@@ -1,0 +1,25 @@
+{
+  "name": "client-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Client Portal, browse, chat, call and pay astrologers.",
+  "scripts": {
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "@astro/shared": "*",
+    "agora-rtc-sdk-ng": "^4.20.2",
+    "firebase": "^10.12.2",
+    "next": "14.2.5",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.39",
+    "tailwindcss": "^3.4.6"
+  }
+}

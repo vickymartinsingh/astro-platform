@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: light; }
+
+html, body, #__next { height: 100%; }
+body {
+  background: #F5F5F5;
+  color: #1A1A2E;
+  font-family: Inter, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 16px min input font prevents iOS zoom (blueprint 10.10). */
+input, textarea, select { font-size: 16px; }
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center rounded-card px-4
+           font-semibold transition-colors;
+    min-height: 48px;
+  }
+  .btn-primary { @apply btn bg-primary text-white hover:opacity-90; }
+  .btn-danger  { @apply btn bg-danger text-white hover:opacity-90; }
+  .btn-ghost   { @apply btn border border-primary text-primary bg-white; }
+  .card {
+    @apply bg-white rounded-card p-4 shadow-sm;
+  }
+  .input {
+    @apply w-full rounded-card border border-gray-300 bg-white px-3 py-3
+           outline-none focus:border-primary;
+  }
+  .skeleton { @apply animate-pulse bg-gray-200 rounded-card; }
+  .badge { @apply inline-block rounded-full px-2 py-0.5 text-xs font-semibold; }
+}
+
+/* Smooth chat auto-scroll (blueprint 10.5). */
+.smooth-scroll { scroll-behavior: smooth; }

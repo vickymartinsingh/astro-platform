@@ -1,0 +1,130 @@
+import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/router';
+import {
+  astrologerService, sessionService, walletService, chatService,
+  kundliService,
+} from '@astro/shared';
+
+// Drives the client side of a session (blueprint 4.10 / Section 7).
+// Billing itself runs server-side (Hard Rule 3); this only reflects state,
+// enforces the 60s request timeout, and stops the session on disconnect
+// (Hard Rule 7) so the Cloud Function stops charging.
+export function useSession({ astroId, type, uid, clientName }) {
+  const router = useRouter();
+  const [astro, setAstro] = useState(null);
+  const [session, setSession] = useState(null);   // live session doc
+  const [wallet, setWallet] = useState(0);
+  const [countdown, setCountdown] = useState(60);
+  const [chatId, setChatId] = useState(null);
+  const sessionIdRef = useRef(null);
+  const introSentRef = useRef(false);
+
+  // Resolve astrologer + conversation, then resume or create the request.
+  useEffect(() => {
+    if (!astroId || !uid) return;
+    let unsubSession = null;
+    let cancelled = false;
+
+    (async () => {
+      const a = await astrologerService.getAstrologer(astroId);
+      if (cancelled) return;
+      setAstro(a);
+      const cId = await chatService.getOrCreateConversation(uid, astroId);
+      setChatId(cId);
+
+      // Resume an existing live session for this pair (refresh / back).
+      const existing = (await sessionService.getUserSessions(uid))
+        .find((s) => s.astroId === astroId &&
+          ['requesting', 'accepted', 'active'].includes(s.status));
+
+      const sid = existing
+        ? existing.id
+        : await sessionService.createSessionRequest({
+            userId: uid,
+            astroId,
+            type,
+            pricePerMinute:
+              type === 'chat' ? a.priceChat
+              : type === 'video' ? a.priceVideo : a.priceCall,
+          });
+      sessionIdRef.current = sid;
+      unsubSession = sessionService.listenSession(sid, setSession);
+    })();
+
+    return () => { cancelled = true; unsubSession && unsubSession(); };
+  }, [astroId, uid, type]);
+
+  // Live wallet (ticks down as the Cloud Function deducts).
+  useEffect(() => {
+    if (uid) return walletService.listenWallet(uid, setWallet);
+  }, [uid]);
+
+  // 60-second request timeout (blueprint 4.10 step 5).
+  useEffect(() => {
+    if (session?.status !== 'requesting') { setCountdown(60); return; }
+    const start = session.createdAt?.toDate
+      ? session.createdAt.toDate().getTime() : Date.now();
+    const t = setInterval(() => {
+      const left = 60 - Math.floor((Date.now() - start) / 1000);
+      setCountdown(left);
+      if (left <= 0 && sessionIdRef.current) {
+        sessionService.updateSessionStatus(sessionIdRef.current, 'missed')
+          .catch(() => {});
+        clearInterval(t);
+      }
+    }, 1000);
+    return () => clearInterval(t);
+  }, [session?.status, session?.createdAt]);
+
+  // As soon as the request is placed: greet the client and share the
+  // chosen kundli with the astrologer (so they have context on accept).
+  useEffect(() => {
+    if (!chatId || !session || introSentRef.current) return;
+    if (['ended', 'rejected', 'missed'].includes(session.status)) return;
+    // Send the intro + kundli exactly ONCE per session. The Firestore
+    // flag survives remounts / navigating back, so it never duplicates.
+    if (session.introSent) { introSentRef.current = true; return; }
+    introSentRef.current = true;
+    (async () => {
+      await sessionService.setSessionMeta(session.id, { introSent: true });
+      const nm = clientName || 'there';
+      const kind = type === 'chat' ? 'chat' : type === 'video'
+        ? 'video call' : 'call';
+      await chatService.sendMessage(chatId, 'system',
+        `Hi ${nm}, please wait until the astrologer accepts your ${kind} ` +
+        'request. Please stay connected; you can keep browsing and we will ' +
+        'notify you here.');
+      const chosenId = typeof router.query.kundli === 'string'
+        ? router.query.kundli : null;
+      const k = chosenId
+        ? (await kundliService.getKundliProfiles(uid))
+            .find((p) => p.id === chosenId)
+          || await kundliService.getDefaultKundli(uid)
+        : await kundliService.getDefaultKundli(uid);
+      if (k) await kundliService.autoSendKundliToChat(chatId, 'system', k);
+    })().catch(() => {});
+  }, [chatId, session, uid, type, clientName, router.query.kundli]);
+
+  // Stop the session on tab close / navigation so billing stops (Rule 7).
+  useEffect(() => {
+    function stop() {
+      const sid = sessionIdRef.current;
+      if (sid && session && ['accepted', 'active'].includes(session.status)) {
+        sessionService.updateSessionStatus(sid, 'ended').catch(() => {});
+      }
+    }
+    window.addEventListener('pagehide', stop);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') stop();
+    });
+    return () => window.removeEventListener('pagehide', stop);
+  }, [session]);
+
+  async function end() {
+    const sid = sessionIdRef.current;
+    if (sid) { try { await sessionService.endSession(sid); } catch (_) {} }
+  }
+
+  return { astro, session, wallet, countdown, chatId, end,
+    sessionId: sessionIdRef.current };
+}

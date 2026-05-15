@@ -1,0 +1,2776 @@
+
+ASTROLOGY PLATFORM
+COMPLETE SYSTEM BLUEPRINT
+
+
+Claude Code Build Prompt + Full Architecture + Code Samples + APK Guide
+Client Portal  •  Astrologer Portal  •  Admin Panel
+Auto-Responsive Web (Desktop & Mobile)  +  Android APK
+TOP NAVIGATION ONLY  •  NO SIDEBARS ANYWHERE
+100% FREE TECH STACK  •  NOT A SINGLE PAISA TO PAY
+
+May 2026
+
+TABLE OF CONTENTS
+Section
+Title
+Section 1
+Master Claude Code Prompt — Paste into Claude Code to start building
+Section 2
+Platform Overview, Tech Stack, Navigation & Responsive Design Rules
+Section 3
+Complete Database Schema — All 18 Firestore Collections
+Section 4
+Client Portal — All Screens, UI, Logic, Onboarding & Guided Tour
+Section 5
+Astrologer Portal — All Screens, Online Control, Earnings, Edge Cases
+Section 6
+Admin Panel — All 31 Modules with Purpose and Real-World Use
+Section 7
+Core Engine — Billing, Session Lifecycle, Wallet Safety, Razorpay Flow
+Section 8
+Service Layer, Backend Cloud Functions & Folder Structure
+Section 9
+Go-To-Market Strategy, Monetization, Conversion & Retention System
+Section 10
+UI Design System — Colours, Components, Premium UX Guidelines
+Section 11
+Android APK Build — Step-by-Step with Capacitor.js (Free)
+Section 12
+Deployment — Vercel + Firebase, Security Rules, Environment Variables
+Section 13
+Complete Feature Checklist — Every Item to Verify Before Launch
+Section 14
+Quick Reference — Free Services, Env Vars, Colour Constants, Hard Rules
+
+SECTION 1: MASTER CLAUDE CODE PROMPT
+Copy the entire block below and paste it as your very first message when you open Claude Code in a new empty project folder. This single prompt tells Claude Code everything it needs to build the complete platform from scratch.
+
+1.1  How to Use This Blueprint
+Install Claude Code on your computer (see Section 11 for full installation steps).
+Create a new empty folder on your computer for the project.
+Open Claude Code inside that folder.
+Paste the Master Prompt below as your first message.
+Claude Code will scaffold the project, ask clarifying questions — answer using this document.
+Follow the build order Claude Code provides.
+Once all three portals are complete, run the APK build commands in Section 11.
+Deploy to Vercel using the steps in Section 12.
+
+1.2  Master Claude Code Prompt
+
+── MASTER BUILD PROMPT ── COPY AND PASTE THIS ENTIRE BLOCK INTO CLAUDE CODE ──
+You are building a full-stack Astrology Consultation Marketplace Platform (similar to Astrotalk). The platform has three separate portals that share a single Firebase backend:
+1. CLIENT PORTAL — for users who browse, chat, call, and pay astrologers
+2. ASTROLOGER PORTAL — for astrologers who go online and deliver consultations
+3. ADMIN PANEL — for the platform owner to control everything
+NAVIGATION RULE (CRITICAL — NEVER BREAK): ALL menus must appear in a horizontal top navigation bar only. Absolutely NO sidebars anywhere in any portal on any screen. On mobile, the top nav collapses to a hamburger button that drops DOWN from the top as a dropdown — it must never slide in from the side.
+RESPONSIVE RULE: All portals must be fully auto-responsive. On desktop show desktop layout. On mobile automatically switch to mobile layout. No manual toggle. Use Tailwind CSS breakpoints (sm:, md:, lg:) so the layout adapts to screen size by itself.
+FREE STACK ONLY — NOT A SINGLE PAISA TO PAY FOR ANY SERVICE OR TOOL:
+• Frontend: React.js (Next.js 14) + Tailwind CSS for all three portals
+• Backend / Database: Firebase (Firestore, Auth, Storage, Cloud Functions, FCM) — free Spark plan
+• Real-time Chat: Firebase Firestore onSnapshot listeners (free, built-in)
+• Voice/Video Calls: Agora.io free tier — up to 10,000 minutes/month free
+• Payments: Razorpay — free to integrate; charges only a % per transaction, no monthly fee
+• Push Notifications: Firebase Cloud Messaging (FCM) — 100% free, unlimited
+• Horoscope Data: Aztro free API or hardcoded CSV content uploaded by admin
+• APK Build: Capacitor.js (free, open source) to wrap the React web app into an Android APK
+• PDF Reports: pdfkit (free Node.js library)
+• Hosting: Vercel free tier for all three web portals
+BUILD ORDER — follow this exact sequence:
+Step 1: Create Firebase project. Enable Firestore, Auth (email/password), Storage, Cloud Functions, FCM
+Step 2: Create Firestore collections from the full schema in Section 3 of the blueprint
+Step 3: Build shared service layer (authService, walletService, chatService, sessionService, notificationService, kundliService, reportService)
+Step 4: Build Client Portal — all screens listed in Section 4: Login, Signup, Dashboard, Astrologer List, Profile, Chat, Call, Wallet, Kundli, Horoscope, History, Notifications, Guided Tour
+Step 5: Build Astrologer Portal — all screens listed in Section 5: Login, Dashboard, Go Online flow, Incoming Request popup, Active Session, Earnings, Profile, Reviews
+Step 6: Build Admin Panel — all 31 modules listed in Section 6 including CMS builder, PDF reports, notification broadcast, payout management
+Step 7: Integrate Razorpay payments with server-side HMAC signature verification in Cloud Functions
+Step 8: Integrate Agora.io for voice and video calls in Client and Astrologer portals
+Step 9: Deploy Firebase Cloud Functions: billingEngine (per-second deduction), verifyPayment, createRazorpayOrder, sendNotification, onAstrologerGoOnline, generatePDFReport
+Step 10: Wrap Client Portal with Capacitor.js and build Android APK (see Section 11)
+Step 11: Deploy all three portals to Vercel (see Section 12)
+KEY BUSINESS RULES TO ENFORCE IN CODE:
+• Wallet writes ONLY via Firebase Cloud Functions — never from the browser (Firestore rule: allow write: if false)
+• Billing runs server-side in Cloud Functions every second — never in the browser
+• Payment verified server-side with Razorpay HMAC signature before any wallet credit
+• Billing stops IMMEDIATELY when user disconnects — Firebase onDisconnect handler
+• Every wallet change (credit or debit) MUST create a transaction record
+• Check wallet balance before every session start; block if insufficient
+• Astrologer must select at least one service (Chat/Call/Video) to go online
+• Session request times out after 60 seconds — status becomes missed
+• Commission calculated after discount: astrologerEarning = (discountedPrice × duration) × (1 - commission/100)
+Refer to the full blueprint document for complete screen specs, database schema, all business logic, UI design system, and deployment steps. Ask me if you need clarification on any module before coding it.
+
+SECTION 2: PLATFORM OVERVIEW & ARCHITECTURE
+2.1  Core Business Flow
+Client enters → selects astrologer → chats or calls → pays per minute → astrologer earns commission → admin monitors and controls everything
+
+The platform has four core engines that everything revolves around: the User System, the Marketplace (astrologers), Communication (chat and call), and the Money System (wallet + billing). All three portals — Client, Astrologer, Admin — share the same Firebase backend. The same service functions are reused everywhere.
+
+2.2  Free Tech Stack — 100% Zero Cost
+Tool / Service
+Purpose & Free Tier
+React.js + Next.js 14
+Frontend for all 3 portals — open source, free forever
+Tailwind CSS
+Responsive UI styling — open source, free forever
+Firebase Auth
+Login for all users — free Spark plan (unlimited auth users)
+Firebase Firestore
+Real-time database — free: 1 GB storage, 50k reads, 20k writes per day
+Firebase Storage
+Images/files — free: 5 GB storage, 1 GB/day download
+Firebase Cloud Functions
+Secure backend billing — free: 125,000 invocations/month
+Firebase FCM
+Push notifications — 100% free, unlimited messages
+Agora.io
+Voice and video calls — free: 10,000 minutes/month
+Razorpay
+Payments — free to integrate; only charges a % per transaction, no monthly fee
+Capacitor.js
+Wrap React web app into Android APK — open source, free forever
+Vercel
+Host all 3 portals — free tier, unlimited deployments
+pdfkit (Node.js)
+Generate PDF reports — open source npm package, free forever
+Aztro API
+Free daily horoscope data — no API key needed
+
+2.3  Navigation Rule — TOP HORIZONTAL NAV BAR ONLY
+⚠️  ALL menus in ALL three portals MUST appear in a horizontal top navigation bar. There must be NO sidebar anywhere — not in Client, not in Astrologer, not in Admin. This is a hard non-negotiable requirement.
+
+Portal
+Top Navbar Menu Items
+Client Portal
+Home | Astrologers | Chat History | Call History | Wallet | Horoscope | Profile | Notifications | Logout
+Astrologer Portal
+Dashboard | My Sessions | Earnings | Kundli Viewer | Profile | [Go Online / Go Offline button] | Logout
+Admin Panel
+Dashboard | Users | Astrologers | Sessions | Transactions | Reports | CMS Builder | Settings | Logout
+
+2.4  Responsive Auto-Adapt — No Manual Toggle
+All portals must automatically adapt to screen size using Tailwind CSS responsive classes (sm:, md:, lg:) and CSS media queries. The user never needs to manually switch between desktop and mobile mode.
+Screen Size
+Automatic Layout Behaviour
+Desktop ≥ 1024px
+Full horizontal top nav with text labels; multi-column card grids; wide content areas
+Tablet 768–1023px
+Condensed top nav; 2-column grids; stacked sections where needed
+Mobile < 768px
+Top nav collapses to hamburger icon (still at top); single-column layout; large tap targets; input fields full width
+📌  Mobile hamburger: must drop DOWN as an overlay from the TOP of the page. Must NOT slide in from the left or right side. This keeps the top-nav-only rule on all screen sizes.
+
+SECTION 3: COMPLETE DATABASE SCHEMA (18 FIRESTORE COLLECTIONS)
+Every collection, every field, its data type, an example value, and what it is used for is listed below. This is the single source of truth for the entire backend.
+
+3.1  users  (all roles in one collection)
+Field
+Type
+Example
+Purpose
+uid
+string
+auto (Firebase)
+Primary key — unique user ID from Firebase Auth
+name
+string
+Vicky Martin
+Display name — used in chat, calls, reviews, kundli auto-fill
+email
+string
+vicky@gmail.com
+Login email
+phone
+string
++91-9876543210
+Contact number (optional at signup, collectible later)
+role
+string
+client/astrologer/admin
+Determines access level and portal routing
+userCode
+string
+847291653
+9-digit unique code — generated at signup
+wallet
+number
+500
+Current balance in ₹ — ONLY Cloud Functions may write this
+profileImage
+string
+https://cdn/img.jpg
+Live profile photo URL
+pendingProfileImage
+string
+https://cdn/new.jpg
+Pending admin approval photo (astrologers only)
+imageStatus
+string
+approved/pending
+Photo approval state (astrologers only)
+isOnline
+boolean
+true
+Live presence flag — true when app is open
+isOnCall
+boolean
+false
+Currently in an active session
+isBlocked
+boolean
+false
+Admin block flag — blocked users cannot login
+hasSeenTour
+boolean
+false
+Whether guided tour was shown — set true after tour completes
+hasUsedFreeChat
+boolean
+false
+First free chat used — set true after free session
+hasUsedFreeCall
+boolean
+false
+First free call used — set true after free session
+status
+string
+active/suspended
+Account status controlled by admin
+fcmToken
+string
+device token string
+Firebase push notification token
+createdAt
+timestamp
+auto
+Account creation date
+
+3.2  astrologers  (additional data for astrologer role)
+Field
+Type
+Example
+Purpose
+userId
+string
+uid from users
+Links to users collection record
+bio
+string
+Vedic expert for 5 yrs...
+Profile description shown to clients
+skills
+array
+[Tarot, Vedic, Numerology]
+Specialisations — shown as tags on cards
+languages
+array
+[Hindi, English, Telugu]
+Languages spoken
+experience
+number
+5
+Years of experience
+priceChat
+number
+20
+₹ per minute for chat service
+priceCall
+number
+30
+₹ per minute for voice call
+priceVideo
+number
+40
+₹ per minute for video call
+discountPercent
+number
+0
+Active discount 0-70%; affects displayed price
+rating
+number
+4.8
+Calculated average star rating
+reviewsCount
+number
+120
+Total number of reviews received
+totalSessions
+number
+200
+Lifetime session count
+responseRate
+number
+90
+Percentage of requests accepted vs total
+approved
+boolean
+true
+Must be true before astrologer is visible to clients
+status
+string
+online/offline/busy/idle
+Live availability status
+chat_enabled
+boolean
+true
+Chat service is ON for this astrologer
+call_enabled
+boolean
+true
+Voice call service is ON
+video_enabled
+boolean
+false
+Video call service is ON
+live_enabled
+boolean
+false
+Live streaming is ON (future feature)
+earnings
+number
+7000
+Total post-commission earnings in ₹
+createdAt
+timestamp
+auto
+Profile creation date
+
+3.3  sessions  (every chat/call/video session)
+Field
+Type
+Example
+Purpose
+userId
+string
+user123
+Client who initiated the session
+astroId
+string
+astro456
+Astrologer who handled the session
+type
+string
+chat/call/video
+Session type
+purpose
+string
+Career advice
+Client-provided reason for the session
+kundliId
+string
+kundli789
+Which kundli profile was shared
+ratePerSecond
+number
+0.5
+₹ deducted per second (pricePerMin ÷ 60)
+startTime
+timestamp
+auto
+When billing started
+endTime
+timestamp
+auto
+When session ended
+duration
+number
+120
+Session length in seconds
+cost
+number
+60
+Total ₹ charged to client
+status
+string
+requesting/accepted/active/ended/rejected/missed
+Current state in lifecycle
+createdAt
+timestamp
+auto
+Record creation time
+
+3.4  transactions
+Field
+Type
+Example
+Purpose
+userId
+string
+user123
+Which user's money moved
+amount
+number
++500 or -20
+Positive=credit (added), Negative=debit (spent)
+type
+string
+credit/debit
+Direction of money movement
+reason
+string
+recharge/chat/call/refund/bonus
+Why money moved
+referenceId
+string
+sessionId or paymentId
+Links to related session or payment record
+createdAt
+timestamp
+auto
+Transaction timestamp
+
+3.5  payments  (Razorpay payment records)
+Field
+Type
+Example
+Purpose
+userId
+string
+user123
+Who paid
+amount
+number
+500
+₹ amount paid
+provider
+string
+razorpay
+Payment gateway used
+status
+string
+success/failed
+Payment outcome
+orderId
+string
+order_xxx
+Razorpay order ID
+paymentId
+string
+pay_xxx
+Razorpay payment ID
+signature
+string
+hmac_xxx
+Razorpay HMAC signature for verification
+createdAt
+timestamp
+auto
+Payment timestamp
+
+3.6  chats  +  chats/{chatId}/messages  (subcollection)
+Field
+Type / Purpose
+chats/{chatId} — participants
+array [userId, astroId] — who is in this conversation
+chats/{chatId} — lastMessage
+string — preview text for chat history screen
+chats/{chatId} — updatedAt
+timestamp — when last message was sent
+messages/{msgId} — senderId
+string — who sent this message
+messages/{msgId} — text
+string — message content
+messages/{msgId} — createdAt
+timestamp — message time
+
+3.7  kundliProfiles
+Field
+Type
+Example
+Purpose
+userId
+string
+user123
+Which user this kundli belongs to
+name
+string
+Vicky Martin
+Person's name (auto-filled from account name)
+dob
+string
+12-05-1998
+Date of birth
+tob
+string
+10:30
+Time of birth
+ampm
+string
+AM/PM
+AM or PM for birth time
+place
+string
+Hyderabad
+Place of birth
+zodiac
+string
+Taurus
+Auto-calculated from DOB
+isDefault
+boolean
+true
+Primary profile auto-shared at session start
+createdAt
+timestamp
+auto
+Profile creation date
+
+3.8  horoscope  (daily content)
+Field
+Purpose
+zodiac
+Zodiac sign name (Aries, Taurus, etc.)
+date
+Date string YYYY-MM-DD
+content
+Full horoscope text for that zodiac on that date
+tomorrowContent
+Next day prediction (stored together for efficiency)
+
+3.9  settings  (three sub-documents)
+Document
+Fields
+settings/config
+platformName, logo (URL), favicon (URL), themeColor (#hex), timezone (GMT offset), commission_percent, min_recharge, signup_bonus, free_chat_seconds, free_call_seconds, kundliToolUrl
+settings/email
+smtp_host, smtp_port, smtp_email, smtp_password, pop_host, pop_port
+settings/features
+enable_chat, enable_call, enable_video, enable_kundli, enable_horoscope, enable_ai, enable_tour, free_chat_enabled, free_call_enabled
+
+3.10  coupons
+Field
+Purpose
+code
+Coupon code string e.g. NEW50
+discountPercent
+Percentage discount on recharge amount
+maxDiscount
+Maximum ₹ discount cap
+expiry
+Timestamp when coupon expires
+usageLimit
+Total number of times this coupon can be used
+usedCount
+How many times it has been used so far
+active
+Boolean — admin can deactivate without deleting
+
+3.11  notifications
+Field
+Purpose
+userId
+User who receives this notification (or 'all' for broadcast)
+title
+Short notification heading
+message
+Full notification text
+type
+incoming_call / new_message / low_balance / payment_success / offer
+read
+Boolean — has user seen this notification
+createdAt
+Timestamp
+
+3.12  reviews
+Field
+Purpose
+userId
+Client who left the review
+astroId
+Astrologer being reviewed
+sessionId
+Links to the session this review is about
+rating
+Number 1–5
+comment
+Review text
+astrologerReply
+Astrologer's reply text (can be added later)
+createdAt
+Timestamp
+
+3.13  payouts  (astrologer withdrawal requests)
+Field
+Purpose
+astroId
+Which astrologer requested the payout
+amount
+₹ amount requested
+bankDetails
+UPI ID or bank account details provided
+status
+pending / approved / rejected
+adminNote
+Admin's reason for rejection if rejected
+createdAt
+Request timestamp
+processedAt
+When admin approved/rejected
+
+3.14  pages  (CMS Builder content)
+Field
+Purpose
+name
+Page name e.g. Home, About, Terms
+components
+Array of block objects: { type: text/image/button/banner, content: {}, style: {} }
+publishedVersion
+Currently live version JSON
+draftVersion
+Saved but not live version JSON
+lastPublishedAt
+Timestamp of last publish
+createdAt
+Timestamp
+
+3.15  reports
+Field
+Purpose
+type
+user / astrologer / session / revenue / custom
+filters
+JSON of applied filters
+generatedBy
+Admin user ID who generated this report
+fileUrl
+Firebase Storage URL of generated PDF
+createdAt
+Timestamp
+
+3.16  logs  (admin audit trail)
+Field
+Purpose
+adminId
+Which admin performed the action
+action
+String describing action e.g. blocked_user, approved_astrologer, changed_commission
+target
+Record ID that was affected
+before
+JSON snapshot of record before change
+after
+JSON snapshot of record after change
+timestamp
+Action timestamp
+
+3.17  disputes
+Field
+Purpose
+userId
+Client who raised the dispute
+sessionId
+Session the dispute is about
+issue
+Text description of the problem
+status
+open / under_review / resolved
+resolution
+Admin's resolution note
+refundAmount
+₹ refunded (0 if no refund)
+createdAt
+Timestamp
+
+3.18  scheduler  (for scheduled notifications/tasks)
+Field
+Purpose
+type
+notification / report / horoscope_rotate
+triggerTime
+Timestamp when to execute
+action
+JSON payload describing what to do
+status
+pending / executed / failed
+createdAt
+Timestamp
+
+3.19  Collection Relationships
+users → sessions → transactions
+users → kundliProfiles → (shared in sessions)
+users → payments → wallet (via Cloud Function)
+astrologers → sessions → earnings
+sessions → calls/video → recordings
+sessions → billing → transactions (per second Cloud Function)
+
+SECTION 4: CLIENT PORTAL — FULL SPECIFICATION
+4.1  Top Navigation Bar
+Top Navbar (left to right):  Home  |  Astrologers  |  Chat History  |  Call History  |  Wallet  |  Horoscope  |  Profile  |  Notifications  |  Logout
+📌  On mobile (< 768px): these items collapse into a hamburger icon fixed at the TOP. Tapping it opens a dropdown menu that falls DOWN from the top. It must never slide from the side.
+
+4.2  URL Routes — Client Portal
+Route
+Screen
+/login
+Login screen
+/signup
+Signup screen
+/dashboard
+Home dashboard
+/astrologers
+Astrologer marketplace listing
+/astrologer/:id
+Individual astrologer profile
+/chat/:id
+Real-time chat session with astrologer :id
+/call/:id
+Voice/video call with astrologer :id
+/wallet
+Wallet, recharge, transactions
+/horoscope
+Daily + tomorrow horoscope
+/kundli
+Kundli profiles — view, add, manage
+/chat-history
+All past chat conversations
+/call-history
+All past call sessions
+/notifications
+In-app notification list
+/profile
+User profile edit
+/transactions
+Full transaction history
+/favorites
+Saved astrologers
+
+4.3  Screen 1: Signup
+Element
+Detail
+Required fields
+Full Name + Email or Phone + Password
+Optional at signup
+Nothing else — keep it minimal for high conversion
+System actions
+1. Firebase Auth creates account  2. Generate 9-digit userCode  3. Create Firestore user record with wallet=0, role=client, hasUsedFreeChat=false, hasUsedFreeCall=false  4. If admin has set signup_bonus > 0: credit wallet and create transaction
+After signup
+Redirect to Dashboard; show guided tour on first login (hasSeenTour=false)
+Validation
+Email must be valid format; password minimum 6 characters; name must not be empty
+
+4.4  Screen 2: Login
+Element
+Detail
+Fields
+Email or phone + Password
+Forgot password link
+Sends reset email via configured SMTP; user clicks link and resets
+Auto-login
+Firebase Auth session persists; user auto-logs in when app reopens
+Blocked check
+If isBlocked=true: show 'Your account has been suspended. Contact support.' and prevent login
+Role routing
+After login: role=client → /dashboard, role=astrologer → /astro-dashboard, role=admin → /admin/dashboard
+
+4.5  Screen 3: Dashboard (Home)
+Element
+Detail
+Wallet card
+Large purple card at top showing current ₹ balance — fetched from Firestore on load
+Quick action grid
+Chat with Astrologer | Call Astrologer | Recharge Wallet | View Horoscope
+Daily horoscope teaser
+First 2 lines of today's horoscope with 'Read Full' button (auto-detected from kundli zodiac)
+Recent chats strip
+Last 3 chat conversations: astrologer photo + name + last message + time
+Loading state
+Show skeleton cards while data fetches — never leave blank screen
+Error state
+'Something went wrong. Try again' with retry button — never show raw error codes
+
+4.6  Screen 4: Astrologer List (Marketplace)
+Element
+Detail
+Card content
+Profile photo | Name | Rating ⭐ (number) | Skills as tags | ₹ Chat rate | ₹ Call rate | Status badge
+Status badges
+🟢 Online (clickable) | 🔴 Busy (not clickable — show 'Busy') | ⚫ Offline (greyed out)
+Sort order
+Online first, then sorted by rating descending
+Filters bar (top)
+Filter by: Skill | Language | Min rating | Price range — all dropdowns in the navbar area
+Search field
+Search by astrologer name — debounced 300ms
+Discount badge
+If discountPercent > 0: show orange badge '50% OFF' on the card
+Discounted price
+Show strikethrough original price and discounted price side by side
+Data source
+astrologers collection where approved=true
+Verified badge
+Show ✅ Verified if approved=true
+Pagination / infinite scroll
+Load 10 at a time; fetch more on scroll down
+
+4.7  Screen 5: Astrologer Profile
+Element
+Detail
+Header section
+Large profile photo | Name | Rating ⭐ | Reviews count | ✅ Verified | Experience | Languages
+Skills section
+Tags: [Tarot] [Vedic] [Numerology]
+Bio section
+Full bio text
+Pricing section
+Chat ₹X/min | Call ₹Y/min | Video ₹Z/min — with discount overlay if active
+Action buttons
+Start Chat (primary, full-width) | Start Voice Call | Start Video Call
+Pre-connection check
+Before opening session: if wallet < (pricePerMin × 1): show 'Insufficient balance. Recharge ₹X to start.' with Recharge button
+Reviews section
+Scrollable list with star rating + comment + client name + astrologer reply (if any)
+Favorites button
+Heart icon — saves to favorites collection
+Busy state
+If status=busy: show 'Astrologer is currently in a session' — Start Chat/Call buttons disabled
+Offline state
+If status=offline: buttons show 'Astrologer is Offline'
+
+4.8  Screen 6 & 7: Chat Screen + Billing
+Element
+Detail
+Top bar
+Astrologer photo + name | Live wallet balance (ticking down) | ₹/sec rate | Live timer MM:SS
+Message area
+Scrollable; auto-scrolls to latest message; User messages right-aligned green bubble; Astrologer messages left-aligned grey bubble
+Input bar
+Text input + Send button — fixed at bottom of screen
+Conversation ID
+Always formed as: smaller_uid + '_' + larger_uid to prevent duplicates
+Real-time listener
+Firestore onSnapshot on messages subcollection — ordered by createdAt asc
+Kundli auto-share
+System sends kundli data as first message automatically when session starts: 'Client: Vicky Martin | DOB: 12 May 1998 | TOB: 10:30 AM | Place: Hyderabad'
+Purpose display
+If user provided session purpose, shown as second auto-message
+Billing display
+Live counter showing ₹ remaining and time elapsed
+Low balance warning
+Orange banner appears when wallet < 10 seconds of billing: '⚠ Only 10 seconds remaining. Recharge now.' with Recharge button
+Chat blocked at zero
+When wallet=0: input disabled, send button disabled, show 'Balance ended — Recharge to continue'
+Billing logic
+Cloud Function deducts priceChat ÷ 60 per second from wallet
+Multiple tabs fix
+activeChat flag in Firestore — if true and another tab tries to start billing, block it
+Refresh resume
+If user refreshes page: check Firestore for activeSession=true and resume billing — never double-charge
+Slow network
+Messages still store; billing continues — Firestore handles offline queueing
+
+4.9  Screen 8: Call Screen (Voice or Video)
+Element
+Detail
+Full-screen layout
+Agora video stream fills screen for video call; audio avatar for voice call
+Overlay info
+Astrologer name | Live timer MM:SS | Live balance ₹ | Mute button | Camera toggle (video only)
+End Call button
+Large red circle button — always visible at bottom of screen
+Billing
+Identical to chat — Cloud Function deducts priceCall ÷ 60 per second
+Auto-end
+When wallet=0: Agora channel left, call ended, user shown 'Call ended — balance finished. Recharge to call again'
+Low balance
+Notification sent when < 60 seconds remaining: 'Call will end soon, recharge now'
+Network drop
+onDisconnect handler fires — session ended, billing stopped, no overcharge
+App closed / minimized
+onDisconnect also fires — session ended immediately
+Agora channel name
+Use sessionId as channel name — unique per session
+
+4.10  Pre-Session: Client Request Flow
+Step
+What Happens
+1. Client clicks Start Chat/Call
+System checks: astro.status=online, service enabled, wallet≥minimum
+2. Checks pass
+Create session record with status=requesting; show 'Waiting for astrologer...' with 60s countdown
+3. Astrologer accepts within 60s
+session.status=accepted; both enter session; billing starts
+4. Astrologer rejects
+session.status=rejected; client sees 'Request rejected by astrologer'
+5. Timer expires (60s no action)
+session.status=missed; client sees 'Astrologer unavailable. Try again later' + option to choose another astrologer
+
+4.11  Screen 9: Wallet
+Element
+Detail
+Balance display
+Large balance card showing current ₹ prominently
+Quick-add buttons
+₹100 | ₹200 | ₹500 | ₹1000 — one tap pre-fills the amount field
+Custom amount
+Manual text input for any amount
+Coupon field
+Enter coupon code; on apply: show discount preview 'You save ₹50 — Final amount ₹450'
+Pay button
+Opens Razorpay payment sheet
+After success
+Cloud Function verifies HMAC, credits wallet, creates credit transaction, shows 'Payment successful — ₹500 added'
+After failure
+Shows 'Payment failed. Please try again.' — wallet NOT changed
+Transaction history tab
+List of all transactions: date | type | amount (color coded) | reason
+Test payment credentials
+Card: 4111 1111 1111 1111 | Expiry: any future | CVV: 123 | OTP: 1234
+
+4.12  Screen 10: Horoscope
+Element
+Detail
+Today's horoscope
+Auto-detected zodiac from default kundli profile DOB; fetched from horoscope collection
+Tomorrow's horoscope
+Next day prediction stored in same Firestore document
+Zodiac not set
+Banner: 'Add your birth details for personalised horoscope' with link to Kundli screen
+Zodiac auto-calculation
+If DOB is 12 May → Taurus; calculated from DOB month+day without API
+Fallback
+If Aztro API available: use it; else use admin-uploaded CSV content
+
+4.13  Screen 11: Kundli Profiles
+Element
+Detail
+Form fields
+Name (auto-filled from account name, editable) | Date of Birth | Time of Birth | AM/PM | Place of Birth
+Save action
+Stores in kundliProfiles collection; auto-calculates zodiac sign from DOB
+Multiple profiles
+User can save profiles for family members — mother, father, spouse etc.
+Default profile
+Marked with isDefault=true; this one is auto-shared when starting a session
+External kundli tool
+If admin has configured kundliToolUrl in settings: show 'Open Kundli Chart Tool' button that opens URL in new tab with DOB/TOB/Place pre-filled as URL params where supported
+When to ask for kundli
+DO NOT force at signup. Prompt contextually when: user clicks chat/call for first time and no kundli exists; or when user opens horoscope with no zodiac set
+Progressive onboarding
+After signup → show Welcome modal with option to 'Setup Kundli Now' or 'Skip for now'
+
+4.14  Screen 12: Chat History
+Element
+Detail
+List items
+Astrologer photo + name | Last message preview | Date/time | Unread badge
+Returning customer
+If same astrologer conversation is opened after 7+ weeks since last session: show banner 'Welcome back! This is a returning session ✅'
+Tap to reopen
+Opens the same chat thread — messages load from Firestore
+Data source
+chats collection filtered by userId in participants array; sorted by updatedAt desc
+
+4.15  Screen 13: Call History
+Element
+Detail
+List items
+Astrologer photo + name | Session type (voice/video) | Duration | Total ₹ cost | Date
+Data source
+sessions collection filtered by userId, type=call/video, status=ended; sorted by createdAt desc
+
+4.16  Screen 14: Notifications
+Element
+Detail
+List
+Icon | Title | Message body | Timestamp | Read/Unread indicator (bold for unread)
+Types
+Incoming call/chat request | New message | Low balance warning | Payment success | Platform offer
+Mark read
+Tap notification marks it read; unread count badge updates in top nav
+
+4.17  Screen 15: Favorites
+Element
+Detail
+Display
+Same astrologer card format as marketplace listing
+Add/Remove
+Heart icon on astrologer cards and profile — toggles saved status
+Data source
+favorites collection with userId and array of astrologerIds
+
+4.18  Screen 16: Profile
+Element
+Detail
+Editable fields
+Name | Phone | Profile photo upload
+Photo upload
+Uploads to Firebase Storage; updates profileImage URL in users collection
+User code display
+Shows 9-digit userCode (read only)
+Replay tour
+'View App Tour' button — resets hasSeenTour=false and triggers tour
+Terms / Privacy links
+Links to CMS pages managed by admin
+
+4.19  Guided Tour (First Visit Only)
+Step
+Highlight + Message
+1 — Welcome
+Modal overlay: 'Welcome to the platform 👋  Let us show you around in 30 seconds'
+2 — Wallet
+Highlights wallet card: 'This is your wallet. Add money to start a consultation'
+3 — Astrologers
+Highlights astrologer button: 'Browse verified astrologers here. See ratings and pricing'
+4 — Chat
+Highlights Chat button: 'Start a text chat and pay only per minute used'
+5 — Call
+Highlights Call button: 'Prefer talking? Start a voice or video call instantly'
+6 — Kundli
+Highlights Kundli section: 'Save your birth details once for accurate predictions'
+7 — Horoscope
+Highlights Horoscope: 'Check your daily and tomorrow's horoscope here'
+8 — Done
+'You are all set! 🎉  Start your first consultation now' + Start Exploring button
+📌  Tour shown only when hasSeenTour=false (first login). User can skip at any step. After completion OR skip: set hasSeenTour=true in Firestore. Tour can be replayed from Profile page.
+
+4.20  Onboarding Flow After Signup
+Stage
+What Happens
+Signup complete
+Redirect to /dashboard; hasSeenTour=false triggers guided tour automatically
+Tour complete/skip
+User lands on dashboard; if no kundli: show small banner 'Add your birth details for better readings'
+User clicks Chat/Call
+If no kundli: show bottom sheet prompt 'Add birth details for accurate reading' — NOT a blocking popup; user can dismiss and proceed
+Progressive enrichment
+Collect gender, DOB etc. in profile later — never at signup
+First paid session
+After session: show 'Rate your astrologer' modal with 1-5 stars + optional comment
+
+SECTION 5: ASTROLOGER PORTAL — FULL SPECIFICATION
+5.1  Top Navigation Bar
+Top Navbar:  Dashboard  |  My Sessions  |  Earnings  |  Kundli Viewer  |  Profile  |  Reviews  |  [Go Online / Go Offline button]  |  Logout
+📌  Go Online / Go Offline is a prominent button always visible in the top nav. No sidebar anywhere.
+
+5.2  URL Routes — Astrologer Portal
+Route
+Screen
+/astro-login
+Login screen
+/astro-dashboard
+Main dashboard
+/astro-sessions
+Session history
+/astro-earnings
+Earnings breakdown
+/astro-kundli
+Kundli viewer during sessions
+/astro-profile
+Profile management
+/astro-reviews
+Reviews and replies
+/astro-session/:id
+Active live session screen
+
+5.3  Screen 1: Login
+Same Firebase Auth login page. After login: system checks role=astrologer → redirect to /astro-dashboard. If role=client → show 'Access denied, wrong portal'.
+
+5.4  Screen 2: Dashboard
+Element
+Detail
+Status card
+Large coloured card: 🟢 ONLINE / 🔴 OFFLINE / 🟡 BUSY — prominently displayed
+Today earnings
+₹ earned today (post-commission, calculated server-side)
+This week earnings
+₹ this week
+Total lifetime earnings
+₹ all-time
+Sessions today
+Count of completed sessions today
+Rating
+Current average star rating with star visual
+Response rate
+% of requests accepted vs total received
+Recent requests
+Last 5 session requests — accepted, rejected, missed with client names and dates
+
+5.5  Screen 3: Go Online Flow (Detailed)
+Step
+What Happens
+1. Click 'Go Online' in navbar
+Opens a service-selection dialog modal (full-width overlay)
+2. Service selection
+Three checkboxes: ☐ Chat (₹X/min)  ☐ Voice Call (₹Y/min)  ☐ Video Call (₹Z/min)
+3. Validation
+If ZERO checkboxes selected: show inline error 'Please select at least one service to go online'
+4. Confirmation popup
+Shows summary: 'You are going online with: Chat + Voice Call' | Confirm / Cancel buttons
+5. Go Online confirmed
+Updates Firestore: astrologers/{id}: status=online, chat_enabled=true/false, call_enabled=true/false, video_enabled=true/false
+6. Notification sent
+Cloud Function: onAstrologerGoOnline fires → sends push to users who favorited this astrologer: '[Name] is now available'
+7. UI changes
+Dashboard card turns green; navbar button shows 'Go Offline' option
+Go Offline
+Click 'Go Offline' in navbar → Confirmation popup: 'You will not receive new requests. Go offline?' → Yes: status=offline, all services set false
+Auto-busy on session
+When session starts: status auto=busy; when session ends: status reverts to online automatically
+Partial service disable
+While online: astrologer can uncheck Call or Video in settings without going fully offline — updates Firestore in real-time
+
+5.6  Screen 4: Incoming Session Request (Critical Screen)
+Element
+Detail
+Trigger
+Firestore real-time listener on sessions collection where astrologerId=myId AND status=requesting — onSnapshot
+Popup appearance
+Full-screen overlay popup — like an incoming phone call visual
+Popup content
+Client Name (Full Name) | User Code (internal ID, not shown as main) | Session Type (Chat/Call/Video) | Purpose (if provided by client) | Kundli preview: DOB, TOB, Place
+Buttons
+Large green ✅ ACCEPT button | Large red ❌ REJECT button
+60-second timer
+Visible countdown ring/bar around accept button; when timer hits 0: auto-missed
+Accept
+Update session: status=accepted; Agora channel created (for calls); astrologer.status=busy; redirect to active session screen
+Reject
+Update session: status=rejected; client notified 'Your request was rejected'; astrologer status remains online
+Missed (timer=0)
+Update session: status=missed; client notified 'Astrologer unavailable, try again'; astrologer status remains online
+Only one at a time
+If isOnCall=true: block new request popup — do not show incoming request while already in session
+
+5.7  Screen 5: Active Session Screen
+Element
+Detail
+Chat view
+Message bubbles (astrologer on right, client on left) — same Firestore listener as client side
+Call/Video view
+Agora RTC stream full screen; timer overlay at top; End Session button at bottom
+Client info panel
+Always visible side panel (collapsible on mobile): Client Name | User Code | Session Purpose | Kundli: DOB, TOB, AM/PM, Place, Zodiac
+Kundli tool button
+If admin has set kundliToolUrl: show 'Open Kundli Chart Tool' button — opens external URL with client details pre-filled
+Session timer
+Live MM:SS elapsed time counter
+End session
+End Session button — confirms before ending; sends notification to client; saves session record; reverts astrologer status to online
+Billing note
+Astrologer NEVER loses money during session — only client wallet deducts. Astrologer earns post-commission.
+
+5.8  Screen 6: My Sessions (History)
+Element
+Detail
+Default view
+Last 7 weeks — sessions sorted by date descending
+Returning customer tag
+If same client returns: show 'Returning Customer ✅' tag on that session row
+Table columns
+Client Name | Session Type | Duration | Gross Amount | Commission Deducted | Net Earned | Date | Status
+Session detail tap
+Opens full detail: kundli summary, cost breakdown, session log
+History beyond 7 weeks
+Toggle button 'Show All History' — loads full history from Firestore
+
+5.9  Screen 7: Earnings
+Element
+Detail
+Earnings breakdown
+Today | This Week | This Month | All Time — four stat cards
+Commission display
+Shows: Gross ₹100 | Commission 30% | Net Earned ₹70
+Session-level breakdown table
+Date | Client | Duration | Gross | Commission | Earned
+Earnings formula
+astrologerEarning = (sessionCost - sessionCost×commissionPercent/100)
+Note on commission after discount
+Commission applies on discounted price only. If priceChat was ₹40 and discount 50%, client pays ₹20, commission applied on ₹20
+Payout request
+Button: 'Request Withdrawal' — opens form with amount + bank/UPI details; creates payout record with status=pending
+Payout status
+Table showing: Amount | Status | Requested Date | Admin Note
+
+5.10  Screen 8: Profile
+Element
+Detail
+Editable fields
+Name | Bio (rich text area) | Skills (multi-select chips) | Languages (multi-select) | Experience (years) | Profile photo
+Photo upload
+Uploads to Firebase Storage; goes into pendingProfileImage; imageStatus=pending; old photo stays live until approved
+Pending photo notice
+Banner shown: 'Your profile photo is under review. It will be approved within 24 hours.'
+After approval
+Notification: 'Your profile photo has been approved ✅'
+Chat price
+₹ per minute input for chat
+Call price
+₹ per minute input for voice call
+Video price
+₹ per minute input for video call
+Discount setter
+Dropdown: No Discount / 25% / 50% / 70% / Custom % — live preview shows client-facing price
+Discount preview
+Shows: ~~₹40~~ ₹20/min (50% OFF)
+Password change
+Current password + New password + Confirm
+Terms & privacy
+Links to CMS pages created by admin
+
+5.11  Screen 9: Reviews
+Element
+Detail
+View all reviews
+Star rating ⭐ | Review text | Client first name | Date
+Reply
+Astrologer can type and submit a reply to each review
+Reply visible to clients
+Reply shown on astrologer profile under the original review
+Hard restriction
+Astrologer CANNOT delete any review. Only admin can delete reviews through admin panel
+Average rating update
+Rating recalculated after each new review: newRating = (sum of all ratings) ÷ reviewsCount
+
+5.12  Disconnect & Edge Case Handling — Astrologer Side
+Edge Case
+System Behaviour
+Astrologer's internet drops during session
+Firebase onDisconnect listener fires on both sides → session.status=ended → billing stops → client notified 'Session ended due to connection loss'
+Astrologer turns offline while in session
+Current session is allowed to finish; new session requests are blocked while in session
+Two clients request same astrologer simultaneously
+First request's 60s timer is active → astrologer accepts → status=busy → second client sees 'Astrologer is busy' immediately
+Astrologer ignores request (60s expires)
+status=missed; astrologer stays online but responseRate calculated drops; system can lower ranking if reject rate is high
+Client closes browser during chat
+Firebase onDisconnect ends session → billing stops → no overcharge; astrologer sees 'Client disconnected' message
+Network unstable (frequent drops)
+Grace time: 5–10 seconds before declaring disconnect. Agora has built-in reconnect logic.
+Back button pressed during session
+Session stays active — show confirmation dialog 'Are you sure you want to leave the session? This will end the call.'
+Page refresh during session
+Check Firestore for activeSession record — resume if still active; prevent duplicate billing timers
+
+5.13  Back & Refresh Handling
+📌  Every session screen must handle browser back button and page refresh. Check Firestore for activeSession flag on page load. If a session is already active, resume it rather than creating a duplicate.
+
+5.14  Astrologer Registration Flow
+Step
+Action
+1. Signup
+Same Firebase Auth flow; role=astrologer in Firestore
+2. Fill profile
+Astrologer fills bio, skills, languages, experience, pricing
+3. Pending state
+approved=false; astrologer portal is accessible but client portal shows 'Under Review'
+4. Admin approves
+approved=true in astrologers collection; astrologer notified; now visible to clients
+5. Go online
+Astrologer sets status to online with service selection
+
+5.15  Low Response Rate Handling
+If an astrologer frequently ignores (misses) or rejects requests without good reason: the system can lower their ranking in the listing (response rate field drives sort weight). Admin can also suspend them.
+
+SECTION 6: ADMIN PANEL — ALL 31 MODULES
+6.1  Top Navigation Bar
+Top Navbar:  Dashboard  |  Users  |  Astrologers  |  Sessions  |  Transactions  |  Reports  |  CMS Builder  |  Settings  |  Logout
+📌  No sidebar in admin panel either. All navigation is in the top bar. Hamburger on mobile drops DOWN.
+
+6.2  Module 1: Admin Auth System
+Feature
+Detail
+Default credentials
+Username: admin | Password: admin (must be changed on first login — forced)
+Admin roles
+Super Admin (full access) | Admin (most features) | Operator (read + approve) | Support (read + disputes) | Viewer (read only)
+Role-based access
+Each role sees only permitted menu items and actions
+IP logging
+Every admin login records IP address, device, and timestamp
+Login history
+Table of last 20 logins visible in account settings
+Optional 2FA
+QR code-based two-factor authentication (can be enabled per admin account)
+Session timeout
+Admin session auto-expires after 2 hours of inactivity
+
+6.3  Module 2: Global Search System
+Feature
+Detail
+Search bar location
+In the top navbar — visible on every admin screen
+What it searches
+Users (by name, email, userCode) | Astrologers (by name, skill) | Sessions (by sessionId, client name) | Transactions (by userId, amount) | Payments (by paymentId) | Kundli profiles
+Result display
+Dropdown grouped by category: Users: [Vicky Martin], Astrologers: [Rahul Sharma], Sessions: [Call 5 mins]
+Function
+globalSearch(query) — multi-collection indexed queries using Firestore composite indexes
+Click result
+Opens the relevant detail page for that record directly
+
+6.4  Module 3: Admin Dashboard
+Metric Card
+What It Shows
+Total Users
+All registered client users
+Active Users Today
+Users who logged in within last 24 hours
+Total Astrologers
+All registered astrologers (approved + pending)
+Active Astrologers
+Currently online astrologers
+Live Chat Sessions
+Sessions with status=active and type=chat right now
+Live Call Sessions
+Sessions with status=active and type=call/video right now
+Revenue Today
+Sum of all debit transactions today
+Total Revenue All-Time
+Sum of all debit transactions ever
+Avg Revenue Per User
+totalRevenue ÷ paidUsers
+Avg Session Duration
+Average of all ended sessions' duration in seconds
+Top Astrologer This Month
+Astrologer with most sessions in current month
+Conversion Rate
+% of users who made at least 1 paid session
+📌  Charts and graphs using recharts or Chart.js — revenue trend line, daily active users bar chart, top astrologers pie chart. All data fetched from Firestore with date range filters.
+
+6.5  Module 4: User Management
+Feature
+Detail
+User table
+Name | Email | Wallet ₹ | Status (active/suspended) | Registered date | Actions
+Filters
+By status | By wallet range | By registration date | Search by name/email
+View user profile
+Full details modal: profile photo, all fields, wallet history, session count, kundli profiles count
+Edit user
+Update name, email, phone — saves to users collection
+Suspend user
+Sets isBlocked=true; user cannot login; email sent notifying them
+Activate user
+Sets isBlocked=false; user can login again
+Delete user
+Permanent deletion with confirmation dialog (irreversible)
+Reset password
+Triggers Firebase Auth password reset email to user's email
+Generate temp password
+Admin sets a temporary password manually — useful for support
+Adjust wallet
+Add or deduct ₹ from wallet manually with reason field (creates transaction record)
+Change role
+Dropdown to change role: client / astrologer / admin
+View sessions
+Link to all sessions for this user
+View transactions
+Link to all transactions for this user
+
+6.6  Module 5: Astrologer Approval System
+Feature
+Detail
+Pending approvals tab
+Separate tab showing all astrologers with approved=false
+Pending card
+Shows: Photo | Name | Bio | Skills | Experience | Languages | Pricing — full profile for review
+Approve
+Click Approve → approved=true; astrologer becomes visible to clients; notification sent to astrologer
+Reject
+Click Reject → opens rejection form with reason field; email sent to astrologer with reason; record stays in system for audit
+
+6.7  Module 6: Astrologer Management (Full)
+Feature
+Detail
+Astrologer table
+Photo | Name | Status | Rating | Sessions | Earnings | Approved | Actions
+Edit profile
+Admin can update bio, skills, languages, pricing on behalf of astrologer
+Force online
+Sets status=online even if astrologer did not go online themselves
+Force offline
+Sets status=offline; useful if astrologer is inactive or causing issues
+Enable/disable services
+Toggle chat_enabled, call_enabled, video_enabled per individual astrologer
+Photo approval
+Shows pendingProfileImage; Approve → sets as profileImage; Reject → clears pendingProfileImage; notification sent either way
+Block astrologer
+Sets approved=false; astrologer disappears from listing; cannot receive sessions
+Commission override
+Set a custom commission% for this specific astrologer (overrides global setting)
+View performance metrics
+Sessions, earnings, rating, response rate, rejection rate all on one detail page
+Delete astrologer
+Removes from platform with confirmation; associated session history preserved for audit
+
+6.8  Module 7: Astro Status Control
+Feature
+Detail
+Status states
+online | offline | busy | idle
+Admin force-online
+Useful for testing or emergency override
+Admin force-offline
+Useful if astrologer is inactive/unresponsive
+Live status table
+Admin can see all astrologers with live status at a glance
+
+6.9  Module 8: Feature Toggle System
+Toggle
+Effect When Disabled
+Enable Chat
+Chat button hidden and disabled for all clients platform-wide
+Enable Voice Call
+Voice call button hidden
+Enable Video Call
+Video call button hidden
+Enable Kundli
+Kundli screens hidden from client portal
+Enable Horoscope
+Horoscope screen hidden
+Enable AI Features
+Any AI-powered features disabled
+Enable Guided Tour
+Tour not triggered for new users
+Enable Free Chat
+Free first session disabled — all chats billed from second 1
+Enable Free Call
+Free first call disabled
+
+6.10  Module 9: Session + Call Monitoring
+Feature
+Detail
+Live sessions table
+Client | Astrologer | Type | Duration (live ticking) | Amount billed so far | Status
+Force-end session
+Admin can terminate any live session immediately — session.status=ended, billing stops, both users notified
+Session history
+Full historical table; filter by date range, by user, by astrologer, by type
+Session detail page
+Full breakdown: timing, cost, kundli used, per-second billing log (first and last 5 entries), transcript link for chat
+Call recording
+If Agora cloud recording enabled: Store URL | Play button | Download button
+Dispute flag
+Link to open a dispute from any session record
+
+6.11  Module 10: Billing Control
+Rule
+Implementation
+Charge only for actual connection time
+Billing runs ONLY between session.status=active and session.status=ended
+Disconnect = stop billing immediately
+Firebase onDisconnect handler ends session and stops Cloud Function billing loop
+Astrologer still active after user disconnects
+System detects user disconnect via onDisconnect → ends session → stops billing → no overcharge
+Admin override
+Admin can end any session from monitoring page — stops billing immediately
+Minimum session billing
+Admin can configure minimum charge e.g. first 30 seconds free (free_chat_seconds setting)
+
+6.12  Module 11: Notification System
+Feature
+Detail
+Broadcast to all users
+Title + Message + Send — goes to every user's device via FCM
+Target: clients only
+Sends to all role=client users
+Target: astrologers only
+Sends to all role=astrologer users
+Target specific user
+Search by name → select → send targeted notification
+Scheduled notification
+Pick date + time for future delivery; stored in scheduler collection
+Auto-trigger types
+Low balance warning (2 min remaining) | Recharge prompt mid-session | Daily horoscope | Inactive user reminder (3 days no login) | Astrologer online alert
+Notification history
+Table of all sent notifications: title, target, sent time, delivery count
+Mobile sound/priority
+Admin controls: enable sound | set priority level (high/normal)
+
+6.13  Module 12: Coupon & Bonus System
+Feature
+Detail
+Create coupon
+Code (e.g. NEW50) | Discount% | Max discount ₹ cap | Expiry date | Usage limit | Active toggle
+Active coupons list
+View / edit / deactivate without deleting — preserves coupon history
+Signup bonus
+Set in System Settings — ₹ credited to wallet automatically on new account creation
+Recharge bonus
+Optional: extra % added to wallet on first recharge or any recharge above ₹X
+Referral bonus
+Referrer gets ₹X when their referral code is used at signup; referee gets ₹Y
+
+6.14  Module 13: Payment API Configuration
+Setting
+Detail
+Razorpay Key ID
+Public key used in frontend payment sheet (stored in settings/payments)
+Razorpay Key Secret
+Private key used ONLY in Cloud Functions env vars — never stored in Firestore or frontend
+Webhook URL
+Cloud Function URL for Razorpay to send payment confirmation events
+Test mode toggle
+Switch between test and live Razorpay keys without code change
+Payment logs
+Table of all Razorpay events: orderId, paymentId, status, amount, timestamp
+Failed payment alert
+Admin email notification when payment failure rate exceeds threshold
+
+6.15  Module 14: AI Integration Panel
+Feature
+Detail
+AI provider dropdown
+OpenAI | Custom AI API | Astrology AI API
+API key field
+Secure input field for AI API key
+Use cases
+AI-generated horoscope content | AI chat suggestions for astrologers | AI-powered kundli interpretation
+Enable/disable toggle
+Turn AI features on or off platform-wide without code change
+
+6.16  Module 15: CMS Builder (Google Sites Level)
+Feature
+Detail
+View modes
+View as Client (sees exact client portal) | View as Astrologer | Edit Mode
+Edit mode
+Click any element to edit it inline — text, image, button label, link
+Drag and drop
+Add, move, remove content blocks: Text Block | Image Block | Button Block | Banner Block | Spacer | Divider
+Menu builder
+Edit top navigation items — add, rename, reorder, link
+Link builder
+Set where any button or link navigates to
+Save Draft
+Saves changes without making them live — preview before publishing
+Publish
+One click makes draft live across all portals instantly
+Rollback
+Restore any previous published version from version history
+Pages covered
+Home | Astrologer Profile template | About Us | Terms & Conditions | Privacy Policy | Refund Policy | FAQ | Custom pages
+
+6.17  Module 16: Version Control
+Feature
+Detail
+Save draft
+Every edit auto-saves as draft; can manually save named versions
+Publish
+Moves draft to published — goes live immediately
+Version history
+Table: version name | saved date | published date | saved by | Restore button
+Rollback
+Restore any past version — useful when a bad change goes live
+Revert on error
+If publish causes issues: one-click revert to previous published version
+
+6.18  Module 17: Terms & Page Builder
+Feature
+Detail
+Built-in pages
+Terms & Conditions | Privacy Policy | Refund Policy | About Us | FAQ
+Editor
+Rich text editor (bold, lists, headings, links)
+Auto-link
+These pages auto-linked in client and astrologer portal footers
+Custom pages
+Create any number of custom CMS pages with custom slugs
+
+6.19  Module 18: Kundli Management
+Feature
+Detail
+View all kundli profiles
+Table: User | Name | DOB | TOB | Place | Zodiac | Created
+Filter
+By user name | By zodiac sign | By date range
+Download kundli PDF
+Generate PDF with birth details, chart (if tool configured), zodiac
+Edit kundli
+Admin can correct birth details if user requests via support
+Delete kundli
+Remove a profile on user request (GDPR compliance)
+
+6.20  Module 19: Horoscope Bulk Upload
+Feature
+Detail
+Upload format
+CSV file: zodiac, date (YYYY-MM-DD), content (daily text), tomorrowContent
+30-day bulk
+Upload one month of horoscopes for all 12 signs at once
+Auto-rotation
+System reads today's date; picks matching record; shows to users with that zodiac
+Manual override
+Admin can edit individual day entries directly in a table UI
+12 signs covered
+Aries, Taurus, Gemini, Cancer, Leo, Virgo, Libra, Scorpio, Sagittarius, Capricorn, Aquarius, Pisces
+Fallback
+If no entry for today: show 'Horoscope not available today'
+
+6.21  Module 20: Analytics System
+Metric
+How It's Tracked
+User growth
+New signups per day/week/month — chart
+Revenue trend
+Daily revenue line chart over last 30 days
+Conversion rate
+Users who had at least 1 paid session ÷ total users
+Average spend per user
+Total revenue ÷ number of paying users
+Top astrologers
+Sorted by sessions count and earnings — bar chart
+Retention rate
+Users who returned within 7 days of first session
+Session type split
+Pie chart: Chat % vs Call % vs Video %
+Daily active users
+Unique logins per day — line chart
+
+6.22  Module 21: Audit Log System
+Logged Action
+Example Entry
+User blocked
+Admin: superadmin | Action: blocked_user | Target: user123 | Time: 2026-05-15 10:30
+Astrologer approved
+Admin: admin1 | Action: approved_astrologer | Target: astro456
+Commission changed
+Admin: superadmin | Action: changed_commission | Before: 30% | After: 25%
+Photo approved
+Admin: operator1 | Action: approved_photo | Target: astro789
+Payout approved
+Admin: admin1 | Action: approved_payout | Target: payout001 | Amount: ₹5000
+Settings changed
+Admin: superadmin | Action: changed_settings | Field: signup_bonus | Before: 0 | After: 50
+
+6.23  Module 22: Advanced Filter & Export
+Feature
+Detail
+Filter users
+By wallet range | By status | By join date | By last active
+Filter sessions
+By duration range | By cost range | By type | By date | By astrologer | By client
+Filter transactions
+By type (credit/debit) | By reason | By amount range | By date
+Export CSV
+Downloads filtered results as .csv file — Excel compatible
+Export PDF
+Generates formatted PDF report of filtered results
+Export Excel
+Downloads as .xlsx with proper column headers
+
+6.24  Module 23: PDF Report System
+Feature
+Detail
+Report types
+User Report | Astrologer Report | Session Report | Revenue Report | Custom Report
+Custom report builder
+Admin selects which sections to include: ☑ Wallet data  ☑ Session history  ☑ Reviews  ☑ Kundli
+Filters
+Date range | Specific user/astrologer | Session type | Amount range
+Preview
+'Preview Report' button → generates HTML in a modal popup — admin reviews before downloading
+Download PDF
+Converts HTML to PDF using pdfkit on server; sends download
+Email report
+Send generated PDF directly to a specified email address via SMTP
+PDF content
+Platform logo + name | Report title | Filters applied | Data tables | Summary stats | Footer: generated by / date
+Scheduled reports
+Auto-generate monthly revenue report at end of each month; sent to admin email
+Report Type
+Contents
+User Report
+Full profile | Wallet balance | All transactions | All sessions | Kundli count | Last active
+Astrologer Report
+Full profile | Earnings breakdown | Commission history | Session count | Rating trend | Reviews
+Session Report
+Client + Astrologer names | Type | Duration | Cost | Kundli used | Status | Date
+Revenue Report
+Daily/weekly/monthly revenue | Commission earned | Top 10 astrologers | Conversion rate
+Custom Report
+Admin selects any combination of the above sections
+
+6.25  Module 24: Media Manager
+Feature
+Detail
+Upload images
+Drag-and-drop image uploader → stores in Firebase Storage
+Manage files
+Table: filename | type | size | uploaded by | date | URL | Delete
+Use in CMS
+Images uploaded here can be inserted into CMS pages
+Logo/favicon upload
+Shortcuts for platform logo and favicon used platform-wide
+
+6.26  Module 25: Auto Retention Engine
+Trigger
+Automated Action
+User inactive 3 days
+Push notification: 'Your horoscope is ready — come back and check it'
+User inactive 7 days
+Push + email: 'We miss you — here is ₹20 bonus waiting for you'
+Low wallet (< ₹50)
+Push during session: 'Your balance is getting low — add ₹200 to keep chatting'
+No session in 30 days
+Targeted notification: 'Astrologer Rahul is online right now — last seen 30 days ago'
+After first session
+24 hours later: 'How was your experience? Rate your astrologer ⭐'
+
+6.27  Module 26: Dispute Management
+Feature
+Detail
+Open disputes list
+Table: User | Astrologer | Issue | Session link | Date | Status
+Review session
+View full session record, chat messages (if chat dispute), billing log
+Issue refund
+Enter ₹ amount → creates credit transaction → updates wallet → session cost partially reversed
+Close dispute
+Mark as resolved with admin notes — saved to dispute record
+Email user
+Send dispute resolution email through SMTP
+
+6.28  Module 27: Announcement Banner System
+Feature
+Detail
+Top banner
+Admin creates a banner that appears at the top of client and/or astrologer portal
+Content
+Text | optional CTA button | link
+Targeting
+Show to: All users / Clients only / Astrologers only
+Active/Inactive toggle
+Turn banner on or off instantly
+Example use
+'🎉 Special offer: Chat for ₹5/min today only! Add money now'
+
+6.29  Module 28: Multi-Language Support
+Feature
+Detail
+Add languages
+Admin adds new languages from a dropdown (ISO codes)
+Translation files
+JSON files stored in Firebase Storage: en.json, hi.json, te.json
+User language selection
+User selects language in profile settings; UI renders in that language
+Admin edits translations
+Admin can update translation strings without code change
+Supported languages
+English (default) | Hindi | Telugu | Add more as needed
+
+6.30  Module 29: Tax & Invoice System
+Feature
+Detail
+Invoice generation
+User can download a GST invoice for any Razorpay payment
+Invoice contents
+Invoice number | Date | User name/address | Amount | GST breakdown | Platform name
+GST configuration
+Admin sets GST % and company GSTIN in Settings
+Send to email
+Invoice emailed to user after successful payment
+Bulk export
+Admin can bulk-export all invoices for a date range as ZIP
+
+6.31  Module 30: System Health Monitoring
+Feature
+Detail
+Active users live
+Count of users currently with open app sessions
+Active sessions live
+Count of currently billing sessions
+Error logging
+Firebase Functions errors logged; admin dashboard shows error count with link to logs
+Billing engine status
+Shows if Cloud Function billingEngine is running correctly
+Payment gateway status
+Ping Razorpay API; show green/red status indicator
+
+6.32  Module 31: Payout Management
+Feature
+Detail
+Pending requests
+Table: Astrologer | Amount requested | Bank/UPI details | Requested date
+Approve payout
+Marks status=approved; admin processes payment externally (bank transfer/UPI); astrologer notified
+Reject payout
+Opens form with rejection reason; marks status=rejected; astrologer notified with reason
+Payout history
+Full history of all payouts: approved, rejected, pending
+Total pending amount
+Sum of all pending payout amounts shown at top of page
+
+6.33  Admin Settings — Complete List
+System / Branding
+Setting
+Detail
+Platform Name
+Appears in navbar, emails, page titles — updates everywhere instantly
+Logo
+Upload image; shown in navbar of all portals
+Favicon
+Upload .ico or .png; shown in browser tab
+Theme / Primary Colour
+Hex colour value applied to buttons, navbar, highlights across all portals
+Timezone
+GMT offset dropdown; all timestamps display in this timezone
+Commission Percent
+Default platform cut % applied to all sessions
+Minimum Recharge
+Minimum ₹ amount user can add to wallet
+Signup Bonus
+₹ credited to new user wallet on first signup (0=disabled)
+Free Chat Seconds
+Seconds of free chat for first-time users per astrologer (0=disabled)
+Free Call Seconds
+Seconds of free call for first-time users per astrologer (0=disabled)
+Kundli Tool URL
+External URL for kundli chart generation — shown as button in astrologer portal during sessions
+Email (SMTP/POP)
+Setting
+Detail
+SMTP Host
+e.g. smtp.gmail.com
+SMTP Port
+e.g. 587 (TLS) or 465 (SSL)
+SMTP Email
+Sender email address
+SMTP Password
+App-specific password (not Google account password)
+POP Host / Port
+For receiving support emails if needed
+Test Email Button
+Sends a test email to verify configuration works before saving
+Payment Settings
+Setting
+Detail
+Razorpay Key ID
+Public key for frontend — stored in settings collection
+Razorpay Key Secret
+Private key — stored ONLY in Firebase Functions environment config, NEVER in Firestore
+Webhook URL
+Razorpay posts payment events here — Cloud Function URL
+Test Mode Toggle
+Switch between test and live keys
+
+SECTION 7: CORE ENGINE — BILLING, SESSION, WALLET, PAYMENT
+7.1  Session Lifecycle (6 States)
+State
+Trigger & Meaning
+requesting
+Client clicks Chat/Call; session record created in Firestore; astrologer gets popup with 60s timer
+accepted
+Astrologer taps Accept within 60 seconds; Agora channel joined (for calls); billing starts
+active
+Both users connected; Cloud Function billing loop deducting wallet per second
+ended
+Session closed — by user, by astrologer, by auto-end (wallet=0), or by admin force-end
+rejected
+Astrologer tapped Reject; client shown 'Request rejected'; astrologer stays online
+missed
+60-second timer expired without astrologer action; client shown 'Astrologer unavailable'; no billing; astrologer stays online
+State machine: requesting → accepted → active → ended
+            requesting → rejected
+            requesting → missed (after 60s)
+
+7.2  Billing Logic (Core Business)
+Rate calculation:
+ratePerSecond = pricePerMinute ÷ 60
+Example: ₹60/min ÷ 60 = ₹1.00 per second
+Example: ₹30/min ÷ 60 = ₹0.50 per second
+Cloud Function runs every second for each active session:
+Step 1: Fetch current wallet from Firestore
+Step 2: If wallet ≤ 0 → call endSession(sessionId) → STOP
+Step 3: Else → newWallet = wallet − ratePerSecond
+Step 4: Update wallet in Firestore (atomic transaction)
+Step 5: Create debit transaction record
+CRITICAL: Billing runs in Firebase Cloud Functions (server-side) only. NEVER in the browser. User cannot manipulate it.
+
+7.3  Commission & Earnings Formula
+After every session ends:
+sessionCost = ratePerSecond × durationInSeconds
+adminEarning = sessionCost × (commissionPercent ÷ 100)
+astrologerEarning = sessionCost − adminEarning
+Example: User spends ₹100 | Commission 30% | Admin earns ₹30 | Astrologer earns ₹70
+Commission applies on DISCOUNTED price:
+If priceChat=₹40, discount=50%: client pays ₹20. Commission applies on ₹20.
+
+7.4  Wallet Safety Rules — NEVER Break These
+⚠️  Wallet can ONLY be written by Firebase Cloud Functions using the Admin SDK. Firestore rules must enforce: allow write: if false for the wallet field.
+✅  Every wallet change (credit OR debit) MUST create a corresponding transaction record.
+✅  Before every session start: verify wallet ≥ (ratePerMinute × 1 minute). Block if insufficient.
+✅  Payment success verified server-side using Razorpay HMAC signature BEFORE any wallet credit.
+✅  Never trust amounts sent from the frontend — always recalculate on the server.
+⚠️  Never update wallet without transaction log — if something breaks you must be able to audit and debug.
+
+7.5  Common Billing Bugs — Must Avoid
+Bug
+Cause & Fix
+Double deduction
+Multiple billing timers running (e.g. page refresh). Fix: activeChat=true flag in Firestore prevents second timer from starting.
+Incorrect balance after refresh
+Frontend cached old value. Fix: Always read wallet directly from Firestore on page load — never trust localStorage.
+Free usage exploit
+User sends messages after wallet=0. Fix: Check wallet BEFORE every message send attempt in Cloud Function — block if zero.
+Overcharge on disconnect
+Billing continues after user drops. Fix: Firebase onDisconnect handler fires immediately and calls endSession.
+Fake payment success
+Frontend reports success without verification. Fix: All wallet credits ONLY after HMAC signature check in Cloud Function.
+
+7.6  Razorpay Payment Flow (Secure)
+Step
+Action
+1
+Client clicks 'Add Money' → Cloud Function createRazorpayOrder(userId, amount) called
+2
+Cloud Function creates Razorpay order using API → returns orderId to frontend
+3
+Frontend opens Razorpay checkout sheet with orderId and Key ID
+4
+User completes payment on Razorpay UI (UPI/card/netbanking)
+5
+Razorpay sends webhook POST to Cloud Function endpoint
+6
+Cloud Function verifies HMAC signature: hmac(orderId+paymentId, keySecret) must match signature
+7
+ONLY if signature is valid: wallet += amount; create credit transaction; create payment record
+8
+User shown: 'Payment successful — ₹500 added to your wallet'
+9
+If signature invalid OR payment fails: wallet NOT changed; user shown failure message
+
+7.7  Firebase onDisconnect — Disconnect Protection
+When user or astrologer goes offline (browser closed, network lost, app minimized):
+Firebase Realtime Database presence + onDisconnect handler:
+1. Set isOnline=false in users collection
+2. If activeSession exists: set session.status=ended
+3. Cloud Function billing loop detects status=ended: stops deducting wallet
+4. Both users notified of session end
+Result: No overcharging. Astrologer who was still connected: session is ended for them too.
+
+7.8  Edge Cases — All Must Be Handled
+Edge Case
+Required System Behaviour
+User network drops during chat
+onDisconnect fires → session=ended → billing stops → no overcharge
+Astrologer network drops
+Same onDisconnect → session=ended → both notified
+User closes browser
+Same as network drop — onDisconnect fires
+Page refresh during session
+Detect activeSession in Firestore on page load → resume session → prevent duplicate billing timer
+Multiple tabs open
+activeChat/activeCall flag prevents second billing timer from starting
+Two users request same astrologer
+First accepted → status=busy → second client sees 'Astrologer is busy' immediately
+Astrologer goes offline during session
+Current session finishes; new sessions blocked; onDisconnect handles if sudden
+Internet unstable (drops/reconnects)
+Grace period 5-10 seconds before declaring disconnect; Agora has built-in reconnect
+Wallet hits exactly 0 mid-sentence
+Cloud Function ends session on next tick; last deduction was the final message/second
+Payment fails mid-session recharge
+Wallet NOT updated; session continues if still has balance; user sees failure message
+Admin force-ends session
+session.status=ended via admin portal → billing stops → both users notified
+Queue system (future)
+When astrologer is busy: option for client to join wait queue → notified when astrologer is free
+
+7.9  Active Chat Session Flag
+sessions/{sessionId}.status = 'active'  →  billing runs
+sessions/{sessionId}.status = 'ended'  →  billing stops immediately
+users/{uid}.isOnCall = true             →  blocks new session requests
+
+SECTION 8: SERVICE LAYER, CLOUD FUNCTIONS & FOLDER STRUCTURE
+8.1  Project Folder Layout
+astro-platform/
+  client-web/          ← Client portal (Next.js 14 + Tailwind CSS)
+    pages/             ← Next.js pages (routes)
+    components/        ← Reusable UI components
+    styles/            ← Global CSS (Tailwind base)
+  astro-web/           ← Astrologer portal (Next.js 14 + Tailwind CSS)
+  admin-web/           ← Admin panel (Next.js 14 + Tailwind CSS)
+  shared/
+    firebase.js        ← Firebase init (shared config)
+    services/
+      authService.js
+      userService.js
+      astrologerService.js
+      chatService.js
+      walletService.js
+      sessionService.js
+      callService.js
+      notificationService.js
+      kundliService.js
+      reviewService.js
+      payoutService.js
+      adminService.js
+      reportService.js
+  functions/           ← Firebase Cloud Functions (Node.js)
+    index.js           ← Exports all cloud functions
+    billing.js         ← billingEngine, endSession
+    payments.js        ← createRazorpayOrder, verifyPayment, addMoney
+    auth.js            ← createUser (onCreate trigger)
+    notifications.js   ← sendNotification, onAstrologerGoOnline
+    reports.js         ← generatePDFReport
+  mobile/              ← Capacitor.js APK wrapper
+
+8.2  Shared Service Functions (All Portals Use These)
+Service File
+Functions Inside
+authService.js
+signupUser(name, email, pw) | loginUser(email, pw) | logoutUser() | sendPasswordReset(email)
+userService.js
+getUser(uid) | updateUser(uid, data) | setOnline(uid) | setOffline(uid) | generateUniqueUserCode()
+walletService.js
+getWallet(uid) | getTransactions(uid) — READ ONLY. All writes via Cloud Function.
+astrologerService.js
+getAstrologers(filters) | getAstrologer(id) | updateAvailability(id, options) | updateAstrologer(id, data)
+chatService.js
+getOrCreateConversation(userId, astroId) | sendMessage(chatId, msg) | listenMessages(chatId, callback) | getUserChats(userId)
+sessionService.js
+createSessionRequest(data) | updateSessionStatus(id, status) | listenSession(id, callback) | endSession(id) | getSession(id)
+callService.js
+joinAgoraChannel(channelName, uid, appId, token) | leaveAgoraChannel() | publishLocalTracks() | subscribeToRemote(user)
+notificationService.js
+saveFCMToken(uid, token) | getNotifications(uid) | markNotificationRead(id)
+kundliService.js
+saveKundli(uid, data) | getKundliProfiles(uid) | setDefaultKundli(id) | deleteKundli(id) | autoSendKundliToChat(chatId, kundliId)
+reviewService.js
+addReview(uid, astroId, sessionId, rating, comment) | getReviews(astroId) | addReply(reviewId, replyText)
+payoutService.js
+requestPayout(astroId, amount, bankDetails) | getPayouts(astroId)
+adminService.js
+getAllUsers(filters) | blockUser(uid) | approveAstrologer(astroId) | getAllTransactions(filters) | globalSearch(query)
+reportService.js
+fetchReportData(type, filters) | generateReportHTML(data) | emailReport(pdf, email)
+
+8.3  Firebase Cloud Functions Required
+Function Name
+Trigger Type & Purpose
+createUser
+auth.onCreate trigger → creates Firestore user record with defaults; applies signup bonus if configured
+billingEngine
+pubsub.schedule every 1 minute (workaround: 1-minute resolution with sub-second tracking) → deducts wallet for all active sessions; calls endSession when wallet≤0
+endSession
+HTTPS callable → ends session, saves duration+cost, updates astrologer earnings, reverts status to online
+createRazorpayOrder
+HTTPS callable → creates Razorpay order via API → returns orderId to frontend
+verifyPayment
+HTTPS callable → verifies HMAC signature → if valid: addMoney(uid, amount), create transaction
+addMoney
+Internal helper → Firestore transaction: wallet += amount + create credit transaction record
+onAstrologerGoOnline
+Firestore.onUpdate on users/{uid}: if isOnline changed false→true → FCM push to favoriting users
+sendScheduledNotification
+pubsub.schedule → checks scheduler collection for due notifications → sends via FCM
+generatePDFReport
+HTTPS callable → builds HTML report → converts to PDF using pdfkit → saves to Storage → returns URL
+sessionTimeout
+pubsub.schedule every 2 minutes → checks for sessions in requesting state > 65 seconds → marks as missed
+
+8.4  Cloud Function Code Samples
+createUser — fires on every new signup
+exports.createUser = functions.auth.user().onCreate(async (user) => {
+  const userCode = generateUniqueCode(); // 9-digit unique
+  const config = await db.collection('settings').doc('config').get();
+  const signupBonus = config.data().signup_bonus || 0;
+  await db.collection('users').doc(user.uid).set({
+    name: user.displayName || '', email: user.email,
+    wallet: signupBonus, role: 'client', userCode,
+    hasUsedFreeChat: false, hasUsedFreeCall: false,
+    isOnline: false, isOnCall: false, isBlocked: false,
+    hasSeenTour: false, status: 'active', createdAt: new Date()
+  });
+  if (signupBonus > 0) { /* create credit transaction */ }
+});
+
+verifyPayment — Razorpay HMAC verification
+exports.verifyPayment = functions.https.onCall(async (data, context) => {
+  const { orderId, paymentId, signature, userId, amount } = data;
+  const keySecret = functions.config().razorpay.secret;
+  const expected = crypto.createHmac('sha256', keySecret)
+    .update(orderId + '|' + paymentId).digest('hex');
+  if (expected !== signature) throw new Error('Invalid payment signature');
+  // Signature valid — safe to credit wallet
+  await addMoney(userId, amount);
+  return { success: true };
+});
+
+billingEngine — per-session wallet deduction
+exports.billingEngine = functions.pubsub.schedule('every 1 minutes').onRun(async () => {
+  const sessions = await db.collection('sessions')
+    .where('status','==','active').get();
+  for (const doc of sessions.docs) {
+    const { userId, ratePerSecond } = doc.data();
+    await db.runTransaction(async (t) => {
+      const userRef = db.collection('users').doc(userId);
+      const user = await t.get(userRef);
+      const wallet = user.data().wallet;
+      if (wallet <= 0) { await endSession(doc.id); return; }
+      const deduct = ratePerSecond * 60; // 60 seconds per minute
+      t.update(userRef, { wallet: wallet - deduct });
+      t.set(db.collection('transactions').doc(), {
+        userId, amount: -deduct, type: 'debit',
+        reason: 'session', referenceId: doc.id,
+        createdAt: new Date() });
+    });
+  }
+});
+
+8.5  Important Design Rules
+⚠️  NEVER write Firebase code directly in the UI components. Always call a service function. Keep all business logic inside service files.
+⚠️  NEVER directly update wallet from the frontend. Always go through walletService which calls Cloud Functions.
+⚠️  NEVER mix chat logic and billing logic in the same component. Keep them separate services.
+✅  Service functions are reused across client-web, astro-web, and admin-web — no duplication.
+✅  All Firestore writes should use atomic transactions (db.runTransaction) when modifying wallet + transaction at the same time.
+
+SECTION 9: GO-TO-MARKET STRATEGY, MONETIZATION & CONVERSION
+9.1  Core Business Goal
+Get users → Convert them to paying users → Retain them → Scale revenue
+
+9.2  Target Users
+User Type
+Description
+Primary — frequent users
+People seeking astrology guidance. Age 20–45. Mobile-first. Regular consultation needs.
+Secondary — occasional users
+Festival-time seekers, major life decisions (marriage, career, health). Occasional usage.
+Tertiary — curious users
+First-time astrology users; attracted by free session offer or daily horoscope content.
+
+9.3  Value Proposition
+✅  Instant astrology consultation — no appointments, talk in seconds
+✅  Trusted verified astrologers with ratings and reviews
+✅  Pay only per minute — no packages forced, no upfront commitment
+✅  Multiple ways to consult — chat, voice, or video
+
+9.4  User Acquisition Strategy (Start Small)
+Channel
+What to Do
+WhatsApp marketing
+Share APK directly with friends, family, community groups. Send offers. Personal onboarding.
+Instagram Reels
+Create short content: daily horoscope, astrology tips, live sessions, predictions. Free.
+Telegram groups
+Create a free daily predictions channel. Build audience. Redirect to app.
+Google Play Store
+Once APK is ready: publish to Play Store. Free listing. Organic search traffic.
+Astrologer network
+Each approved astrologer brings their own clients to the platform.
+
+9.5  First 100 Users Strategy
+Action
+Why
+Give ₹50 free signup bonus
+Let users test chat without paying first — builds trust and first experience
+Personal onboarding message
+Send WhatsApp to each new user explaining how to start their first consultation
+Partner with 5 astrologers first
+Quality over quantity — 5 great astrologers are better than 20 mediocre ones
+Track every session
+Monitor which astrologers get 5-star ratings — promote them to top of listing
+
+9.6  Conversion Triggers — Turn Free Users into Paying Users
+Trigger
+Message / Action
+Click Chat/Call for first time
+Show popup: 'Talk to Astrologer Rahul — only ₹20/min. Start now.' with big Start button
+Low wallet mid-session
+Orange banner: 'Only 10 seconds remaining. Add ₹100 to continue your session.' + Recharge button
+Session ends due to balance=0
+Screen: 'Your session ended. You spoke for 2 min. Add ₹200 to call again.' + Recharge button
+After session ends
+'How was your experience with Rahul? Continue chatting?' with Continue Chat button
+Daily horoscope
+Notifications: 'Today is lucky for Taurus. Ask an astrologer about your opportunities now.'
+Urgency trigger
+Limited time: 'Only ₹10/min today until midnight' (admin-controlled discount)
+Social proof
+'500 people consulted Rahul this week. He has 4.9 stars.'
+
+9.7  Retention Strategy
+Strategy
+How It Works
+Daily horoscope push notification
+Sent every morning: 'Your horoscope for today is ready 🔮'
+Personal reminder
+After 3 days of inactivity: 'You haven't checked your horoscope today. Here is what the stars say.'
+Bonus offer for inactive users
+After 7 days: 'We miss you — ₹20 bonus credited to your wallet. Use it now.'
+Post-session review prompt
+24 hours after session: 'How was your consultation with Rahul? Rate your experience ⭐'
+Returning customer recognition
+When client returns after long gap: 'Welcome back! Rahul remembers you from last time ✅'
+
+9.8  Revenue Model
+Revenue Source
+How Money Flows
+Chat billing
+Client pays ₹X/min; platform takes commission%; astrologer gets rest
+Call billing
+Same structure as chat but typically higher price per minute
+Video billing
+Highest rate — premium feature
+Commission
+Default 30%; adjustable per astrologer from admin panel
+
+9.9  Strategies to Increase Revenue
+Strategy
+Implementation
+Dynamic pricing
+Popular astrologers (high rating, many sessions) can set higher prices — market-driven
+Premium astrologers tier
+Badge 'Premium Expert' shown on top astrologers — can charge 3-5x regular price
+Session packages
+Optional: ₹499 for 30 min — client commits upfront; better conversion for astrologer
+Recharge bonus
+Recharge ₹500 → get ₹50 extra — increases average recharge amount
+Referral program
+User refers friend → both get ₹50 wallet credit when friend pays first session
+
+9.10  Astrologer Onboarding Strategy
+Approach
+Detail
+WhatsApp outreach
+Find astrologers on Instagram, YouTube, Facebook — send direct message with earning potential
+Show earnings potential
+'Earn ₹700 per hour if you charge ₹20/min and stay online 1 hour'
+Daily payout clarity
+'You can request withdrawal any time your balance is above ₹100'
+Quality control
+Only approve astrologers with verifiable experience — maintains platform trust
+
+9.11  Daily Business Loop
+Users sign up → Get free session → Experience value → Wallet ends → Recharge prompted → Pay → Return tomorrow → Check horoscope → Book again → Refer friends
+
+9.12  Key Metrics to Track
+Metric
+Target
+Daily Active Users (DAU)
+Growing week on week
+Signup to first paid session (conversion)
+Target > 30% of signups make at least 1 paid session
+Average wallet recharge amount
+Target ₹300+ per recharge
+Session repeat rate
+Target > 50% of users have more than 1 session
+Average session duration
+Target > 5 minutes per session
+Daily revenue
+Track daily; identify patterns; double down on what works
+
+9.13  Week-by-Week Execution Plan
+Week
+Focus
+Week 1
+Complete working product. All three portals functional. Firebase connected. Payments working.
+Week 2
+Onboard 5 quality astrologers. Invite 50 users via WhatsApp. Give free signup bonus. Get first 10 paid sessions.
+Week 3
+Start charging full rates. Collect reviews. Fix bugs from real usage. Activate push notifications.
+Week 4
+Improve UI based on feedback. Scale to 200+ users. Start Instagram content for organic growth.
+
+9.14  Common Failure Reasons — Avoid These
+❌  Weak UI → users don't trust the platform and won't pay
+❌  Slow app → users leave after 3 seconds of loading
+❌  Wrong billing → users feel cheated and never come back
+❌  No astrologers online → users find nobody to talk to
+❌  No free session → first-time users scared to pay without trying
+❌  No daily engagement (no horoscope/notifications) → users forget the app
+
+SECTION 10: UI DESIGN SYSTEM — PREMIUM ASTROTALK LEVEL
+10.1  Core Design Philosophy
+Your UI must feel minimal, premium, fast, and trustworthy. Think 'consultation platform' not 'chat app'. Every screen must load fast, show the right info at a glance, and make the next action obvious. Reduce cognitive load. Fewer clicks = more revenue.
+
+10.2  Colour System
+Constant
+Value & Usage
+Primary / Brand
+#6C2BD9 — buttons, navbar background, headings, badges, active states
+Background Light
+#F3EEFF — card backgrounds, info boxes, hover states
+Accent Blue
+#EAF4FF — informational banners and tips
+Success Green
+#1B6B2F — online status, credit transactions, success states
+Danger Red
+#C0392B — offline/busy, debit transactions, End Call button, errors
+Warning Orange
+#E67E22 — low balance warning, urgent notices
+Gold / Rating
+#B8860B — star ratings
+Dark Text
+#1A1A2E — all body text
+Subtext Gray
+#555555 — secondary labels, timestamps
+Background Gray
+#F5F5F5 — page backgrounds
+White
+#FFFFFF — card surfaces, input fields
+Font
+Inter or Arial — clean, readable, universally supported across all devices
+
+10.3  Global Layout on All Screens
+DESKTOP:  [Top Navbar — full links]  →  [Page Content — wide, multi-column]
+MOBILE:   [Top Navbar — hamburger dropdown from top]  →  [Page Content — single column, full-width]
+📌  Padding: 16px standard on all sides. Card border-radius: 12–16px. Spacing between cards: 12px. Button height: 48px minimum on mobile (tap target).
+
+10.4  Astrologer Card Component (Most Important UI)
+[Profile Photo — left, 64px circle]
+[Name — bold 18px]   [✅ Verified]   [Status badge: 🟢 Online / 🔴 Busy / ⚫ Offline]
+[⭐ 4.8  (200 reviews)]   [5 years exp]
+[Tarot] [Vedic] [Numerology]   ← skill tags
+Chat ~~₹40~~ ₹20/min  |  Call ~~₹60~~ ₹30/min   [50% OFF badge orange]
+[Chat button]  [Call button]
+
+10.5  Chat Screen UI (WhatsApp Level)
+Element
+Design Detail
+Message bubbles — user
+Right-aligned, green background #DCF8C6, rounded corners, 12px padding, max-width 60%
+Message bubbles — astrologer
+Left-aligned, grey background #EEEEEE, rounded corners, 12px padding, max-width 60%
+Input bar
+White background, border-radius 24px, text input + send button in a row, sticky at bottom
+Top billing bar
+Purple background, white text: 'Rahul Sharma | ₹1.00/sec | Balance: ₹120 ↓ | 00:45'
+Low balance banner
+Orange full-width banner: '⚠ Only 10 seconds remaining — Recharge now' + button
+Balance=0 state
+Input disabled with grey overlay; message: 'Balance ended — Recharge to continue'
+Auto-scroll
+Chat auto-scrolls to latest message on new message received — smooth scroll animation
+
+10.6  Call Screen UI (Premium Look)
+Element
+Design Detail
+Background
+Dark overlay #0A0A0A — creates premium call feel
+Video feed
+Full-screen Agora video; remote feed full screen; local feed small pip (picture-in-picture) top-right
+Timer bar
+Translucent bar at top: '📞 Rahul Sharma | 00:45 | ₹120 remaining'
+End Call button
+Large red circle (64px) at bottom center — highly visible, impossible to miss
+Low balance overlay
+Pulsing orange ring around End Call button when balance < 60 seconds
+Mute/camera buttons
+White circle buttons (48px) bottom left of End Call button
+
+10.7  Wallet Screen (Conversion Screen)
+Element
+Design Detail
+Balance card
+Large purple gradient card: 'Wallet Balance | ₹500' — centre aligned, prominent
+Quick buttons
+Row of 4 buttons: ₹100 | ₹200 | ₹500 | ₹1000 — tapping pre-fills amount field
+Coupon field
+Expandable — hidden behind 'Have a coupon?' link; shows discount preview after apply
+Pay button
+Full-width, primary purple, large: 'Add ₹500 to Wallet'
+Post-payment
+Green success card: '✅ ₹500 added to your wallet'
+
+10.8  Trust Elements (Critical for Payment Conversion)
+Element
+Where to Show
+✅ Verified astrologer badge
+Astrologer cards and profile pages
+⭐ Star rating + count
+Astrologer cards and profile pages
+'500 people consulted this week'
+Profile page stat
+'Joined 2019 — 5 years on platform'
+Profile page stat
+Sample reviews visible
+3 top reviews on astrologer profile, no login needed to read
+Secure payment badge
+Wallet recharge screen: 'Secured by Razorpay 🔒'
+
+10.9  Loading & Error States
+State
+Design
+Data loading
+Skeleton screen — grey placeholder cards that pulse; never show blank white screen
+Network error
+'Something went wrong. Check your internet connection.' + Retry button
+Payment processing
+Loading spinner inside Pay button; button disabled while processing
+Session connecting
+Pulsing animation with astrologer photo: 'Waiting for Rahul...' + 60s countdown ring
+Empty states
+Friendly message: 'No sessions yet. Start your first consultation 🔮' + browse button
+
+10.10  Mobile-Specific UX Rules
+📌  Design mobile FIRST. Most users will be on phones. Then scale up for desktop.
+✅  Minimum tap target size: 48×48px for all buttons
+✅  Input fields: full-width on mobile, readable font size minimum 16px (prevents iOS zoom)
+✅  Bottom action bars: sticky at bottom of screen for primary actions (Send, End Call, Recharge)
+✅  Images: lazy-loaded with placeholder; profile photos cached after first load
+✅  Animations: keep subtle — 200ms transitions max; heavy animations drain battery
+
+SECTION 11: ANDROID APK BUILD — STEP BY STEP (CAPACITOR.JS — FREE)
+11.1  Approach
+Capacitor.js (free, open source by Ionic team) wraps the React/Next.js web app into a native Android APK. The web app runs inside a WebView in the APK. All the same Firebase backend and Tailwind CSS responsive design applies automatically. No React Native rewrite needed.
+📌  The APK wraps the Client Portal only. Astrologer portal and Admin panel remain as web apps on Vercel — astrologers and admins use them on browser.
+
+11.2  Prerequisites — All Free
+Requirement
+How to Get (Free)
+Node.js v18+
+Download free from nodejs.org
+Android Studio
+Download free from developer.android.com/studio
+Android SDK
+Installed automatically inside Android Studio (API level 33+)
+Java JDK 17
+Bundled with Android Studio — no separate install needed
+Capacitor CLI
+Run: npm install -g @capacitor/cli (free npm package)
+Git
+For code version control — download free from git-scm.com
+
+11.3  Step-by-Step APK Build
+Step 1 — Build Client Portal for Production
+cd client-web
+npm run build
+npm run export   # only for static export; skip if using Next.js server features
+📌  Output folder will be 'out/' for static export or '.next/' for server. Set capacitor.config.json webDir accordingly.
+
+Step 2 — Install Capacitor in Client Project
+npm install @capacitor/core @capacitor/android
+npx cap init
+📌  When prompted: App Name = YourPlatformName  |  App ID = com.yourname.astroapp  |  Web Dir = out
+
+Step 3 — Add Android Platform
+npx cap add android
+📌  This creates an 'android/' folder with a full native Android project inside your client-web directory.
+
+Step 4 — Copy Web Build into Android
+npx cap copy android
+📌  This copies the built web files into the Android project's assets folder.
+
+Step 5 — Sync Capacitor Plugins
+npx cap sync android
+
+Step 6 — Open in Android Studio
+npx cap open android
+📌  Android Studio opens automatically with your project. Wait for Gradle sync to complete (may take 5-10 minutes first time).
+
+Step 7 — Build Debug APK (for Testing)
+In Android Studio: Click Build menu → Build Bundle(s) / APK(s) → Build APK(s)
+APK location after build: android/app/build/outputs/apk/debug/app-debug.apk
+
+Step 8 — Install on Android Device
+adb install android/app/build/outputs/apk/debug/app-debug.apk
+📌  Or simply copy the .apk file to your phone via USB or share via WhatsApp/email and install directly.
+
+Step 9 — Build Release APK (for Distribution)
+cd android
+./gradlew assembleRelease
+Release APK: android/app/build/outputs/apk/release/app-release-unsigned.apk
+📌  For Play Store submission you need to sign the APK. Generate a keystore using Android Studio: Build → Generate Signed Bundle/APK. Keep keystore safe — never lose it.
+
+11.4  Every-Update Workflow
+Make changes in client-web source code
+Run: npm run build (rebuild the web app)
+Run: npx cap copy android (sync updated web files to Android)
+Rebuild APK in Android Studio (Build → Build APK)
+Install new APK on device for testing
+
+11.5  Responsive Design in APK
+Because the APK is a wrapped web app, all Tailwind CSS responsive classes apply automatically. On the phone screen (small viewport), the mobile layout with hamburger dropdown menu appears — exactly as designed. No additional mobile-specific code needed.
+
+11.6  Push Notifications in APK
+📌  Firebase FCM works in Capacitor APK. Install @capacitor/push-notifications plugin and configure following Capacitor documentation. This allows push notifications to work even when app is backgrounded.
+
+11.7  Claude Code Install Steps
+Step
+Command / Action
+Install Node.js
+Download from nodejs.org and install
+Install Claude Code
+npm install -g @anthropic-ai/claude-code
+Create project folder
+mkdir astro-platform && cd astro-platform
+Open Claude Code
+claude (runs Claude Code in current folder)
+Paste Master Prompt
+Paste the complete prompt from Section 1 as first message
+Follow instructions
+Claude Code scaffolds files and guides you step by step
+
+SECTION 12: DEPLOYMENT — ALL FREE
+12.1  Deploy Web Portals to Vercel
+Step
+Action
+1
+Create free account at vercel.com
+2
+Create free GitHub account at github.com — push your code
+3
+In Vercel: click 'New Project' → Import from GitHub
+4
+Select client-web repository → set root directory → Deploy → get URL like client.vercel.app
+5
+Repeat for astro-web → astro.vercel.app
+6
+Repeat for admin-web → admin.vercel.app
+7
+Add environment variables in Vercel dashboard for each project (Firebase config, Agora App ID, Razorpay Key ID)
+8
+Optional: connect custom domain (e.g. yoursite.com) in Vercel dashboard — free
+📌  Vercel auto-deploys every time you push a commit to GitHub main branch. Zero manual steps after initial setup.
+
+12.2  Firebase Setup & Deployment
+Step
+Command / Action
+Install Firebase CLI
+npm install -g firebase-tools
+Login
+firebase login
+Initialize project
+firebase init (select Firestore, Functions, Storage, Hosting, FCM)
+Deploy Cloud Functions
+firebase deploy --only functions
+Deploy Firestore rules
+firebase deploy --only firestore:rules
+Deploy Firestore indexes
+firebase deploy --only firestore:indexes
+Set Cloud Function env
+firebase functions:config:set razorpay.secret='YOUR_KEY_SECRET'
+Verify Functions
+Go to Firebase Console → Functions → check all functions are deployed and running
+
+12.3  Firestore Security Rules (Production-Ready)
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{db}/documents {
+    // Users: only read/write own record
+    match /users/{uid} {
+      allow read, write: if request.auth.uid == uid;
+    }
+    // Transactions: Cloud Function writes only — NEVER frontend
+    match /transactions/{id} {
+      allow read: if request.auth != null;
+      allow write: if false; // Cloud Function uses admin SDK
+    }
+    // Astrologers: anyone can read approved astrologers
+    match /astrologers/{id} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    // Chat messages: only session participants
+    match /chats/{chatId}/{sub=**} {
+      allow read, write: if request.auth != null;
+    }
+    // Sessions: auth users only
+    match /sessions/{id} {
+      allow read, write: if request.auth != null;
+    }
+    // Settings: admin only writes; all can read for config
+    match /settings/{doc} {
+      allow read: if true;
+      allow write: if false; // Admin SDK only
+    }
+  }
+}
+
+12.4  Environment Variables
+Variable
+Used In / Notes
+NEXT_PUBLIC_FIREBASE_API_KEY
+All three portals — from Firebase console → Project Settings
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+All three portals
+NEXT_PUBLIC_FIREBASE_PROJECT_ID
+All three portals
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+All three portals
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+All three portals
+NEXT_PUBLIC_FIREBASE_APP_ID
+All three portals
+NEXT_PUBLIC_AGORA_APP_ID
+Client portal and Astrologer portal
+NEXT_PUBLIC_RAZORPAY_KEY_ID
+Client portal ONLY — public key, safe for frontend
+RAZORPAY_KEY_SECRET
+Firebase Cloud Functions config ONLY — NEVER in any portal or Vercel env
+📌  NEXT_PUBLIC_ prefix makes the variable available in the browser. Variables without this prefix are server-side only. Razorpay Key Secret must NEVER have NEXT_PUBLIC_ prefix.
+
+SECTION 13: COMPLETE FEATURE CHECKLIST — VERIFY BEFORE LAUNCH
+Every single item below must be present, tested, and working before the platform goes live.
+
+13.1  Client Portal
+✅  Top horizontal navbar on every screen; hamburger dropdown from TOP on mobile (never slide-in from side)
+✅  Auto-responsive: desktop layout on desktop, mobile layout on mobile — no manual toggle
+✅  Signup: name + email + password; 9-digit userCode generated; signup bonus applied if configured
+✅  Login: email/password; forgot password via SMTP email; auto-login on return visit
+✅  Login blocked with message if isBlocked=true
+✅  Guided tour shown on first login (hasSeenTour=false); skippable; replayable from Profile
+✅  Dashboard: wallet card, quick actions, horoscope teaser, recent chats strip
+✅  Astrologer list: cards with photo, skills tags, rating, price, status badges; sorted online-first
+✅  Discount badge and strikethrough price shown when discountPercent > 0
+✅  Filters at top of listing: skill, language, rating, price range
+✅  Pre-connection check: wallet ≥ 1 minute of billing before session allowed
+✅  Chat screen: real-time bubbles, live wallet ticking, low balance banner, auto-stop at zero
+✅  Kundli auto-shared as first message when chat starts
+✅  Session request: 60s countdown; astrologer accept/reject/miss; correct messages to client
+✅  Call screen: Agora voice/video; live timer; live balance; large End Call button
+✅  Auto-end call when wallet=0; user shown recharge prompt
+✅  Disconnect protection: billing stops immediately on network drop/browser close (onDisconnect)
+✅  Page refresh during session: session resumes without creating duplicate billing
+✅  Wallet: quick-add buttons, coupon field, Razorpay payment, balance displayed live
+✅  Razorpay: HMAC verified server-side before wallet credit; failure shown to user without wallet change
+✅  Transaction history: all entries, color-coded, filterable
+✅  Chat history: list with returning customer tag after 7+ week gap
+✅  Call history: list with duration, cost, type
+✅  Horoscope: daily + tomorrow; auto-detected from kundli zodiac
+✅  Kundli: save, view, set default, multiple profiles, external tool button if configured
+✅  Reviews: post after session; 1-5 stars + optional comment
+✅  Favorites: save/unsave astrologers; separate screen
+✅  Notifications: push + in-app list; mark read; correct notification types
+✅  Profile: edit name/phone/photo; replay tour button
+✅  Skeleton loading screens; friendly empty states; actionable error messages
+
+13.2  Astrologer Portal
+✅  Top horizontal navbar; hamburger from TOP on mobile
+✅  Auto-responsive layout
+✅  Login: role=astrologer check; redirect to /astro-dashboard
+✅  Dashboard: status card, earnings cards, rating, response rate, recent requests
+✅  Go Online: service selection dialog; minimum 1 service required validation; confirmation popup
+✅  Go Offline: confirmation popup before changing status
+✅  Status auto-switches: Online → Busy when session starts; Busy → Online when session ends
+✅  Incoming request popup: client name, purpose, kundli preview, 60-second timer; accept/reject buttons
+✅  Missed (60s no action): session=missed; client notified; astrologer stays online
+✅  Only one session at a time: new requests blocked while isOnCall=true
+✅  Active session: chat bubbles or Agora call; client info panel with kundli; external tool button
+✅  Billing note enforced: client wallet deducts; astrologer wallet grows after session ends
+✅  Earnings: session breakdown; commission shown; payout request button
+✅  Commission after discount: formula correct
+✅  Session history: 7 weeks default; returning customer tag; show all toggle
+✅  Profile: all fields editable; photo upload goes to pending; banner shown; notification on approval
+✅  Discount setter: percentage dropdown; live price preview with strikethrough
+✅  Reviews: view all; reply; cannot delete
+✅  Payout request: form with amount + bank details; status tracking
+✅  Disconnect edge case: onDisconnect ends session; billing stops; client notified
+✅  Back button during session: confirmation dialog before leaving
+
+13.3  Admin Panel
+✅  Top horizontal navbar; hamburger from TOP on mobile
+✅  Default login admin/admin; forced password change on first login
+✅  Role-based access: Super Admin / Admin / Operator / Support / Viewer
+✅  IP logging and login history
+✅  Global search: searches across all collections; grouped results
+✅  Dashboard: all 12 metric cards live; charts for revenue and DAU
+✅  User management: all 13 features working (view, edit, suspend, block, reset pw, temp pw, wallet adjust, role change, delete)
+✅  Astrologer pending approvals tab; approve/reject with email notification
+✅  Astrologer management: edit, force online/offline, disable services, photo approval, commission override, block, delete
+✅  Session monitoring: live table; force-end button; session detail page; dispute flag
+✅  Billing control: charge only for actual connection; stops on disconnect
+✅  Transactions: full list; filters; export CSV/PDF; refund action
+✅  PDF reports: all 5 report types; preview modal; download; email send
+✅  CMS builder: view-as-client mode; drag-drop blocks; save draft; publish; rollback
+✅  Version control: history table; restore any version
+✅  All 11 system settings fields working and reflecting across portals
+✅  SMTP/POP email config; test email button works
+✅  All 9 feature toggles working platform-wide when disabled
+✅  Razorpay settings: key stored; test mode toggle; webhook URL configured
+✅  Kundli tool URL field: saves in settings; appears in astrologer portal
+✅  Horoscope bulk CSV upload; manual edit; 12 signs covered
+✅  All 5 coupon fields; signup/recharge/referral bonus configuration
+✅  Notification broadcast (all/clients/astros/specific/scheduled)
+✅  Payout management: approve/reject with notification to astrologer
+✅  Dispute management: review, refund, close
+✅  Audit logs: all admin actions recorded
+✅  AI integration panel: provider dropdown; API key field; enable toggle
+✅  Multi-language: at least English default; admin can add Hindi/Telugu
+✅  Tax/invoice: GST config; invoice download for users; bulk export
+✅  System health: error count; billing engine status; payment gateway status
+✅  Announcement banner: create, target, toggle on/off
+✅  Auto retention engine: inactive user reminders; low balance alerts
+✅  Media manager: upload, manage, use in CMS
+
+13.4  Core Engine
+✅  Billing: Cloud Function deducts ratePerSecond per second for every active session
+✅  Billing: stops immediately when wallet≤0; session ended automatically
+✅  Wallet: Firestore rule allow write: if false; only Cloud Function writes
+✅  Payment: Razorpay HMAC verified before wallet credit; server-side only
+✅  Session: all 6 states implemented (requesting/accepted/active/ended/rejected/missed)
+✅  60s timeout: sessions in requesting state auto-become missed after 60 seconds
+✅  onDisconnect: session ended + billing stopped + both users notified
+✅  Commission: calculated server-side after session ends; astrologer earnings updated
+✅  Commission on discounted price: formula correct
+✅  Transaction: every wallet change creates corresponding transaction record
+✅  Multiple tabs: activeChat flag prevents double billing
+✅  Refresh: session resumes on page reload without duplicate billing
+✅  Status sync: astrologer status auto-updates online→busy→online correctly
+
+SECTION 14: QUICK REFERENCE
+14.1  Free Service Account Setup Links
+Service
+URL & What to Do
+Firebase (all backend)
+console.firebase.google.com → Create project → Enable Auth (email/password), Firestore, Storage, Functions, FCM
+Agora.io (calls)
+console.agora.io → Create account → Create project → Copy App ID (free 10k min/month)
+Razorpay (payments)
+dashboard.razorpay.com → Create account → Get Key ID + Key Secret from Settings → API Keys (no monthly fee)
+Vercel (hosting)
+vercel.com → Create account (free) → Connect GitHub → Deploy
+GitHub (code)
+github.com → Create account (free) → Create private repository for project
+Claude Code
+npm install -g @anthropic-ai/claude-code → run 'claude' in project folder
+
+14.2  Colour & UI Constants for Claude Code
+Constant
+Value
+Primary / Brand Purple
+#6C2BD9
+Background Light Purple
+#F3EEFF
+Accent Blue
+#EAF4FF
+Success Green
+#1B6B2F
+Danger Red
+#C0392B
+Warning Orange
+#E67E22
+Gold / Rating
+#B8860B
+Dark Text
+#1A1A2E
+Subtext Gray
+#555555
+Background Gray
+#F5F5F5
+Font Family
+Inter or Arial
+
+14.3  Full Platform Feature Count
+Portal / Area
+Features
+Client Portal
+20 screens + guided tour + onboarding flow + conversion triggers
+Astrologer Portal
+9 screens + online flow + incoming request + edge case handling
+Admin Panel
+31 modules including CMS builder, PDF reports, analytics, payout, disputes
+Core Engine
+Billing, session lifecycle, wallet, payment verification, disconnect protection
+Go-To-Market
+Acquisition, conversion triggers, retention, revenue model, week-by-week plan
+Total
+100% production-grade Astrotalk-level system
+
+14.4  The 10 Rules That Must NEVER Be Broken
+⚠️  Rule 1: TOP NAV ONLY — No sidebar in any portal on any screen. Hamburger on mobile drops DOWN from top.
+⚠️  Rule 2: AUTO-RESPONSIVE — Desktop shows desktop layout, mobile shows mobile layout automatically.
+⚠️  Rule 3: BILLING IN CLOUD FUNCTION ONLY — Never in browser. User cannot manipulate it.
+⚠️  Rule 4: WALLET WRITES IN CLOUD FUNCTION ONLY — Firestore rule: allow write: if false.
+⚠️  Rule 5: PAYMENT VERIFIED SERVER-SIDE — Razorpay HMAC in Cloud Function before any wallet credit.
+⚠️  Rule 6: TRANSACTION WITH EVERY WALLET CHANGE — No wallet update without transaction record.
+⚠️  Rule 7: BILLING STOPS ON DISCONNECT — onDisconnect fires immediately; no overcharge ever.
+⚠️  Rule 8: WALLET CHECKED BEFORE SESSION — Block session start if wallet < 1 minute of billing.
+⚠️  Rule 9: MIN 1 SERVICE TO GO ONLINE — Astrologer must select chat, call, or video before going online.
+⚠️  Rule 10: FREE STACK ONLY — Not a single paisa to pay for any tool or service.
+
+— END OF BLUEPRINT —
+Upload this document to Claude Code and paste the Master Prompt from Section 1 to begin building.
+100% FREE STACK  •  FULL ASTROTALK-LEVEL PLATFORM  •  ANDROID APK INCLUDED

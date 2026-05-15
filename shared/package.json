@@ -1,0 +1,11 @@
+{
+  "name": "@astro/shared",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Shared Firebase init + service layer reused by client-web, astro-web and admin-web.",
+  "main": "index.js",
+  "type": "module",
+  "dependencies": {
+    "firebase": "^10.12.2"
+  }
+}

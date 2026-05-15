@@ -1,0 +1,22 @@
+node_modules/
+.next/
+out/
+dist/
+build/
+*.log
+npm-debug.log*
+.env
+.env.local
+.env*.local
+.DS_Store
+.firebase/
+firebase-debug.log
+functions/node_modules/
+# Capacitor / Android
+client-web/android/
+client-web/ios/
+*.keystore
+# misc
+.vercel
+coverage/
+_blueprint_unpacked/

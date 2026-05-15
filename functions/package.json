@@ -1,0 +1,22 @@
+{
+  "name": "astro-functions",
+  "description": "Cloud Functions, core billing engine, payments, auth, notifications, reports.",
+  "private": true,
+  "engines": {
+    "node": "18"
+  },
+  "main": "index.js",
+  "scripts": {
+    "serve": "firebase emulators:start --only functions",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "dependencies": {
+    "agora-access-token": "^2.0.4",
+    "firebase-admin": "^12.1.0",
+    "firebase-functions": "^4.9.0",
+    "razorpay": "^2.9.4",
+    "pdfkit": "^0.15.0",
+    "nodemailer": "^6.9.13"
+  }
+}

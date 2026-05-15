@@ -1,0 +1,115 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isSelf(uid) { return signedIn() && request.auth.uid == uid; }
+
+    // users: a user reads/writes own record, BUT wallet & role are
+    // immutable from the client (Hard Rule 4 & 6 — wallet writes only via
+    // Cloud Functions which use the Admin SDK and bypass these rules).
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create: if isSelf(uid);
+      allow update: if isSelf(uid)
+                    && request.resource.data.wallet == resource.data.wallet
+                    && request.resource.data.role == resource.data.role;
+      allow delete: if false;
+    }
+
+    // transactions: read own only; never writable from client (Hard Rule 6)
+    match /transactions/{id} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    // payments: read own; written only by Cloud Function after HMAC verify
+    match /payments/{id} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    // astrologers: anyone may read; the astrologer may update own profile
+    // (pricing/availability) but NOT earnings/rating/approved (server-owned)
+    match /astrologers/{id} {
+      allow read: if true;
+      allow create: if signedIn();
+      allow update: if signedIn()
+                    && request.resource.data.earnings == resource.data.earnings
+                    && request.resource.data.rating == resource.data.rating
+                    && request.resource.data.approved == resource.data.approved;
+    }
+
+    // sessions: participants (auth users) can read/write status fields;
+    // billing fields (cost/duration) are written by Cloud Functions only
+    match /sessions/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update: if signedIn();
+      allow delete: if false;
+    }
+
+    // chats + messages subcollection: signed-in participants
+    match /chats/{chatId} {
+      allow read, write: if signedIn();
+      match /messages/{msgId} {
+        allow read, write: if signedIn();
+      }
+    }
+
+    match /kundliProfiles/{id} {
+      allow read: if signedIn();
+      allow write: if signedIn();
+    }
+
+    match /reviews/{id} {
+      allow read: if true;
+      allow create: if signedIn();
+      // reviews cannot be deleted by users — admin SDK only (Astro 5.11)
+      allow update: if signedIn();
+      allow delete: if false;
+    }
+
+    match /favorites/{uid} {
+      allow read, write: if isSelf(uid);
+    }
+
+    match /notifications/{id} {
+      allow read: if signedIn();
+      allow write: if signedIn();
+    }
+
+    match /payouts/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update, delete: if false;
+    }
+
+    match /horoscope/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // settings: world-readable config; written by Admin SDK only
+    match /settings/{doc} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /pages/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /coupons/{id} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    // admin-only collections — Admin SDK / privileged backend only
+    match /logs/{id}      { allow read: if signedIn(); allow write: if false; }
+    match /reports/{id}   { allow read: if signedIn(); allow write: if false; }
+    match /disputes/{id}  { allow read: if signedIn(); allow create: if signedIn(); allow update, delete: if false; }
+    match /scheduler/{id} { allow read, write: if false; }
+  }
+}

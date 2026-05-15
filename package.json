@@ -1,0 +1,26 @@
+{
+  "name": "astro-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Astrology Consultation Marketplace, Client + Astrologer + Admin portals on a shared Firebase backend. Built from AstrologyPlatform_FULL_Blueprint.",
+  "workspaces": [
+    "shared",
+    "client-web",
+    "astro-web",
+    "admin-web"
+  ],
+  "scripts": {
+    "dev:client": "npm run dev --workspace client-web",
+    "dev:astro": "npm run dev --workspace astro-web",
+    "dev:admin": "npm run dev --workspace admin-web",
+    "build:client": "npm run build --workspace client-web",
+    "build:astro": "npm run build --workspace astro-web",
+    "build:admin": "npm run build --workspace admin-web",
+    "functions:deploy": "firebase deploy --only functions",
+    "rules:deploy": "firebase deploy --only firestore:rules",
+    "indexes:deploy": "firebase deploy --only firestore:indexes"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
