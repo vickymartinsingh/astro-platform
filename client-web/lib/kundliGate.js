@@ -21,6 +21,7 @@ export function KundliGateProvider({ children }) {
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState(BLANK);
   const [busy, setBusy] = useState(false);
+  const [lowBal, setLowBal] = useState(null); // { astro, perMin }
 
   async function requestSession(type, astro) {
     if (!astro) return;
@@ -30,6 +31,18 @@ export function KundliGateProvider({ children }) {
     if (!user) {
       // Popup login, then resume this exact action.
       openLogin(() => requestSession(type, astro));
+      return;
+    }
+    // Wallet gate: a session must be able to fund at least 1 minute,
+    // UNLESS this is the user's one free first session.
+    const eff = (b) => Math.round(
+      (Number(b) || 0) * (1 - (Number(astro.discountPercent) || 0) / 100));
+    const perMin = type === 'chat' ? eff(astro.priceChat)
+      : type === 'video' ? eff(astro.priceVideo) : eff(astro.priceCall);
+    const wallet = Number(profile?.wallet || 0);
+    const firstFree = !profile?.freeUsed;
+    if (!firstFree && perMin > 0 && wallet < perMin) {
+      setLowBal({ astro, perMin });
       return;
     }
     const list = await kundliService.getKundliProfiles(user.uid);
@@ -59,6 +72,31 @@ export function KundliGateProvider({ children }) {
   return (
     <Ctx.Provider value={{ requestSession }}>
       {children}
+      {lowBal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center
+                        bg-black/40 px-4">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5
+                          text-center">
+            <div className="text-lg font-bold">Recharge to connect</div>
+            <p className="mt-2 text-sm text-sub-text">
+              Your wallet balance is too low to start this
+              {' '}{lowBal.astro?.name ? `session with ${lowBal.astro.name}`
+                : 'session'}. Please recharge your wallet with a minimum of
+              {' '}<b>₹100</b> to connect with this astrologer
+              {lowBal.perMin ? ` (₹${lowBal.perMin}/min)` : ''}.
+            </p>
+            <div className="mt-4 flex gap-2">
+              <button onClick={() => setLowBal(null)}
+                className="btn-ghost flex-1">Cancel</button>
+              <button onClick={() => { setLowBal(null);
+                router.push('/wallet'); }}
+                className="btn-grad flex-1 justify-center">
+                Recharge ₹100+
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {pending && (
         <div className="fixed inset-0 z-50 flex items-center justify-center
                         bg-black/40 px-4">

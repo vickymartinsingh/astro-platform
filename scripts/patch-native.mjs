@@ -10,6 +10,27 @@ import { dirname, join } from 'path';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // Only the apps that make calls. Admin never needs mic/camera.
 const APPS = ['client-web', 'astro-web'];
+// All apps get the display-name fix (Capacitor only writes strings.xml on
+// `cap add`, never on sync, so the renamed app titles must be re-applied).
+const NAME_APPS = ['client-web', 'astro-web', 'admin-web'];
+
+// Force the Android launcher label to match capacitor.config.json appName.
+function patchAppName(app) {
+  const cfgF = join(ROOT, app, 'capacitor.config.json');
+  const strF = join(ROOT, app, 'android', 'app', 'src', 'main', 'res',
+    'values', 'strings.xml');
+  if (!existsSync(cfgF) || !existsSync(strF)) {
+    return `name: skipped (${app})`;
+  }
+  const name = JSON.parse(readFileSync(cfgF, 'utf8')).appName || 'App';
+  let x = readFileSync(strF, 'utf8');
+  x = x.replace(/(<string name="app_name">)[^<]*(<\/string>)/,
+    `$1${name}$2`);
+  x = x.replace(/(<string name="title_activity_main">)[^<]*(<\/string>)/,
+    `$1${name}$2`);
+  writeFileSync(strF, x);
+  return `name: "${name}" (${app})`;
+}
 
 const ANDROID_PERMS = `
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -58,5 +79,8 @@ function patchIos(app) {
 for (const app of APPS) {
   console.log(patchAndroid(app));
   console.log(patchIos(app));
+}
+for (const app of NAME_APPS) {
+  console.log(patchAppName(app));
 }
 console.log('patch-native done');

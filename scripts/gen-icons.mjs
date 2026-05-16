@@ -33,9 +33,10 @@ const hex = (h) => ({
   b: parseInt(h.slice(5, 7), 16),
 });
 const APPS = {
-  'client-web': { tint: hex('#8B5CF6'), bri: 1.12,
-                  bg: ['#6D28D9', '#2E1065'],
-                  sp: '#2E1065', spD: '#0B0820' },              // violet
+  // Client: ORIGINAL artwork, untouched (no recolour) per request.
+  'client-web': { raw: true,
+                  bg: ['#15122B', '#0B0A1F'],
+                  sp: '#0B0A1F', spD: '#000000' },
   'astro-web':  { tint: hex('#10B981'), bri: 1.12,
                   bg: ['#059669', '#04231B'],
                   sp: '#063D2E', spD: '#04231B' },              // emerald
@@ -59,17 +60,17 @@ const solidSvg = (size, c) => Buffer.from(
   `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">`
   + `<rect width="${size}" height="${size}" fill="${c}"/></svg>`);
 
-// Recoloured artwork at NxN (full square — keeps the dark corners).
-// Luminance-preserving tint => cohesive single-theme colouring.
-const square = (n, tint, bri) =>
-  sharp(SRC).resize(n, n, { fit: 'cover' })
-    .modulate({ brightness: bri })
-    .tint(tint)
-    .png().toBuffer();
+// Artwork at NxN. opts.raw => ORIGINAL untouched image; otherwise a
+// luminance-preserving tint for a cohesive single-theme colouring.
+const square = (n, opts) => {
+  let p = sharp(SRC).resize(n, n, { fit: 'cover' });
+  if (!opts.raw) p = p.modulate({ brightness: opts.bri }).tint(opts.tint);
+  return p.png().toBuffer();
+};
 
-// Recoloured artwork cropped to a circle at NxN (transparent corners).
-async function disc(n, tint, bri) {
-  const sq = await square(n, tint, bri);
+// Artwork cropped to a circle at NxN (transparent corners).
+async function disc(n, opts) {
+  const sq = await square(n, opts);
   return sharp(sq)
     .composite([{ input: circleMask(n), blend: 'dest-in' }])
     .png().toBuffer();
@@ -84,12 +85,13 @@ function canvas(size, bgBuf) {
   return base;
 }
 
-for (const [app, { tint, bri, bg, sp, spD }] of Object.entries(APPS)) {
+for (const [app, opts] of Object.entries(APPS)) {
+  const { bg, sp, spD } = opts;
   const dir = join(ROOT, app, 'assets');
   mkdirSync(dir, { recursive: true });
 
-  // Legacy / round icon: full recoloured artwork (1024).
-  await sharp(await square(1024, tint, bri))
+  // Legacy / round icon: full artwork (1024).
+  await sharp(await square(1024, opts))
     .toFile(join(dir, 'icon-only.png'));
 
   // Adaptive background: themed gradient.
@@ -97,13 +99,13 @@ for (const [app, { tint, bri, bg, sp, spD }] of Object.entries(APPS)) {
     .toFile(join(dir, 'icon-background.png'));
 
   // Adaptive foreground: circular artwork inside the safe zone (~62%).
-  const fg = await disc(Math.round(1024 * 0.62), tint, bri);
+  const fg = await disc(Math.round(1024 * 0.62), opts);
   await canvas(1024, null)
     .composite([{ input: fg, gravity: 'centre' }])
     .png().toFile(join(dir, 'icon-foreground.png'));
 
   // Splash + dark splash: solid brand bg, centred circular logo.
-  const logo = await disc(1100, tint, bri);
+  const logo = await disc(1100, opts);
   await sharp(solidSvg(2732, sp)).png()
     .composite([{ input: logo, gravity: 'centre' }])
     .toFile(join(dir, 'splash.png'));
