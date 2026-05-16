@@ -50,27 +50,44 @@ export default function AdminUsers() {
   }
   async function saveEdit() {
     setMsg('');
+    // 1) Profile (name / phone / status) — this ALWAYS saves and never
+    //    blocks on the optional login-email/password change.
     try {
       await adminService.updateUserProfile(edit.uid, {
         name: edit.name || '', phone: edit.phone || '',
         status: edit.status || 'active',
       });
-      // Login email / password live in Firebase Auth — only change them
-      // when the admin actually edited the field.
-      const newEmail = (edit.email || '').trim();
-      const wantEmail = newEmail && newEmail !== (edit._origEmail || '');
-      const wantPwd = !!(edit.newPassword && edit.newPassword.length >= 6);
-      if (wantEmail || wantPwd) {
-        await adminService.adminUpdateAuthUser(edit.uid, {
-          ...(wantEmail ? { email: newEmail } : {}),
-          ...(wantPwd ? { password: edit.newPassword } : {}),
-        });
-      }
-      setEdit(null);
-      load();
     } catch (e) {
       setMsg('Save failed: ' + (e?.message || 'error'));
+      return;
     }
+    // 2) Login email / password (Firebase Auth) — only when actually
+    //    changed, valid, and the relay is configured. Failure here does
+    //    NOT discard the profile save; we just warn and still close.
+    const newEmail = (edit.email || '').trim();
+    const validEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(newEmail);
+    const wantEmail = newEmail && newEmail !== (edit._origEmail || '');
+    const wantPwd = !!(edit.newPassword && edit.newPassword.length >= 6);
+    if (wantEmail || wantPwd) {
+      if (wantEmail && !validEmail) {
+        window.alert('Profile saved. Login email NOT changed: '
+          + `"${newEmail}" is not a valid email address.`);
+      } else {
+        try {
+          await adminService.adminUpdateAuthUser(edit.uid, {
+            ...(wantEmail ? { email: newEmail } : {}),
+            ...(wantPwd ? { password: edit.newPassword } : {}),
+          });
+        } catch (e) {
+          window.alert('Profile saved. Login email/password NOT changed: '
+            + (e?.message || 'service unavailable')
+            + '\n\n(Email/password change needs the relay + '
+            + 'NEXT_PUBLIC_PUSH_ENDPOINT set on this Vercel project.)');
+        }
+      }
+    }
+    setEdit(null);
+    load();
   }
 
   if (loading || rows == null) {
