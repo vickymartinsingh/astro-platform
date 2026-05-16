@@ -14,6 +14,36 @@ function parseZodiac(dob) {
   return zodiacFromDOB(d, m);
 }
 
+// Real kundli via the relay (Prokerala API; secret stays server-side).
+// Endpoint derives from the push relay URL, or NEXT_PUBLIC_KUNDLI_ENDPOINT.
+// Returns null if not configured / on any failure (caller shows the
+// basic zodiac instead — never throws).
+function kundliEndpoint() {
+  const env = typeof process !== 'undefined' && process.env;
+  const explicit = (env && env.NEXT_PUBLIC_KUNDLI_ENDPOINT) || '';
+  if (explicit) return explicit;
+  const push = (env && env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
+  return push ? push.replace(/\/sendPush\/?$/, '/kundli') : '';
+}
+
+export async function getProkeralaKundli(birth) {
+  const url = kundliEndpoint();
+  if (!url || !birth || !birth.dob) return null;
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        dob: birth.dob, tob: birth.tob, ampm: birth.ampm,
+        place: birth.place,
+      }),
+    });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return j && !j.error ? j : null;
+  } catch (_) { return null; }
+}
+
 export async function saveKundli(uid, data) {
   const ref = doc(collection(db, 'kundliProfiles'));
   await setDoc(ref, {

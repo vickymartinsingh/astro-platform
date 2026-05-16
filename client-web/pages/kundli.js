@@ -14,6 +14,13 @@ export default function Kundli() {
   const [form, setForm] = useState(EMPTY);
   const [toolUrl, setToolUrl] = useState('');
   const [busy, setBusy] = useState(false);
+  const [chart, setChart] = useState({});   // { [kundliId]: data|'loading'|'err' }
+
+  async function viewFull(k) {
+    setChart((c) => ({ ...c, [k.id]: 'loading' }));
+    const data = await kundliService.getProkeralaKundli(k);
+    setChart((c) => ({ ...c, [k.id]: data || 'err' }));
+  }
 
   async function refresh() {
     setList(await kundliService.getKundliProfiles(user.uid));
@@ -106,7 +113,11 @@ export default function Kundli() {
               <div className="mt-1 text-sm text-sub-text">
                 {k.dob} · {k.tob} {k.ampm} · {k.place}
               </div>
-              <div className="mt-2 flex gap-2 text-sm">
+              <div className="mt-2 flex flex-wrap gap-3 text-sm">
+                <button onClick={() => viewFull(k)}
+                  className="font-semibold text-primary">
+                  View full Kundli
+                </button>
                 {!k.isDefault && (
                   <button onClick={() => makeDefault(k.id)}
                     className="text-primary font-semibold">
@@ -117,6 +128,30 @@ export default function Kundli() {
                   Delete
                 </button>
               </div>
+              {chart[k.id] === 'loading' && (
+                <div className="mt-2 text-sm text-sub-text">
+                  Generating kundli…
+                </div>
+              )}
+              {chart[k.id] === 'err' && (
+                <div className="mt-2 text-sm text-danger">
+                  Kundli service not available yet. (Admin: set Prokerala
+                  keys on the relay.)
+                </div>
+              )}
+              {chart[k.id] && typeof chart[k.id] === 'object' && (
+                <div className="mt-2 grid grid-cols-2 gap-2 rounded-card
+                                bg-bg-light p-3 text-sm">
+                  <div><span className="text-sub-text">Zodiac:</span>{' '}
+                    <b>{chart[k.id].zodiac || '—'}</b></div>
+                  <div><span className="text-sub-text">Nakshatra:</span>{' '}
+                    <b>{chart[k.id].nakshatra || '—'}</b></div>
+                  <div><span className="text-sub-text">Moon sign:</span>{' '}
+                    <b>{chart[k.id].chandra_rasi || '—'}</b></div>
+                  <div><span className="text-sub-text">Sun sign:</span>{' '}
+                    <b>{chart[k.id].soorya_rasi || '—'}</b></div>
+                </div>
+              )}
             </div>
           ))}
         </div>
