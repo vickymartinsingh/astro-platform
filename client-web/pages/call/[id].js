@@ -35,7 +35,7 @@ export default function CallScreen() {
     joinedRef.current = true;
     (async () => {
       try {
-        const tok = await callService.fetchAgoraToken(sessionId);
+        const tok = await callService.fetchAgoraToken(sessionId, user.uid);
         const appId = tok.appId || callService.AGORA_APP_ID;
         await callService.joinAgoraChannel(
           sessionId, user.uid, appId, tok.token || null);

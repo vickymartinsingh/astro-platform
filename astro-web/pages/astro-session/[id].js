@@ -58,7 +58,7 @@ export default function ActiveSession() {
     joinedRef.current = true;
     (async () => {
       try {
-        const tok = await callService.fetchAgoraToken(id);
+        const tok = await callService.fetchAgoraToken(id, user.uid);
         await callService.joinAgoraChannel(
           id, user.uid,
           tok.appId || callService.AGORA_APP_ID,

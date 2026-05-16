@@ -13,15 +13,36 @@ export const AGORA_APP_ID =
     && process.env.NEXT_PUBLIC_AGORA_APP_ID) || '').trim()
   || 'db48c9f93e334937819af474abb1b450';
 
-// Fetch a short-lived RTC token from the server (App Certificate stays
-// server-side). Returns { token, appId }, token is null if the Agora
-// project is in testing mode (a null token is valid there).
-export async function fetchAgoraToken(channelName) {
+// Resolve the Agora token endpoint. Explicit env wins; otherwise derive
+// it from the push relay URL (same Vercel deployment, /api/agoraToken).
+function tokenEndpoint() {
+  const explicit = (typeof process !== 'undefined' && process.env
+    && process.env.NEXT_PUBLIC_AGORA_TOKEN_ENDPOINT) || '';
+  if (explicit) return explicit;
+  const push = (typeof process !== 'undefined' && process.env
+    && process.env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
+  return push ? push.replace(/\/sendPush\/?$/, '/agoraToken') : '';
+}
+
+// Fetch a short-lived RTC token. With an App Certificate enabled the
+// token MUST be signed server-side (relay). Firebase uids are strings,
+// so the token is account-based and must be minted per (channel, uid).
+// Falls back to a Cloud Function, then to a null token (testing mode).
+export async function fetchAgoraToken(channelName, uid) {
+  const url = tokenEndpoint();
+  if (url) {
+    try {
+      const r = await fetch(
+        `${url}?channel=${encodeURIComponent(channelName)}`
+        + `&uid=${encodeURIComponent(uid || '')}`);
+      if (r.ok) return await r.json();
+    } catch (_) { /* fall through */ }
+  }
   try {
     const fn = httpsCallable(functions, 'generateAgoraToken');
-    return (await fn({ channelName })).data;
+    return (await fn({ channelName, uid })).data;
   } catch (e) {
-    return { token: null };
+    return { appId: AGORA_APP_ID, token: null };
   }
 }
 
