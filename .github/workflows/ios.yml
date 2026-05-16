@@ -40,6 +40,8 @@ jobs:
 
       - name: Build web (static export -> out/)
         run: npm run build --workspace=${{ matrix.app }}
+        env:
+          CAPACITOR: 'true'
 
       - name: Generate branded source icons
         run: node scripts/gen-icons.mjs
