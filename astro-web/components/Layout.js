@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { astrologerService } from '@astro/shared';
 import TopNav from './TopNav';
 import IncomingRequest from './IncomingRequest';
+import AnnouncementBanner from './AnnouncementBanner';
 import { useAuth } from '../lib/useAuth';
 
 export default function Layout({ children, nav = true }) {
@@ -26,6 +27,7 @@ export default function Layout({ children, nav = true }) {
                       tracking-widest text-white">
         Astrologer Portal
       </div>
+      <AnnouncementBanner />
       {nav && <TopNav astro={astro} />}
       <main className="mx-auto w-full max-w-6xl px-4 py-4">{children}</main>
       {user && <IncomingRequest uid={user.uid} isOnCall={inSession} />}

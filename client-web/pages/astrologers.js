@@ -14,10 +14,12 @@ const CHIPS = ['All', 'Love', 'Career', 'Marriage', 'Health',
   'Finance', 'Education', 'Vedic', 'Tarot', 'Numerology'];
 
 export default function Astrologers() {
-  const { user, loading } = useOptionalClient();
+  const { user, profile, loading } = useOptionalClient();
   const router = useRouter();
   const { go } = useAstroActions(user);
   const { freeChatMin } = useSettings();
+  // First-session-free is one-time: hide it once the user has used it.
+  const freeMin = profile?.freeUsed ? 0 : freeChatMin;
   const [all, setAll] = useState(null);
   const [err, setErr] = useState(false);
   const [visible, setVisible] = useState(PAGE);
@@ -94,7 +96,7 @@ export default function Astrologers() {
                           lg:grid-cols-4">
             {all.slice(0, visible).map((a) => (
               <AstrologerCard key={a.id} a={a} onOpen={openProfile}
-                onChat={(x) => go('chat', x)} freeMin={freeChatMin} />
+                onAction={go} freeMin={freeMin} />
             ))}
           </div>
           {visible < all.length && (

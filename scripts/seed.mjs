@@ -123,11 +123,11 @@ async function run() {
     void existingRev;
   }
 
-  // ---- Admin account (admin@astro.demo / admin123) ----
+  // ---- Admin account (vickymartinsing@gmail.com / admin123) ----
   // Firestore rules allow a user to CREATE its own users doc with any
   // fields (role immutability only applies to updates), so seeding an
   // admin role here is permitted.
-  const ADMIN_EMAIL = 'admin@astro.demo';
+  const ADMIN_EMAIL = 'vickymartinsing@gmail.com';
   try {
     let auid;
     try {
@@ -148,13 +148,13 @@ async function run() {
       hasSeenTour: true, status: 'active', createdAt: new Date(),
     }, { merge: true });
     await signOut(auth);
-    console.log('seeded admin: admin@astro.demo');
+    console.log('seeded admin: vickymartinsing@gmail.com');
   } catch (e) {
     console.error('admin seed failed:', e.code || e.message);
   }
 
   console.log('\n==== LOGIN CREDENTIALS (password for all: admin123) ====');
-  console.log('ADMIN  (portal :3002)  admin@astro.demo');
+  console.log('ADMIN  (portal :3002)  vickymartinsing@gmail.com');
   console.log('\nASTROLOGERS (portal :3001):');
   creds.forEach(([n, em, st]) =>
     console.log(`  ${n.padEnd(22)} ${em.padEnd(34)} [${st}]`));

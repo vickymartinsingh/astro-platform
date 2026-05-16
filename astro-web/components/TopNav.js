@@ -14,6 +14,7 @@ const LINKS = [
   { href: '/astro-kundli', label: 'Kundli Viewer' },
   { href: '/astro-profile', label: 'Profile' },
   { href: '/astro-reviews', label: 'Reviews' },
+  { href: '/astro-notifications', label: 'Announcements' },
 ];
 
 export default function TopNav({ astro }) {
@@ -107,8 +108,18 @@ export default function TopNav({ astro }) {
       </div>
 
       {open && (
-        <nav className="border-t border-gray-100 bg-white px-4 pb-4 pt-2
-                        md:hidden">
+        <div className="fixed inset-0 z-50 md:hidden">
+          <div className="absolute inset-0 bg-black/40"
+            onClick={() => setOpen(false)} />
+          <nav className="absolute right-0 top-0 h-full w-[78%] max-w-xs
+                          overflow-y-auto bg-white px-4 pb-6 pt-4 shadow-2xl
+                          animate-[slideIn_.2s_ease-out]">
+          <div className="mb-3 flex items-center justify-between">
+            <span className="font-bold">Menu</span>
+            <button aria-label="Close" onClick={() => setOpen(false)}
+              className="rounded-lg border border-gray-200 px-2.5 py-1
+                         text-sm">✕</button>
+          </div>
           {LINKS.map((l) => (
             <Link key={l.href} href={l.href}
               className={`block rounded-xl px-3 py-3 text-base ${
@@ -124,8 +135,15 @@ export default function TopNav({ astro }) {
           <button onClick={logout}
             className="mt-2 w-full rounded-xl border border-gray-200 px-3
                        py-3 text-left text-base">Logout</button>
-        </nav>
+          </nav>
+        </div>
       )}
+      <style jsx global>{`
+        @keyframes slideIn {
+          from { opacity: .4; transform: translateX(100%); }
+          to   { opacity: 1; transform: translateX(0); }
+        }
+      `}</style>
 
       {modal && (
         <GoOnlineModal astro={astro} uid={user?.uid}

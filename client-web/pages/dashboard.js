@@ -41,6 +41,7 @@ export default function Dashboard() {
   const { go } = useAstroActions();
   const { openLogin } = useAuthModal();
   const { freeChatMin } = useSettings();
+  const freeMin = profile?.freeUsed ? 0 : freeChatMin;
   const router = useRouter();
   const [list, setList] = useState(null);
   const [showTour, setShowTour] = useState(false);
@@ -158,7 +159,7 @@ export default function Dashboard() {
                         lg:grid-cols-4">
           {topRated.map((a) => (
             <AstrologerCard key={a.id} a={a} onOpen={openProfile}
-              onChat={(x) => go('chat', x)} freeMin={freeChatMin} />
+              onAction={go} freeMin={freeMin} />
           ))}
         </div>
       )}

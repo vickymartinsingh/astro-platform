@@ -4,7 +4,7 @@
 //
 // Requires Email/Password sign-in enabled in the Firebase console
 // (Authentication > Sign-in method > Email/Password).
-// Result: admin@astro.demo / admin123  with users/{uid}.role = "admin".
+// Result: vickymartinsing@gmail.com / admin123  with users/{uid}.role = "admin".
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -33,7 +33,7 @@ const app = initializeApp({
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-const EMAIL = 'admin@astro.demo';
+const EMAIL = 'vickymartinsing@gmail.com';
 const PWD = 'admin123';
 
 async function run() {
@@ -55,7 +55,7 @@ async function run() {
         console.log('Account already exists, signed in OK.');
       } catch (e2) {
         console.error('\nThe email exists but the password is NOT ' +
-          'admin123.\nDelete the user "admin@astro.demo" in Firebase ' +
+          'admin123.\nDelete the user "vickymartinsing@gmail.com" in Firebase ' +
           'Console > Authentication > Users, then run this again.');
         process.exit(1);
       }
@@ -81,7 +81,7 @@ async function run() {
   console.log('\nDone. users/%s role = %s', uid,
     check.exists() ? check.data().role : '(missing)');
   console.log('\nLogin at  http://localhost:3002/admin-login');
-  console.log('  Email:    admin@astro.demo');
+  console.log('  Email:    vickymartinsing@gmail.com');
   console.log('  Password: admin123');
   process.exit(0);
 }

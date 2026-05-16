@@ -41,9 +41,10 @@ export async function endAndSettleClient(sessionId) {
   let duration = everConnected
     ? Math.max(0, Math.floor((Date.now() - startMs) / 1000)) : 0;
 
-  const freeSecs = s.type === 'chat'
+  // Free seconds apply ONLY to the user's one eligible first session.
+  const freeSecs = !s.freeEligible ? 0 : (s.type === 'chat'
     ? Number(cfg.free_chat_seconds || 0)
-    : Number(cfg.free_call_seconds || 0);
+    : Number(cfg.free_call_seconds || 0));
   const billableSecs = Math.max(0, duration - freeSecs);
   // Billed PER MINUTE (any started minute counts as a full minute).
   const billedMinutes = Math.ceil(billableSecs / 60);
@@ -138,6 +139,18 @@ export async function collectAstrologerEarnings(astroUid) {
 export async function createSessionRequest(data) {
   const ref = doc(collection(db, 'sessions'));
   const ratePerMin = Number(data.pricePerMinute || 0);
+  // First-session-free is a ONE-TIME perk: it applies only if this user
+  // has never started a session before. We snapshot the decision onto the
+  // session (freeEligible) and immediately mark the user as having used
+  // their free session, so even a 1-minute first chat consumes it and the
+  // FREE badge never shows for them again.
+  let freeEligible = false;
+  try {
+    const uRef = doc(db, 'users', data.userId);
+    const uSnap = await getDoc(uRef);
+    freeEligible = !(uSnap.exists() && uSnap.data().freeUsed);
+    if (freeEligible) await updateDoc(uRef, { freeUsed: true });
+  } catch (_) { freeEligible = false; }
   await setDoc(ref, {
     userId: data.userId,
     astroId: data.astroId,
@@ -147,6 +160,7 @@ export async function createSessionRequest(data) {
     ratePerSecond: ratePerMin / 60,
     pricePerMinute: ratePerMin,
     status: 'requesting',
+    freeEligible,
     duration: 0,
     cost: 0,
     createdAt: serverTimestamp(),

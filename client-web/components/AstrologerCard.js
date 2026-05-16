@@ -8,10 +8,27 @@ function effPrice(base, d) {
   return Math.round((base || 0) * (1 - Number(d || 0) / 100));
 }
 
-export default function AstrologerCard({ a, onOpen, onChat, freeMin = 0 }) {
+export default function AstrologerCard({
+  a, onOpen, onChat, onAction, freeMin = 0,
+}) {
   const online = a.status === 'online';
   const price = effPrice(a.priceChat, a.discountPercent);
   const skills = (a.skills || []).join(', ');
+  const act = (type) => (onAction ? onAction(type, a) : onChat?.(a));
+
+  // Show exactly the services the astrologer has enabled. Legacy docs
+  // with no flags fall back to Chat so the card is never actionless.
+  const svc = [
+    a.chat_enabled && { type: 'chat', label: 'Chat',
+      price: effPrice(a.priceChat, a.discountPercent) },
+    a.call_enabled && { type: 'call', label: 'Call',
+      price: effPrice(a.priceCall, a.discountPercent) },
+    a.video_enabled && { type: 'video', label: 'Video',
+      price: effPrice(a.priceVideo, a.discountPercent) },
+  ].filter(Boolean);
+  if (svc.length === 0) {
+    svc.push({ type: 'chat', label: 'Chat', price });
+  }
 
   return (
     <div className="surface relative p-5 transition hover:shadow-md">
@@ -59,22 +76,41 @@ export default function AstrologerCard({ a, onOpen, onChat, freeMin = 0 }) {
         </div>
       </button>
 
-      <div className="mt-4 flex items-center justify-between border-t
-                      border-gray-100 pt-3">
-        <div className="text-lg font-bold">
-          {freeMin > 0 && (
-            <span className="mr-1 text-sm font-normal text-sub-text
-                             line-through">₹{price}</span>
+      <div className="mt-4 border-t border-gray-100 pt-3">
+        <div className="mb-2 text-sm">
+          {freeMin > 0 ? (
+            <>
+              <span className="mr-1 text-sub-text line-through">
+                ₹{price}
+              </span>
+              <span className="font-bold text-success">
+                First {freeMin} min FREE
+              </span>
+            </>
+          ) : (
+            <span className="font-bold">
+              from ₹{Math.min(...svc.map((s) => s.price))}
+              <span className="text-xs font-normal text-sub-text">
+                /min
+              </span>
+            </span>
           )}
-          {freeMin > 0
-            ? <span className="text-success">FREE</span>
-            : <>₹{price}</>}
-          <span className="text-xs font-normal text-sub-text">/min</span>
         </div>
-        <button onClick={() => onChat?.(a)}
-          className={`btn-grad ${online ? '' : 'opacity-60'}`}>
-          ↻ {online ? 'Chat' : a.status === 'busy' ? 'Busy' : 'Offline'}
-        </button>
+        <div className="flex flex-wrap gap-2">
+          {svc.map((s) => (
+            <button key={s.type} onClick={() => act(s.type)}
+              disabled={!online}
+              className={`btn-grad flex-1 justify-center !px-3 text-sm ${
+                online ? '' : 'opacity-50'}`}>
+              {s.label}
+            </button>
+          ))}
+        </div>
+        {!online && (
+          <div className="mt-2 text-center text-xs text-sub-text">
+            {a.status === 'busy' ? 'Busy right now' : 'Currently offline'}
+          </div>
+        )}
       </div>
     </div>
   );
