@@ -12,8 +12,41 @@ import {
   getAuth, createUserWithEmailAndPassword, signOut,
 } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
-import { db, functions } from '../firebase.js';
+import { db, functions, auth } from '../firebase.js';
 import { sendPushToUser } from './pushService.js';
+
+// Relay endpoint for admin Auth operations (derives from push endpoint).
+function adminRelay() {
+  const env = typeof process !== 'undefined' && process.env;
+  const explicit = (env && env.NEXT_PUBLIC_ADMIN_ENDPOINT) || '';
+  if (explicit) return explicit;
+  const push = (env && env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
+  return push ? push.replace(/\/sendPush\/?$/, '/adminUser') : '';
+}
+
+// Change a user's LOGIN email / password (Firebase Auth) via the relay,
+// authenticated with the current admin's Firebase ID token.
+export async function adminUpdateAuthUser(uid, { email, password } = {}) {
+  const url = adminRelay();
+  if (!url) {
+    throw new Error('Email-change service not configured. Set '
+      + 'NEXT_PUBLIC_PUSH_ENDPOINT and deploy the relay.');
+  }
+  const token = auth && auth.currentUser
+    ? await auth.currentUser.getIdToken() : null;
+  if (!token) throw new Error('Not signed in.');
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ uid, email, password }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.error) throw new Error(j.error || 'Update failed');
+  return j;
+}
 
 async function tryCloud(name, payload, local) {
   try {

@@ -50,12 +50,27 @@ export default function AdminUsers() {
   }
   async function saveEdit() {
     setMsg('');
-    await adminService.updateUserProfile(edit.uid, {
-      name: edit.name || '', phone: edit.phone || '',
-      status: edit.status || 'active',
-    });
-    setEdit(null);
-    load();
+    try {
+      await adminService.updateUserProfile(edit.uid, {
+        name: edit.name || '', phone: edit.phone || '',
+        status: edit.status || 'active',
+      });
+      // Login email / password live in Firebase Auth — only change them
+      // when the admin actually edited the field.
+      const newEmail = (edit.email || '').trim();
+      const wantEmail = newEmail && newEmail !== (edit._origEmail || '');
+      const wantPwd = !!(edit.newPassword && edit.newPassword.length >= 6);
+      if (wantEmail || wantPwd) {
+        await adminService.adminUpdateAuthUser(edit.uid, {
+          ...(wantEmail ? { email: newEmail } : {}),
+          ...(wantPwd ? { password: edit.newPassword } : {}),
+        });
+      }
+      setEdit(null);
+      load();
+    } catch (e) {
+      setMsg('Save failed: ' + (e?.message || 'error'));
+    }
   }
 
   if (loading || rows == null) {
@@ -99,7 +114,8 @@ export default function AdminUsers() {
                   {u.isBlocked ? 'Suspended' : 'Active'}
                 </td>
                 <td className="space-x-3 p-2">
-                  <button onClick={() => setEdit({ ...u })}
+                  <button onClick={() => setEdit({
+                    ...u, _origEmail: u.email || '', newPassword: '' })}
                     className="text-primary">Edit</button>
                   <button onClick={() => {
                     setGift(u); setGiftAmt(100);
@@ -130,8 +146,21 @@ export default function AdminUsers() {
               <input className="input" placeholder="Phone"
                 value={edit.phone || ''}
                 onChange={(e) => setEdit({ ...edit, phone: e.target.value })} />
-              <input className="input bg-bg-gray" value={edit.email || ''}
-                readOnly />
+              <label className="block text-xs font-medium text-sub-text">
+                Login email (changes the sign-in email)
+              </label>
+              <input className="input" type="email" placeholder="Email"
+                value={edit.email || ''}
+                onChange={(e) =>
+                  setEdit({ ...edit, email: e.target.value })} />
+              <label className="block text-xs font-medium text-sub-text">
+                New password (optional, min 6 chars — leave blank to keep)
+              </label>
+              <input className="input" type="text"
+                placeholder="New password (optional)"
+                value={edit.newPassword || ''}
+                onChange={(e) =>
+                  setEdit({ ...edit, newPassword: e.target.value })} />
               <select className="input" value={edit.status || 'active'}
                 onChange={(e) =>
                   setEdit({ ...edit, status: e.target.value })}>
@@ -139,6 +168,7 @@ export default function AdminUsers() {
                 <option value="suspended">Suspended</option>
               </select>
             </div>
+            {msg && <div className="mt-2 text-sm text-danger">{msg}</div>}
             <div className="mt-4 flex gap-2">
               <button onClick={() => setEdit(null)}
                 className="btn-ghost flex-1">Cancel</button>
