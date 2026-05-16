@@ -64,6 +64,15 @@ export default function AdminAstrologers() {
     load();
   }
 
+  async function del(a) {
+    if (!window.confirm(
+      `Permanently delete astrologer "${a.name}"?\n\n`
+      + 'This removes their public profile and account. '
+      + 'Use this to clean up duplicates. This cannot be undone.')) return;
+    await adminService.deleteAstrologer(a.id);
+    load();
+  }
+
   // Admin-uploaded photo is AUTO-APPROVED (set live immediately).
   async function uploadEditPhoto(file) {
     if (!file || !edit) return;
@@ -238,6 +247,8 @@ export default function AdminAstrologers() {
                         className="text-danger">Reject</button>
                     </>
                   )}
+                  <button onClick={() => del(a)}
+                    className="font-semibold text-danger">Delete</button>
                 </div>
               </div>
             </div>

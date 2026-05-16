@@ -5,7 +5,7 @@
 // so the admin panel is fully functional without Cloud Functions.
 import {
   collection, query, where, orderBy, getDocs, limit, doc, getDoc, setDoc,
-  updateDoc, addDoc, runTransaction, serverTimestamp,
+  updateDoc, addDoc, runTransaction, serverTimestamp, deleteDoc,
 } from 'firebase/firestore';
 import { initializeApp, getApps } from 'firebase/app';
 import {
@@ -61,6 +61,16 @@ export function blockUser(uid, blocked = true) {
 export function approveAstrologer(astroId, approved = true) {
   return tryCloud('adminApproveAstrologer', { astroId, approved }, async () => {
     await updateDoc(doc(db, 'astrologers', astroId), { approved: !!approved });
+    return { success: true };
+  });
+}
+
+// Permanently remove an astrologer: their public profile + their user
+// record (so duplicates / unwanted accounts can be cleaned from admin).
+export function deleteAstrologer(astroId) {
+  return tryCloud('adminDeleteAstrologer', { astroId }, async () => {
+    await deleteDoc(doc(db, 'astrologers', astroId));
+    try { await deleteDoc(doc(db, 'users', astroId)); } catch (_) {}
     return { success: true };
   });
 }

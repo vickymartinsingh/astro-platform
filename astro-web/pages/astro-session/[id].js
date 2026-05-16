@@ -123,7 +123,25 @@ export default function ActiveSession() {
     `${String(elapsed % 60).padStart(2, '0')}`;
 
   return (
-    <div className="flex h-screen flex-col md:flex-row">
+    <div className="flex h-screen flex-col">
+      {/* Always-visible top bar with a prominent End button */}
+      <div className="flex items-center justify-between gap-2 bg-primary
+                      px-4 py-2 text-white">
+        <div className="min-w-0">
+          <div className="truncate text-sm font-semibold">
+            {client?.name || 'Client'}
+          </div>
+          <div className="text-[11px] capitalize opacity-90">
+            {session.type} · {mmss}
+          </div>
+        </div>
+        <button onClick={endSession}
+          className="shrink-0 rounded-full bg-danger px-5 py-2 text-sm
+                     font-bold shadow">
+          End
+        </button>
+      </div>
+      <div className="flex flex-1 flex-col overflow-hidden md:flex-row">
       {/* Client info panel (collapsible on mobile) */}
       <aside className="bg-bg-light p-4 md:w-72">
         <div className="font-bold">{client?.name || 'Client'}</div>
@@ -206,6 +224,7 @@ export default function ActiveSession() {
           </>
         )}
       </main>
+      </div>
     </div>
   );
 }
