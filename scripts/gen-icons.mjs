@@ -1,98 +1,116 @@
-// Generates distinct branded source assets for each app, then they are
-// sliced into Android densities by @capacitor/assets. Pure SVG -> PNG via
-// sharp (already on disk as a @capacitor/assets dependency). No design
-// tool or network needed. Run: node scripts/gen-icons.mjs
+// Builds branded source assets for each app from ONE shared artwork
+// (brand/source-logo.png), recoloured per app via a hue rotation so all
+// three keep the same illustration but a distinct colour theme.
+// Pure sharp (a @capacitor/assets dependency) -> PNG. No design tool /
+// network. Works on Windows and the macOS CI runner (no hardcoded paths).
+// Run: node scripts/gen-icons.mjs
 import sharp from 'sharp';
-import { mkdirSync, writeFileSync } from 'fs';
+import { mkdirSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
-// Repo root = parent of this scripts/ folder. Works on Windows and the
-// macOS CI runner alike (no hardcoded drive paths).
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const SRC = join(ROOT, 'brand', 'source-logo.png');
 
-// White glyphs authored in a 1024x1024 coordinate space, centred.
-const GLYPHS = {
-  // Client: sparkle star inside an orbit ring.
-  client: `
-    <g fill="none" stroke="#fff" stroke-width="22">
-      <circle cx="512" cy="512" r="352"/>
-    </g>
-    <path d="M512 168 L573 451 L856 512 L573 573 L512 856
-             L451 573 L168 512 L451 451 Z" fill="#fff"/>
-    <circle cx="805" cy="318" r="28" fill="#fff"/>
-    <circle cx="225" cy="690" r="18" fill="#fff"/>`,
-  // Astrologer: crescent moon + spark (celestial guide).
-  astro: `
-    <defs><mask id="cresc">
-      <rect width="1024" height="1024" fill="#000"/>
-      <circle cx="486" cy="512" r="258" fill="#fff"/>
-      <circle cx="588" cy="466" r="226" fill="#000"/>
-    </mask></defs>
-    <rect width="1024" height="1024" fill="#fff" mask="url(#cresc)"/>
-    <path d="M742 250 l34 78 78 34 -78 34 -34 78 -34 -78 -78 -34 78 -34 Z"
-          fill="#fff"/>`,
-  // Admin: shield + check (control / approval).
-  admin: `
-    <path d="M512 176 L786 286 L786 542 C786 716 662 812 512 862
-             C362 812 238 716 238 542 L238 286 Z"
-          fill="none" stroke="#fff" stroke-width="42"
-          stroke-linejoin="round"/>
-    <path d="M416 522 L486 592 L626 446" fill="none" stroke="#fff"
-          stroke-width="46" stroke-linecap="round"
-          stroke-linejoin="round"/>`,
-};
-
-// appKey -> [gradientStart, gradientEnd, splashBg, splashDarkBg]
-const APPS = {
-  'client-web': ['#7C3AED', '#4F46E5', '#6D28D9', '#0B0A1F'],
-  'astro-web':  ['#10B981', '#047857', '#059669', '#04231B'],
-  'admin-web':  ['#475569', '#1E3A8A', '#334155', '#0B1020'],
-};
-
-const wrap = (px, inner) =>
-  `<svg xmlns="http://www.w3.org/2000/svg" width="${px}" height="${px}" `
-  + `viewBox="0 0 1024 1024">${inner}</svg>`;
-
-const grad = (a, b) =>
-  `<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">`
-  + `<stop offset="0" stop-color="${a}"/>`
-  + `<stop offset="1" stop-color="${b}"/></linearGradient></defs>`;
-
-// Scale a glyph about the centre (512,512).
-const scaled = (glyph, s) =>
-  `<g transform="translate(512 512) scale(${s}) translate(-512 -512)">`
-  + `${glyph}</g>`;
-
-async function png(svg, file) {
-  await sharp(Buffer.from(svg)).png().toFile(file);
+if (!existsSync(SRC)) {
+  console.error(
+    '\nMissing artwork: ' + SRC +
+    '\nSave the shared logo there (brand/source-logo.png) and re-run.\n');
+  process.exit(1);
 }
 
-for (const [app, [c1, c2, sp, spDark]] of Object.entries(APPS)) {
-  const g = GLYPHS[app === 'client-web' ? 'client'
-    : app === 'astro-web' ? 'astro' : 'admin'];
+// appDir -> recolour + background palette.
+//   hue:   degrees to rotate the artwork's colours (original art is warm
+//          orange ~30 deg; these shift it to each app's theme).
+//   bg:    adaptive-icon background gradient [start, end].
+//   sp/spD: splash + dark-splash solid backgrounds.
+// Each app keeps the SAME illustration but is recoloured cohesively with
+// a luminance-preserving tint, so the whole icon (art + background) reads
+// as one clean theme colour. bri lifts it slightly before tinting.
+const hex = (h) => ({
+  r: parseInt(h.slice(1, 3), 16),
+  g: parseInt(h.slice(3, 5), 16),
+  b: parseInt(h.slice(5, 7), 16),
+});
+const APPS = {
+  'client-web': { tint: hex('#8B5CF6'), bri: 1.12,
+                  bg: ['#6D28D9', '#2E1065'],
+                  sp: '#2E1065', spD: '#0B0820' },              // violet
+  'astro-web':  { tint: hex('#10B981'), bri: 1.12,
+                  bg: ['#059669', '#04231B'],
+                  sp: '#063D2E', spD: '#04231B' },              // emerald
+  'admin-web':  { tint: hex('#3B82F6'), bri: 1.12,
+                  bg: ['#2563EB', '#0B1B3F'],
+                  sp: '#142C66', spD: '#0B1020' },              // blue
+};
+
+const circleMask = (d) => Buffer.from(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="${d}" height="${d}">`
+  + `<circle cx="${d / 2}" cy="${d / 2}" r="${d / 2}" fill="#fff"/></svg>`);
+
+const gradientSvg = (size, a, b) => Buffer.from(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">`
+  + `<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">`
+  + `<stop offset="0" stop-color="${a}"/>`
+  + `<stop offset="1" stop-color="${b}"/></linearGradient></defs>`
+  + `<rect width="${size}" height="${size}" fill="url(#g)"/></svg>`);
+
+const solidSvg = (size, c) => Buffer.from(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">`
+  + `<rect width="${size}" height="${size}" fill="${c}"/></svg>`);
+
+// Recoloured artwork at NxN (full square — keeps the dark corners).
+// Luminance-preserving tint => cohesive single-theme colouring.
+const square = (n, tint, bri) =>
+  sharp(SRC).resize(n, n, { fit: 'cover' })
+    .modulate({ brightness: bri })
+    .tint(tint)
+    .png().toBuffer();
+
+// Recoloured artwork cropped to a circle at NxN (transparent corners).
+async function disc(n, tint, bri) {
+  const sq = await square(n, tint, bri);
+  return sharp(sq)
+    .composite([{ input: circleMask(n), blend: 'dest-in' }])
+    .png().toBuffer();
+}
+
+// Place a buffer centred on a transparent / coloured canvas.
+function canvas(size, bgBuf) {
+  const base = bgBuf
+    ? sharp(bgBuf)
+    : sharp({ create: { width: size, height: size, channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0 } } });
+  return base;
+}
+
+for (const [app, { tint, bri, bg, sp, spD }] of Object.entries(APPS)) {
   const dir = join(ROOT, app, 'assets');
   mkdirSync(dir, { recursive: true });
 
-  // Adaptive-icon background (full-bleed gradient).
-  await png(wrap(1024, `${grad(c1, c2)}<rect width="1024" height="1024" `
-    + `fill="url(#g)"/>`), `${dir}/icon-background.png`);
+  // Legacy / round icon: full recoloured artwork (1024).
+  await sharp(await square(1024, tint, bri))
+    .toFile(join(dir, 'icon-only.png'));
 
-  // Adaptive-icon foreground (transparent, glyph inside safe zone).
-  await png(wrap(1024, scaled(g, 0.60)), `${dir}/icon-foreground.png`);
+  // Adaptive background: themed gradient.
+  await sharp(gradientSvg(1024, bg[0], bg[1])).png()
+    .toFile(join(dir, 'icon-background.png'));
 
-  // Legacy / round icon (rounded gradient tile + glyph).
-  await png(wrap(1024, `${grad(c1, c2)}`
-    + `<rect width="1024" height="1024" rx="220" fill="url(#g)"/>`
-    + scaled(g, 0.74)), `${dir}/icon-only.png`);
+  // Adaptive foreground: circular artwork inside the safe zone (~62%).
+  const fg = await disc(Math.round(1024 * 0.62), tint, bri);
+  await canvas(1024, null)
+    .composite([{ input: fg, gravity: 'centre' }])
+    .png().toFile(join(dir, 'icon-foreground.png'));
 
-  // Splash screens (2732 canvas, solid brand bg, centred logo).
-  await png(wrap(2732, `<rect width="1024" height="1024" fill="${sp}"/>`
-    + scaled(g, 0.34)), `${dir}/splash.png`);
-  await png(wrap(2732, `<rect width="1024" height="1024" fill="${spDark}"/>`
-    + scaled(g, 0.34)), `${dir}/splash-dark.png`);
+  // Splash + dark splash: solid brand bg, centred circular logo.
+  const logo = await disc(1100, tint, bri);
+  await sharp(solidSvg(2732, sp)).png()
+    .composite([{ input: logo, gravity: 'centre' }])
+    .toFile(join(dir, 'splash.png'));
+  await sharp(solidSvg(2732, spD)).png()
+    .composite([{ input: logo, gravity: 'centre' }])
+    .toFile(join(dir, 'splash-dark.png'));
 
-  writeFileSync(`${dir}/.gitkeep`, '');
-  console.log(`generated icons for ${app}`);
+  console.log(`recoloured icons generated for ${app}`);
 }
 console.log('done');
