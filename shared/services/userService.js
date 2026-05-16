@@ -5,6 +5,7 @@ import {
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../firebase.js';
+import { isAdminEmail } from '../admins.js';
 
 // Fallback for when the createUser Cloud Function isn't deployed (Spark/no
 // Blaze). On first sign-in, create the Firestore user doc client-side so
@@ -24,7 +25,8 @@ export async function ensureUserDoc(authUser) {
     name: authUser.displayName || '',
     email: authUser.email || '',
     phone: authUser.phoneNumber || '',
-    role: 'client',
+    // Owner emails are always admin; never downgrade them to client.
+    role: isAdminEmail(authUser.email) ? 'admin' : 'client',
     userCode,
     wallet: 0,
     isOnline: true,

@@ -2,6 +2,7 @@
 export { default as firebaseApp, auth, db, storage, functions, rtdb } from './firebase.js';
 export * from './theme.js';
 export { useAndroidBack } from './androidBack.js';
+export { ADMIN_EMAILS, isAdminEmail, isAdminUser } from './admins.js';
 export { getHoroscope, horoscopeText } from './horoscope.js';
 export { TAROT, drawCards, tarotReading } from './tarot.js';
 export { gunaMilan, signFromDOB } from './matching.js';

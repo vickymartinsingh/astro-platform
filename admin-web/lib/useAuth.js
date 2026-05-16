@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
-import { authService, userService } from '@astro/shared';
+import { authService, userService, isAdminUser } from '@astro/shared';
 
 const AuthCtx = createContext({ user: null, profile: null, loading: true });
 
@@ -41,7 +41,7 @@ export function useRequireAdmin() {
   useEffect(() => {
     if (loading) return;
     if (!user) { router.replace('/admin-login'); return; }
-    if (profile && profile.role !== 'admin') {
+    if (profile && !isAdminUser(profile, user.email)) {
       authService.logoutUser();
       router.replace('/admin-login?denied=1');
     }

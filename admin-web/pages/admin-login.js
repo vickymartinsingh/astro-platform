@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
-import { authService, userService } from '@astro/shared';
+import { authService, userService, isAdminUser } from '@astro/shared';
 
 export default function AdminLogin() {
   const router = useRouter();
@@ -16,7 +16,7 @@ export default function AdminLogin() {
     try {
       const u = await authService.loginUser(email.trim(), password);
       const p = await userService.getUser(u.uid);
-      if (!p || p.role !== 'admin') {
+      if (!isAdminUser(p, u.email)) {
         await authService.logoutUser();
         setErr('Access denied, admin only.');
         return;
