@@ -14,6 +14,7 @@ export * as chatService from './services/chatService.js';
 export * as sessionService from './services/sessionService.js';
 export * as callService from './services/callService.js';
 export * as notificationService from './services/notificationService.js';
+export * as pushService from './services/pushService.js';
 export * as presenceService from './services/presenceService.js';
 export * as kundliService from './services/kundliService.js';
 export * as reviewService from './services/reviewService.js';

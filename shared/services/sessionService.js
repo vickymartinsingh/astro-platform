@@ -6,6 +6,7 @@ import {
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../firebase.js';
+import { sendPushToUser } from './pushService.js';
 
 function round2(n) {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -150,11 +151,32 @@ export async function createSessionRequest(data) {
     cost: 0,
     createdAt: serverTimestamp(),
   });
+  // Lock-screen push to the astrologer: an incoming consultation request.
+  sendPushToUser({
+    toUid: data.astroId,
+    title: `Incoming ${data.type} request`,
+    body: 'A client is requesting a consultation. Tap to respond.',
+    data: { type: 'session', sessionId: ref.id, route: '/astro-dashboard' },
+  });
   return ref.id;
 }
 
 export async function updateSessionStatus(id, status, extra = {}) {
   await updateDoc(doc(db, 'sessions', id), { status, ...extra });
+  // When the astrologer accepts, alert the client on their lock screen.
+  if (status === 'accepted') {
+    try {
+      const s = (await getDoc(doc(db, 'sessions', id))).data();
+      if (s && s.userId) {
+        sendPushToUser({
+          toUid: s.userId,
+          title: 'Astrologer accepted',
+          body: `Your ${s.type || ''} consultation is starting.`.trim(),
+          data: { type: 'session', sessionId: id, route: '/dashboard' },
+        });
+      }
+    } catch (_) { /* best-effort */ }
+  }
 }
 
 // Generic patch (e.g. mark introSent) without touching status.

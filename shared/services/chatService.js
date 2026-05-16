@@ -4,6 +4,7 @@ import {
   orderBy, onSnapshot, getDocs, serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../firebase.js';
+import { sendPushToUser } from './pushService.js';
 
 // Deterministic conversation id prevents duplicate threads (blueprint 4.8):
 // smaller_uid + '_' + larger_uid
@@ -37,6 +38,20 @@ export async function sendMessage(chatId, senderId, text) {
     lastMessage: clean.slice(0, 120),
     updatedAt: serverTimestamp(),
   });
+  // Lock-screen push to the OTHER participant. chatId is the two UIDs
+  // joined with '_' (Firebase UIDs contain no underscore). System
+  // separators ('system') never trigger a push.
+  if (senderId && senderId !== 'system') {
+    const toUid = String(chatId).split('_').find((p) => p && p !== senderId);
+    if (toUid) {
+      sendPushToUser({
+        toUid,
+        title: 'New message',
+        body: clean.slice(0, 140),
+        data: { type: 'chat', chatId },
+      });
+    }
+  }
 }
 
 export function listenMessages(chatId, callback) {

@@ -1,13 +1,19 @@
 // notificationService, blueprint 8.2
 import {
   doc, updateDoc, collection, query, where, onSnapshot, getDocs,
+  arrayUnion,
 } from 'firebase/firestore';
 import { db } from '../firebase.js';
 import { updateUser } from './userService.js';
 
+// Store the latest token AND keep a de-duplicated array of every device
+// the user has signed in on, so the relay can push to all of them.
 export async function saveFCMToken(uid, token) {
   if (!uid || !token) return;
-  await updateUser(uid, { fcmToken: token });
+  await updateUser(uid, {
+    fcmToken: token,
+    fcmTokens: arrayUnion(token),
+  });
 }
 
 const byCreatedDesc = (a, b) =>

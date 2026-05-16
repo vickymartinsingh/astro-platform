@@ -1,0 +1,9 @@
+{
+  "name": "astro-push-relay",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Tiny serverless relay that sends FCM lock-screen pushes for the AstroConnect apps. Holds the Firebase service account so the apps never do. Deploy free on Vercel.",
+  "dependencies": {
+    "firebase-admin": "^12.7.0"
+  }
+}

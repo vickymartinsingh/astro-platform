@@ -2,7 +2,9 @@ import {
   createContext, useContext, useEffect, useRef, useState,
 } from 'react';
 import { useRouter } from 'next/router';
-import { authService, userService, presenceService } from '@astro/shared';
+import {
+  authService, userService, presenceService, pushService,
+} from '@astro/shared';
 import { useAuthModal } from './authModal';
 
 const AuthCtx = createContext({ user: null, profile: null, loading: true });
@@ -23,6 +25,8 @@ export function AuthProvider({ children }) {
         teardownPresence = presenceService.setupPresence(u.uid);
         // Create the user doc if the Cloud Function hasn't (Spark/no Blaze).
         userService.ensureUserDoc(u).catch(() => {});
+        // Native apps only: register for lock-screen push (no-op on web).
+        pushService.registerForPush(u.uid).catch(() => {});
         unsubProfile = userService.listenUser(u.uid, (p) => {
           setProfile(p);
           setLoading(false);

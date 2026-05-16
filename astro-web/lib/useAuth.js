@@ -1,6 +1,8 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
-import { authService, userService, presenceService } from '@astro/shared';
+import {
+  authService, userService, presenceService, pushService,
+} from '@astro/shared';
 
 const AuthCtx = createContext({ user: null, profile: null, loading: true });
 
@@ -19,6 +21,7 @@ export function AuthProvider({ children }) {
       if (u) {
         teardownPresence = presenceService.setupPresence(u.uid);
         userService.ensureUserDoc(u).catch(() => {});
+        pushService.registerForPush(u.uid).catch(() => {});
         unsubProfile = userService.listenUser(u.uid, (p) => {
           setProfile(p); setLoading(false);
         });

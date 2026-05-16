@@ -13,6 +13,7 @@ import {
 } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../firebase.js';
+import { sendPushToUser } from './pushService.js';
 
 async function tryCloud(name, payload, local) {
   try {
@@ -103,6 +104,15 @@ export function sendNotification(payload) {
       userId: payload.target === 'user' ? payload.userId : 'all',
       title: payload.title, message: payload.message,
       type: 'offer', read: false, createdAt: serverTimestamp() });
+    // Also fire a real lock-screen push. The relay fans out by target
+    // (all / clients / astrologers / a specific user) server-side.
+    await sendPushToUser({
+      target: payload.target,
+      userId: payload.userId || null,
+      title: payload.title,
+      body: payload.message,
+      data: { type: 'offer', route: '/notifications' },
+    });
     return { sent: 1, local: true };
   });
 }
