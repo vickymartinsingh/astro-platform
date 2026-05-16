@@ -56,6 +56,9 @@ jobs:
         working-directory: ${{ matrix.app }}
         run: npx cap sync ios
 
+      - name: Inject mic/camera permissions (Info.plist)
+        run: node scripts/patch-native.mjs
+
       - name: Build unsigned archive
         working-directory: ${{ matrix.app }}
         run: |
