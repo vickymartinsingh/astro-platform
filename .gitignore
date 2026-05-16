@@ -22,6 +22,12 @@ admin-web/ios/
 *.keystore
 *.jks
 keystore.properties
+# Secrets — NEVER commit these
+firebase-key.json
+firebase-key.oneline.txt
+google-services.json
+*serviceAccount*.json
+*service-account*.json
 # misc
 .vercel
 coverage/
