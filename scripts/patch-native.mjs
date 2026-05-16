@@ -76,9 +76,38 @@ function patchIos(app) {
   return `ios: patched (${app})`;
 }
 
+// Copy the repo-root google-services.json into an app's android project
+// ONLY if it contains that app's package (otherwise the Google Services
+// gradle plugin fails the build / Firebase native crashes at runtime).
+const PKG = {
+  'client-web': 'com.astroconnect.app',
+  'astro-web': 'com.astroconnect.astrologer',
+};
+function patchGoogleServices(app) {
+  const src = join(ROOT, 'google-services.json');
+  const destDir = join(ROOT, app, 'android', 'app');
+  if (!existsSync(src) || !existsSync(destDir)) {
+    return `gservices: skipped (${app})`;
+  }
+  let pkgs = [];
+  try {
+    const j = JSON.parse(readFileSync(src, 'utf8'));
+    pkgs = (j.client || []).map((c) => c.client_info
+      && c.client_info.android_client_info
+      && c.client_info.android_client_info.package_name);
+  } catch (_) { return `gservices: bad json (${app})`; }
+  if (!pkgs.includes(PKG[app])) {
+    return `gservices: ${PKG[app]} NOT in json — ${app} push stays off`;
+  }
+  writeFileSync(join(destDir, 'google-services.json'),
+    readFileSync(src));
+  return `gservices: installed for ${app} (${PKG[app]})`;
+}
+
 for (const app of APPS) {
   console.log(patchAndroid(app));
   console.log(patchIos(app));
+  console.log(patchGoogleServices(app));
 }
 for (const app of NAME_APPS) {
   console.log(patchAppName(app));
