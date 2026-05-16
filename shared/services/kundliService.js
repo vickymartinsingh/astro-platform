@@ -58,8 +58,12 @@ export async function deleteKundli(id) {
 // Auto-shared as the first chat message when a session starts (blueprint 4.8).
 export async function autoSendKundliToChat(chatId, systemSenderId, kundli) {
   if (!kundli) return;
-  const line =
-    `Client: ${kundli.name} | DOB: ${kundli.dob} | ` +
-    `TOB: ${kundli.tob} ${kundli.ampm} | Place: ${kundli.place}`;
-  await sendMessage(chatId, systemSenderId, line);
+  const lines = [
+    kundli.name,
+    `DOB: ${kundli.dob}`,
+    `Time of birth: ${kundli.tob || '--'} ${kundli.ampm || ''}`.trim(),
+    `Place of birth: ${kundli.place || '--'}`,
+  ];
+  if (kundli.zodiac) lines.push(`Sign: ${kundli.zodiac}`);
+  await sendMessage(chatId, systemSenderId, lines.join('\n'));
 }

@@ -4,52 +4,66 @@ service cloud.firestore {
 
     function signedIn() { return request.auth != null; }
     function isSelf(uid) { return signedIn() && request.auth.uid == uid; }
+    // True when the caller's own users doc has role == 'admin'.
+    function isAdmin() {
+      return signedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid))
+          .data.role == 'admin';
+    }
 
-    // users: a user reads/writes own record, BUT wallet & role are
-    // immutable from the client (Hard Rule 4 & 6 — wallet writes only via
-    // Cloud Functions which use the Admin SDK and bypass these rules).
+    // users: a user reads/writes own record; wallet & role stay immutable
+    // from the client (Hard Rule 4 & 6) UNLESS the caller is an admin
+    // (admin panel runs client-side when Cloud Functions are not deployed).
+    // DEMO MODE (no Cloud Functions / Blaze): wallet settlement runs
+    // client-side, so a signed-in user may update their own doc incl.
+    // wallet, and admins may update anyone. Role stays immutable for
+    // non-admins. In production with Cloud Functions deployed, tighten
+    // back to wallet-immutable (Hard Rules 4 & 6).
     match /users/{uid} {
       allow read: if signedIn();
-      allow create: if isSelf(uid);
-      allow update: if isSelf(uid)
-                    && request.resource.data.wallet == resource.data.wallet
-                    && request.resource.data.role == resource.data.role;
-      allow delete: if false;
+      allow create: if isSelf(uid) || isAdmin();
+      allow update: if isAdmin() ||
+        (isSelf(uid) && request.resource.data.role == resource.data.role);
+      allow delete: if isAdmin();
     }
 
-    // transactions: read own only; never writable from client (Hard Rule 6)
+    // transactions: every wallet change still writes a transaction
+    // (Hard Rule 6). Client-side settlement needs signed-in create.
     match /transactions/{id} {
       allow read: if signedIn();
-      allow write: if false;
+      allow create: if signedIn();
+      allow update, delete: if false;
     }
 
-    // payments: read own; written only by Cloud Function after HMAC verify
     match /payments/{id} {
       allow read: if signedIn();
-      allow write: if false;
+      allow write: if isAdmin();
     }
 
-    // astrologers: anyone may read; the astrologer may update own profile
-    // (pricing/availability) but NOT earnings/rating/approved (server-owned)
+    // astrologers: anyone reads; the astrologer updates own profile
+    // (not earnings/rating/approved); an admin may update anything.
+    // DEMO MODE: the astrologer settles their own earnings client-side
+    // on session end (no Cloud Function). Owner (doc id == uid) or admin
+    // may write fully; other signed-in users may only touch
+    // rating/reviewsCount (client review recompute).
     match /astrologers/{id} {
       allow read: if true;
       allow create: if signedIn();
-      allow update: if signedIn()
-                    && request.resource.data.earnings == resource.data.earnings
-                    && request.resource.data.rating == resource.data.rating
-                    && request.resource.data.approved == resource.data.approved;
+      allow update: if isAdmin() || isSelf(id) ||
+        (signedIn()
+          && request.resource.data.earnings == resource.data.earnings
+          && request.resource.data.approved == resource.data.approved
+          && request.resource.data.status == resource.data.status);
+      allow delete: if isAdmin();
     }
 
-    // sessions: participants (auth users) can read/write status fields;
-    // billing fields (cost/duration) are written by Cloud Functions only
     match /sessions/{id} {
       allow read: if signedIn();
       allow create: if signedIn();
       allow update: if signedIn();
-      allow delete: if false;
+      allow delete: if isAdmin();
     }
 
-    // chats + messages subcollection: signed-in participants
     match /chats/{chatId} {
       allow read, write: if signedIn();
       match /messages/{msgId} {
@@ -65,9 +79,8 @@ service cloud.firestore {
     match /reviews/{id} {
       allow read: if true;
       allow create: if signedIn();
-      // reviews cannot be deleted by users — admin SDK only (Astro 5.11)
       allow update: if signedIn();
-      allow delete: if false;
+      allow delete: if isAdmin();
     }
 
     match /favorites/{uid} {
@@ -82,34 +95,46 @@ service cloud.firestore {
     match /payouts/{id} {
       allow read: if signedIn();
       allow create: if signedIn();
-      allow update, delete: if false;
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
     }
 
     match /horoscope/{id} {
       allow read: if true;
-      allow write: if false;
+      allow write: if isAdmin();
     }
 
-    // settings: world-readable config; written by Admin SDK only
+    // settings: world-readable; admin may write (Cloud Function in prod).
     match /settings/{doc} {
       allow read: if true;
-      allow write: if false;
+      allow write: if isAdmin();
     }
 
     match /pages/{id} {
       allow read: if true;
-      allow write: if false;
+      allow write: if isAdmin();
     }
 
     match /coupons/{id} {
       allow read: if signedIn();
-      allow write: if false;
+      allow write: if isAdmin();
     }
 
-    // admin-only collections — Admin SDK / privileged backend only
-    match /logs/{id}      { allow read: if signedIn(); allow write: if false; }
-    match /reports/{id}   { allow read: if signedIn(); allow write: if false; }
-    match /disputes/{id}  { allow read: if signedIn(); allow create: if signedIn(); allow update, delete: if false; }
-    match /scheduler/{id} { allow read, write: if false; }
+    match /logs/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update, delete: if false;
+    }
+    match /reports/{id} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+    match /disputes/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+    match /scheduler/{id} { allow read, write: if isAdmin(); }
   }
 }

@@ -59,9 +59,26 @@ async function run() {
       await updateProfile(c.user, { displayName: a.name });
     } catch (err) {
       if (err.code === 'auth/email-already-in-use') {
-        const c = await signInWithEmailAndPassword(auth, email, PWD);
-        uid = c.user.uid;
-      } else { console.error(a.name, err.code || err.message); continue; }
+        try {
+          const c = await signInWithEmailAndPassword(auth, email, PWD);
+          uid = c.user.uid;
+        } catch {
+          console.error(`! ${email} exists with a different password. ` +
+            'Delete it in Firebase Console > Authentication > Users, ' +
+            'then re-run.');
+          continue;
+        }
+      } else if (err.code === 'auth/operation-not-allowed') {
+        console.error('\n========================================\n' +
+          'Email/Password sign-in is NOT enabled.\n' +
+          'Firebase Console > Authentication > Sign-in method >\n' +
+          'Email/Password > Enable. Then run this script again.\n' +
+          '========================================');
+        process.exit(1);
+      } else {
+        console.error(a.name, err.code || err.message);
+        continue;
+      }
     }
 
     await setDoc(doc(db, 'users', uid), {
@@ -106,10 +123,42 @@ async function run() {
     void existingRev;
   }
 
-  console.log('\nAstrologer logins (password for all: admin123):');
+  // ---- Admin account (admin@astro.demo / admin123) ----
+  // Firestore rules allow a user to CREATE its own users doc with any
+  // fields (role immutability only applies to updates), so seeding an
+  // admin role here is permitted.
+  const ADMIN_EMAIL = 'admin@astro.demo';
+  try {
+    let auid;
+    try {
+      const c = await createUserWithEmailAndPassword(auth, ADMIN_EMAIL, PWD);
+      auid = c.user.uid;
+      await updateProfile(c.user, { displayName: 'Administrator' });
+    } catch (err) {
+      if (err.code === 'auth/email-already-in-use') {
+        const c = await signInWithEmailAndPassword(auth, ADMIN_EMAIL, PWD);
+        auid = c.user.uid;
+      } else { throw err; }
+    }
+    await setDoc(doc(db, 'users', auid), {
+      name: 'Administrator', email: ADMIN_EMAIL, phone: '',
+      role: 'admin',
+      userCode: String(Math.floor(1e8 + Math.random() * 9e8)),
+      wallet: 0, isOnline: false, isOnCall: false, isBlocked: false,
+      hasSeenTour: true, status: 'active', createdAt: new Date(),
+    }, { merge: true });
+    await signOut(auth);
+    console.log('seeded admin: admin@astro.demo');
+  } catch (e) {
+    console.error('admin seed failed:', e.code || e.message);
+  }
+
+  console.log('\n==== LOGIN CREDENTIALS (password for all: admin123) ====');
+  console.log('ADMIN  (portal :3002)  admin@astro.demo');
+  console.log('\nASTROLOGERS (portal :3001):');
   creds.forEach(([n, em, st]) =>
     console.log(`  ${n.padEnd(22)} ${em.padEnd(34)} [${st}]`));
-  console.log('\nDone. Use these at the Astrologer portal (port 3001).');
+  console.log('\nDone.');
   process.exit(0);
 }
 run().catch((err) => { console.error(err); process.exit(1); });

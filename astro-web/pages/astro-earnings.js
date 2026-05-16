@@ -12,9 +12,13 @@ export default function AstroEarnings() {
 
   useEffect(() => {
     if (!user) return;
-    sessionService.getAstrologerSessions(user.uid).then((l) =>
-      setEnded(l.filter((s) => s.status === 'ended')));
-    astrologerService.getAstrologer(user.uid).then(setAstro);
+    sessionService.collectAstrologerEarnings(user.uid)
+      .catch(() => {})
+      .finally(() => {
+        sessionService.getAstrologerSessions(user.uid).then((l) =>
+          setEnded(l.filter((s) => s.status === 'ended')));
+        astrologerService.getAstrologer(user.uid).then(setAstro);
+      });
   }, [user]);
 
   if (loading) return <Layout><div className="card">Loading…</div></Layout>;

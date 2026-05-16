@@ -4,6 +4,7 @@ import {
   sessionService, chatService, userService, kundliService, callService,
 } from '@astro/shared';
 import { useRequireAstrologer } from '../../lib/useAuth';
+import { playPing } from '../../lib/ping';
 
 export default function ActiveSession() {
   const router = useRouter();
@@ -18,6 +19,7 @@ export default function ActiveSession() {
   const scrollRef = useRef(null);
   const remoteRef = useRef(null);
   const joinedRef = useRef(false);
+  const lastCount = useRef(0);
 
   useEffect(() => {
     if (!id) return;
@@ -62,8 +64,17 @@ export default function ActiveSession() {
   }, [session?.status, session?.type, id, user]);
 
   useEffect(() => {
+    // Ping on a genuinely new incoming (client) message, like WA/Meta.
+    if (messages.length > lastCount.current) {
+      const last = messages[messages.length - 1];
+      if (lastCount.current > 0 && last && last.senderId !== user?.uid
+          && last.senderId !== 'system') {
+        playPing();
+      }
+      lastCount.current = messages.length;
+    }
     scrollRef.current?.scrollTo({ top: 1e9, behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, user]);
 
   useEffect(() => {
     if (session && ['ended', 'rejected', 'missed'].includes(session.status)) {
@@ -82,7 +93,13 @@ export default function ActiveSession() {
   async function endSession() {
     if (!confirm('End this session?')) return;
     await callService.leaveAgoraChannel();
-    await sessionService.endSession(id);
+    // Charge the client, then collect this astrologer's post-commission
+    // earning into their wallet (client-side; no Cloud Functions needed).
+    try { await sessionService.endAndSettleClient(id); } catch (_) {}
+    try { await sessionService.collectAstrologerEarnings(user.uid); }
+    catch (_) {}
+    sessionService.endSession(id).catch(() => {});
+    router.replace('/astro-dashboard');
   }
 
   if (loading || !session) {
@@ -118,7 +135,8 @@ export default function ActiveSession() {
           <div ref={remoteRef}
             className="flex flex-1 items-center justify-center bg-call-bg
                        text-white">
-            {session.type === 'video' ? 'Video stream' : '🎙️ Voice call'}
+            {session.type === 'video'
+              ? 'Video call in progress' : 'Voice call in progress'}
           </div>
         )}
         {session.type === 'chat' && (
@@ -132,8 +150,9 @@ export default function ActiveSession() {
                   <div key={m.id}
                     className={`flex ${mine ? 'justify-end'
                       : sys ? 'justify-center' : 'justify-start'}`}>
-                    <div className={`max-w-[75%] rounded-card px-3 py-2
-                      text-sm ${sys ? 'bg-accent-blue text-sub-text'
+                    <div className={`max-w-[75%] whitespace-pre-line
+                      rounded-card px-3 py-2 text-sm ${
+                      sys ? 'bg-accent-blue text-sub-text'
                       : mine ? 'bg-chat-user' : 'bg-chat-astro'}`}>
                       {m.text}
                     </div>

@@ -90,6 +90,12 @@ export function useSession({ astroId, type, uid, clientName }) {
       const nm = clientName || 'there';
       const kind = type === 'chat' ? 'chat' : type === 'video'
         ? 'video call' : 'call';
+      // Clear divider so each new consultation is visually separated
+      // from earlier ones in the shared thread.
+      const when = new Date().toLocaleString([], {
+        day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+      await chatService.sendMessage(chatId, 'system',
+        `••• New ${kind} consultation • ${when} •••`);
       await chatService.sendMessage(chatId, 'system',
         `Hi ${nm}, please wait until the astrologer accepts your ${kind} ` +
         'request. Please stay connected; you can keep browsing and we will ' +
@@ -105,24 +111,24 @@ export function useSession({ astroId, type, uid, clientName }) {
     })().catch(() => {});
   }, [chatId, session, uid, type, clientName, router.query.kundli]);
 
-  // Stop the session on tab close / navigation so billing stops (Rule 7).
-  useEffect(() => {
-    function stop() {
-      const sid = sessionIdRef.current;
-      if (sid && session && ['accepted', 'active'].includes(session.status)) {
-        sessionService.updateSessionStatus(sid, 'ended').catch(() => {});
-      }
-    }
-    window.addEventListener('pagehide', stop);
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden') stop();
-    });
-    return () => window.removeEventListener('pagehide', stop);
-  }, [session]);
+  // NOTE: switching tabs / minimising must NOT end the session. The user
+  // can move around the app and come back; the session only ends on an
+  // explicit End (with confirmation) or when the wallet runs out.
 
   async function end() {
     const sid = sessionIdRef.current;
-    if (sid) { try { await sessionService.endSession(sid); } catch (_) {} }
+    if (!sid) { router.replace('/dashboard'); return; }
+    // Charge the client + compute the astrologer earning client-side
+    // (works without Cloud Functions). The astrologer collects their
+    // post-commission share from their portal.
+    try { await sessionService.endAndSettleClient(sid); }
+    catch (_) {
+      try {
+        await sessionService.updateSessionStatus(sid, 'ended',
+          { endTime: new Date() });
+      } catch (e) {}
+    }
+    sessionService.endSession(sid).catch(() => {});
   }
 
   return { astro, session, wallet, countdown, chatId, end,

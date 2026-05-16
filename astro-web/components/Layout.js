@@ -2,10 +2,8 @@ import { useEffect, useState } from 'react';
 import { astrologerService } from '@astro/shared';
 import TopNav from './TopNav';
 import IncomingRequest from './IncomingRequest';
-import AnnouncementBanner from './AnnouncementBanner';
 import { useAuth } from '../lib/useAuth';
 
-// Global layout: TOP NAV ONLY + always-listening incoming-request popup.
 export default function Layout({ children, nav = true }) {
   const { user, profile } = useAuth();
   const [astro, setAstro] = useState(null);
@@ -15,15 +13,22 @@ export default function Layout({ children, nav = true }) {
     return astrologerService.listenAstrologer(user.uid, setAstro);
   }, [user]);
 
+  // Only suppress the popup while the astrologer is genuinely IN a live
+  // session (users.isOnCall, set when a session is accepted/active).
+  // Do NOT suppress on a seeded/idle "busy" status, that hid real
+  // incoming requests.
+  const inSession = !!profile?.isOnCall;
+
   return (
-    <div className="min-h-full">
+    <div className="min-h-full" style={{ background: '#F1FAF6' }}>
+      <div className="bg-gradient-to-r from-emerald-600 to-teal-600
+                      py-1 text-center text-xs font-semibold uppercase
+                      tracking-widest text-white">
+        Astrologer Portal
+      </div>
       {nav && <TopNav astro={astro} />}
-      {nav && <AnnouncementBanner />}
       <main className="mx-auto w-full max-w-6xl px-4 py-4">{children}</main>
-      {user && (
-        <IncomingRequest uid={user.uid}
-          isOnCall={profile?.isOnCall || astro?.status === 'busy'} />
-      )}
+      {user && <IncomingRequest uid={user.uid} isOnCall={inSession} />}
     </div>
   );
 }

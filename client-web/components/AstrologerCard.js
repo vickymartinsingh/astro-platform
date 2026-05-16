@@ -8,7 +8,7 @@ function effPrice(base, d) {
   return Math.round((base || 0) * (1 - Number(d || 0) / 100));
 }
 
-export default function AstrologerCard({ a, onOpen, onChat }) {
+export default function AstrologerCard({ a, onOpen, onChat, freeMin = 0 }) {
   const online = a.status === 'online';
   const price = effPrice(a.priceChat, a.discountPercent);
   const skills = (a.skills || []).join(', ');
@@ -16,6 +16,12 @@ export default function AstrologerCard({ a, onOpen, onChat }) {
   return (
     <div className="surface relative p-5 transition hover:shadow-md">
       {a.approved && <span className="featured-badge">★ Featured</span>}
+      {freeMin > 0 && (
+        <span className="absolute right-3 top-3 z-[1] rounded-full
+          bg-success px-2 py-0.5 text-[11px] font-semibold text-white">
+          First {freeMin} min FREE
+        </span>
+      )}
 
       <button onClick={() => onOpen?.(a)}
         className="flex w-full flex-col items-center text-center">
@@ -56,7 +62,14 @@ export default function AstrologerCard({ a, onOpen, onChat }) {
       <div className="mt-4 flex items-center justify-between border-t
                       border-gray-100 pt-3">
         <div className="text-lg font-bold">
-          ₹{price}<span className="text-xs font-normal text-sub-text">/min</span>
+          {freeMin > 0 && (
+            <span className="mr-1 text-sm font-normal text-sub-text
+                             line-through">₹{price}</span>
+          )}
+          {freeMin > 0
+            ? <span className="text-success">FREE</span>
+            : <>₹{price}</>}
+          <span className="text-xs font-normal text-sub-text">/min</span>
         </div>
         <button onClick={() => onChat?.(a)}
           className={`btn-grad ${online ? '' : 'opacity-60'}`}>

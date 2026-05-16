@@ -6,6 +6,7 @@ import RateModal from '../../components/RateModal';
 import { useRequireClient } from '../../lib/useAuth';
 import { useSession } from '../../lib/useSession';
 import { usePendingSession } from '../../lib/pendingSession';
+import { playPing } from '../../lib/ping';
 
 export default function ChatScreen() {
   const router = useRouter();
@@ -20,6 +21,7 @@ export default function ChatScreen() {
   const [text, setText] = useState('');
   const [showRate, setShowRate] = useState(false);
   const scrollRef = useRef(null);
+  const lastCount = useRef(0);
 
   function minimise() {
     if (session?.id) {
@@ -37,9 +39,18 @@ export default function ChatScreen() {
   }, [chatId]);
 
   useEffect(() => {
+    // Ping on a genuinely new incoming (astrologer) message, like WA/Meta.
+    if (messages.length > lastCount.current) {
+      const last = messages[messages.length - 1];
+      if (lastCount.current > 0 && last && last.senderId !== user?.uid
+          && last.senderId !== 'system') {
+        playPing();
+      }
+      lastCount.current = messages.length;
+    }
     scrollRef.current?.scrollTo({
       top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, user]);
 
   useEffect(() => {
     if (session?.status === 'ended') setShowRate(true);
@@ -47,14 +58,26 @@ export default function ChatScreen() {
 
   const active = session?.status === 'active' || session?.status === 'accepted';
   const ratePerSec = session?.ratePerSecond || 0;
-  const lowBalance = active && wallet > 0 && wallet < ratePerSec * 10;
+  const ratePerMin = Math.round(ratePerSec * 60);
+  const lowBalance = active && wallet > 0 && wallet < ratePerSec * 60;
   const broke = active && wallet <= 0;
+  // Minutes the client can still afford at this rate.
+  const minsLeft = ratePerMin > 0
+    ? Math.floor(wallet / ratePerMin) : 0;
+  const secsLeft = ratePerSec > 0
+    ? Math.max(0, Math.floor(wallet / ratePerSec)) : 0;
+  const clock = `${String(Math.floor(secsLeft / 60)).padStart(2, '0')}:` +
+    `${String(secsLeft % 60).padStart(2, '0')}`;
 
   async function send() {
     if (!text.trim() || !active || broke) return;
     const v = text;
     setText('');
     await chatService.sendMessage(chatId, user.uid, v);
+  }
+
+  async function confirmEnd() {
+    if (window.confirm('End this consultation now?')) end();
   }
 
   if (loading || !astro) {
@@ -99,10 +122,13 @@ export default function ChatScreen() {
         <div className="flex-1">
           <div className="font-semibold">{astro.name}</div>
           <div className="text-xs opacity-90">
-            ₹{ratePerSec.toFixed(2)}/sec · Balance ₹{wallet.toFixed(2)}
+            ₹{ratePerMin}/min · Balance ₹{wallet.toFixed(0)}
+            {active && ratePerMin > 0 && (
+              <> · {clock} left</>
+            )}
           </div>
         </div>
-        <button onClick={end}
+        <button onClick={confirmEnd}
           className="rounded-card bg-white/20 px-3 py-2 text-sm">
           End
         </button>
@@ -147,7 +173,8 @@ export default function ChatScreen() {
             <div key={m.id}
               className={`flex ${mine ? 'justify-end'
                 : system ? 'justify-center' : 'justify-start'}`}>
-              <div className={`max-w-[75%] rounded-card px-3 py-2 text-sm ${
+              <div className={`max-w-[75%] whitespace-pre-line rounded-card
+                px-3 py-2 text-sm ${
                 system ? 'bg-accent-blue text-sub-text'
                 : mine ? 'bg-chat-user' : 'bg-chat-astro'}`}>
                 {m.text}
@@ -158,8 +185,9 @@ export default function ChatScreen() {
       </div>
 
       {broke ? (
-        <div className="bg-gray-200 p-4 text-center text-sub-text">
-          Balance ended, {' '}
+        <div className="bg-gray-100 p-3 text-center text-sm text-sub-text">
+          Your balance ended, so you can&apos;t send new messages, but the
+          astrologer can still reply here for up to 1 hour.{' '}
           <a href="/wallet" className="font-bold text-primary">
             Recharge to continue
           </a>

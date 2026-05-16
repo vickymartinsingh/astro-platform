@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { reviewService } from '@astro/shared';
+import { reviewService, userService } from '@astro/shared';
 import Layout from '../components/Layout';
 import { useRequireAstrologer } from '../lib/useAuth';
 
@@ -9,7 +9,17 @@ export default function AstroReviews() {
   const [replies, setReplies] = useState({});
 
   async function load() {
-    setRows(await reviewService.getReviews(user.uid));
+    const list = await reviewService.getReviews(user.uid);
+    const named = await Promise.all(list.map(async (r) => {
+      if (r.userId === 'sample' || r.userId === user.uid) {
+        return { ...r, reviewer: 'A client' };
+      }
+      try {
+        const u = await userService.getUser(r.userId);
+        return { ...r, reviewer: u?.name || 'A client' };
+      } catch { return { ...r, reviewer: 'A client' }; }
+    }));
+    setRows(named);
   }
   useEffect(() => { if (user) load(); /* eslint-disable-next-line */ }, [user]);
 
@@ -35,9 +45,16 @@ export default function AstroReviews() {
       ) : (
         <div className="space-y-2">
           {rows.map((r) => (
-            <div key={r.id} className="card">
-              <div className="text-gold">
-                {'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}
+            <div key={r.id} className="surface p-4">
+              <div className="flex items-center justify-between">
+                <div className="font-semibold">{r.reviewer}</div>
+                <div className="text-gold">
+                  {'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}
+                </div>
+              </div>
+              <div className="text-xs text-sub-text">
+                {r.createdAt?.toDate
+                  ? r.createdAt.toDate().toLocaleDateString() : ''}
               </div>
               <p className="mt-1">{r.comment}</p>
               {r.astrologerReply ? (

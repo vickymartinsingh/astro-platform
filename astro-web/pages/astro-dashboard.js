@@ -15,7 +15,12 @@ export default function AstroDashboard() {
     if (!user) return;
     const unsub = astrologerService.listenAstrologer(user.uid, (a) =>
       setAstro(a || null));
-    sessionService.getAstrologerSessions(user.uid).then(setSessions);
+    // Collect any post-commission earnings from sessions the client
+    // already ended (works even after disconnect), then load history.
+    sessionService.collectAstrologerEarnings(user.uid)
+      .catch(() => {})
+      .finally(() => sessionService.getAstrologerSessions(user.uid)
+        .then(setSessions));
     return () => unsub && unsub();
   }, [user]);
 
@@ -59,9 +64,18 @@ export default function AstroDashboard() {
         </div>
       )}
 
-      <div className={`rounded-card p-6 text-white ${statusStyle}`}>
-        <div className="text-sm opacity-80">Status</div>
-        <div className="text-3xl font-bold uppercase">{status}</div>
+      <div className={`rounded-2xl p-6 text-white shadow-sm ${statusStyle}`}>
+        <div className="text-sm opacity-80">Your status</div>
+        <div className="text-3xl font-bold uppercase tracking-wide">
+          {status}
+        </div>
+        <div className="mt-1 text-sm opacity-90">
+          {status === 'online'
+            ? 'You are visible to clients and can receive requests.'
+            : status === 'busy'
+              ? 'You are in a session. New requests are paused.'
+              : 'Go online from the top bar to receive consultations.'}
+        </div>
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -69,25 +83,30 @@ export default function AstroDashboard() {
         <Stat label="This Week" value={`₹${sum(since(7 * DAY)).toFixed(0)}`} />
         <Stat label="Lifetime" value={`₹${Number(astro.earnings || 0)}`} />
         <Stat label="Sessions Today" value={since(DAY).length} />
-        <Stat label="Rating" value={`⭐ ${astro.rating || 0}`} />
+        <Stat label="Rating"
+          value={<span className="text-gold">★ {astro.rating || 0}</span>} />
         <Stat label="Response Rate" value={`${astro.responseRate || 0}%`} />
         <Stat label="Total Sessions" value={astro.totalSessions || 0} />
         <Stat label="Reviews" value={astro.reviewsCount || 0} />
       </div>
 
-      <h2 className="mt-6 mb-2 font-bold">Recent Requests</h2>
+      <h2 className="mb-2 mt-8 text-lg font-bold">Recent requests</h2>
       <div className="space-y-2">
-        {sessions.slice(0, 5).map((s) => (
-          <div key={s.id} className="card flex justify-between text-sm">
-            <span className="capitalize">{s.type} · {s.status}</span>
-            <span className="text-sub-text">
+        {sessions.slice(0, 6).map((s) => (
+          <div key={s.id}
+            className="surface flex items-center justify-between p-3
+                       text-sm">
+            <span className="capitalize font-medium">
+              {s.type} · <span className="text-sub-text">{s.status}</span>
+            </span>
+            <span className="text-xs text-sub-text">
               {s.createdAt?.toDate
                 ? s.createdAt.toDate().toLocaleString() : ''}
             </span>
           </div>
         ))}
         {sessions.length === 0 && (
-          <div className="card text-sub-text">No requests yet.</div>
+          <div className="surface p-4 text-sub-text">No requests yet.</div>
         )}
       </div>
     </Layout>
@@ -96,8 +115,10 @@ export default function AstroDashboard() {
 
 function Stat({ label, value }) {
   return (
-    <div className="card text-center">
-      <div className="text-xs text-sub-text">{label}</div>
+    <div className="surface p-4 text-center">
+      <div className="text-xs uppercase tracking-wide text-sub-text">
+        {label}
+      </div>
       <div className="mt-1 text-lg font-bold">{value}</div>
     </div>
   );

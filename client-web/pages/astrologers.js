@@ -6,6 +6,7 @@ import AstrologerCard from '../components/AstrologerCard';
 import { SkeletonList, ErrorState, EmptyState } from '../components/Skeleton';
 import { useOptionalClient } from '../lib/useAuth';
 import { useAstroActions } from '../lib/useAstroActions';
+import { useSettings } from '../lib/useSettings';
 import { getFavorites } from '../lib/favorites';
 
 const PAGE = 12;
@@ -16,6 +17,7 @@ export default function Astrologers() {
   const { user, loading } = useOptionalClient();
   const router = useRouter();
   const { go } = useAstroActions(user);
+  const { freeChatMin } = useSettings();
   const [all, setAll] = useState(null);
   const [err, setErr] = useState(false);
   const [visible, setVisible] = useState(PAGE);
@@ -92,7 +94,7 @@ export default function Astrologers() {
                           lg:grid-cols-4">
             {all.slice(0, visible).map((a) => (
               <AstrologerCard key={a.id} a={a} onOpen={openProfile}
-                onChat={(x) => go('chat', x)} />
+                onChat={(x) => go('chat', x)} freeMin={freeChatMin} />
             ))}
           </div>
           {visible < all.length && (

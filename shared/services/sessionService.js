@@ -2,10 +2,135 @@
 // States: requesting -> accepted -> active -> ended | rejected | missed
 import {
   doc, getDoc, setDoc, updateDoc, onSnapshot, collection, query, where,
-  getDocs, serverTimestamp,
+  getDocs, serverTimestamp, runTransaction, addDoc,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../firebase.js';
+
+function round2(n) {
+  return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+}
+
+async function getConfig() {
+  try {
+    const s = await getDoc(doc(db, 'settings', 'config'));
+    return s.exists() ? s.data() : {};
+  } catch { return {}; }
+}
+
+// DEMO settlement (no Cloud Functions). Phase 1: when the session ends,
+// the CLIENT pays. Charges the client wallet for the connected time
+// (respecting any free seconds), records a debit transaction, and writes
+// the computed astrologer earning onto the session for the astrologer to
+// collect in phase 2.
+export async function endAndSettleClient(sessionId) {
+  const sRef = doc(db, 'sessions', sessionId);
+  const sSnap = await getDoc(sRef);
+  if (!sSnap.exists()) return;
+  const s = sSnap.data();
+  if (s.clientSettled) return;
+  if (!['accepted', 'active', 'requesting'].includes(s.status)
+      && s.status !== 'ended') return;
+
+  const cfg = await getConfig();
+  const startMs = s.startTime?.toMillis ? s.startTime.toMillis()
+    : (s.createdAt?.toMillis ? s.createdAt.toMillis() : Date.now());
+  const everConnected = !!s.startTime || s.status === 'active'
+    || s.status === 'accepted';
+  let duration = everConnected
+    ? Math.max(0, Math.floor((Date.now() - startMs) / 1000)) : 0;
+
+  const freeSecs = s.type === 'chat'
+    ? Number(cfg.free_chat_seconds || 0)
+    : Number(cfg.free_call_seconds || 0);
+  const billableSecs = Math.max(0, duration - freeSecs);
+  // Billed PER MINUTE (any started minute counts as a full minute).
+  const billedMinutes = Math.ceil(billableSecs / 60);
+  const perMin = Number(s.pricePerMinute
+    || Math.round(Number(s.ratePerSecond || 0) * 60));
+
+  let cost = round2(perMin * billedMinutes);
+
+  // Per-astrologer commission overrides the global default.
+  let commissionPct = Number(cfg.commission_percent ?? 30);
+  try {
+    const a = await getDoc(doc(db, 'astrologers', s.astroId));
+    if (a.exists() && a.data().commissionPercent != null) {
+      commissionPct = Number(a.data().commissionPercent);
+    }
+  } catch (_) {}
+
+  await runTransaction(db, async (t) => {
+    const uRef = doc(db, 'users', s.userId);
+    const uSnap = await t.get(uRef);
+    const wallet = Number((uSnap.data() || {}).wallet || 0);
+    if (cost > wallet) cost = round2(wallet); // never negative
+    const astrologerEarning = round2(cost * (1 - commissionPct / 100));
+
+    if (cost > 0) {
+      t.update(uRef, { wallet: round2(wallet - cost) });
+      t.set(doc(collection(db, 'transactions')), {
+        userId: s.userId, amount: -cost, type: 'debit',
+        reason: 'session', referenceId: sessionId,
+        createdAt: serverTimestamp(),
+      });
+    }
+    t.update(sRef, {
+      status: 'ended', endTime: serverTimestamp(),
+      duration, cost, commissionPercent: commissionPct,
+      astrologerEarning, clientSettled: true,
+    });
+  });
+}
+
+// Phase 2: the astrologer collects their post-commission earning into
+// their own wallet + earnings (runs when they view ended sessions).
+export async function collectAstrologerEarnings(astroUid) {
+  const snap = await getDocs(query(collection(db, 'sessions'),
+    where('astroId', '==', astroUid), where('status', '==', 'ended')));
+  let collected = 0;
+  for (const d of snap.docs) {
+    const s = d.data();
+    const earn = Number(s.astrologerEarning || 0);
+    if (s.astroSettled || earn <= 0) continue;
+    try {
+      await runTransaction(db, async (t) => {
+        const aRef = doc(db, 'astrologers', astroUid);
+        const uRef = doc(db, 'users', astroUid);
+        const sRef = doc(db, 'sessions', d.id);
+        const [aS, uS, sS] = await Promise.all(
+          [t.get(aRef), t.get(uRef), t.get(sRef)]);
+        if ((sS.data() || {}).astroSettled) return;
+        t.set(aRef, {
+          earnings: round2(Number((aS.data() || {}).earnings || 0) + earn),
+          totalSessions: Number((aS.data() || {}).totalSessions || 0) + 1,
+        }, { merge: true });
+        if (uS.exists()) {
+          t.update(uRef, {
+            wallet: round2(Number(uS.data().wallet || 0) + earn) });
+        }
+        t.set(doc(collection(db, 'transactions')), {
+          userId: astroUid, amount: earn, type: 'credit',
+          reason: 'earning', referenceId: d.id,
+          createdAt: serverTimestamp(),
+        });
+        t.update(sRef, { astroSettled: true });
+      });
+      collected += earn;
+    } catch (_) {}
+  }
+  // Session(s) finished, so the astrologer is available again.
+  try {
+    const aRef = doc(db, 'astrologers', astroUid);
+    const aSnap = await getDoc(aRef);
+    if (aSnap.exists() && aSnap.data().status === 'busy') {
+      await updateDoc(aRef, { status: 'online' });
+    }
+    await updateDoc(doc(db, 'users', astroUid), { isOnCall: false })
+      .catch(() => {});
+  } catch (_) {}
+  return collected;
+}
 
 // createSessionRequest: wallet sufficiency MUST be re-checked server-side
 // before billing starts; this only creates the request record.

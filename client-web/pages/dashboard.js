@@ -10,6 +10,7 @@ import { Icon } from '../components/Icons';
 import { useOptionalClient } from '../lib/useAuth';
 import { useAstroActions } from '../lib/useAstroActions';
 import { useAuthModal } from '../lib/authModal';
+import { useSettings } from '../lib/useSettings';
 
 const CATEGORIES = [
   ['Love', 'Love & Relationships'],
@@ -39,6 +40,7 @@ export default function Dashboard() {
   const { user, profile, loading } = useOptionalClient();
   const { go } = useAstroActions();
   const { openLogin } = useAuthModal();
+  const { freeChatMin } = useSettings();
   const router = useRouter();
   const [list, setList] = useState(null);
   const [showTour, setShowTour] = useState(false);
@@ -156,7 +158,7 @@ export default function Dashboard() {
                         lg:grid-cols-4">
           {topRated.map((a) => (
             <AstrologerCard key={a.id} a={a} onOpen={openProfile}
-              onChat={(x) => go('chat', x)} />
+              onChat={(x) => go('chat', x)} freeMin={freeChatMin} />
           ))}
         </div>
       )}

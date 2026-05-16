@@ -15,7 +15,13 @@ functions/node_modules/
 # Capacitor / Android
 client-web/android/
 client-web/ios/
+astro-web/android/
+astro-web/ios/
+admin-web/android/
+admin-web/ios/
 *.keystore
+*.jks
+keystore.properties
 # misc
 .vercel
 coverage/

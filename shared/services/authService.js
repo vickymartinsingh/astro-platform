@@ -8,11 +8,23 @@ import {
   onAuthStateChanged,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithCredential,
   EmailAuthProvider,
   reauthenticateWithCredential,
   updatePassword,
 } from 'firebase/auth';
 import { auth } from '../firebase.js';
+
+// True only inside the packaged Android/iOS app (Capacitor injects this
+// global). On the web it stays false, so the browser keeps using the
+// normal popup flow. No @capacitor/* import here, so the web bundles
+// (astro-web / admin-web) are completely unaffected.
+function isNativeApp() {
+  return typeof window !== 'undefined'
+    && !!window.Capacitor
+    && typeof window.Capacitor.isNativePlatform === 'function'
+    && window.Capacitor.isNativePlatform();
+}
 
 // The Firestore user record is created by the createUser Cloud Function
 // (auth.onCreate trigger). The browser never writes wallet/role.
@@ -40,7 +52,27 @@ export function watchAuth(callback) {
 }
 
 // ---- Google sign-in (free, no SMS) ----
+// Web: Firebase popup. Native app: Google blocks OAuth inside Android
+// WebViews, so we use the native @capacitor-firebase/authentication
+// plugin to get a Google ID token, then sign that token into the same
+// Firebase JS SDK so the rest of the app sees the user identically.
 export async function loginWithGoogle() {
+  if (isNativeApp()) {
+    // Capacitor auto-registers the native plugin as a runtime global, so
+    // we reach it via window.Capacitor.Plugins WITHOUT a bundler import.
+    // (Importing '@capacitor-firebase/authentication' would drag its web
+    // build into webpack and break the static export.)
+    const plugin = window.Capacitor
+      && window.Capacitor.Plugins
+      && window.Capacitor.Plugins.FirebaseAuthentication;
+    if (!plugin) throw new Error('Google sign-in is unavailable');
+    const result = await plugin.signInWithGoogle();
+    const idToken = result && result.credential && result.credential.idToken;
+    if (!idToken) throw new Error('Google sign-in was cancelled');
+    const gCred = GoogleAuthProvider.credential(idToken);
+    const cred = await signInWithCredential(auth, gCred);
+    return cred.user;
+  }
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
   const cred = await signInWithPopup(auth, provider);

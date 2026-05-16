@@ -1,0 +1,9 @@
+{
+  "appId": "com.astroconnect.admin",
+  "appName": "AstroConnect Admin",
+  "webDir": "out",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  }
+}

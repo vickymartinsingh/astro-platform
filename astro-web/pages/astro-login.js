@@ -16,9 +16,9 @@ export default function AstroLogin() {
     try {
       const u = await authService.loginUser(email.trim(), password);
       const p = await userService.getUser(u.uid);
-      if (!p || p.role !== 'astrologer') {
+      if (!p || (p.role !== 'astrologer' && p.isAstrologer !== true)) {
         await authService.logoutUser();
-        setErr('Access denied, this is the Astrologer portal.');
+        setErr('Access denied. This is the Astrologer portal.');
         return;
       }
       if (p.isBlocked) {
@@ -32,27 +32,54 @@ export default function AstroLogin() {
     } finally { setBusy(false); }
   }
 
+  async function forgot() {
+    if (!email.trim()) { setErr('Enter your email first.'); return; }
+    try {
+      await authService.sendPasswordReset(email.trim());
+      setErr('Password reset email sent. Check your inbox.');
+    } catch { setErr('Could not send reset email.'); }
+  }
+
   return (
-    <div className="mx-auto mt-16 max-w-sm px-4">
-      <h1 className="mb-1 text-2xl font-bold text-primary">
-        ✨ Astrologer Portal
-      </h1>
-      <p className="mb-6 text-sub-text">Sign in to go online.</p>
-      {(err || denied) && (
-        <div className="mb-3 rounded-card bg-danger/10 p-3 text-danger">
-          {err || 'Access denied, wrong portal.'}
+    <div className="flex min-h-screen items-center justify-center
+                    bg-gradient-to-br from-[#EDE9FE] to-[#FCE7F3] px-4">
+      <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white
+                      shadow-xl">
+        <div className="hero-grad p-6 text-white">
+          <div className="text-xl font-bold">AstroConnect</div>
+          <div className="mt-1 text-2xl font-bold">Astrologer Portal</div>
+          <p className="mt-1 text-sm opacity-90">
+            Sign in to go online and take consultations.
+          </p>
         </div>
-      )}
-      <form onSubmit={submit} className="card space-y-3">
-        <input className="input" type="email" placeholder="Email"
-          value={email} onChange={(e) => setEmail(e.target.value)} required />
-        <input className="input" type="password" placeholder="Password"
-          value={password} onChange={(e) => setPassword(e.target.value)}
-          required />
-        <button className="btn-primary w-full" disabled={busy}>
-          {busy ? 'Signing in…' : 'Login'}
-        </button>
-      </form>
+        <div className="p-6">
+          {(err || denied) && (
+            <div className="mb-3 rounded-xl bg-rose-50 p-3 text-sm
+                            text-rose-600">
+              {err || 'Access denied, wrong portal.'}
+            </div>
+          )}
+          <form onSubmit={submit} className="space-y-3">
+            <input className="input" type="email" placeholder="Email"
+              value={email} onChange={(e) => setEmail(e.target.value)}
+              required />
+            <input className="input" type="password" placeholder="Password"
+              value={password} onChange={(e) => setPassword(e.target.value)}
+              required />
+            <button className="btn-grad w-full justify-center py-3"
+              disabled={busy}>
+              {busy ? 'Signing in…' : 'Login'}
+            </button>
+            <button type="button" onClick={forgot}
+              className="w-full text-sm text-primary">
+              Forgot password?
+            </button>
+          </form>
+          <p className="mt-4 text-center text-xs text-sub-text">
+            Astrologer accounts are created/approved by the admin team.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

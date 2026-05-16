@@ -47,7 +47,11 @@ export function useRequireAstrologer() {
   useEffect(() => {
     if (loading) return;
     if (!user) { router.replace('/astro-login'); return; }
-    if (profile && profile.role !== 'astrologer') {
+    // One login can be both client and astrologer: allow when role is
+    // 'astrologer' OR the account has been extended (isAstrologer).
+    const allowed = profile &&
+      (profile.role === 'astrologer' || profile.isAstrologer === true);
+    if (profile && !allowed) {
       authService.logoutUser();
       router.replace('/astro-login?denied=1');
     }
