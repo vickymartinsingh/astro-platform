@@ -46,6 +46,17 @@ jobs:
       - name: Generate branded source icons
         run: node scripts/gen-icons.mjs
 
+      # The Firebase native plugins crash iOS on launch without an iOS
+      # Firebase config (GoogleService-Info.plist), and iOS push needs the
+      # paid Apple Developer Program + APNs anyway — neither is available
+      # on the free sideload path. Strip them for the iOS build ONLY
+      # (CI-ephemeral; the committed repo + Android keep them). The app
+      # still works fully: it loads the live site (email login, chat,
+      # browsing, calls). This prevents the launch crash.
+      - name: Strip Firebase native plugins for iOS (prevent crash)
+        run: |
+          node -e "const f='${{ matrix.app }}/package.json';const fs=require('fs');const j=JSON.parse(fs.readFileSync(f));for(const k of ['@capacitor-firebase/authentication','@capacitor/push-notifications']){if(j.dependencies)delete j.dependencies[k];}fs.writeFileSync(f,JSON.stringify(j,null,2)+'\n');console.log('stripped firebase native plugins from',f);"
+
       - name: Add iOS platform
         working-directory: ${{ matrix.app }}
         run: npx cap add ios
