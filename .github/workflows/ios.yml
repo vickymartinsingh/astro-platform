@@ -1,0 +1,90 @@
+name: Build iOS IPAs (unsigned)
+
+# Manual trigger only — macOS runner minutes are limited on the free tier,
+# so we don't run this on every push. Go to the repo's Actions tab,
+# pick this workflow, and click "Run workflow".
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: client-web
+            ipa: AstroConnect
+          - app: astro-web
+            ipa: AstroConnect-Astrologer
+          - app: admin-web
+            ipa: AstroConnect-Admin
+
+    name: ${{ matrix.ipa }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies (workspaces)
+        run: npm ci
+
+      - name: Build web (static export -> out/)
+        run: npm run build --workspace=${{ matrix.app }}
+
+      - name: Generate branded source icons
+        run: node scripts/gen-icons.mjs
+
+      - name: Add iOS platform
+        working-directory: ${{ matrix.app }}
+        run: npx cap add ios
+
+      - name: Generate iOS app icons + splash
+        working-directory: ${{ matrix.app }}
+        run: npx capacitor-assets generate --ios
+
+      - name: Sync web + native into iOS project
+        working-directory: ${{ matrix.app }}
+        run: npx cap sync ios
+
+      - name: Build unsigned archive
+        working-directory: ${{ matrix.app }}
+        run: |
+          xcodebuild \
+            -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -archivePath "$RUNNER_TEMP/App.xcarchive" \
+            archive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            DEVELOPMENT_TEAM=""
+
+      - name: Package unsigned .ipa
+        run: |
+          APP="$RUNNER_TEMP/App.xcarchive/Products/Applications/App.app"
+          if [ ! -d "$APP" ]; then echo "App.app not found"; exit 1; fi
+          mkdir -p "$RUNNER_TEMP/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/Payload/"
+          cd "$RUNNER_TEMP"
+          zip -qr "$GITHUB_WORKSPACE/${{ matrix.ipa }}.ipa" Payload
+          ls -lh "$GITHUB_WORKSPACE/${{ matrix.ipa }}.ipa"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.ipa }}-ipa
+          path: ${{ matrix.ipa }}.ipa
+          if-no-files-found: error
+          retention-days: 14
