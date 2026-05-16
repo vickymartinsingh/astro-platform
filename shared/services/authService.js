@@ -8,6 +8,8 @@ import {
   onAuthStateChanged,
   GoogleAuthProvider,
   signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
   signInWithCredential,
   EmailAuthProvider,
   reauthenticateWithCredential,
@@ -48,6 +50,9 @@ export async function sendPasswordReset(email) {
 }
 
 export function watchAuth(callback) {
+  // Complete any pending Google redirect before/while we start listening,
+  // so a redirect sign-in lands the user automatically.
+  try { getRedirectResult(auth).catch(() => {}); } catch (_) {}
   return onAuthStateChanged(auth, callback);
 }
 
@@ -75,8 +80,30 @@ export async function loginWithGoogle() {
   }
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
-  const cred = await signInWithPopup(auth, provider);
-  return cred.user;
+  try {
+    const cred = await signInWithPopup(auth, provider);
+    return cred.user;
+  } catch (e) {
+    // Popups are often blocked (in-app browsers, strict mobile browsers,
+    // some PWAs). Fall back to a full-page redirect — the result is
+    // finalised by resolveGoogleRedirect() on the next load.
+    const code = e && e.code;
+    if ([
+      'auth/popup-blocked', 'auth/popup-closed-by-user',
+      'auth/cancelled-popup-request', 'auth/web-storage-unsupported',
+      'auth/operation-not-supported-in-this-environment',
+    ].includes(code)) {
+      await signInWithRedirect(auth, provider);
+      return null; // browser navigates away; handled on return
+    }
+    throw e;
+  }
+}
+
+// Finalise a Google redirect sign-in (no-op for popup/native flows).
+// Safe to call on every app load.
+export async function resolveGoogleRedirect() {
+  try { await getRedirectResult(auth); } catch (_) { /* ignore */ }
 }
 
 // ---- Change password (email/password accounts) ----
