@@ -4,6 +4,8 @@
   "webDir": "out",
   "bundledWebRuntime": false,
   "server": {
-    "androidScheme": "https"
+    "androidScheme": "https",
+    "url": "https://admin.vickymartinsingh.com",
+    "cleartext": false
   }
 }

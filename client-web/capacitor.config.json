@@ -4,7 +4,9 @@
   "webDir": "out",
   "bundledWebRuntime": false,
   "server": {
-    "androidScheme": "https"
+    "androidScheme": "https",
+    "url": "https://astro.vickymartinsingh.com",
+    "cleartext": false
   },
   "plugins": {
     "FirebaseAuthentication": {

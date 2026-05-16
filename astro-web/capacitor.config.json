@@ -4,6 +4,8 @@
   "webDir": "out",
   "bundledWebRuntime": false,
   "server": {
-    "androidScheme": "https"
+    "androidScheme": "https",
+    "url": "https://astrologer.vickymartinsingh.com",
+    "cleartext": false
   }
 }
