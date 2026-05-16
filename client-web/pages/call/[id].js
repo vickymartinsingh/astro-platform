@@ -36,7 +36,7 @@ export default function CallScreen() {
     (async () => {
       try {
         const tok = await callService.fetchAgoraToken(sessionId);
-        const appId = tok.appId || process.env.NEXT_PUBLIC_AGORA_APP_ID;
+        const appId = tok.appId || callService.AGORA_APP_ID;
         await callService.joinAgoraChannel(
           sessionId, user.uid, appId, tok.token || null);
         callService.subscribeToRemote((rUser, mediaType) => {

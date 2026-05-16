@@ -3,6 +3,16 @@
 import { httpsCallable } from 'firebase/functions';
 import { functions } from '../firebase.js';
 
+// Agora App ID. Baked in so packaged APK / iOS builds (which have no
+// NEXT_PUBLIC_* env at runtime) can still connect. An env override wins
+// if provided at build time. NOTE: this is App-ID/testing-mode auth —
+// the Agora project must have NO App Certificate enabled (token = null),
+// otherwise a token server is required.
+export const AGORA_APP_ID =
+  ((typeof process !== 'undefined' && process.env
+    && process.env.NEXT_PUBLIC_AGORA_APP_ID) || '').trim()
+  || 'db48c9f93e334937819af474abb1b450';
+
 // Fetch a short-lived RTC token from the server (App Certificate stays
 // server-side). Returns { token, appId }, token is null if the Agora
 // project is in testing mode (a null token is valid there).
@@ -28,10 +38,13 @@ async function ensureSdk() {
 }
 
 // Channel name is always the sessionId (blueprint 4.9, unique per session).
-export async function joinAgoraChannel(channelName, uid, appId, token = null) {
+export async function joinAgoraChannel(
+  channelName, uid, appId, token = null,
+) {
   const rtc = await ensureSdk();
   client = rtc.createClient({ mode: 'rtc', codec: 'vp8' });
-  await client.join(appId, channelName, token || null, uid || null);
+  await client.join(
+    appId || AGORA_APP_ID, channelName, token || null, uid || null);
   return client;
 }
 

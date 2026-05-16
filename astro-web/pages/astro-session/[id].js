@@ -16,10 +16,20 @@ export default function ActiveSession() {
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
   const [elapsed, setElapsed] = useState(0);
+  const [muted, setMuted] = useState(false);
+  const [camOn, setCamOn] = useState(true);
   const scrollRef = useRef(null);
   const remoteRef = useRef(null);
+  const localRef = useRef(null);
   const joinedRef = useRef(false);
   const lastCount = useRef(0);
+
+  function toggleMute() {
+    const m = !muted; setMuted(m); callService.setMuted(m);
+  }
+  function toggleCam() {
+    const c = !camOn; setCamOn(c); callService.setCameraEnabled(c);
+  }
 
   useEffect(() => {
     if (!id) return;
@@ -51,14 +61,17 @@ export default function ActiveSession() {
         const tok = await callService.fetchAgoraToken(id);
         await callService.joinAgoraChannel(
           id, user.uid,
-          tok.appId || process.env.NEXT_PUBLIC_AGORA_APP_ID,
+          tok.appId || callService.AGORA_APP_ID,
           tok.token || null);
         callService.subscribeToRemote((u, mt) => {
           if (mt === 'video') u.videoTrack?.play(remoteRef.current);
           if (mt === 'audio') u.audioTrack?.play();
         });
-        await callService.publishLocalTracks(
+        const tracks = await callService.publishLocalTracks(
           { video: session.type === 'video' });
+        if (session.type === 'video' && tracks.video && localRef.current) {
+          tracks.video.play(localRef.current);
+        }
       } catch (e) { console.error(e); }
     })();
   }, [session?.status, session?.type, id, user]);
@@ -132,11 +145,33 @@ export default function ActiveSession() {
 
       <main className="flex flex-1 flex-col bg-bg-gray">
         {session.type !== 'chat' && (
-          <div ref={remoteRef}
-            className="flex flex-1 items-center justify-center bg-call-bg
-                       text-white">
-            {session.type === 'video'
-              ? 'Video call in progress' : 'Voice call in progress'}
+          <div className="relative flex flex-1 flex-col bg-call-bg
+                          text-white">
+            <div ref={remoteRef}
+              className="flex flex-1 items-center justify-center">
+              {session.type === 'video'
+                ? 'Connecting video…' : 'Voice call connected'}
+            </div>
+            {session.type === 'video' && (
+              <div ref={localRef}
+                className="absolute right-3 top-3 h-36 w-24 overflow-hidden
+                           rounded-card bg-black/60" />
+            )}
+            <div className="flex items-center justify-center gap-6 py-6">
+              <button onClick={toggleMute}
+                className="h-12 w-12 rounded-full bg-white/20 text-xl">
+                {muted ? '🔇' : '🎙️'}
+              </button>
+              <button onClick={endSession}
+                className="flex h-16 w-16 items-center justify-center
+                           rounded-full bg-danger text-2xl">✕</button>
+              {session.type === 'video' && (
+                <button onClick={toggleCam}
+                  className="h-12 w-12 rounded-full bg-white/20 text-xl">
+                  {camOn ? '📷' : '🚫'}
+                </button>
+              )}
+            </div>
           </div>
         )}
         {session.type === 'chat' && (
