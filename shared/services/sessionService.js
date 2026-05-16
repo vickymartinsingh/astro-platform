@@ -166,13 +166,29 @@ export async function createSessionRequest(data) {
     createdAt: serverTimestamp(),
   });
   // Lock-screen push to the astrologer: an incoming consultation request.
+  const clientName = await resolveName(data.userId) || 'A client';
   sendPushToUser({
     toUid: data.astroId,
     title: `Incoming ${data.type} request`,
-    body: 'A client is requesting a consultation. Tap to respond.',
-    data: { type: 'session', sessionId: ref.id, route: '/astro-dashboard' },
+    body: `${clientName} is requesting a ${data.type} consultation. `
+      + 'Tap to respond.',
+    data: { type: 'session', sessionId: ref.id, route: '/astro-dashboard',
+      from: clientName },
   });
   return ref.id;
+}
+
+// Resolve a display name (astrologer profile first, then user record).
+async function resolveName(uid) {
+  try {
+    const a = await getDoc(doc(db, 'astrologers', uid));
+    if (a.exists() && a.data().name) return a.data().name;
+  } catch (_) {}
+  try {
+    const u = await getDoc(doc(db, 'users', uid));
+    if (u.exists() && u.data().name) return u.data().name;
+  } catch (_) {}
+  return '';
 }
 
 export async function updateSessionStatus(id, status, extra = {}) {
@@ -182,11 +198,14 @@ export async function updateSessionStatus(id, status, extra = {}) {
     try {
       const s = (await getDoc(doc(db, 'sessions', id))).data();
       if (s && s.userId) {
+        const astroName = await resolveName(s.astroId) || 'Your astrologer';
         sendPushToUser({
           toUid: s.userId,
-          title: 'Astrologer accepted',
-          body: `Your ${s.type || ''} consultation is starting.`.trim(),
-          data: { type: 'session', sessionId: id, route: '/dashboard' },
+          title: `${astroName} accepted your ${s.type || ''}`.trim(),
+          body: `${astroName} is ready — your ${s.type || ''} `
+            + 'consultation is starting.',
+          data: { type: 'session', sessionId: id, route: '/dashboard',
+            from: astroName },
         });
       }
     } catch (_) { /* best-effort */ }

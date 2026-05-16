@@ -33,6 +33,15 @@ export default function AdminUsers() {
     await adminService.blockUser(u.uid, !u.isBlocked);
     load();
   }
+  async function del(u) {
+    if (!window.confirm(
+      `Permanently delete user "${u.name || u.email || u.uid}"?\n\n`
+      + 'This removes their account and data. This cannot be undone.')) {
+      return;
+    }
+    await adminService.deleteUser(u.uid);
+    load();
+  }
   async function adjust(u) {
     const amt = Number(prompt(`Adjust wallet for ${u.name} (₹, +/-):`));
     if (!amt) return;
@@ -101,6 +110,8 @@ export default function AdminUsers() {
                   </button>
                   <button onClick={() => adjust(u)}
                     className="text-primary">Wallet±</button>
+                  <button onClick={() => del(u)}
+                    className="font-semibold text-danger">Delete</button>
                 </td>
               </tr>
             ))}

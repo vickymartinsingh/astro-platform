@@ -58,6 +58,15 @@ export function blockUser(uid, blocked = true) {
   });
 }
 
+// Permanently delete a user (and their astrologer profile if any).
+export function deleteUser(uid) {
+  return tryCloud('adminDeleteUser', { uid }, async () => {
+    await deleteDoc(doc(db, 'users', uid));
+    try { await deleteDoc(doc(db, 'astrologers', uid)); } catch (_) {}
+    return { success: true };
+  });
+}
+
 export function approveAstrologer(astroId, approved = true) {
   return tryCloud('adminApproveAstrologer', { astroId, approved }, async () => {
     await updateDoc(doc(db, 'astrologers', astroId), { approved: !!approved });

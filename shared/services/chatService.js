@@ -40,18 +40,33 @@ export async function sendMessage(chatId, senderId, text) {
   });
   // Lock-screen push to the OTHER participant. chatId is the two UIDs
   // joined with '_' (Firebase UIDs contain no underscore). System
-  // separators ('system') never trigger a push.
+  // separators ('system') never trigger a push. The title carries the
+  // SENDER's name (astrologer name when the astrologer messages a client).
   if (senderId && senderId !== 'system') {
     const toUid = String(chatId).split('_').find((p) => p && p !== senderId);
     if (toUid) {
+      const senderName = await resolveName(senderId);
       sendPushToUser({
         toUid,
-        title: 'New message',
+        title: senderName ? `${senderName}` : 'New message',
         body: clean.slice(0, 140),
-        data: { type: 'chat', chatId },
+        data: { type: 'chat', chatId, from: senderName || '' },
       });
     }
   }
+}
+
+// Resolve a person's display name (astrologer profile first, then user).
+async function resolveName(uid) {
+  try {
+    const a = await getDoc(doc(db, 'astrologers', uid));
+    if (a.exists() && a.data().name) return a.data().name;
+  } catch (_) {}
+  try {
+    const u = await getDoc(doc(db, 'users', uid));
+    if (u.exists() && u.data().name) return u.data().name;
+  } catch (_) {}
+  return '';
 }
 
 export function listenMessages(chatId, callback) {

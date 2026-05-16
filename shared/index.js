@@ -1,6 +1,7 @@
 // @astro/shared, single entry point reused by client-web, astro-web, admin-web.
 export { default as firebaseApp, auth, db, storage, functions, rtdb } from './firebase.js';
 export * from './theme.js';
+export { useAndroidBack } from './androidBack.js';
 export { getHoroscope, horoscopeText } from './horoscope.js';
 export { TAROT, drawCards, tarotReading } from './tarot.js';
 export { gunaMilan, signFromDOB } from './matching.js';
