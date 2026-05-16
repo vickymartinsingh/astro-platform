@@ -21,7 +21,11 @@ async function getToken() {
   }
   const id = process.env.PROKERALA_CLIENT_ID;
   const secret = process.env.PROKERALA_CLIENT_SECRET;
-  if (!id || !secret) throw new Error('Prokerala env vars not set');
+  if (!id || !secret) {
+    throw new Error('Prokerala env vars NOT set on the relay '
+      + '(add PROKERALA_CLIENT_ID + PROKERALA_CLIENT_SECRET, then '
+      + 'REDEPLOY the relay).');
+  }
   const r = await fetch('https://api.prokerala.com/token', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -30,8 +34,13 @@ async function getToken() {
       client_id: id, client_secret: secret,
     }),
   });
-  const j = await r.json();
-  if (!j.access_token) throw new Error('Prokerala token failed');
+  const j = await r.json().catch(() => ({}));
+  if (!j.access_token) {
+    // Surface Prokerala's real reason (e.g. invalid_client = wrong creds)
+    throw new Error('Prokerala token failed: HTTP ' + r.status + ' '
+      + JSON.stringify(j).slice(0, 200)
+      + ` | id_len=${id.length} secret_len=${secret.length}`);
+  }
   cachedToken = {
     token: j.access_token,
     exp: Date.now() + (Number(j.expires_in || 3000) * 1000),
