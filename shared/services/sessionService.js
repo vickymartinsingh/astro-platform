@@ -161,12 +161,31 @@ export async function createSessionRequest(data) {
   // session (freeEligible) and immediately mark the user as having used
   // their free session, so even a 1-minute first chat consumes it and the
   // FREE badge never shows for them again.
+  // Admin controls (settings/config): free_enabled master switch,
+  // free_scope ('new' = only first-time users | 'all' = every user gets
+  // one free session), and free_grant_uids = a curated list (uid / phone
+  // / email) that ALWAYS gets a free session until the admin removes them
+  // (for old or specific users). Defaults preserve current behaviour.
   let freeEligible = false;
   try {
-    const uRef = doc(db, 'users', data.userId);
-    const uSnap = await getDoc(uRef);
-    freeEligible = !(uSnap.exists() && uSnap.data().freeUsed);
-    if (freeEligible) await updateDoc(uRef, { freeUsed: true });
+    const cfg = await getConfig();
+    if (cfg.free_enabled !== false) {
+      const uRef = doc(db, 'users', data.userId);
+      const uSnap = await getDoc(uRef);
+      const u = uSnap.exists() ? uSnap.data() : {};
+      const grant = (Array.isArray(cfg.free_grant_uids)
+        ? cfg.free_grant_uids : []).map((x) => String(x).trim()
+        .toLowerCase()).filter(Boolean);
+      const ids = [data.userId, u.phone, u.email]
+        .filter(Boolean).map((x) => String(x).trim().toLowerCase());
+      if (grant.some((g) => ids.includes(g))) {
+        freeEligible = true;            // specific user: always free
+      } else {
+        // 'new' (default) and 'all' are both one-time per user here.
+        freeEligible = !u.freeUsed;
+        if (freeEligible) await updateDoc(uRef, { freeUsed: true });
+      }
+    }
   } catch (_) { freeEligible = false; }
   await setDoc(ref, {
     userId: data.userId,

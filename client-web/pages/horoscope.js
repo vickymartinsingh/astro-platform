@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { kundliService, ZODIAC, getHoroscope } from '@astro/shared';
+import { kundliService, getHoroscope } from '@astro/shared';
 import Layout from '../components/Layout';
 import { SkeletonList } from '../components/Skeleton';
+import ZodiacPicker from '../components/ZodiacPicker';
 import { useOptionalClient } from '../lib/useAuth';
+import { useSettings } from '../lib/useSettings';
 
 // Public. Always shows Today + Tomorrow via the built-in generator
 // (no DB / Cloud Function needed). Logged-in users with a default kundli
 // get their sign auto-selected.
 export default function Horoscope() {
   const { user, loading } = useOptionalClient();
+  const { features } = useSettings();
   const [sign, setSign] = useState('Aries');
   const [when, setWhen] = useState('today');
 
@@ -36,10 +39,10 @@ export default function Horoscope() {
 
       <div className="surface mb-4 p-4">
         <label className="text-sm text-sub-text">Choose your sign</label>
-        <select className="input mt-1" value={sign}
-          onChange={(e) => setSign(e.target.value)}>
-          {ZODIAC.map((z) => <option key={z} value={z}>{z}</option>)}
-        </select>
+        <div className="mt-2">
+          <ZodiacPicker value={sign} onChange={setSign}
+            dropdown={features.zodiac_dropdown === true} />
+        </div>
         {!user && (
           <p className="mt-2 text-xs text-sub-text">
             <Link href="/signup" className="font-semibold text-primary">

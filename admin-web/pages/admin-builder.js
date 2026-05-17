@@ -1,3 +1,4 @@
+/* eslint-disable react/no-array-index-key */
 import { useEffect, useRef, useState } from 'react';
 import { db, adminService, menuService } from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
@@ -10,6 +11,8 @@ import { flash } from '../lib/flash';
 // given settings/features key.
 function MenuEditor({ title, defaults, value, onChange }) {
   const dragHref = useRef(null);
+  const [nl, setNl] = useState('');
+  const [nh, setNh] = useState('');
   const merged = menuService.mergeMenu(defaults, value);
   function update(href, patch) {
     onChange(merged.map((m) => (m.href === href
@@ -22,6 +25,20 @@ function MenuEditor({ title, defaults, value, onChange }) {
     const j = a.findIndex((x) => x.href === to);
     a.splice(j, 0, a.splice(i, 1)[0]);
     onChange(a);
+  }
+  function remove(href) {
+    onChange(merged.filter((m) => m.href !== href));
+  }
+  function add() {
+    let href = nh.trim();
+    const label = nl.trim();
+    if (!label) return;
+    if (!href) href = '/' + label.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    if (!href.startsWith('/') && !/^https?:\/\//.test(href)) href = '/' + href;
+    if (merged.some((m) => m.href === href)) return;
+    onChange([...merged, { href, label, hidden: false, custom: true }]);
+    setNl(''); setNh('');
   }
   return (
     <div className="card">
@@ -39,14 +56,35 @@ function MenuEditor({ title, defaults, value, onChange }) {
             py-1 text-sm" value={m.label}
             onChange={(e) => update(m.href, { label: e.target.value })} />
           <span className="text-xs text-sub-text">{m.href}</span>
+          {m.custom && (
+            <span className="rounded-full bg-amber-100 px-2 py-0.5
+              text-[10px] font-semibold text-amber-700">CUSTOM</span>
+          )}
           <label className="ml-auto flex items-center gap-1 text-sm">
             <input type="checkbox" checked={!m.hidden}
               onChange={(e) =>
                 update(m.href, { hidden: !e.target.checked })} />
             Visible
           </label>
+          {m.custom && (
+            <button onClick={() => remove(m.href)} title="Remove"
+              className="rounded-full border border-danger px-2 py-0.5
+                text-xs text-danger">✕</button>
+          )}
         </div>
       ))}
+      <div className="mt-2 flex flex-wrap items-center gap-2 border-t
+        border-gray-100 pt-2">
+        <input className="w-40 rounded border border-gray-200 px-2 py-1
+          text-sm" placeholder="New item label" value={nl}
+          onChange={(e) => setNl(e.target.value)} />
+        <input className="w-40 rounded border border-gray-200 px-2 py-1
+          text-sm" placeholder="/path or https://..." value={nh}
+          onChange={(e) => setNh(e.target.value)} />
+        <button onClick={add}
+          className="rounded-card bg-primary px-3 py-1 text-sm
+            font-semibold text-white">+ Add item</button>
+      </div>
     </div>
   );
 }
@@ -183,6 +221,26 @@ export default function AdminBuilder() {
             className="btn-primary w-full">
             Save all menus (client + astrologer)
           </button>
+
+          {/* DISPLAY OPTIONS */}
+          <div className="card space-y-2">
+            <div className="font-semibold">Display options</div>
+            <label className="flex items-center justify-between text-sm">
+              <span>
+                Zodiac selector
+                <span className="block text-xs text-sub-text">
+                  Off = swipeable sign carousel (default). On = classic
+                  dropdown.
+                </span>
+              </span>
+              <input type="checkbox"
+                checked={feat.zodiac_dropdown === true}
+                onChange={(e) => setFeat({
+                  ...feat, zodiac_dropdown: e.target.checked })} />
+            </label>
+            <button onClick={saveMenu}
+              className="btn-primary w-full">Save display options</button>
+          </div>
 
           {/* BANNER */}
           <div className="card space-y-2">

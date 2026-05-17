@@ -20,6 +20,7 @@ export const DEFAULT_CLIENT_PROFILE = [
   { href: '/chat-history', label: 'Consultation history' },
   { href: '/call-history', label: 'Call history' },
   { href: '/transactions', label: 'Order history' },
+  { href: '/review', label: 'Write a Review' },
   { href: '/notifications', label: 'Notifications', notif: true },
   { href: '/support', label: 'Help & Support' },
 ];
@@ -39,14 +40,22 @@ export const DEFAULT_ASTRO_MENU = [
 // Merge a saved override list with the defaults: keep saved order +
 // label + hidden, then append any new default routes not yet saved
 // (so new features always appear, never lost). Drops hidden items.
+// Saved order + label + hidden wins. Items NOT in defaults are kept as
+// admin-added CUSTOM links (so you can add brand-new menu entries).
+// Any default not yet saved is appended (new features never lost).
 export function mergeMenu(defaults, saved) {
   const byHref = Object.fromEntries(defaults.map((d) => [d.href, d]));
   const out = [];
   (Array.isArray(saved) ? saved : []).forEach((s) => {
+    if (!s || !s.href) return;
     const d = byHref[s.href];
-    if (!d) return;
-    out.push({ ...d, label: (s.label || '').trim() || d.label,
-      hidden: !!s.hidden });
+    out.push({
+      href: s.href,
+      label: (s.label || '').trim() || (d && d.label) || s.href,
+      hidden: !!s.hidden,
+      notif: d ? d.notif : undefined,
+      custom: !d,
+    });
   });
   defaults.forEach((d) => {
     if (!out.find((o) => o.href === d.href)) out.push({ ...d });

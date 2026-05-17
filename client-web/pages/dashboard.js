@@ -2,12 +2,13 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import {
-  astrologerService, ZODIAC, getHoroscope, db,
+  astrologerService, getHoroscope, reviewService, db,
 } from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { SkeletonList } from '../components/Skeleton';
 import AstrologerCard from '../components/AstrologerCard';
+import ZodiacPicker from '../components/ZodiacPicker';
 import { Icon } from '../components/Icons';
 import { useOptionalClient } from '../lib/useAuth';
 import { useAstroActions } from '../lib/useAstroActions';
@@ -42,7 +43,7 @@ export default function Dashboard() {
   const { user, profile, loading } = useOptionalClient();
   const { go } = useAstroActions();
   const { openLogin } = useAuthModal();
-  const { freeChatMin } = useSettings();
+  const { freeChatMin, features } = useSettings();
   const freeMin = profile?.freeUsed ? 0 : freeChatMin;
   const router = useRouter();
   const [list, setList] = useState(null);
@@ -77,6 +78,12 @@ export default function Dashboard() {
 
   useEffect(() => {
     astrologerService.getAstrologers().then(setList).catch(() => setList([]));
+  }, []);
+
+  const [pubReviews, setPubReviews] = useState(null);
+  useEffect(() => {
+    reviewService.getPublicPlatformReviews()
+      .then(setPubReviews).catch(() => setPubReviews([]));
   }, []);
 
   if (loading) return <Layout><SkeletonList /></Layout>;
@@ -141,12 +148,12 @@ export default function Dashboard() {
       {sec.starsToday !== false && (
       <><h2 className="mb-3 mt-8 text-lg font-bold">Your stars today</h2>
       <div className="surface p-5">
+        <div className="mb-3">
+          <ZodiacPicker value={sign} onChange={setSign}
+            dropdown={features.zodiac_dropdown === true} />
+        </div>
         <div className="flex flex-wrap items-center gap-3">
           <span className="badge bg-bg-light text-primary">Daily reading</span>
-          <select className="input w-44" value={sign}
-            onChange={(e) => setSign(e.target.value)}>
-            {ZODIAC.map((z) => <option key={z} value={z}>{z}</option>)}
-          </select>
           <div className="flex gap-1">
             {['today', 'tomorrow'].map((w) => (
               <button key={w} onClick={() => setWhen(w)}
@@ -222,9 +229,17 @@ export default function Dashboard() {
           4.8 / 5 average
         </span>
       </div>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {CUSTOMER_REVIEWS.map(([name, city, stars, text]) => (
-          <div key={name} className="surface p-4">
+      <div className="flex gap-4 overflow-x-auto pb-2"
+        style={{ scrollSnapType: 'x mandatory',
+          WebkitOverflowScrolling: 'touch' }}>
+        {((pubReviews && pubReviews.length)
+          ? pubReviews.map((r) => [r.userName, r.city, r.rating, r.text])
+          : CUSTOMER_REVIEWS
+        ).map(([name, city, stars, text]) => (
+          <div key={name + '|' + String(text).slice(0, 12)}
+            style={{ scrollSnapAlign: 'start' }}
+            className="surface w-[85%] shrink-0 p-4 sm:w-[46%]
+              lg:w-[31%]">
             <div className="flex items-center justify-between">
               <div className="font-semibold">{name}</div>
               <div className="text-sm text-gold">
@@ -238,7 +253,10 @@ export default function Dashboard() {
             <p className="mt-2 text-sm text-sub-text">{text}</p>
           </div>
         ))}
-      </div></>
+      </div>
+      <p className="mt-1 text-xs text-sub-text">
+        Swipe to see more reviews.
+      </p></>
       )}
     </Layout>
   );
