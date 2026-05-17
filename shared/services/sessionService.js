@@ -7,6 +7,7 @@ import {
 import { httpsCallable } from 'firebase/functions';
 import { db, functions } from '../firebase.js';
 import { sendPushToUser } from './pushService.js';
+import { notifyWallet } from './walletNotify.js';
 
 function round2(n) {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -87,6 +88,10 @@ export async function endAndSettleClient(sessionId) {
       astrologerEarning, clientSettled: true,
     });
   });
+  if (cost > 0) {
+    await notifyWallet(s.userId, -cost,
+      `${s.type || 'consultation'} consultation`);
+  }
 }
 
 // Phase 2: the astrologer collects their post-commission earning into
@@ -123,6 +128,7 @@ export async function collectAstrologerEarnings(astroUid) {
         t.update(sRef, { astroSettled: true });
       });
       collected += earn;
+      await notifyWallet(astroUid, earn, 'consultation earning');
     } catch (_) {}
   }
   // Session(s) finished, so the astrologer is available again.

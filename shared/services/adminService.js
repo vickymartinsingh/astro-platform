@@ -14,6 +14,7 @@ import {
 import { httpsCallable } from 'firebase/functions';
 import { db, functions, auth } from '../firebase.js';
 import { sendPushToUser } from './pushService.js';
+import { notifyWallet } from './walletNotify.js';
 
 // Relay endpoint for admin Auth operations (derives from push endpoint).
 function adminRelay() {
@@ -131,8 +132,47 @@ export function adjustWallet(uid, amount, reason) {
           reason: reason || 'admin_adjust', referenceId: 'admin_adjust',
           createdAt: serverTimestamp() });
       });
+      await notifyWallet(uid, amt, reason || 'admin adjustment');
       return { success: true };
     });
+}
+
+// Gift cards run through the relay (server-side admin SDK) so the
+// wallet credit on redeem is atomic and abuse-safe.
+function giftRelay() {
+  const env = typeof process !== 'undefined' && process.env;
+  const push = (env && env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
+  return push ? push.replace(/\/sendPush\/?$/, '/giftCard') : '';
+}
+async function giftCall(payload) {
+  const url = giftRelay();
+  if (!url) {
+    throw new Error('Gift card service not configured. Set '
+      + 'NEXT_PUBLIC_PUSH_ENDPOINT and deploy the relay.');
+  }
+  const token = auth && auth.currentUser
+    ? await auth.currentUser.getIdToken() : null;
+  if (!token) throw new Error('Not signed in.');
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload || {}),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.error) throw new Error(j.error || 'Request failed');
+  return j;
+}
+
+// Admin: generate a shareable gift card (8 uppercase alphanumeric).
+export function createGiftCard(amount) {
+  return giftCall({ action: 'create', amount: Math.round(Number(amount)) });
+}
+export async function listGiftCards() {
+  const j = await giftCall({ action: 'list' });
+  return j.cards || [];
 }
 
 export function forceEndSession(sessionId) {

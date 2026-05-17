@@ -130,6 +130,63 @@ async function resolveName(uid) {
   return '';
 }
 
+// Voice note: record on the device, upload, send an audio message.
+export async function sendAudioMessage(chatId, senderId, blob) {
+  if (!chatId || !senderId || !blob) return false;
+  try {
+    const path = `media/chat/${chatId}/${Date.now()}_voice.webm`;
+    const r = storageRef(storage, path);
+    const withTimeout = (p, ms) => Promise.race([
+      p, new Promise((_, rej) => setTimeout(
+        () => rej(new Error('timeout')), ms)),
+    ]);
+    await withTimeout(uploadBytes(r, blob,
+      { contentType: blob.type || 'audio/webm' }), 30000);
+    const url = await withTimeout(getDownloadURL(r), 15000);
+    await addDoc(collection(db, 'chats', chatId, 'messages'), {
+      senderId, text: '', audioUrl: url, createdAt: serverTimestamp(),
+    });
+    await updateDoc(doc(db, 'chats', chatId), {
+      lastMessage: 'Voice message', updatedAt: serverTimestamp(),
+    });
+    if (senderId !== 'system') {
+      const toUid = String(chatId).split('_').find(
+        (p) => p && p !== senderId);
+      if (toUid) {
+        const senderName = await resolveName(senderId);
+        let route = `/chat/${senderId}`;
+        try {
+          const aSnap = await getDoc(doc(db, 'astrologers', toUid));
+          if (aSnap.exists()) route = `/astro-chat/${senderId}`;
+        } catch (_) {}
+        sendPushToUser({
+          toUid,
+          title: senderName || 'New message',
+          body: 'Voice message',
+          data: { type: 'chat', chatId, from: senderName || '', route },
+        });
+      }
+    }
+    return true;
+  } catch (_) { return false; }
+}
+
+// Typing indicator: write a per-user timestamp on the chat doc; the
+// other side shows "typing..." while it is fresh (< 6s old).
+export async function setTyping(chatId, uid, isTyping) {
+  if (!chatId || !uid) return;
+  try {
+    await setDoc(doc(db, 'chats', chatId), {
+      typing: { [uid]: isTyping ? Date.now() : 0 },
+    }, { merge: true });
+  } catch (_) { /* non-critical */ }
+}
+
+export function listenChat(chatId, callback) {
+  return onSnapshot(doc(db, 'chats', chatId), (s) =>
+    callback(s.exists() ? { id: s.id, ...s.data() } : null));
+}
+
 export function listenMessages(chatId, callback) {
   const q = query(
     collection(db, 'chats', chatId, 'messages'),

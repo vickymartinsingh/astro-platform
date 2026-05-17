@@ -15,6 +15,8 @@ export default function Wallet() {
   const [wallet, setWallet] = useState(0);
   const [amount, setAmount] = useState(100);
   const [coupon, setCoupon] = useState('');
+  const [gift, setGift] = useState('');
+  const [giftBusy, setGiftBusy] = useState(false);
   const [tab, setTab] = useState('add');
   const [txns, setTxns] = useState(null);
   const [msg, setMsg] = useState(null);
@@ -84,6 +86,23 @@ export default function Wallet() {
     }
   }
 
+  async function redeemGift() {
+    setMsg(null);
+    const code = gift.trim().toUpperCase();
+    if (code.length !== 8) {
+      setMsg({ ok: false, t: 'Enter the 8-character gift card code.' });
+      return;
+    }
+    setGiftBusy(true);
+    try {
+      const r = await walletService.redeemGiftCard(code);
+      setGift('');
+      setMsg({ ok: true, t: `Gift card redeemed, Rs ${r.amount} added.` });
+    } catch (e) {
+      setMsg({ ok: false, t: e?.message || 'Could not redeem this code.' });
+    } finally { setGiftBusy(false); }
+  }
+
   if (loading) return <Layout><SkeletonList /></Layout>;
 
   return (
@@ -135,6 +154,22 @@ export default function Wallet() {
           <input className="input" value={coupon}
             onChange={(e) => setCoupon(e.target.value.toUpperCase())}
             placeholder="Have a coupon? Enter code" />
+          <div className="rounded-card border border-gray-200 p-3">
+            <div className="mb-2 text-sm font-semibold">
+              Redeem a gift card
+            </div>
+            <div className="flex gap-2">
+              <input className="input flex-1 tracking-widest"
+                maxLength={8} value={gift}
+                onChange={(e) => setGift(
+                  e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                placeholder="8-CHAR CODE" />
+              <button onClick={redeemGift} disabled={giftBusy}
+                className="btn-primary !min-h-0 px-4">
+                {giftBusy ? '...' : 'Redeem'}
+              </button>
+            </div>
+          </div>
           {msg && (
             <div className={`rounded-card p-3 ${msg.ok
               ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}>

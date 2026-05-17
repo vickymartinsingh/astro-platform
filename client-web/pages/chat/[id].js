@@ -37,10 +37,13 @@ export default function ChatScreen() {
   const [atBottom, setAtBottom] = useState(true);
   const [busyImg, setBusyImg] = useState(false);
   const [liveSecs, setLiveSecs] = useState(0);
+  const [otherTyping, setOtherTyping] = useState(false);
   const scrollRef = useRef(null);
   const lastCount = useRef(0);
   const fileRef = useRef(null);
   const camRef = useRef(null);
+  const typingTsRef = useRef(0);
+  const typingOffRef = useRef(null);
 
   function goBack() {
     if (isView) { router.back(); return; }
@@ -70,6 +73,35 @@ export default function ChatScreen() {
     if (!chatId) return;
     return chatService.listenMessages(chatId, setMessages);
   }, [chatId]);
+
+  // "typing..." indicator (other participant is the astrologer = astroId).
+  useEffect(() => {
+    if (!chatId || !astroId) return undefined;
+    let map = {};
+    const unsub = chatService.listenChat(chatId, (c) => {
+      map = (c && c.typing) || {};
+    });
+    const iv = setInterval(() => {
+      const ts = Number(map[astroId] || 0);
+      setOtherTyping(ts > 0 && Date.now() - ts < 6000);
+    }, 800);
+    return () => { unsub && unsub(); clearInterval(iv); };
+  }, [chatId, astroId]);
+
+  function onType(v) {
+    setText(v);
+    if (!chatId || !user?.uid) return;
+    const now = Date.now();
+    if (now - typingTsRef.current > 2500) {
+      typingTsRef.current = now;
+      chatService.setTyping(chatId, user.uid, true);
+    }
+    clearTimeout(typingOffRef.current);
+    typingOffRef.current = setTimeout(() => {
+      typingTsRef.current = 0;
+      chatService.setTyping(chatId, user.uid, false);
+    }, 3000);
+  }
 
   function jumpToBottom(smooth = true) {
     scrollRef.current?.scrollTo({
@@ -219,7 +251,9 @@ export default function ChatScreen() {
             {astro.approved && <VerifiedBadge size={15} />}
           </div>
           <div className="text-xs text-sub-text">
-            {isView ? 'Viewing past messages'
+            {otherTyping ? (
+              <span className="font-semibold text-primary">typing...</span>
+            ) : isView ? 'Viewing past messages'
               : waiting ? 'Connecting...'
               : active && ratePerMin > 0 ? `${clock} left`
               : active ? 'online'
@@ -332,6 +366,9 @@ export default function ChatScreen() {
                 {m.imageUrl ? (
                   <img src={m.imageUrl} alt="shared"
                     className="max-h-72 rounded-lg object-cover" />
+                ) : m.audioUrl ? (
+                  <audio controls src={m.audioUrl}
+                    className="h-10 w-56 max-w-full" />
                 ) : (
                   <span className="whitespace-pre-line break-words
                                    text-dark-text">{m.text}</span>
@@ -398,7 +435,7 @@ export default function ChatScreen() {
             placeholder={active ? 'Message...'
               : 'Waiting for the astrologer to accept...'}
             value={text} disabled={!active}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => onType(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && send()} />
           <button onClick={send} disabled={!active || !text.trim()}
             aria-label="Send"

@@ -5,7 +5,7 @@ import {
   doc, getDoc, onSnapshot, collection, query, where, getDocs,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { db, functions } from '../firebase.js';
+import { db, functions, auth } from '../firebase.js';
 
 export async function getWallet(uid) {
   const snap = await getDoc(doc(db, 'users', uid));
@@ -42,4 +42,30 @@ export async function verifyRecharge({ orderId, paymentId, signature, amount }) 
   const fn = httpsCallable(functions, 'verifyPayment');
   const res = await fn({ orderId, paymentId, signature, amount });
   return res.data; // { success: true }
+}
+
+// Redeem a gift card code into the wallet (server-side via the relay,
+// so the credit is atomic and a code can never be used twice).
+export async function redeemGiftCard(code) {
+  const env = typeof process !== 'undefined' && process.env;
+  const push = (env && env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
+  const url = push ? push.replace(/\/sendPush\/?$/, '/giftCard') : '';
+  if (!url) throw new Error('Gift card service not configured.');
+  const token = auth && auth.currentUser
+    ? await auth.currentUser.getIdToken() : null;
+  if (!token) throw new Error('Please sign in first.');
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      action: 'redeem',
+      code: String(code || '').trim().toUpperCase(),
+    }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.error) throw new Error(j.error || 'Redeem failed');
+  return j; // { success:true, amount }
 }
