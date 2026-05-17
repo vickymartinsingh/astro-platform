@@ -66,8 +66,9 @@ export async function addLiveComment(astroUid, user, text) {
   const clean = String(text || '').trim();
   if (!clean) return;
   await addDoc(collection(db, 'lives', astroUid, 'comments'), {
-    name: user?.name || 'Guest',
+    name: user?.team ? 'Complace Team' : (user?.name || 'Guest'),
     uid: user?.uid || null,
+    team: !!user?.team,        // shown with a verified badge
     text: clean.slice(0, 240),
     createdAt: serverTimestamp(),
   });

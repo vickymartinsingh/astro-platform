@@ -6,6 +6,21 @@ import {
 import Layout from '../components/Layout';
 import { useRequireAstrologer } from '../lib/useAuth';
 
+function Tick() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24"
+      style={{ display: 'inline-block', verticalAlign: 'middle',
+        marginLeft: 3 }}>
+      <path fill="#1D9BF0" d="M12 1.5l2.2 2.06 3-.36 1.2 2.78 2.78
+        1.2-.36 3L23 12l-2.06 2.2.36 3-2.78 1.2-1.2 2.78-3-.36L12
+        22.5l-2.2-2.06-3 .36-1.2-2.78-2.78-1.2.36-3L1 12l2.06-2.2-.36-3
+        2.78-1.2 1.2-2.78 3 .36L12 1.5z" />
+      <path fill="#fff" d="M10.6 14.4l-2.3-2.3-1.3 1.3 3.6 3.6
+        6.4-6.4-1.3-1.3z" />
+    </svg>
+  );
+}
+
 // Astrologer goes LIVE (Instagram/YouTube style). Publishes video+audio
 // to the Agora channel live_<uid>; clients watch + comment + like.
 export default function AstroLive() {
@@ -20,6 +35,12 @@ export default function AstroLive() {
   const [comments, setComments] = useState([]);
   const localRef = useRef(null);
   const joinedRef = useRef(false);
+  const cRef = useRef(null);
+
+  useEffect(() => {
+    const el = cRef.current;
+    if (el) el.scrollTop = el.scrollHeight; // auto-scroll to newest
+  }, [comments]);
 
   useEffect(() => {
     if (!user) return undefined;
@@ -88,7 +109,7 @@ export default function AstroLive() {
     <Layout>
       <h1 className="mb-3 text-xl font-bold">Go Live</h1>
       <div className="relative overflow-hidden rounded-2xl bg-black"
-        style={{ aspectRatio: '9 / 14', maxHeight: '70vh' }}>
+        style={{ height: '78vh' }}>
         <div ref={localRef} className="absolute inset-0" />
         {!live && (
           <div className="absolute inset-0 flex flex-col items-center
@@ -115,6 +136,32 @@ export default function AstroLive() {
               <span className="rounded-full bg-black/50 px-2 py-0.5
                 text-xs text-white">{(info?.likes || 0)} likes</span>
             </div>
+            {/* Comments overlay: bottom HALF of the video, auto-scroll.
+                Astrologer sees the name AND a short client ID. */}
+            <div ref={cRef}
+              className="absolute inset-x-0 bottom-16 max-h-[48%]
+                overflow-y-auto px-3 pb-2"
+              style={{
+                maskImage:
+                  'linear-gradient(to top, #000 78%, transparent)',
+                WebkitMaskImage:
+                  'linear-gradient(to top, #000 78%, transparent)',
+              }}>
+              {comments.map((c) => (
+                <div key={c.id} className="mb-1 text-sm text-white">
+                  <span className="font-semibold">
+                    {c.name}
+                    {c.team && <Tick />}
+                    {!c.team && c.uid && (
+                      <span className="opacity-60">
+                        {' '}({String(c.uid).slice(0, 6)})
+                      </span>
+                    )}:
+                  </span>{' '}
+                  <span className="opacity-90">{c.text}</span>
+                </div>
+              ))}
+            </div>
             <div className="absolute bottom-3 left-0 right-0 flex
               justify-center gap-4">
               <button onClick={toggleMute}
@@ -132,22 +179,6 @@ export default function AstroLive() {
           </>
         )}
       </div>
-
-      {live && (
-        <div className="mt-4">
-          <div className="mb-2 font-semibold">Live comments</div>
-          <div className="max-h-60 space-y-1 overflow-y-auto">
-            {comments.length === 0 ? (
-              <div className="text-sm text-sub-text">No comments yet.</div>
-            ) : comments.map((c) => (
-              <div key={c.id} className="text-sm">
-                <span className="font-semibold">{c.name}: </span>
-                <span className="text-sub-text">{c.text}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </Layout>
   );
 }

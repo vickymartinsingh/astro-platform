@@ -13,6 +13,12 @@ export default function LiveView() {
   const [text, setText] = useState('');
   const remoteRef = useRef(null);
   const joinedRef = useRef(false);
+  const cRef = useRef(null);
+
+  useEffect(() => {
+    const el = cRef.current;
+    if (el) el.scrollTop = el.scrollHeight; // auto-scroll to newest
+  }, [comments]);
 
   useEffect(() => {
     if (!astroUid) return undefined;
@@ -82,10 +88,31 @@ export default function LiveView() {
       )}
 
       <div className="absolute inset-x-0 bottom-0 p-3">
-        <div className="mb-2 max-h-44 space-y-1 overflow-y-auto">
+        <div ref={cRef}
+          className="mb-2 max-h-[45vh] space-y-1 overflow-y-auto"
+          style={{
+            maskImage: 'linear-gradient(to top, #000 80%, transparent)',
+            WebkitMaskImage:
+              'linear-gradient(to top, #000 80%, transparent)',
+          }}>
           {comments.map((c) => (
             <div key={c.id} className="text-sm">
-              <span className="font-semibold">{c.name}: </span>
+              <span className="font-semibold">
+                {c.name}
+                {c.team && (
+                  <svg width="13" height="13" viewBox="0 0 24 24"
+                    style={{ display: 'inline-block',
+                      verticalAlign: 'middle', marginLeft: 3 }}>
+                    <path fill="#1D9BF0" d="M12 1.5l2.2 2.06 3-.36 1.2
+                      2.78 2.78 1.2-.36 3L23 12l-2.06 2.2.36 3-2.78
+                      1.2-1.2 2.78-3-.36L12 22.5l-2.2-2.06-3 .36-1.2-2.78
+                      -2.78-1.2.36-3L1 12l2.06-2.2-.36-3 2.78-1.2 1.2-2.78
+                      3 .36L12 1.5z" />
+                    <path fill="#fff" d="M10.6 14.4l-2.3-2.3-1.3 1.3 3.6
+                      3.6 6.4-6.4-1.3-1.3z" />
+                  </svg>
+                )}:
+              </span>{' '}
               <span className="opacity-90">{c.text}</span>
             </div>
           ))}
