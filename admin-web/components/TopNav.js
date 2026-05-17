@@ -24,6 +24,7 @@ const MORE = [
   { href: '/admin-gifts', label: 'Gift Cards' },
   { href: '/admin-remedies', label: 'Remedies' },
   { href: '/admin-payments', label: 'Payment Gateways' },
+  { href: '/admin-kundli-api', label: 'Kundli API' },
   { href: '/admin-live', label: 'Monitor Live' },
   { href: '/admin-notifications', label: 'Notifications' },
   { href: '/admin-features', label: 'Feature Toggles' },
