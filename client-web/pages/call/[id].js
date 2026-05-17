@@ -25,7 +25,11 @@ export default function CallScreen() {
   const remoteRef = useRef(null);
   const localRef = useRef(null);
 
-  const active = session?.status === 'active' || session?.status === 'accepted';
+  // Only "connected" (Agora join + billing) once the astrologer
+  // accepted, which stamps startTime. Until then it stays a request.
+  const acceptedStatus = session?.status === 'active'
+    || session?.status === 'accepted';
+  const active = acceptedStatus && !!session?.startTime;
   const ratePerSec = session?.ratePerSecond || 0;
   const lowBalance = active && wallet > 0 && wallet < ratePerSec * 60;
 
@@ -120,7 +124,8 @@ export default function CallScreen() {
     );
   }
 
-  if (session && session.status === 'requesting') {
+  if (session && (session.status === 'requesting'
+      || (acceptedStatus && !session.startTime))) {
     return (
       <Overlay>
         <div className="w-full max-w-sm rounded-2xl bg-white p-6

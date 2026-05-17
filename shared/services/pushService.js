@@ -94,6 +94,25 @@ export async function registerForPush(uid) {
   const PN = plugin();
   if (!PN) return;
   try {
+    // CRITICAL ORDER: attach the 'registration' listener BEFORE calling
+    // register(). register() fires the token event almost immediately;
+    // if we add the listener afterwards the token is missed and never
+    // saved, so the relay has no one to deliver to (the real reason
+    // pushes were not arriving).
+    if (!wired) {
+      wired = true;            // listeners are process-wide singletons
+
+      PN.addListener('registration', (t) => {
+        if (!t || !t.value) return;
+        // Always record the device (broadcast / not-signed-in delivery).
+        saveDeviceToken(t.value, lastUid).catch(() => {});
+        // And map it to the user when we know who they are (targeted).
+        if (lastUid) saveFCMToken(lastUid, t.value).catch(() => {});
+      });
+      PN.addListener('registrationError', () => {});
+      wireMessageListeners(PN);
+    }
+
     let perm = await PN.checkPermissions();
     if (perm.receive !== 'granted') perm = await PN.requestPermissions();
     if (perm.receive !== 'granted') return;
@@ -105,18 +124,13 @@ export async function registerForPush(uid) {
       const LN = localPlugin();
       if (LN && LN.requestPermissions) await LN.requestPermissions();
     } catch (_) {}
+    return;
+  } catch (_) { /* never block the app on push setup */ }
+}
 
-    if (wired) return;            // listeners are process-wide singletons
-    wired = true;
-
-    PN.addListener('registration', (t) => {
-      if (!t || !t.value) return;
-      // Always record the device (broadcast / not-signed-in delivery).
-      saveDeviceToken(t.value, lastUid).catch(() => {});
-      // And map it to the user when we know who they are (targeted).
-      if (lastUid) saveFCMToken(lastUid, t.value).catch(() => {});
-    });
-    PN.addListener('registrationError', () => {});
+// Foreground re-raise + tap deep-link listeners (attached once).
+function wireMessageListeners(PN) {
+  try {
 
     // Fired when a push arrives while the app is in the FOREGROUND
     // (screen on, user inside the app). The OS does NOT draw a banner

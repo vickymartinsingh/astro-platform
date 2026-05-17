@@ -149,61 +149,68 @@ export default function TopNav() {
         <div className="fixed inset-0 z-50 md:hidden">
           <div className="absolute inset-0 bg-black/40"
             onClick={() => setOpen(false)} />
-          <nav className="absolute right-0 top-0 h-full w-[78%] max-w-xs
-                          overflow-y-auto bg-white px-4 pb-6 pt-4 shadow-2xl
+          <nav className="absolute right-0 top-0 flex h-full w-[78%]
+                          max-w-xs flex-col bg-white shadow-2xl
                           animate-[slideIn_.2s_ease-out]">
-          <div className="mb-3 flex items-center justify-between">
-            <span className="font-bold">Menu</span>
-            <button aria-label="Close" onClick={() => setOpen(false)}
-              className="rounded-lg border border-gray-200 px-2.5 py-1
-                         text-sm">✕</button>
-          </div>
-          {LINKS.map((l) => (
-            <Link key={l.href} href={l.href}
-              className={`block rounded-xl px-3 py-3 text-base ${
-                router.pathname === l.href
-                  ? 'bg-bg-light font-semibold text-primary' : ''}`}>
-              {l.tKey ? t(l.tKey) : l.label}
-            </Link>
-          ))}
-          <div className="mt-2 border-t border-gray-100 pt-2">
-            <div className="px-3 pb-1 text-xs font-semibold uppercase
-                            tracking-wide text-sub-text">
-              {t('nav.profile')}
+          {/* Fixed top: close + auth always visible (never scrolls away) */}
+          <div className="border-b border-gray-100 px-4 pb-3 pt-4">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="font-bold">Menu</span>
+              <button aria-label="Close" onClick={() => setOpen(false)}
+                className="rounded-lg border border-gray-200 px-2.5 py-1
+                           text-sm">✕</button>
             </div>
-            {PROFILE_MENU.map((m) => (
-              <Link key={m.href} href={m.href}
-                className={`flex items-center justify-between rounded-xl
-                  px-3 py-3 text-base ${router.pathname === m.href
+            {user ? (
+              <button onClick={logout}
+                className="w-full rounded-xl border border-gray-200
+                           px-3 py-3 text-center text-base font-semibold">
+                {t('nav.logout')}
+              </button>
+            ) : (
+              <div className="flex gap-2">
+                <button onClick={() => openLogin()}
+                  className="flex-1 rounded-xl border border-gray-200 px-3
+                             py-3 text-center text-base font-semibold">
+                  {t('auth.login')}
+                </button>
+                <button
+                  onClick={() => openLogin(undefined, { mode: 'signup' })}
+                  className="btn-grad flex-1 justify-center py-3 text-base">
+                  {t('auth.signup')}
+                </button>
+              </div>
+            )}
+          </div>
+          {/* Scrollable links */}
+          <div className="flex-1 overflow-y-auto px-4 py-3">
+            {LINKS.map((l) => (
+              <Link key={l.href} href={l.href}
+                className={`block rounded-xl px-3 py-3 text-base ${
+                  router.pathname === l.href
                     ? 'bg-bg-light font-semibold text-primary' : ''}`}>
-                {m.label}
-                {m.notif && unread > 0 && (
-                  <span className="badge bg-rose-500 text-white">
-                    {unread}
-                  </span>
-                )}
+                {l.tKey ? t(l.tKey) : l.label}
               </Link>
             ))}
-          </div>
-          {user ? (
-            <button onClick={logout}
-              className="mt-2 w-full rounded-xl border border-gray-200
-                         px-3 py-3 text-left text-base">
-              {t('nav.logout')}
-            </button>
-          ) : (
-            <div className="mt-2 flex gap-2">
-              <button onClick={() => openLogin()}
-                className="flex-1 rounded-xl border border-gray-200 px-3
-                           py-3 text-center text-base">
-                {t('auth.login')}
-              </button>
-              <button onClick={() => openLogin(undefined, { mode: 'signup' })}
-                className="btn-grad flex-1 justify-center py-3 text-base">
-                {t('auth.signup')}
-              </button>
+            <div className="mt-2 border-t border-gray-100 pt-2">
+              <div className="px-3 pb-1 text-xs font-semibold uppercase
+                              tracking-wide text-sub-text">
+                {t('nav.profile')}
+              </div>
+              {PROFILE_MENU.map((m) => (
+                <Link key={m.href} href={m.href}
+                  className={`flex items-center justify-between rounded-xl
+                    px-3 py-3 text-base ${router.pathname === m.href
+                      ? 'bg-bg-light font-semibold text-primary' : ''}`}>
+                  {m.label}
+                  {m.notif && unread > 0 && (
+                    <span className="badge bg-rose-500 text-white">
+                      {unread}
+                    </span>
+                  )}
+                </Link>
+              ))}
             </div>
-          )}
+          </div>
           </nav>
         </div>
       )}

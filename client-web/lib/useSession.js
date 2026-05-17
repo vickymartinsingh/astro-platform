@@ -37,10 +37,20 @@ export function useSession({ astroId, type, uid, clientName, view = false }) {
       // notify the astrologer, never bill. The user is only reading.
       if (view) return;
 
-      // Resume an existing live session for this pair (refresh / back).
+      // Resume an existing live session for this pair ONLY if it is
+      // still genuinely live: a pending request, or one the astrologer
+      // already accepted (startTime set). A stale 'active'/'accepted'
+      // doc with no startTime, or anything older than 3h, must NOT be
+      // auto-resumed (that caused phantom "auto-connected" + billing).
+      const recent = (s) => {
+        const ms = s.createdAt?.toMillis ? s.createdAt.toMillis() : 0;
+        return ms && (Date.now() - ms) < 3 * 3600 * 1000;
+      };
       const existing = (await sessionService.getUserSessions(uid))
-        .find((s) => s.astroId === astroId &&
-          ['requesting', 'accepted', 'active'].includes(s.status));
+        .find((s) => s.astroId === astroId && recent(s) && (
+          s.status === 'requesting'
+          || ((s.status === 'active' || s.status === 'accepted')
+              && !!s.startTime)));
 
       const sid = existing
         ? existing.id

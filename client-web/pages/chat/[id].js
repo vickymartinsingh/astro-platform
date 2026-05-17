@@ -104,7 +104,12 @@ export default function ChatScreen() {
     }
   }, [isView, session?.id, session?.status, astroId, astro?.name, track]);
 
-  const active = session?.status === 'active' || session?.status === 'accepted';
+  // The consultation is only "connected" (timer + billing) once the
+  // astrologer has accepted, which stamps startTime. Before that it is
+  // strictly a waiting state - no countdown, no charge.
+  const acceptedStatus = session?.status === 'active'
+    || session?.status === 'accepted';
+  const active = acceptedStatus && !!session?.startTime;
   const ratePerSec = session?.ratePerSecond || 0;
   const ratePerMin = Math.round(ratePerSec * 60);
   const broke = active && wallet <= 0;
@@ -160,7 +165,9 @@ export default function ChatScreen() {
     return <Layout nav={false}><div className="p-6">Loading...</div></Layout>;
   }
 
-  const waiting = !isView && session && session.status === 'requesting';
+  const waiting = !isView && session
+    && (session.status === 'requesting'
+      || (acceptedStatus && !session.startTime));
 
   if (!isView && session && session.status === 'cancelled') {
     if (typeof window !== 'undefined') router.replace('/astrologers');

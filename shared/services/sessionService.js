@@ -34,12 +34,16 @@ export async function endAndSettleClient(sessionId) {
       && s.status !== 'ended') return;
 
   const cfg = await getConfig();
+  // BILLING RULE: a client is charged ONLY for time after the astrologer
+  // accepted (which sets startTime). No startTime => the consultation
+  // never actually connected => duration 0 => cost 0. Never fall back to
+  // the request-creation time (that billed people who were never
+  // connected / cancelled).
   const startMs = s.startTime?.toMillis ? s.startTime.toMillis()
-    : (s.createdAt?.toMillis ? s.createdAt.toMillis() : Date.now());
-  const everConnected = !!s.startTime || s.status === 'active'
-    || s.status === 'accepted';
-  let duration = everConnected
-    ? Math.max(0, Math.floor((Date.now() - startMs) / 1000)) : 0;
+    : (s.startTime instanceof Date ? s.startTime.getTime() : 0);
+  const endMs = s.endTime?.toMillis ? s.endTime.toMillis() : Date.now();
+  let duration = startMs > 0
+    ? Math.max(0, Math.floor((endMs - startMs) / 1000)) : 0;
 
   // Free seconds apply ONLY to the user's one eligible first session.
   const freeSecs = !s.freeEligible ? 0 : (s.type === 'chat'

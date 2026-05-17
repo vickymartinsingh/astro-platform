@@ -1,4 +1,7 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import {
+  createContext, useContext, useEffect, useRef, useState,
+  useCallback, useMemo,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/router';
 import LoginCard from '../components/LoginCard';
@@ -19,6 +22,13 @@ export function AuthModalProvider({ children }) {
   const dismissRef = useRef(null);
   const router = useRouter();
   const { user } = useAuth();
+  // Latest values for the STABLE callbacks below (so openLogin's identity
+  // never changes -> gated pages do not re-fire it in a loop -> the
+  // login popup no longer flickers open/closed during sign-in).
+  const userRef = useRef(user);
+  const openRef = useRef(open);
+  useEffect(() => { userRef.current = user; }, [user]);
+  useEffect(() => { openRef.current = open; }, [open]);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -49,16 +59,21 @@ export function AuthModalProvider({ children }) {
     return () => router.events.off('routeChangeStart', close);
   }, [router.events]);
 
-  function openLogin(onSuccess, opts = {}) {
+  const openLogin = useCallback((onSuccess, opts = {}) => {
     // Already signed in: never show the popup, just run the action.
-    if (user) { if (typeof onSuccess === 'function') onSuccess(); return; }
+    if (userRef.current) {
+      if (typeof onSuccess === 'function') onSuccess();
+      return;
+    }
+    // Already open: do NOT reopen / reset (kills the flicker loop).
+    if (openRef.current) return;
     cbRef.current = typeof onSuccess === 'function' ? onSuccess : null;
     dismissRef.current = typeof opts.onDismiss === 'function'
       ? opts.onDismiss : null;
     setMode(opts.mode === 'signup' ? 'signup' : 'login');
     setOpen(true);
-  }
-  function closeLogin() { setOpen(false); }
+  }, []);
+  const closeLogin = useCallback(() => { setOpen(false); }, []);
 
   function done() {
     const cb = cbRef.current;
@@ -104,8 +119,11 @@ export function AuthModalProvider({ children }) {
     </div>
   ) : null;
 
+  const ctxValue = useMemo(
+    () => ({ openLogin, closeLogin }), [openLogin, closeLogin]);
+
   return (
-    <Ctx.Provider value={{ openLogin, closeLogin }}>
+    <Ctx.Provider value={ctxValue}>
       {children}
       {mounted && overlay ? createPortal(overlay, document.body) : null}
     </Ctx.Provider>

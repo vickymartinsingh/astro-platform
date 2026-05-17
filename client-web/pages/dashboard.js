@@ -90,6 +90,23 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Quick actions (Tarot is front and centre on the home page) */}
+      <div className="mt-4 grid grid-cols-4 gap-3">
+        {[
+          ['/tarot', 'Tarot', '🔮'],
+          ['/kundli', 'Kundli', '📜'],
+          ['/matching', 'Matching', '💞'],
+          ['/horoscope', 'Horoscope', '✨'],
+        ].map(([href, label, icon]) => (
+          <Link key={href} href={href}
+            className="surface flex flex-col items-center gap-1 p-3
+                       text-center hover:shadow-md">
+            <span className="text-2xl">{icon}</span>
+            <span className="text-xs font-semibold">{label}</span>
+          </Link>
+        ))}
+      </div>
+
       {/* Stats */}
       <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat n={`${(list || []).length || 0}+`} l="Verified Experts" />
