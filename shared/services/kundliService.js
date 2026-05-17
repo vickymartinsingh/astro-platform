@@ -111,7 +111,9 @@ const SIGN_TRAITS = {
 // so it always has rich content even if a text endpoint is unavailable.
 export function generateNarrative(r) {
   if (!r) return null;
-  const sign = r.zodiac || r.soorya_rasi || '';
+  // Vedic reading is primarily LAGNA (ascendant) based.
+  const asc = r.ascendant && r.ascendant.sign;
+  const sign = asc || r.zodiac || r.soorya_rasi || '';
   const t = SIGN_TRAITS[sign] || {
     p: 'a unique blend of strengths', c: 'a wide range of fields',
     h: 'balanced wellbeing with mindful habits',
@@ -122,7 +124,8 @@ export function generateNarrative(r) {
     ? `${r.nakshatra}${r.nakshatra_pada ? ` (pada ${r.nakshatra_pada})` : ''}`
     : '';
   return {
-    personality: `As a ${sign || 'native'}, you are ${t.p}. `
+    personality: `${asc ? `Your Lagna (ascendant) is ${asc}. ` : ''}`
+      + `As a ${sign || 'native'} ascendant, you are ${t.p}. `
       + `${moon ? `${moon} colours your emotional nature. ` : ''}`
       + `${nak ? `Your birth star ${nak} adds its own signature to your `
         + 'temperament and instincts.' : ''}`,

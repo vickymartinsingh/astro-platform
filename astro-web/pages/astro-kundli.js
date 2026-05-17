@@ -3,6 +3,7 @@ import {
   kundliService, sessionService, userService,
 } from '@astro/shared';
 import Layout from '../components/Layout';
+import FullKundli from '../components/FullKundli';
 import { useRequireAstrologer } from '../lib/useAuth';
 
 // Kundli viewer. Pick a client from a dropdown (your past / current
@@ -15,6 +16,13 @@ export default function AstroKundli() {
   const [q, setQ] = useState('');
   const [list, setList] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [full, setFull] = useState({}); // { [id]: data|'loading'|'err' }
+
+  async function viewFull(k) {
+    setFull((c) => ({ ...c, [k.id]: 'loading' }));
+    const data = await kundliService.getFullKundli(k);
+    setFull((c) => ({ ...c, [k.id]: data || 'err' }));
+  }
 
   useEffect(() => {
     if (!user) return;
@@ -96,6 +104,23 @@ export default function AstroKundli() {
               <div className="text-sm text-sub-text">
                 {k.dob} - {k.tob} {k.ampm} - {k.place}
               </div>
+              <button onClick={() => viewFull(k)}
+                className="mt-2 text-sm font-semibold text-primary">
+                View full Kundli
+              </button>
+              {full[k.id] === 'loading' && (
+                <div className="mt-2 text-sm text-sub-text">
+                  Generating kundli...
+                </div>
+              )}
+              {full[k.id] === 'err' && (
+                <div className="mt-2 text-sm text-danger">
+                  Kundli service not available yet.
+                </div>
+              )}
+              {full[k.id] && typeof full[k.id] === 'object' && (
+                <FullKundli r={full[k.id]} />
+              )}
             </div>
           ))}
         </div>

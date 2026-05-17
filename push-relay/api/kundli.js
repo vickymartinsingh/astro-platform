@@ -119,12 +119,29 @@ module.exports = async (req, res) => {
       } catch (_) { return null; }
     };
 
+    // The chart endpoint returns raw SVG (not JSON).
+    const getSvg = async (chartType) => {
+      try {
+        const rr = await fetch(`${base}/chart${qs}`
+          + `&chart_type=${chartType}&chart_style=north-indian&la=en`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'image/svg+xml',
+          },
+        });
+        const txt = await rr.text();
+        return txt && txt.indexOf('<svg') !== -1 ? txt : null;
+      } catch (_) { return null; }
+    };
+
     // birth-details is required; the rest enrich the report and are
     // best-effort so one missing endpoint never fails the whole call.
-    const [bd, pp, dp] = await Promise.all([
+    const [bd, pp, dp, svgRasi, svgNav] = await Promise.all([
       get('birth-details'),
       get('planet-position', '&planet_position_format=detailed'),
       get('dasha-periods'),
+      getSvg('rasi'),
+      getSvg('navamsa'),
     ]);
     if (!bd) {
       const rr = await fetch(`${base}/birth-details${qs}`, {
@@ -134,24 +151,50 @@ module.exports = async (req, res) => {
       return res.status(502).json({ error: 'prokerala', detail: jj });
     }
 
-    const planets = ((pp && (pp.planet_position
-      || pp.planets)) || []).map((p) => ({
+    const rawPlanets = (pp && (pp.planet_position
+      || pp.planets)) || [];
+    const planets = rawPlanets.map((p) => ({
       name: p.name,
       sign: p.rasi && p.rasi.name,
       house: p.position || p.house,
-      degree: p.degree,
-      retrograde: p.is_retrograde,
+      degree: typeof p.degree === 'number'
+        ? Math.round(p.degree * 100) / 100 : p.degree,
+      retrograde: !!p.is_retrograde,
     }));
+    // Ascendant / Lagna (Prokerala lists it among the positions).
+    const ascP = rawPlanets.find((p) => /ascend|lagna/i.test(p.name || ''));
+    const ascendant = ascP ? {
+      sign: ascP.rasi && ascP.rasi.name,
+      degree: typeof ascP.degree === 'number'
+        ? Math.round(ascP.degree * 100) / 100 : ascP.degree,
+    } : null;
+
+    // Full Vimshottari maha dasha + mark the current period by date.
+    const now = Date.now();
     const dasha = (dp && (dp.dasha_periods || dp.periods) || [])
-      .slice(0, 9).map((x) => ({
-        planet: x.name,
-        start: x.start,
-        end: x.end,
-      }));
+      .map((x) => {
+        const s = x.start ? Date.parse(x.start) : 0;
+        const e = x.end ? Date.parse(x.end) : 0;
+        return {
+          planet: x.name,
+          start: x.start,
+          end: x.end,
+          current: s && e && now >= s && now < e,
+          antardasha: Array.isArray(x.antardasha)
+            ? x.antardasha.map((a) => ({
+              planet: a.name, start: a.start, end: a.end,
+              current: a.start && a.end
+                && now >= Date.parse(a.start)
+                && now < Date.parse(a.end),
+            })) : [],
+        };
+      });
+    const currentDasha = dasha.find((d) => d.current) || null;
 
     return res.status(200).json({
       datetime,
       coordinates: { lat, lng },
+      ascendant,
       nakshatra: bd.nakshatra && bd.nakshatra.name,
       nakshatra_lord: bd.nakshatra && bd.nakshatra.lord
         && bd.nakshatra.lord.name,
@@ -162,6 +205,8 @@ module.exports = async (req, res) => {
       additional_info: bd.additional_info || null,
       planets,
       dasha,
+      currentDasha,
+      charts: { rasi: svgRasi || null, navamsa: svgNav || null },
       generatedAt: Date.now(),
       raw: bd,
     });
