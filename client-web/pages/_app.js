@@ -8,6 +8,7 @@ import { AuthModalProvider } from '../lib/authModal';
 import { KundliGateProvider } from '../lib/kundliGate';
 import { PendingSessionProvider } from '../lib/pendingSession';
 import useNativeBack from '../lib/useNativeBack';
+import GuidedTour from '../components/GuidedTour';
 
 function WithProviders({ children }) {
   const { user, profile } = useAuth();
@@ -38,6 +39,7 @@ export default function App({ Component, pageProps }) {
           <Component {...pageProps} />
         </WithProviders>
       </AuthProvider>
+      <GuidedTour />
     </>
   );
 }

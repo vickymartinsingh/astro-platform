@@ -7,7 +7,6 @@ import {
 import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { SkeletonList } from '../components/Skeleton';
-import GuidedTour from '../components/GuidedTour';
 import AstrologerCard from '../components/AstrologerCard';
 import { Icon } from '../components/Icons';
 import { useOptionalClient } from '../lib/useAuth';
@@ -47,7 +46,6 @@ export default function Dashboard() {
   const freeMin = profile?.freeUsed ? 0 : freeChatMin;
   const router = useRouter();
   const [list, setList] = useState(null);
-  const [showTour, setShowTour] = useState(false);
   const [sign, setSign] = useState('Aries');
   const [when, setWhen] = useState('today');
   const [hero, setHero] = useState({
@@ -80,9 +78,6 @@ export default function Dashboard() {
   useEffect(() => {
     astrologerService.getAstrologers().then(setList).catch(() => setList([]));
   }, []);
-  useEffect(() => {
-    if (profile && profile.hasSeenTour === false) setShowTour(true);
-  }, [profile]);
 
   if (loading) return <Layout><SkeletonList /></Layout>;
 
@@ -93,9 +88,6 @@ export default function Dashboard() {
 
   return (
     <Layout>
-      {showTour && user && (
-        <GuidedTour uid={user.uid} onClose={() => setShowTour(false)} />
-      )}
 
       {/* Hero */}
       <div className="hero-grad rounded-2xl p-6 text-white md:p-10">

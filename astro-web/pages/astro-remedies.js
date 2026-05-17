@@ -65,7 +65,7 @@ export default function AstroRemedies() {
           onChange={(e) => setF({ ...f, description: e.target.value })} />
         <input className="input" type="number" min={0}
           placeholder="Your price (Rs)" value={f.price}
-          onChange={(e) => setF({ ...f, price: Number(e.target.value) })} />
+          onChange={(e) => setF({ ...f, price: e.target.value === '' ? '' : Number(e.target.value) })} />
         {msg && <div className="text-sm text-primary">{msg}</div>}
         <button onClick={add} disabled={busy}
           className="btn-primary w-full">

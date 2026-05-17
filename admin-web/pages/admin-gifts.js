@@ -39,7 +39,7 @@ export default function AdminGifts() {
       <div className="card space-y-3">
         <label className="text-sm font-semibold">Amount (Rs)</label>
         <input className="input" type="number" min={1} value={amount}
-          onChange={(e) => setAmount(Number(e.target.value))} />
+          onChange={(e) => setAmount(e.target.value === '' ? '' : Number(e.target.value))} />
         <button onClick={create} disabled={busy || !(amount > 0)}
           className="btn-primary w-full">
           {busy ? 'Generating...' : 'Generate gift card'}

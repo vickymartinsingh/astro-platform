@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
-import { walletService } from '@astro/shared';
+import { walletService, db } from '@astro/shared';
+import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { SkeletonList } from '../components/Skeleton';
 import { useRequireClient } from '../lib/useAuth';
@@ -21,6 +22,17 @@ export default function Wallet() {
   const [txns, setTxns] = useState(null);
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [gwName, setGwName] = useState('');
+  useEffect(() => {
+    getDoc(doc(db, 'settings', 'payments')).then((s) => {
+      const id = (s.exists() && s.data().active) || '';
+      const map = { razorpay: 'Razorpay', cashfree: 'Cashfree',
+        payu: 'PayU', paytm: 'Paytm', phonepe: 'PhonePe',
+        cashfree_sandbox: 'Cashfree' };
+      setGwName(map[id] || (id ? id.charAt(0).toUpperCase()
+        + id.slice(1) : ''));
+    }).catch(() => {});
+  }, []);
   const rzpReady = useRazorpay();
 
   useEffect(() => {
@@ -53,7 +65,8 @@ export default function Wallet() {
 
   async function pay() {
     setMsg(null);
-    if (amount < MIN_RECHARGE) {
+    const amt = Number(amount) || 0;
+    if (amt < MIN_RECHARGE) {
       setMsg({ ok: false, t: `Minimum recharge is ₹${MIN_RECHARGE}.` });
       return;
     }
@@ -62,7 +75,7 @@ export default function Wallet() {
       ? router.query.return : null;
     try {
       const order = await walletService.payCall({
-        action: 'create', amount,
+        action: 'create', amount: amt,
         name: profile?.name, email: profile?.email,
         phone: profile?.phone,
         returnUrl: typeof window !== 'undefined'
@@ -76,7 +89,7 @@ export default function Wallet() {
         }
         const rzp = new window.Razorpay({
           key: order.keyId,
-          amount: Math.round(amount * 100),
+          amount: Math.round(amt * 100),
           currency: 'INR',
           name: 'AstroConnect',
           description: 'Wallet recharge',
@@ -90,10 +103,10 @@ export default function Wallet() {
                 orderId: resp.razorpay_order_id,
                 paymentId: resp.razorpay_payment_id,
                 signature: resp.razorpay_signature,
-                amount,
+                amount: amt,
               });
               setMsg({ ok: true,
-                t: `Payment successful, ₹${amount} added`, back });
+                t: `Payment successful, ₹${amt} added`, back });
             } catch {
               setMsg({ ok: false, t: 'Payment verification failed.' });
             }
@@ -107,7 +120,7 @@ export default function Wallet() {
         // Remember the order so we can verify after returning.
         try {
           sessionStorage.setItem('cfPending',
-            JSON.stringify({ orderId: order.orderId, amount, back }));
+            JSON.stringify({ orderId: order.orderId, amount: amt, back }));
         } catch (_) {}
         await loadScript('https://sdk.cashfree.com/js/v3/cashfree.js');
         // eslint-disable-next-line no-undef
@@ -182,8 +195,7 @@ export default function Wallet() {
         </button>
       )}
 
-      <div className="rounded-card bg-gradient-to-br from-primary
-                      to-[#8B5CF6] p-6 text-center text-white">
+      <div className="hero-grad rounded-card p-6 text-center text-white">
         <div className="text-sm opacity-80">Wallet Balance</div>
         <div className="mt-1 text-4xl font-bold">₹{wallet}</div>
       </div>
@@ -214,7 +226,8 @@ export default function Wallet() {
           </div>
           <input className="input" type="number" min={MIN_RECHARGE}
             value={amount}
-            onChange={(e) => setAmount(Number(e.target.value))}
+            onChange={(e) => setAmount(e.target.value === ''
+              ? '' : Number(e.target.value))}
             placeholder="Custom amount" />
           <input className="input" value={coupon}
             onChange={(e) => setCoupon(e.target.value.toUpperCase())}
@@ -250,13 +263,11 @@ export default function Wallet() {
           )}
           <button onClick={pay} disabled={busy}
             className="btn-primary w-full">
-            {busy ? 'Processing...' : `Add ₹${amount} to Wallet`}
+            {busy ? 'Processing...'
+              : `Add ₹${Number(amount) || 0} to Wallet`}
           </button>
           <p className="text-center text-xs text-sub-text">
-            🔒 Secured by Razorpay
-          </p>
-          <p className="text-center text-xs text-sub-text">
-            Test card 4111 1111 1111 1111 · any future expiry · CVV 123 · OTP 1234
+            🔒 Secure online payment{gwName ? ` via ${gwName}` : ''}
           </p>
         </div>
       ) : (

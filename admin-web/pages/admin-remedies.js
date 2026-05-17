@@ -63,7 +63,7 @@ export default function AdminRemedies() {
           <input className="input" type="number" min={0}
             placeholder="Base price (Rs)" value={f.basePrice}
             onChange={(e) => setF({
-              ...f, basePrice: Number(e.target.value) })} />
+              ...f, basePrice: e.target.value === '' ? '' : Number(e.target.value) })} />
         </div>
         <textarea className="input" rows={2} placeholder="Description"
           value={f.description}
