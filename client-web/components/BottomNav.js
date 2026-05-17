@@ -2,9 +2,11 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useSettings } from '../lib/useSettings';
 
-// Astrotalk-style fixed bottom tab bar (mobile only). Five tabs:
-// Home · Chat · Live · Call · Remedies. The active tab turns brand
-// yellow. Hidden on >=md (desktop keeps the top nav).
+// Astrotalk-style fixed bottom tab bar (mobile only). Default tabs:
+// Home / Chat / Live / Tarot / Profile. Call is moved into the menu by
+// default but stays a real tab the admin can switch back on (App
+// Builder -> Bottom menu: show Call, hide Tarot). The active tab turns
+// brand yellow. Hidden on >=md (desktop keeps the top nav).
 const I = {
   width: 24, height: 24, viewBox: '0 0 24 24', fill: 'none',
   stroke: 'currentColor', strokeWidth: 1.7,
@@ -46,6 +48,14 @@ function Call(p) {
     </svg>
   );
 }
+function Tarot(p) {
+  return (
+    <svg {...I} {...p}>
+      <rect x="6" y="3" width="12" height="18" rx="2" />
+      <path d="M12 7v8M8.5 11h7" />
+    </svg>
+  );
+}
 function Profile(p) {
   return (
     <svg {...I} {...p}>
@@ -63,11 +73,16 @@ const TABS = [
     match: ['/astrologers', '/chat/[id]', '/chat-history'] },
   { key: 'live', href: '/live', label: 'Live', Ico: Live,
     match: ['/live'] },
+  { key: 'tarot', href: '/tarot', label: 'Tarot', Ico: Tarot,
+    match: ['/tarot'] },
   { key: 'call', href: '/astrologers?mode=call', label: 'Call',
     Ico: Call, match: ['/call/[id]', '/call-history'] },
   { key: 'profile', href: '/profile', label: 'Profile',
     Ico: Profile, match: ['/profile'] },
 ];
+// Tabs hidden by default (admin can switch them back on in App Builder).
+// Call lives in the menu by default; Tarot takes its place in the bar.
+const DEFAULT_HIDDEN = { call: true };
 
 export default function BottomNav() {
   const router = useRouter();
@@ -84,9 +99,13 @@ export default function BottomNav() {
   // Always include any default tab missing from a saved order (so new
   // tabs like Profile show even if the saved order predates them).
   const order = [...saved, ...defKeys.filter((k) => !saved.includes(k))];
+  const isHidden = (key) => {
+    const v = features[`nav_hidden_${key}`];
+    return v === undefined ? !!DEFAULT_HIDDEN[key] : !!v;
+  };
   const tabs = order
     .map((k) => byKey[k]).filter(Boolean)
-    .filter((t) => !features[`nav_hidden_${t.key}`])
+    .filter((t) => !isHidden(t.key))
     .filter((t) => !(t.key === 'live' && features.enable_live === false));
 
   return (

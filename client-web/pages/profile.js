@@ -67,6 +67,11 @@ export default function Profile() {
     router.push('/dashboard');
   }
 
+  async function logout() {
+    try { await authService.logoutUser(); } catch (_) {}
+    router.replace('/login');
+  }
+
   if (loading || !profile) return <Layout><SkeletonList /></Layout>;
 
   return (
@@ -175,6 +180,12 @@ export default function Profile() {
           <a href="/page/refund">Refund Policy</a>
         </div>
       </div>
+
+      <button onClick={logout}
+        className="mt-3 w-full rounded-card border border-danger
+          py-3 font-semibold text-danger">
+        Log out
+      </button>
     </Layout>
   );
 }

@@ -8,6 +8,7 @@ import { db } from '../firebase.js';
 export const DEFAULT_CLIENT_MENU = [
   { href: '/dashboard', label: 'Home' },
   { href: '/astrologers', label: 'Astrologers' },
+  { href: '/astrologers?mode=call', label: 'Call astrologer' },
   { href: '/horoscope', label: 'Horoscope' },
   { href: '/tarot', label: 'Tarot' },
   { href: '/kundli', label: 'Kundli' },

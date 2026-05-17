@@ -91,8 +91,11 @@ function MenuEditor({ title, defaults, value, onChange }) {
 
 const TAB_DEFS = [
   ['home', 'Home'], ['chat', 'Chat'], ['live', 'Live'],
-  ['call', 'Call'], ['profile', 'Profile'],
+  ['tarot', 'Tarot'], ['call', 'Call'], ['profile', 'Profile'],
 ];
+// Tabs hidden by default (kept in sync with client BottomNav). The admin
+// can switch Call back on / hide Tarot here at any time.
+const NAV_DEFAULT_HIDDEN = { call: true };
 const HOME_SECTIONS = [
   ['quickActions', 'Quick actions (Tarot/Kundli/etc.)'],
   ['starsToday', 'Your stars today'],
@@ -173,7 +176,9 @@ export default function AdminBuilder() {
             {order.map((k) => {
               const label = (TAB_DEFS.find(([x]) => x === k) || [])[1]
                 || k;
-              const hidden = !!feat[`nav_hidden_${k}`];
+              const hv = feat[`nav_hidden_${k}`];
+              const hidden = hv === undefined
+                ? !!NAV_DEFAULT_HIDDEN[k] : !!hv;
               return (
                 <div key={k} draggable
                   onDragStart={() => { dragKey.current = k; }}
