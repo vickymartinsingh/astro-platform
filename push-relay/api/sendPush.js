@@ -56,6 +56,12 @@ module.exports = async (req, res) => {
     const db = admin.firestore();
     const users = [];
 
+    // Treat anyone who is an astrologer (role OR the isAstrologer flag)
+    // as an astrologer; everyone else as a client. This makes the
+    // "Clients only" / "Astrologers only" targeting exact and mutually
+    // exclusive (the previous code leaked to both).
+    const isAstro = (d) => d.role === 'astrologer' || d.isAstrologer === true;
+
     if (toUid) {
       const s = await db.collection('users').doc(toUid).get();
       if (s.exists) users.push(s);
@@ -63,13 +69,13 @@ module.exports = async (req, res) => {
       const s = await db.collection('users').doc(userId).get();
       if (s.exists) users.push(s);
     } else if (target === 'clients') {
-      (await db.collection('users').where('role', '==', 'client').get())
-        .forEach((d) => users.push(d));
+      (await db.collection('users').get()).forEach((d) => {
+        if (!isAstro(d.data() || {})) users.push(d);
+      });
     } else if (target === 'astrologers') {
-      (await db.collection('users').where('role', '==', 'astrologer').get())
-        .forEach((d) => users.push(d));
-      (await db.collection('users').where('isAstrologer', '==', true).get())
-        .forEach((d) => users.push(d));
+      (await db.collection('users').get()).forEach((d) => {
+        if (isAstro(d.data() || {})) users.push(d);
+      });
     } else { // 'all' or unspecified broadcast
       (await db.collection('users').get()).forEach((d) => users.push(d));
     }
@@ -83,10 +89,10 @@ module.exports = async (req, res) => {
       tokens = tokens.concat(tokensFrom(u));
     }
 
-    // Broadcasts (admin announcements) also go to every device that has
-    // opened the app, even ones never signed in, via the deviceTokens
-    // collection. Targeted (toUid / single user) pushes do not.
-    const isBroadcast = !toUid && target !== 'user';
+    // ONLY a true "all" broadcast also fans out to anonymous devices
+    // (deviceTokens). Role-targeted (clients / astrologers) and single
+    // user sends must NOT, otherwise the wrong audience receives it.
+    const isBroadcast = !toUid && (target === 'all' || !target);
     if (isBroadcast) {
       try {
         const dt = await db.collection('deviceTokens').get();
