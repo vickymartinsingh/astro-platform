@@ -55,6 +55,7 @@ export default function Dashboard() {
     subtitle: 'Speak with verified astrologers on chat, call or video. '
       + 'Clarity on love, career, marriage and the road ahead.',
   });
+  const [sec, setSec] = useState({}); // section show/hide from admin
   useEffect(() => {
     getDoc(doc(db, 'settings', 'content')).then((s) => {
       const d = s.exists() ? s.data() : {};
@@ -64,7 +65,16 @@ export default function Dashboard() {
           subtitle: d.homeHeroSubtitle || h.subtitle,
         }));
       }
-    }).catch(() => {});
+      setSec({
+        quickActions: d.sec_quickActions !== false,
+        starsToday: d.sec_starsToday !== false,
+        categories: d.sec_categories !== false,
+        topRated: d.sec_topRated !== false,
+        reviews: d.sec_reviews !== false,
+      });
+    }).catch(() => setSec({
+      quickActions: true, starsToday: true, categories: true,
+      topRated: true, reviews: true }));
   }, []);
 
   useEffect(() => {
@@ -109,6 +119,7 @@ export default function Dashboard() {
       </div>
 
       {/* Quick actions (Tarot is front and centre on the home page) */}
+      {sec.quickActions !== false && (
       <div className="mt-4 grid grid-cols-4 gap-3">
         {[
           ['/tarot', 'Tarot', '🔮'],
@@ -124,6 +135,7 @@ export default function Dashboard() {
           </Link>
         ))}
       </div>
+      )}
 
       {/* Stats */}
       <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -134,7 +146,8 @@ export default function Dashboard() {
       </div>
 
       {/* Your stars today (Today by default, Tomorrow on tap) */}
-      <h2 className="mb-3 mt-8 text-lg font-bold">Your stars today</h2>
+      {sec.starsToday !== false && (
+      <><h2 className="mb-3 mt-8 text-lg font-bold">Your stars today</h2>
       <div className="surface p-5">
         <div className="flex flex-wrap items-center gap-3">
           <span className="badge bg-bg-light text-primary">Daily reading</span>
@@ -164,10 +177,12 @@ export default function Dashboard() {
               })()}`}
             h={reading} />
         </div>
-      </div>
+      </div></>
+      )}
 
       {/* Categories */}
-      <h2 className="mb-3 mt-8 text-lg font-bold">Browse by category</h2>
+      {sec.categories !== false && (
+      <><h2 className="mb-3 mt-8 text-lg font-bold">Browse by category</h2>
       <div className="grid grid-cols-3 gap-3 md:grid-cols-6">
         {CATEGORIES.map(([key, label]) => {
           const Ico = Icon[key] || Icon.Star;
@@ -184,10 +199,12 @@ export default function Dashboard() {
             </Link>
           );
         })}
-      </div>
+      </div></>
+      )}
 
       {/* Top rated astrologers */}
-      <div className="mb-3 mt-8 flex items-center justify-between">
+      {sec.topRated !== false && (
+      <><div className="mb-3 mt-8 flex items-center justify-between">
         <h2 className="text-lg font-bold">Top rated astrologers</h2>
         <Link href="/astrologers"
           className="text-sm font-semibold text-primary">See all</Link>
@@ -202,10 +219,12 @@ export default function Dashboard() {
               onAction={go} freeMin={freeMin} />
           ))}
         </div>
+      )}</>
       )}
 
       {/* Customer ratings & reviews */}
-      <div className="mb-3 mt-10 flex items-center justify-between">
+      {sec.reviews !== false && (
+      <><div className="mb-3 mt-10 flex items-center justify-between">
         <h2 className="text-lg font-bold">What our customers say</h2>
         <span className="text-sm font-semibold text-gold">
           4.8 / 5 average
@@ -227,7 +246,8 @@ export default function Dashboard() {
             <p className="mt-2 text-sm text-sub-text">{text}</p>
           </div>
         ))}
-      </div>
+      </div></>
+      )}
     </Layout>
   );
 }

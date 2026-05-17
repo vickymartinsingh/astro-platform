@@ -42,6 +42,7 @@ const GROUPS = [
   ]],
   ['Config', [
     ['/admin-developer', 'Developer Mode'],
+    ['/admin-builder', 'App Builder'],
     ['/admin-settings', 'Settings'],
     ['/admin-features', 'Feature Toggles'],
     ['/admin-theme', 'App Theme'],

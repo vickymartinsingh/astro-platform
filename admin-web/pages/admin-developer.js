@@ -11,6 +11,8 @@ import { flash } from '../lib/flash';
 // lives in admin.)
 const SECTIONS = [
   ['Appearance', [
+    ['/admin-builder', 'App Builder',
+      'No-code: drag menu, banner, sections, live preview'],
     ['/admin-theme', 'Theme & Colours', 'Full palette + custom themes'],
     ['/admin-settings', 'Branding & Settings',
       'Logo, favicon, name, commission, recharge'],

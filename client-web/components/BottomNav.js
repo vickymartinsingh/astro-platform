@@ -55,21 +55,19 @@ function Remedies(p) {
   );
 }
 
+// key = stable id used by the admin App Builder (order/hide/label).
 const TABS = [
-  { href: '/dashboard', label: 'Home', Ico: Home, match: ['/dashboard'] },
-  { href: '/astrologers', label: 'Chat', Ico: Chat,
+  { key: 'home', href: '/dashboard', label: 'Home', Ico: Home,
+    match: ['/dashboard'] },
+  { key: 'chat', href: '/astrologers', label: 'Chat', Ico: Chat,
     match: ['/astrologers', '/chat/[id]', '/chat-history'] },
-  { href: '/live', label: 'Live', Ico: Live, match: ['/live'] },
-  { href: '/astrologers?mode=call', label: 'Call', Ico: Call,
-    match: ['/call/[id]', '/call-history'] },
-  { href: '/remedies', label: 'Remedies', Ico: Remedies,
-    match: ['/remedies'] },
+  { key: 'live', href: '/live', label: 'Live', Ico: Live,
+    match: ['/live'] },
+  { key: 'call', href: '/astrologers?mode=call', label: 'Call',
+    Ico: Call, match: ['/call/[id]', '/call-history'] },
+  { key: 'remedies', href: '/remedies', label: 'Remedies',
+    Ico: Remedies, match: ['/remedies'] },
 ];
-
-const LABEL_KEY = {
-  Home: 'nav_home', Chat: 'nav_chat', Live: 'nav_live',
-  Call: 'nav_call', Remedies: 'nav_remedies',
-};
 
 export default function BottomNav() {
   const router = useRouter();
@@ -77,22 +75,28 @@ export default function BottomNav() {
   const query = router.asPath;
   const { features } = useSettings();
 
-  // Admin can hide the Live tab via settings/features.enable_live.
-  const tabs = TABS.filter(
-    (t) => !(t.label === 'Live' && features.enable_live === false));
+  const byKey = Object.fromEntries(TABS.map((t) => [t.key, t]));
+  // Admin App Builder order (settings/features.nav_order); default
+  // order otherwise. Then drop hidden tabs (+ legacy enable_live).
+  const order = Array.isArray(features.nav_order) && features.nav_order.length
+    ? features.nav_order : TABS.map((t) => t.key);
+  const tabs = order
+    .map((k) => byKey[k]).filter(Boolean)
+    .filter((t) => !features[`nav_hidden_${t.key}`])
+    .filter((t) => !(t.key === 'live' && features.enable_live === false));
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200
                     bg-white safe-bottom md:hidden">
       <div className="mx-auto flex max-w-md items-stretch justify-between">
-        {tabs.map(({ href, label, Ico, match }) => {
-          const shown = (features[LABEL_KEY[label]] || '').trim() || label;
+        {tabs.map(({ key, href, label, Ico, match }) => {
+          const shown = (features[`nav_${key}`] || '').trim() || label;
           const active = match.includes(path)
             || (label === 'Call' && query.startsWith('/astrologers?mode=call'))
             || (label === 'Chat' && path === '/astrologers'
                 && !query.startsWith('/astrologers?mode=call'));
           return (
-            <Link key={label} href={href}
+            <Link key={key} href={href}
               className={`flex flex-1 flex-col items-center gap-0.5 py-2
                 ${active ? 'text-primary' : 'text-sub-text'}`}>
               <span className={`flex h-9 w-12 items-center justify-center
