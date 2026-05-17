@@ -183,6 +183,25 @@ export async function listGiftCards() {
   return j.cards || [];
 }
 
+// Assign one or more roles to a user. Primary `role` stays a single
+// value (used by gating) = admin > astrologer > support > client; the
+// full set is stored in `roles` (checked by hasRole / isAdminUser).
+export function setUserRoles(uid, roles) {
+  const list = Array.from(new Set((roles || []).filter(Boolean)));
+  const primary = list.includes('admin') ? 'admin'
+    : list.includes('astrologer') ? 'astrologer'
+    : list.includes('support') ? 'support'
+    : 'client';
+  return tryCloud('adminSetUserRoles', { uid, roles: list }, async () => {
+    await updateDoc(doc(db, 'users', uid), { role: primary, roles: list });
+    if (list.includes('astrologer')) {
+      await setDoc(doc(db, 'astrologers', uid),
+        { approved: true }, { merge: true }).catch(() => {});
+    }
+    return { success: true, role: primary, roles: list };
+  });
+}
+
 export function forceEndSession(sessionId) {
   return tryCloud('adminForceEndSession', { sessionId }, async () => {
     await updateDoc(doc(db, 'sessions', sessionId),

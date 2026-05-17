@@ -9,6 +9,7 @@ import { useAuth } from '../lib/useAuth';
 // portal. Go Online/Offline is a prominent nav button.
 const LINKS = [
   { href: '/astro-dashboard', label: 'Dashboard' },
+  { href: '/astro-live', label: 'Go Live' },
   { href: '/astro-sessions', label: 'My Sessions' },
   { href: '/astro-earnings', label: 'Earnings' },
   { href: '/astro-kundli', label: 'Kundli Viewer' },

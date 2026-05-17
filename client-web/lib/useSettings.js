@@ -6,9 +6,13 @@ import { doc, getDoc } from 'firebase/firestore';
 // free" values the admin sets, so cards/profile can show a FREE badge.
 export function useSettings() {
   const [cfg, setCfg] = useState({});
+  const [features, setFeatures] = useState({});
   useEffect(() => {
     getDoc(doc(db, 'settings', 'config'))
       .then((s) => setCfg(s.exists() ? s.data() : {}))
+      .catch(() => {});
+    getDoc(doc(db, 'settings', 'features'))
+      .then((s) => setFeatures(s.exists() ? s.data() : {}))
       .catch(() => {});
   }, []);
   // Default: every new user gets the first 5 minutes free, shown on all
@@ -17,6 +21,7 @@ export function useSettings() {
   const fl = cfg.free_call_seconds;
   return {
     cfg,
+    features,
     freeChatMin: fc == null || fc === '' ? 5 : Math.round(Number(fc) / 60),
     freeCallMin: fl == null || fl === '' ? 5 : Math.round(Number(fl) / 60),
   };

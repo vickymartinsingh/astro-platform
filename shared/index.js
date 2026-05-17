@@ -1,7 +1,7 @@
 // @astro/shared, single entry point reused by client-web, astro-web, admin-web.
 export { default as firebaseApp, auth, db, storage, functions, rtdb } from './firebase.js';
 export * from './theme.js';
-export { ADMIN_EMAILS, isAdminEmail, isAdminUser } from './admins.js';
+export { ADMIN_EMAILS, isAdminEmail, isAdminUser, hasRole } from './admins.js';
 export { getHoroscope, horoscopeText } from './horoscope.js';
 export { TAROT, drawCards, tarotReading } from './tarot.js';
 export { gunaMilan, signFromDOB } from './matching.js';
@@ -24,3 +24,4 @@ export * as adminService from './services/adminService.js';
 export * as reportService from './services/reportService.js';
 export * as cmsService from './services/cmsService.js';
 export * as remedyService from './services/remedyService.js';
+export * as liveService from './services/liveService.js';

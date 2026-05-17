@@ -1,8 +1,10 @@
 import TopNav from './TopNav';
+import PullToRefresh from './PullToRefresh';
 
 export default function Layout({ children, nav = true }) {
   return (
     <div className="min-h-full" style={{ background: '#EEF1FB' }}>
+      <PullToRefresh />
       <div className="bg-gradient-to-r from-slate-800 to-indigo-900
                       py-1 text-center text-xs font-semibold uppercase
                       tracking-widest text-white">

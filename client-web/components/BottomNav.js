@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { useRouter } from 'next/router';
+import { useSettings } from '../lib/useSettings';
 
 // Astrotalk-style fixed bottom tab bar (mobile only). Five tabs:
 // Home · Chat · Live · Call · Remedies. The active tab turns brand
@@ -65,16 +66,27 @@ const TABS = [
     match: ['/remedies'] },
 ];
 
+const LABEL_KEY = {
+  Home: 'nav_home', Chat: 'nav_chat', Live: 'nav_live',
+  Call: 'nav_call', Remedies: 'nav_remedies',
+};
+
 export default function BottomNav() {
   const router = useRouter();
   const path = router.pathname;
   const query = router.asPath;
+  const { features } = useSettings();
+
+  // Admin can hide the Live tab via settings/features.enable_live.
+  const tabs = TABS.filter(
+    (t) => !(t.label === 'Live' && features.enable_live === false));
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200
                     bg-white safe-bottom md:hidden">
       <div className="mx-auto flex max-w-md items-stretch justify-between">
-        {TABS.map(({ href, label, Ico, match }) => {
+        {tabs.map(({ href, label, Ico, match }) => {
+          const shown = (features[LABEL_KEY[label]] || '').trim() || label;
           const active = match.includes(path)
             || (label === 'Call' && query.startsWith('/astrologers?mode=call'))
             || (label === 'Chat' && path === '/astrologers'
@@ -88,7 +100,7 @@ export default function BottomNav() {
                 <Ico />
               </span>
               <span className={`text-[11px] ${active
-                ? 'font-bold' : 'font-medium'}`}>{label}</span>
+                ? 'font-bold' : 'font-medium'}`}>{shown}</span>
             </Link>
           );
         })}

@@ -3,6 +3,7 @@ import { astrologerService } from '@astro/shared';
 import TopNav from './TopNav';
 import IncomingRequest from './IncomingRequest';
 import AnnouncementBanner from './AnnouncementBanner';
+import PullToRefresh from './PullToRefresh';
 import { useAuth } from '../lib/useAuth';
 
 export default function Layout({ children, nav = true }) {
@@ -22,6 +23,7 @@ export default function Layout({ children, nav = true }) {
 
   return (
     <div className="min-h-full" style={{ background: '#F1FAF6' }}>
+      <PullToRefresh />
       <div className="bg-gradient-to-r from-emerald-600 to-teal-600
                       py-1 text-center text-xs font-semibold uppercase
                       tracking-widest text-white">

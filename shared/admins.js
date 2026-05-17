@@ -20,5 +20,14 @@ export function isAdminEmail(email) {
 // profile = users doc (may be null), authEmail = Firebase auth email.
 export function isAdminUser(profile, authEmail) {
   if (profile && profile.role === 'admin') return true;
+  if (profile && Array.isArray(profile.roles)
+      && profile.roles.includes('admin')) return true;
   return isAdminEmail((profile && profile.email) || authEmail);
+}
+
+// Does the user hold a given role (single role field OR roles array)?
+export function hasRole(profile, role) {
+  if (!profile) return false;
+  if (profile.role === role) return true;
+  return Array.isArray(profile.roles) && profile.roles.includes(role);
 }

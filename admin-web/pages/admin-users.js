@@ -61,6 +61,15 @@ export default function AdminUsers() {
       setMsg('Save failed: ' + (e?.message || 'error'));
       return;
     }
+    // Roles (admin / astrologer / support / client).
+    try {
+      if (Array.isArray(edit.roles) && edit.roles.length) {
+        await adminService.setUserRoles(edit.uid, edit.roles);
+      }
+    } catch (e) {
+      window.alert('Profile saved. Roles NOT changed: '
+        + (e?.message || 'error'));
+    }
     // 2) Login email / password (Firebase Auth) - only when actually
     //    changed, valid, and the relay is configured. Failure here does
     //    NOT discard the profile save; we just warn and still close.
@@ -132,7 +141,11 @@ export default function AdminUsers() {
                 </td>
                 <td className="space-x-3 p-2">
                   <button onClick={() => setEdit({
-                    ...u, _origEmail: u.email || '', newPassword: '' })}
+                    ...u, _origEmail: u.email || '', newPassword: '',
+                    roles: Array.isArray(u.roles) && u.roles.length
+                      ? u.roles
+                      : [u.role || 'client',
+                        ...(u.isAstrologer ? ['astrologer'] : [])] })}
                     className="text-primary">Edit</button>
                   <button onClick={() => {
                     setGift(u); setGiftAmt(100);
@@ -184,6 +197,30 @@ export default function AdminUsers() {
                 <option value="active">Active</option>
                 <option value="suspended">Suspended</option>
               </select>
+              <div className="rounded-card border border-gray-200 p-3">
+                <div className="mb-1 text-xs font-semibold text-sub-text">
+                  Access roles (assign one or more)
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  {['client', 'astrologer', 'admin', 'support'].map((r) => {
+                    const on = (edit.roles || []).includes(r);
+                    return (
+                      <label key={r}
+                        className="flex items-center gap-1.5 text-sm
+                                   capitalize">
+                        <input type="checkbox" checked={on}
+                          onChange={(e) => {
+                            const set = new Set(edit.roles || []);
+                            if (e.target.checked) set.add(r);
+                            else set.delete(r);
+                            setEdit({ ...edit, roles: [...set] });
+                          }} />
+                        {r}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
             {msg && <div className="mt-2 text-sm text-danger">{msg}</div>}
             <div className="mt-4 flex gap-2">

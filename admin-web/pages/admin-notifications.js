@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { adminService } from '@astro/shared';
 import Layout from '../components/Layout';
+import UserPicker from '../components/UserPicker';
 import { useRequireAdmin } from '../lib/useAuth';
 
 export default function AdminNotifications() {
@@ -8,17 +9,32 @@ export default function AdminNotifications() {
   const [target, setTarget] = useState('all');
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
-  const [userId, setUserId] = useState('');
+  const [picked, setPicked] = useState([]); // selected user objects
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
 
   async function send() {
     setBusy(true); setMsg('');
     try {
-      const res = await adminService.sendNotification({
-        target, title, message, userId: target === 'user' ? userId : null });
-      setMsg(`Sent to ${res.sent} user(s).`);
-      setTitle(''); setMessage('');
+      if (target === 'user') {
+        if (!picked.length) {
+          setMsg('Pick at least one user.'); setBusy(false); return;
+        }
+        let sent = 0;
+        for (const u of picked) {
+          // eslint-disable-next-line no-await-in-loop
+          const r = await adminService.sendNotification({
+            target: 'user', title, message, userId: u.uid });
+          sent += (r && r.sent) || 1;
+        }
+        setMsg(`Sent to ${picked.length} selected user(s).`);
+        setTitle(''); setMessage(''); setPicked([]);
+      } else {
+        const res = await adminService.sendNotification({
+          target, title, message, userId: null });
+        setMsg(`Sent to ${res.sent} user(s).`);
+        setTitle(''); setMessage('');
+      }
     } catch (e) {
       setMsg('Failed: ' + (e?.message || 'error'));
     } finally { setBusy(false); }
@@ -38,8 +54,7 @@ export default function AdminNotifications() {
           <option value="user">Specific user</option>
         </select>
         {target === 'user' && (
-          <input className="input" placeholder="User ID" value={userId}
-            onChange={(e) => setUserId(e.target.value)} />
+          <UserPicker value={picked} onChange={setPicked} />
         )}
         <input className="input" placeholder="Title" value={title}
           onChange={(e) => setTitle(e.target.value)} />

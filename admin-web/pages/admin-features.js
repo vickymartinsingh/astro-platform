@@ -8,12 +8,21 @@ const TOGGLES = [
   ['enable_chat', 'Chat'],
   ['enable_call', 'Voice Call'],
   ['enable_video', 'Video Call'],
+  ['enable_live', 'Live Streaming'],
   ['enable_kundli', 'Kundli'],
   ['enable_horoscope', 'Horoscope'],
+  ['enable_remedies', 'Remedies'],
   ['enable_ai', 'AI Features'],
   ['enable_tour', 'Guided Tour'],
   ['free_chat_enabled', 'Free Chat'],
   ['free_call_enabled', 'Free Call'],
+];
+const NAV_LABELS = [
+  ['nav_home', 'Home'],
+  ['nav_chat', 'Chat'],
+  ['nav_live', 'Live'],
+  ['nav_call', 'Call'],
+  ['nav_remedies', 'Remedies'],
 ];
 
 export default function AdminFeatures() {
@@ -50,6 +59,23 @@ export default function AdminFeatures() {
         ))}
         <button onClick={save} className="btn-primary mt-2 w-full">
           Save Toggles
+        </button>
+      </div>
+
+      <h2 className="mb-2 mt-6 text-lg font-bold">
+        Bottom navigation labels (client app)
+      </h2>
+      <div className="card space-y-2">
+        {NAV_LABELS.map(([k, def]) => (
+          <label key={k} className="flex items-center gap-3">
+            <span className="w-24 text-sm text-sub-text">{def}</span>
+            <input className="input flex-1"
+              placeholder={def} value={f[k] || ''}
+              onChange={(e) => setF({ ...f, [k]: e.target.value })} />
+          </label>
+        ))}
+        <button onClick={save} className="btn-primary mt-2 w-full">
+          Save Navigation
         </button>
       </div>
     </Layout>
