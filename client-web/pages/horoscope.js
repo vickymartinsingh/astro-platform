@@ -23,6 +23,12 @@ export default function Horoscope() {
   if (loading) return <Layout><SkeletonList /></Layout>;
 
   const h = getHoroscope(sign, when);
+  const dateStr = (w) => {
+    const d = new Date();
+    if (w === 'tomorrow') d.setDate(d.getDate() + 1);
+    return d.toLocaleDateString('en-GB', {
+      weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+  };
 
   return (
     <Layout>
@@ -52,10 +58,12 @@ export default function Horoscope() {
         ))}
       </div>
       <Reading
-        title={`${sign} ${when === 'today' ? 'Today' : 'Tomorrow'}`}
+        title={`${sign} - ${when === 'today' ? 'Today' : 'Tomorrow'}, `
+          + `${dateStr(when)}`}
         h={h} />
       <p className="mt-3 text-xs text-sub-text">
-        Showing {when}. Tap Tomorrow to see the next day.
+        Showing {when === 'today' ? 'Today' : 'Tomorrow'} ({dateStr(when)}).
+        Tap Tomorrow to see the next day.
       </p>
     </Layout>
   );

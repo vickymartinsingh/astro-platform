@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import {
   sessionService, chatService, userService, kundliService,
+  remedyService,
 } from '@astro/shared';
 import { useRequireAstrologer } from '../../lib/useAuth';
 import { playPing } from '../../lib/ping';
@@ -20,6 +21,8 @@ export default function AstroChat() {
   const [otherTyping, setOtherTyping] = useState(false);
   const [recording, setRecording] = useState(false);
   const [busyAudio, setBusyAudio] = useState(false);
+  const [remedyOpen, setRemedyOpen] = useState(false);
+  const [myRemedies, setMyRemedies] = useState([]);
   const scrollRef = useRef(null);
   const lastCount = useRef(0);
   const typingTsRef = useRef(0);
@@ -89,6 +92,18 @@ export default function AstroChat() {
     if (!text.trim() || !session || !chatId) return;
     const v = text; setText('');
     await chatService.sendMessage(chatId, user.uid, v);
+  }
+
+  async function openRemedies() {
+    if (!user) return;
+    setMyRemedies(await remedyService.getAstrologerRemedies(user.uid));
+    setRemedyOpen(true);
+  }
+  async function suggestRemedy(r) {
+    setRemedyOpen(false);
+    if (!chatId) return;
+    await chatService.sendMessage(
+      chatId, user.uid, remedyService.remedyMessageText(r));
   }
 
   async function toggleRecord() {
@@ -202,9 +217,49 @@ export default function AstroChat() {
               : 'Type a reply...'}
             onChange={(e) => onType(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && send()} />
+          <button onClick={openRemedies} title="Suggest a remedy"
+            className="shrink-0 rounded-full bg-bg-light px-3 py-2
+              text-sm font-semibold text-primary">Remedy</button>
           <button onClick={send}
             className="btn-grad !rounded-full px-5">Send</button>
         </div>
+        {remedyOpen && (
+          <div className="fixed inset-0 z-50 flex items-end
+            justify-center bg-black/40"
+            onClick={() => setRemedyOpen(false)}>
+            <div className="m-3 w-full max-w-md rounded-2xl bg-white p-4"
+              onClick={(e) => e.stopPropagation()}>
+              <div className="mb-2 flex items-center justify-between">
+                <span className="font-bold">Suggest a remedy</span>
+                <button onClick={() => setRemedyOpen(false)}
+                  className="text-sm text-sub-text">Close</button>
+              </div>
+              {myRemedies.length === 0 ? (
+                <p className="text-sm text-sub-text">
+                  You have no remedies yet. Add them in My Remedies.
+                </p>
+              ) : (
+                <div className="max-h-80 space-y-2 overflow-y-auto">
+                  {myRemedies.map((r) => (
+                    <button key={r.id} onClick={() => suggestRemedy(r)}
+                      className="block w-full rounded-card border
+                        border-gray-200 p-3 text-left hover:shadow">
+                      <div className="font-semibold">{r.name}</div>
+                      <div className="text-xs font-semibold text-primary">
+                        Rs {r.price}
+                      </div>
+                      {r.description && (
+                        <div className="text-xs text-sub-text">
+                          {r.description}
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

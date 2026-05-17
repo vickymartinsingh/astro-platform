@@ -6,6 +6,13 @@
 // admin (users/{callerUid}.role === 'admin') before doing anything.
 const admin = require('firebase-admin');
 
+const ADMIN_EMAILS = [
+  'vickymartinsingh@gmail.com',
+  'vickymartinsing@gmail.com',
+];
+const isAdminEmail = (e) => ADMIN_EMAILS.includes(
+  String(e || '').trim().toLowerCase());
+
 function init() {
   if (admin.apps.length) return;
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
@@ -30,9 +37,10 @@ module.exports = async (req, res) => {
     const decoded = await admin.auth().verifyIdToken(idToken);
     const callerDoc = await admin.firestore()
       .collection('users').doc(decoded.uid).get();
-    if (!callerDoc.exists || callerDoc.data().role !== 'admin') {
-      return res.status(403).json({ error: 'not an admin' });
-    }
+    const ok = (callerDoc.exists && callerDoc.data().role === 'admin')
+      || isAdminEmail(decoded.email)
+      || (callerDoc.exists && isAdminEmail(callerDoc.data().email));
+    if (!ok) return res.status(403).json({ error: 'not an admin' });
 
     let body = req.body;
     if (typeof body === 'string') {

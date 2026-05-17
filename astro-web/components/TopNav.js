@@ -12,6 +12,7 @@ const LINKS = [
   { href: '/astro-sessions', label: 'My Sessions' },
   { href: '/astro-earnings', label: 'Earnings' },
   { href: '/astro-kundli', label: 'Kundli Viewer' },
+  { href: '/astro-remedies', label: 'My Remedies' },
   { href: '/astro-profile', label: 'Profile' },
   { href: '/astro-reviews', label: 'Reviews' },
   { href: '/astro-notifications', label: 'Announcements' },

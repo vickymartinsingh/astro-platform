@@ -23,3 +23,4 @@ export * as payoutService from './services/payoutService.js';
 export * as adminService from './services/adminService.js';
 export * as reportService from './services/reportService.js';
 export * as cmsService from './services/cmsService.js';
+export * as remedyService from './services/remedyService.js';

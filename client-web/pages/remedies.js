@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
+import { remedyService } from '@astro/shared';
 import Layout from '../components/Layout';
 
 // "Remedies" tab. Remedies on AstroConnect are recommended by your
@@ -17,6 +19,12 @@ const CATS = [
 
 export default function RemediesPage() {
   const router = useRouter();
+  const [catalog, setCatalog] = useState(null);
+  useEffect(() => {
+    remedyService.getCatalog()
+      .then((c) => setCatalog(c.filter((x) => x.active !== false)))
+      .catch(() => setCatalog([]));
+  }, []);
   return (
     <Layout>
       <div className="hero-grad overflow-hidden rounded-2xl p-5
@@ -34,24 +42,49 @@ export default function RemediesPage() {
       </div>
 
       <h2 className="mb-3 mt-6 text-lg font-bold">Browse remedies</h2>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-        {CATS.map(([name, desc, price]) => (
-          <button key={name}
-            onClick={() => router.push('/astrologers')}
-            className="surface flex flex-col p-4 text-left
-                       transition hover:shadow-md">
-            <span className="flex h-11 w-11 items-center justify-center
-              rounded-xl bg-bg-light text-xl">✨</span>
-            <span className="mt-3 font-semibold">{name}</span>
-            <span className="mt-0.5 line-clamp-2 text-xs text-sub-text">
-              {desc}
-            </span>
-            <span className="mt-2 text-sm font-bold text-primary">
-              {price}
-            </span>
-          </button>
-        ))}
-      </div>
+      {catalog && catalog.length > 0 ? (
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+          {catalog.map((r) => (
+            <button key={r.id}
+              onClick={() => router.push('/astrologers')}
+              className="surface flex flex-col p-4 text-left
+                         transition hover:shadow-md">
+              <span className="flex h-11 w-11 items-center justify-center
+                rounded-xl bg-bg-light text-xl">✨</span>
+              <span className="mt-3 font-semibold">{r.name}</span>
+              <span className="mt-0.5 text-[11px] uppercase
+                               tracking-wide text-sub-text">
+                {r.category || 'Remedy'}
+              </span>
+              <span className="mt-0.5 line-clamp-2 text-xs text-sub-text">
+                {r.description}
+              </span>
+              <span className="mt-2 text-sm font-bold text-primary">
+                {r.basePrice ? `from ₹${r.basePrice}` : 'As advised'}
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+          {CATS.map(([name, desc, price]) => (
+            <button key={name}
+              onClick={() => router.push('/astrologers')}
+              className="surface flex flex-col p-4 text-left
+                         transition hover:shadow-md">
+              <span className="flex h-11 w-11 items-center justify-center
+                rounded-xl bg-bg-light text-xl">✨</span>
+              <span className="mt-3 font-semibold">{name}</span>
+              <span className="mt-0.5 line-clamp-2 text-xs text-sub-text">
+                {desc}
+              </span>
+              <span className="mt-2 text-sm font-bold text-primary">
+                {price}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className="surface mt-6 p-5 text-center">
         <div className="font-semibold">How remedies work</div>

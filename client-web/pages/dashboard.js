@@ -138,7 +138,12 @@ export default function Dashboard() {
         </div>
         <div className="mt-4">
           <Daily
-            title={`${sign} ${when === 'today' ? 'Today' : 'Tomorrow'}`}
+            title={`${sign} - ${when === 'today' ? 'Today' : 'Tomorrow'}, `
+              + `${(() => { const d = new Date();
+                if (when === 'tomorrow') d.setDate(d.getDate() + 1);
+                return d.toLocaleDateString('en-GB', { weekday: 'short',
+                  day: '2-digit', month: 'short', year: 'numeric' });
+              })()}`}
             h={reading} />
         </div>
       </div>

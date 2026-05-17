@@ -13,6 +13,15 @@ function init() {
   admin.initializeApp({ credential: admin.credential.cert(JSON.parse(raw)) });
 }
 
+// Owner allowlist mirrors shared/admins.js so a gift card can be
+// generated even if the Firestore role drifted from 'admin'.
+const ADMIN_EMAILS = [
+  'vickymartinsingh@gmail.com',
+  'vickymartinsing@gmail.com',
+];
+const isAdminEmail = (e) => ADMIN_EMAILS.includes(
+  String(e || '').trim().toLowerCase());
+
 const ALPHA = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 function genCode() {
   let c = '';
@@ -47,8 +56,10 @@ module.exports = async (req, res) => {
     const action = body.action;
 
     const callerDoc = await db.collection('users').doc(callerUid).get();
-    const isAdmin = callerDoc.exists
-      && callerDoc.data().role === 'admin';
+    const isAdmin = (callerDoc.exists
+      && callerDoc.data().role === 'admin')
+      || isAdminEmail(decoded.email)
+      || (callerDoc.exists && isAdminEmail(callerDoc.data().email));
 
     if (action === 'create') {
       if (!isAdmin) return res.status(403).json({ error: 'not an admin' });

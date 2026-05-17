@@ -22,6 +22,7 @@ const MORE = [
   { href: '/admin-disputes', label: 'Disputes' },
   { href: '/admin-coupons', label: 'Coupons' },
   { href: '/admin-gifts', label: 'Gift Cards' },
+  { href: '/admin-remedies', label: 'Remedies' },
   { href: '/admin-notifications', label: 'Notifications' },
   { href: '/admin-features', label: 'Feature Toggles' },
   { href: '/admin-announcement', label: 'Announcement' },
