@@ -9,7 +9,7 @@ import {
 // Billing itself runs server-side (Hard Rule 3); this only reflects state,
 // enforces the 60s request timeout, and stops the session on disconnect
 // (Hard Rule 7) so the Cloud Function stops charging.
-export function useSession({ astroId, type, uid, clientName }) {
+export function useSession({ astroId, type, uid, clientName, view = false }) {
   const router = useRouter();
   const [astro, setAstro] = useState(null);
   const [session, setSession] = useState(null);   // live session doc
@@ -31,6 +31,11 @@ export function useSession({ astroId, type, uid, clientName }) {
       setAstro(a);
       const cId = await chatService.getOrCreateConversation(uid, astroId);
       setChatId(cId);
+
+      // VIEW-ONLY (history): just resolve the astrologer + thread id so
+      // the past messages render. NEVER create a session request, never
+      // notify the astrologer, never bill. The user is only reading.
+      if (view) return;
 
       // Resume an existing live session for this pair (refresh / back).
       const existing = (await sessionService.getUserSessions(uid))
@@ -79,6 +84,7 @@ export function useSession({ astroId, type, uid, clientName }) {
   // As soon as the request is placed: greet the client and share the
   // chosen kundli with the astrologer (so they have context on accept).
   useEffect(() => {
+    if (view) return;
     if (!chatId || !session || introSentRef.current) return;
     if (['ended', 'rejected', 'missed'].includes(session.status)) return;
     // Send the intro + kundli exactly ONCE per session. The Firestore

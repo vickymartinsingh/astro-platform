@@ -78,14 +78,14 @@ export default function AdminTest() {
               <tr key={t.id} className="border-t">
                 <td className="p-2">
                   {t.createdAt?.toDate
-                    ? t.createdAt.toDate().toLocaleString() : '—'}
+                    ? t.createdAt.toDate().toLocaleString() : '-'}
                 </td>
-                <td className="p-2">{t.reason || '—'}</td>
+                <td className="p-2">{t.reason || '-'}</td>
                 <td className="p-2 font-semibold">
                   ₹{Math.abs(Number(t.amount || 0))}
                 </td>
                 <td className="p-2 text-xs text-sub-text">
-                  {t.referenceId || '—'}
+                  {t.referenceId || '-'}
                 </td>
               </tr>
             ))}

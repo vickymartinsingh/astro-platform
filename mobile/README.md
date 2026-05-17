@@ -1,10 +1,10 @@
-# Mobile (Android APK) — Capacitor wrapper
+# Mobile (Android APK) - Capacitor wrapper
 
 Per blueprint Section 11, **only the Client Portal** is wrapped into an
 Android APK. The Astrologer portal and Admin panel stay as web apps.
 
 Capacitor is initialised **inside `client-web/`** (that is where the web
-build and `capacitor.config.json` live) — this folder is documentation only.
+build and `capacitor.config.json` live) - this folder is documentation only.
 
 ## Build steps (all free)
 
@@ -38,7 +38,7 @@ npx cap open android
 ## Notes
 - `capacitor.config.json` uses `webDir: "out"` (Next static export folder).
 - Dynamic routes (`/chat/[id]`, `/call/[id]`, `/astrologer/[id]`) need the
-  static export to keep client-side routing — the screens already fetch all
+  static export to keep client-side routing - the screens already fetch all
   data client-side via the shared services, so SSR is not required.
 - Push notifications: add `@capacitor/push-notifications` and follow the
   Capacitor + Firebase FCM guide (blueprint 11.6).

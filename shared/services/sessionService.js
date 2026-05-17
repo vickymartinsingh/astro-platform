@@ -202,7 +202,7 @@ export async function updateSessionStatus(id, status, extra = {}) {
         sendPushToUser({
           toUid: s.userId,
           title: `${astroName} accepted your ${s.type || ''}`.trim(),
-          body: `${astroName} is ready — your ${s.type || ''} `
+          body: `${astroName} is ready - your ${s.type || ''} `
             + 'consultation is starting.',
           data: { type: 'session', sessionId: id, route: '/dashboard',
             from: astroName },

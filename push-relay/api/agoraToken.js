@@ -2,7 +2,7 @@
 //
 // Why this exists: once an Agora App Certificate is enabled, every
 // channel join needs a SIGNED token. The certificate is a secret and
-// must never ship in the app or the Git repo — it lives ONLY here as a
+// must never ship in the app or the Git repo - it lives ONLY here as a
 // Vercel environment variable.
 //
 // Env vars (Vercel -> Project -> Settings -> Environment Variables):

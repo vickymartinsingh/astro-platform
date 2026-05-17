@@ -82,9 +82,9 @@ export default function BottomNav() {
           return (
             <Link key={label} href={href}
               className={`flex flex-1 flex-col items-center gap-0.5 py-2
-                ${active ? 'text-brand-dark' : 'text-sub-text'}`}>
+                ${active ? 'text-primary' : 'text-sub-text'}`}>
               <span className={`flex h-9 w-12 items-center justify-center
-                rounded-full transition ${active ? 'bg-brand-soft' : ''}`}>
+                rounded-full transition ${active ? 'bg-bg-light' : ''}`}>
                 <Ico />
               </span>
               <span className={`text-[11px] ${active

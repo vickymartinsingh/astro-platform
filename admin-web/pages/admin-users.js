@@ -50,7 +50,7 @@ export default function AdminUsers() {
   }
   async function saveEdit() {
     setMsg('');
-    // 1) Profile (name / phone / status) — this ALWAYS saves and never
+    // 1) Profile (name / phone / status) - this ALWAYS saves and never
     //    blocks on the optional login-email/password change.
     try {
       await adminService.updateUserProfile(edit.uid, {
@@ -61,7 +61,7 @@ export default function AdminUsers() {
       setMsg('Save failed: ' + (e?.message || 'error'));
       return;
     }
-    // 2) Login email / password (Firebase Auth) — only when actually
+    // 2) Login email / password (Firebase Auth) - only when actually
     //    changed, valid, and the relay is configured. Failure here does
     //    NOT discard the profile save; we just warn and still close.
     const newEmail = (edit.email || '').trim();
@@ -171,7 +171,7 @@ export default function AdminUsers() {
                 onChange={(e) =>
                   setEdit({ ...edit, email: e.target.value })} />
               <label className="block text-xs font-medium text-sub-text">
-                New password (optional, min 6 chars — leave blank to keep)
+                New password (optional, min 6 chars - leave blank to keep)
               </label>
               <input className="input" type="text"
                 placeholder="New password (optional)"

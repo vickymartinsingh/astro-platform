@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/router';
 import LoginCard from '../components/LoginCard';
+import { useAuth } from './useAuth';
 
 // Global login popup. openLogin(onSuccess, { onDismiss }).
 // Closes ONLY on: successful login, the X / "Maybe later" buttons, or a
@@ -17,8 +18,22 @@ export function AuthModalProvider({ children }) {
   const cbRef = useRef(null);
   const dismissRef = useRef(null);
   const router = useRouter();
+  const { user } = useAuth();
 
   useEffect(() => { setMounted(true); }, []);
+
+  // The instant auth succeeds (email, Google, redirect, anything) close
+  // the popup and run any pending action. This guarantees the login
+  // popup never lingers once the user is signed in.
+  useEffect(() => {
+    if (open && user) {
+      const cb = cbRef.current;
+      cbRef.current = null; dismissRef.current = null;
+      setShown(false);
+      setTimeout(() => setOpen(false), 150);
+      if (cb) setTimeout(cb, 380);
+    }
+  }, [open, user]);
 
   // Smoothly animate in after mount.
   useEffect(() => {
@@ -35,6 +50,8 @@ export function AuthModalProvider({ children }) {
   }, [router.events]);
 
   function openLogin(onSuccess, opts = {}) {
+    // Already signed in: never show the popup, just run the action.
+    if (user) { if (typeof onSuccess === 'function') onSuccess(); return; }
     cbRef.current = typeof onSuccess === 'function' ? onSuccess : null;
     dismissRef.current = typeof opts.onDismiss === 'function'
       ? opts.onDismiss : null;
@@ -63,8 +80,8 @@ export function AuthModalProvider({ children }) {
       className={`fixed inset-0 z-[2147483646] flex items-center
         justify-center p-4 transition-opacity duration-200
         ${shown ? 'opacity-100' : 'opacity-0'}`}
-      style={{ background: 'rgba(20,14,46,.45)', isolation: 'isolate',
-        backdropFilter: 'blur(3px)', WebkitBackdropFilter: 'blur(3px)' }}
+      style={{ background: 'rgba(16,11,38,.86)', isolation: 'isolate',
+        backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }}
     >
       <div
         className={`relative w-full max-w-md transition-all duration-300

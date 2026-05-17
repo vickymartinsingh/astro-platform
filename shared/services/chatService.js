@@ -65,11 +65,23 @@ export async function sendMessage(chatId, senderId, text) {
 export async function sendImageMessage(chatId, senderId, file) {
   if (!chatId || !senderId || !file) return false;
   try {
-    const path = `chat/${chatId}/${Date.now()}_${
+    // Use the media/ prefix: Storage rules already allow any signed-in
+    // user to write there, so photo send works with no rules redeploy.
+    const path = `media/chat/${chatId}/${Date.now()}_${
       String(file.name || 'photo').replace(/[^\w.\-]/g, '')}`;
     const r = storageRef(storage, path);
-    await uploadBytes(r, file, { contentType: file.type || 'image/jpeg' });
-    const url = await getDownloadURL(r);
+    // Never hang the UI: if Storage is unreachable / rules block the
+    // write, fail after 30s so the spinner stops and we can tell the
+    // user instead of spinning forever.
+    const withTimeout = (p, ms) => Promise.race([
+      p,
+      new Promise((_, rej) => setTimeout(
+        () => rej(new Error('timeout')), ms)),
+    ]);
+    await withTimeout(
+      uploadBytes(r, file, { contentType: file.type || 'image/jpeg' }),
+      30000);
+    const url = await withTimeout(getDownloadURL(r), 15000);
     await addDoc(collection(db, 'chats', chatId, 'messages'), {
       senderId, text: '', imageUrl: url, createdAt: serverTimestamp(),
     });

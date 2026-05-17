@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--workspace=client-web"],
       "port": 3000
+    },
+    {
+      "name": "client-export",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["--yes", "serve", "-s", "client-web/out", "-l", "4173"],
+      "port": 4173
     }
   ]
 }

@@ -85,7 +85,7 @@ export async function loginWithGoogle() {
     return cred.user;
   } catch (e) {
     // Popups are often blocked (in-app browsers, strict mobile browsers,
-    // some PWAs). Fall back to a full-page redirect — the result is
+    // some PWAs). Fall back to a full-page redirect - the result is
     // finalised by resolveGoogleRedirect() on the next load.
     const code = e && e.code;
     if ([

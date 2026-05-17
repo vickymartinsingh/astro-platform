@@ -17,7 +17,7 @@ function parseZodiac(dob) {
 // Real kundli via the relay (Prokerala API; secret stays server-side).
 // Endpoint derives from the push relay URL, or NEXT_PUBLIC_KUNDLI_ENDPOINT.
 // Returns null if not configured / on any failure (caller shows the
-// basic zodiac instead — never throws).
+// basic zodiac instead - never throws).
 function kundliEndpoint() {
   const env = typeof process !== 'undefined' && process.env;
   const explicit = (env && env.NEXT_PUBLIC_KUNDLI_ENDPOINT) || '';

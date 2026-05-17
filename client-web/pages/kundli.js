@@ -143,13 +143,13 @@ export default function Kundli() {
                 <div className="mt-2 grid grid-cols-2 gap-2 rounded-card
                                 bg-bg-light p-3 text-sm">
                   <div><span className="text-sub-text">Zodiac:</span>{' '}
-                    <b>{chart[k.id].zodiac || '—'}</b></div>
+                    <b>{chart[k.id].zodiac || '-'}</b></div>
                   <div><span className="text-sub-text">Nakshatra:</span>{' '}
-                    <b>{chart[k.id].nakshatra || '—'}</b></div>
+                    <b>{chart[k.id].nakshatra || '-'}</b></div>
                   <div><span className="text-sub-text">Moon sign:</span>{' '}
-                    <b>{chart[k.id].chandra_rasi || '—'}</b></div>
+                    <b>{chart[k.id].chandra_rasi || '-'}</b></div>
                   <div><span className="text-sub-text">Sun sign:</span>{' '}
-                    <b>{chart[k.id].soorya_rasi || '—'}</b></div>
+                    <b>{chart[k.id].soorya_rasi || '-'}</b></div>
                 </div>
               )}
             </div>

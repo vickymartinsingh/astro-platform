@@ -34,8 +34,9 @@ export default function AstrologerCard({
     <div className="surface relative p-5 transition hover:shadow-md">
       {a.approved && <span className="featured-badge">★ Featured</span>}
       {freeMin > 0 && (
-        <span className="absolute right-3 top-3 z-[1] rounded-full
-          bg-success px-2 py-0.5 text-[11px] font-semibold text-white">
+        <span className="pointer-events-none absolute right-3 top-3 z-0
+          rounded-full bg-success px-2 py-0.5 text-[11px]
+          font-semibold text-white">
           First {freeMin} min FREE
         </span>
       )}

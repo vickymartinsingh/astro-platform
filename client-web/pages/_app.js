@@ -5,9 +5,11 @@ import { I18nProvider } from '../lib/i18n';
 import { AuthModalProvider } from '../lib/authModal';
 import { KundliGateProvider } from '../lib/kundliGate';
 import { PendingSessionProvider } from '../lib/pendingSession';
+import useNativeBack from '../lib/useNativeBack';
 
 function WithProviders({ children }) {
   const { user, profile } = useAuth();
+  useNativeBack();
   return (
     <I18nProvider profile={profile} uid={user?.uid}>
       <AuthModalProvider>

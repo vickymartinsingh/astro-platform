@@ -3,24 +3,11 @@ import { useRouter } from 'next/router';
 import { chatService } from '@astro/shared';
 import Layout from '../../components/Layout';
 import RateModal from '../../components/RateModal';
+import VerifiedBadge from '../../components/VerifiedBadge';
 import { useRequireClient } from '../../lib/useAuth';
 import { useSession } from '../../lib/useSession';
 import { usePendingSession } from '../../lib/pendingSession';
 import { playPing } from '../../lib/ping';
-
-function GreenTick({ size = 15 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24"
-      style={{ display: 'inline-block', flexShrink: 0 }}>
-      <path fill="#1FA855" d="M12 1.5l2.2 2.06 3-.36 1.2 2.78 2.78 1.2-.36
-        3L23 12l-2.06 2.2.36 3-2.78 1.2-1.2 2.78-3-.36L12 22.5l-2.2-2.06-3
-        .36-1.2-2.78-2.78-1.2.36-3L1 12l2.06-2.2-.36-3 2.78-1.2
-        1.2-2.78 3 .36L12 1.5z" />
-      <path fill="#fff" d="M10.6 14.4l-2.3-2.3-1.3 1.3 3.6 3.6
-        6.4-6.4-1.3-1.3z" />
-    </svg>
-  );
-}
 
 function fmtTime(ts) {
   try {
@@ -29,17 +16,18 @@ function fmtTime(ts) {
       : ts instanceof Date ? ts : null;
     if (!d) return '';
     return d.toLocaleTimeString([], {
-      hour: '2-digit', minute: '2-digit' }).toLowerCase();
+      hour: '2-digit', minute: '2-digit' });
   } catch (_) { return ''; }
 }
 
 export default function ChatScreen() {
   const router = useRouter();
   const { id: astroId } = router.query;
+  const isView = router.query.view === '1';
   const { user, profile, loading } = useRequireClient();
   const { astro, session, wallet, countdown, chatId, end } =
     useSession({ astroId, type: 'chat', uid: user?.uid,
-      clientName: profile?.name });
+      clientName: profile?.name, view: isView });
 
   const { track } = usePendingSession();
   const [messages, setMessages] = useState([]);
@@ -48,12 +36,14 @@ export default function ChatScreen() {
   const [sheet, setSheet] = useState(false);
   const [atBottom, setAtBottom] = useState(true);
   const [busyImg, setBusyImg] = useState(false);
+  const [liveSecs, setLiveSecs] = useState(0);
   const scrollRef = useRef(null);
   const lastCount = useRef(0);
   const fileRef = useRef(null);
   const camRef = useRef(null);
 
-  function minimise() {
+  function goBack() {
+    if (isView) { router.back(); return; }
     if (session?.id) {
       track({ sessionId: session.id, astroId, astroName: astro?.name,
         type: 'chat' });
@@ -78,13 +68,13 @@ export default function ChatScreen() {
     if (messages.length > lastCount.current) {
       const last = messages[messages.length - 1];
       if (lastCount.current > 0 && last && last.senderId !== user?.uid
-          && last.senderId !== 'system') {
+          && last.senderId !== 'system' && !isView) {
         playPing();
       }
       lastCount.current = messages.length;
     }
     if (atBottom) jumpToBottom();
-  }, [messages, user, atBottom]);
+  }, [messages, user, atBottom, isView]);
 
   useEffect(() => {
     if (session?.status === 'ended') setShowRate(true);
@@ -93,12 +83,28 @@ export default function ChatScreen() {
   const active = session?.status === 'active' || session?.status === 'accepted';
   const ratePerSec = session?.ratePerSecond || 0;
   const ratePerMin = Math.round(ratePerSec * 60);
-  const lowBalance = active && wallet > 0 && wallet < ratePerSec * 60;
   const broke = active && wallet <= 0;
+  // Seconds the wallet can still afford at this rate.
   const secsLeft = ratePerSec > 0
     ? Math.max(0, Math.floor(wallet / ratePerSec)) : 0;
-  const clock = `${String(Math.floor(secsLeft / 60)).padStart(2, '0')}:` +
-    `${String(secsLeft % 60).padStart(2, '0')}`;
+
+  // Smooth 1-second countdown. Re-syncs whenever the real wallet figure
+  // changes (the server/end settlement deducts), then ticks down locally
+  // so the client always sees a live "time remaining" clock.
+  useEffect(() => { setLiveSecs(secsLeft); }, [secsLeft]);
+  useEffect(() => {
+    if (!active || ratePerMin <= 0 || isView) return undefined;
+    const t = setInterval(
+      () => setLiveSecs((s) => (s > 0 ? s - 1 : 0)), 1000);
+    return () => clearInterval(t);
+  }, [active, ratePerMin, isView]);
+
+  const showSecs = ratePerMin > 0 ? liveSecs : 0;
+  const clock = `${String(Math.floor(showSecs / 60)).padStart(2, '0')}:` +
+    `${String(showSecs % 60).padStart(2, '0')}`;
+  // Warn the client when ~3 minutes of balance is left.
+  const lowBalance = active && ratePerMin > 0
+    && showSecs > 0 && showSecs <= 180;
 
   async function send() {
     if (!text.trim() || !active || broke) return;
@@ -116,8 +122,10 @@ export default function ChatScreen() {
     setBusyImg(true);
     const ok = await chatService.sendImageMessage(chatId, user.uid, f);
     setBusyImg(false);
-    if (!ok) window.alert('Could not send the photo. Please try again.');
-    else setAtBottom(true);
+    if (!ok) {
+      window.alert('Could not send the photo. Please check your '
+        + 'connection and try again.');
+    } else setAtBottom(true);
   }
 
   async function confirmEnd() {
@@ -125,12 +133,12 @@ export default function ChatScreen() {
   }
 
   if (loading || !astro) {
-    return <Layout nav={false}><div className="p-6">Loading…</div></Layout>;
+    return <Layout nav={false}><div className="p-6">Loading...</div></Layout>;
   }
 
-  const waiting = session && session.status === 'requesting';
+  const waiting = !isView && session && session.status === 'requesting';
 
-  if (session && ['rejected', 'missed'].includes(session.status)) {
+  if (!isView && session && ['rejected', 'missed'].includes(session.status)) {
     return (
       <Overlay>
         <div className="w-full max-w-sm rounded-2xl bg-white p-6
@@ -145,7 +153,7 @@ export default function ChatScreen() {
           </p>
           <div className="mt-4 flex gap-2">
             <button onClick={() => router.push('/astrologers')}
-              className="btn-brand flex-1 justify-center">
+              className="btn-primary flex-1 justify-center">
               Choose another astrologer
             </button>
             <button onClick={() => router.push('/dashboard')}
@@ -157,14 +165,14 @@ export default function ChatScreen() {
   }
 
   return (
-    <div className="relative flex h-screen flex-col bg-chat-canvas">
-      {/* Header — Astrotalk style: back · avatar · name+tick+timer ·
-          wallet · red End */}
-      <div className="flex items-center gap-2.5 border-b border-black/10
+    <div className="relative flex h-screen flex-col bg-[#F4F2FB]">
+      {/* Header: back, avatar, name + blue tick, live countdown,
+          wallet, red End */}
+      <div className="flex items-center gap-2.5 border-b border-gray-200
                       bg-white px-3 py-2.5">
-        <button onClick={minimise} aria-label="Back"
+        <button onClick={goBack} aria-label="Back"
           className="-ml-1 p-1 text-2xl leading-none text-dark-text">
-          ‹
+          &#8249;
         </button>
         <img src={astro.profileImage || '/avatar.png'}
           className="h-9 w-9 rounded-full object-cover" alt="" />
@@ -172,34 +180,39 @@ export default function ChatScreen() {
           <div className="flex items-center gap-1 font-semibold
                           text-dark-text">
             <span className="truncate">{astro.name}</span>
-            {astro.approved && <GreenTick />}
+            {astro.approved && <VerifiedBadge size={15} />}
           </div>
           <div className="text-xs text-sub-text">
-            {waiting ? 'Connecting…'
-              : active && ratePerMin > 0 ? clock
+            {isView ? 'Viewing past messages'
+              : waiting ? 'Connecting...'
+              : active && ratePerMin > 0 ? `${clock} left`
               : active ? 'online'
               : 'Consultation ended'}
           </div>
         </div>
-        <button onClick={() => router.push('/wallet')} aria-label="Wallet"
-          className="p-1 text-dark-text">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" strokeWidth="1.7"
-            strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="6" width="18" height="13" rx="2.5" />
-            <path d="M3 10h18M16 14h2" />
-          </svg>
-        </button>
-        <button onClick={confirmEnd}
-          className="px-1 text-base font-semibold text-danger">
-          End
-        </button>
+        {!isView && (
+          <>
+            <button onClick={() => router.push('/wallet')}
+              aria-label="Wallet" className="p-1 text-dark-text">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="1.7"
+                strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="6" width="18" height="13" rx="2.5" />
+                <path d="M3 10h18M16 14h2" />
+              </svg>
+            </button>
+            <button onClick={confirmEnd}
+              className="px-1 text-base font-semibold text-danger">
+              End
+            </button>
+          </>
+        )}
       </div>
 
       {waiting && (
-        <div className="flex items-center gap-3 bg-brand-soft px-4 py-3">
+        <div className="flex items-center gap-3 bg-bg-light px-4 py-3">
           <span className="h-6 w-6 shrink-0 animate-spin rounded-full
-                           border-2 border-brand border-t-transparent" />
+                           border-2 border-primary border-t-transparent" />
           <div className="flex-1 text-sm">
             <div className="font-semibold text-dark-text">
               Please wait until {astro.name} accepts your chat
@@ -208,9 +221,9 @@ export default function ChatScreen() {
               Your details have been shared. Time left {mmss}
             </div>
           </div>
-          <button onClick={minimise}
-            className="shrink-0 rounded-full bg-brand px-3 py-2
-                       text-xs font-semibold text-dark-text">
+          <button onClick={goBack}
+            className="shrink-0 rounded-full bg-primary px-3 py-2
+                       text-xs font-semibold text-white">
             Continue browsing
           </button>
           <button onClick={() => router.push('/astrologers')}
@@ -220,9 +233,15 @@ export default function ChatScreen() {
       )}
 
       {lowBalance && (
-        <div className="bg-warning px-4 py-2 text-center text-sm text-white">
-          ⚠ Low balance, only ~{secsLeft}s left ·{' '}
-          <a href="/wallet" className="font-bold underline">Recharge now</a>
+        <div className="flex items-center justify-between gap-2 bg-warning
+                        px-4 py-2 text-sm text-white">
+          <span>Low balance, about {Math.ceil(showSecs / 60)} min left.</span>
+          <button
+            onClick={() => router.push(`/wallet?return=/chat/${astroId}`)}
+            className="rounded-full bg-white px-3 py-1 text-xs
+                       font-bold text-warning">
+            Recharge now
+          </button>
         </div>
       )}
 
@@ -231,12 +250,11 @@ export default function ChatScreen() {
           const el = e.currentTarget;
           setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 80);
         }}
-        className="smooth-scroll relative flex-1 overflow-y-auto
-                   chat-doodle px-3 py-3">
+        className="smooth-scroll relative flex-1 overflow-y-auto px-3 py-3">
         <div className="mb-3 flex justify-center">
-          <span className="rounded-full bg-white/80 px-3 py-1 text-[11px]
+          <span className="rounded-full bg-white px-3 py-1 text-[11px]
                            font-medium text-sub-text shadow-sm">
-            Today
+            {isView ? 'Conversation history' : 'Today'}
           </span>
         </div>
 
@@ -249,8 +267,8 @@ export default function ChatScreen() {
           if (divider) {
             return (
               <div key={m.id} className="my-3 flex justify-center">
-                <span className="rounded-full bg-white/70 px-3 py-1
-                                 text-[11px] text-sub-text">
+                <span className="rounded-full bg-white px-3 py-1
+                                 text-[11px] text-sub-text shadow-sm">
                   {String(m.text).replace(/•/g, '').trim()}
                 </span>
               </div>
@@ -259,9 +277,9 @@ export default function ChatScreen() {
           if (system) {
             return (
               <div key={m.id} className="my-2 flex justify-center">
-                <div className="max-w-[82%] whitespace-pre-line
-                  rounded-2xl bg-chat-yellow px-3.5 py-2 text-center
-                  text-[13px] text-dark-text shadow-sm">
+                <div className="max-w-[82%] whitespace-pre-line rounded-2xl
+                  bg-bg-light px-3.5 py-2 text-center text-[13px]
+                  text-primary shadow-sm">
                   {m.text}
                 </div>
               </div>
@@ -273,19 +291,19 @@ export default function ChatScreen() {
                 : 'justify-start'}`}>
               <div className={`max-w-[78%] rounded-2xl px-3 py-2
                 text-[14px] shadow-sm ${mine
-                  ? 'rounded-br-md bg-chat-user'
-                  : 'rounded-bl-md bg-chat-astro'}`}>
+                  ? 'rounded-br-md bg-[#E7DEFF]'
+                  : 'rounded-bl-md bg-white'}`}>
                 {m.imageUrl ? (
-                  <img src={m.imageUrl} alt="photo"
+                  <img src={m.imageUrl} alt="shared"
                     className="max-h-72 rounded-lg object-cover" />
                 ) : (
                   <span className="whitespace-pre-line break-words
                                    text-dark-text">{m.text}</span>
                 )}
-                <div className={`mt-0.5 flex items-center justify-end gap-1
-                  text-[10px] text-sub-text`}>
+                <div className="mt-0.5 flex items-center justify-end gap-1
+                                text-[10px] text-sub-text">
                   <span>{t}</span>
-                  {mine && <span className="text-[#34B7F1]">✓✓</span>}
+                  {mine && <span className="text-primary">&#10003;&#10003;</span>}
                 </div>
               </div>
             </div>
@@ -297,7 +315,7 @@ export default function ChatScreen() {
         <button onClick={() => { setAtBottom(true); jumpToBottom(); }}
           aria-label="Scroll to latest"
           className="absolute bottom-24 right-4 z-10 flex h-10 w-10
-            items-center justify-center rounded-full bg-white text-dark-text
+            items-center justify-center rounded-full bg-white text-primary
             shadow-lg ring-1 ring-black/5">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
             stroke="currentColor" strokeWidth="2" strokeLinecap="round"
@@ -305,39 +323,51 @@ export default function ChatScreen() {
         </button>
       )}
 
-      {broke ? (
+      {isView ? (
+        <div className="flex items-center gap-2 border-t border-gray-200
+                        bg-white px-3 py-3">
+          <span className="flex-1 text-center text-xs text-sub-text">
+            You are viewing past messages. The astrologer is not notified.
+          </span>
+          <button onClick={() => router.push(`/chat/${astroId}`)}
+            className="btn-primary !min-h-0 px-4 py-2 text-sm">
+            Start new chat
+          </button>
+        </div>
+      ) : broke ? (
         <div className="bg-gray-100 p-3 text-center text-sm text-sub-text">
-          Your balance ended, so you can&apos;t send new messages, but the
+          Your balance ended, so you cannot send new messages, but the
           astrologer can still reply here for up to 1 hour.{' '}
-          <a href="/wallet" className="font-bold text-brand-dark">
+          <a href={`/wallet?return=/chat/${astroId}`}
+            className="font-bold text-primary">
             Recharge to continue
           </a>
         </div>
       ) : (
-        <div className="flex items-center gap-2 border-t border-black/10
+        <div className="flex items-center gap-2 border-t border-gray-200
                         bg-white px-3 py-2.5">
           <button onClick={() => active && setSheet(true)}
             aria-label="Add photo" disabled={!active || busyImg}
             className="flex h-9 w-9 shrink-0 items-center justify-center
-              rounded-full text-2xl leading-none text-sub-text
+              rounded-full text-2xl leading-none text-primary
               disabled:opacity-40">
             {busyImg ? (
               <span className="h-4 w-4 animate-spin rounded-full border-2
-                               border-brand border-t-transparent" />
+                               border-primary border-t-transparent" />
             ) : '+'}
           </button>
           <input
             className="h-11 flex-1 rounded-full border border-gray-200
-              bg-gray-50 px-4 text-[15px] outline-none focus:border-brand"
-            placeholder={active ? 'Message…'
-              : 'Waiting for the astrologer to accept…'}
+              bg-gray-50 px-4 text-[15px] outline-none focus:border-primary"
+            placeholder={active ? 'Message...'
+              : 'Waiting for the astrologer to accept...'}
             value={text} disabled={!active}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && send()} />
           <button onClick={send} disabled={!active || !text.trim()}
             aria-label="Send"
             className="flex h-10 w-10 shrink-0 items-center justify-center
-              rounded-full bg-brand text-dark-text disabled:opacity-40">
+              rounded-full bg-primary text-white disabled:opacity-40">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
               stroke="currentColor" strokeWidth="2" strokeLinecap="round"
               strokeLinejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4
@@ -353,21 +383,20 @@ export default function ChatScreen() {
 
       {sheet && (
         <div className="fixed inset-0 z-50 flex flex-col justify-end
-                        bg-black/30" onClick={() => setSheet(false)}>
+                        bg-black/40" onClick={() => setSheet(false)}>
           <div className="m-2 animate-[slideUp_.18s_ease-out]"
             onClick={(e) => e.stopPropagation()}>
-            <div className="overflow-hidden rounded-2xl bg-white/95
-                            backdrop-blur">
+            <div className="overflow-hidden rounded-2xl bg-white">
               <div className="py-3 text-center text-sm font-semibold
                               text-sub-text">Choose Picture</div>
               <button onClick={() => camRef.current?.click()}
                 className="block w-full border-t border-gray-200 py-4
-                  text-center text-base text-brand-dark">
+                  text-center text-base text-primary">
                 From Camera
               </button>
               <button onClick={() => fileRef.current?.click()}
                 className="block w-full border-t border-gray-200 py-4
-                  text-center text-base text-brand-dark">
+                  text-center text-base text-primary">
                 From Photos
               </button>
             </div>

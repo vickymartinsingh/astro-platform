@@ -1,6 +1,6 @@
 name: Build iOS IPAs (unsigned)
 
-# Manual trigger only — macOS runner minutes are limited on the free tier,
+# Manual trigger only - macOS runner minutes are limited on the free tier,
 # so we don't run this on every push. Go to the repo's Actions tab,
 # pick this workflow, and click "Run workflow".
 on:
@@ -48,7 +48,7 @@ jobs:
 
       # The Firebase native plugins crash iOS on launch without an iOS
       # Firebase config (GoogleService-Info.plist), and iOS push needs the
-      # paid Apple Developer Program + APNs anyway — neither is available
+      # paid Apple Developer Program + APNs anyway - neither is available
       # on the free sideload path. Strip them for the iOS build ONLY
       # (CI-ephemeral; the committed repo + Android keep them). The app
       # still works fully: it loads the live site (email login, chat,

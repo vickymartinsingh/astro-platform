@@ -1,7 +1,7 @@
 // One-off: make vickymartinsing@gmail.com a single account that can sign
 // into ALL three portals (admin + astrologer + client).
 //
-// Firebase has ONE auth user per email, so we don't delete anything —
+// Firebase has ONE auth user per email, so we don't delete anything -
 // we just (create or) elevate that account and set its Firestore role.
 // Uses the local service-account key (gitignored). Run:
 //   node scripts/make-superadmin.mjs

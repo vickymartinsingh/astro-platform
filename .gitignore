@@ -22,7 +22,7 @@ admin-web/ios/
 *.keystore
 *.jks
 keystore.properties
-# Secrets — NEVER commit these
+# Secrets - NEVER commit these
 firebase-key.json
 firebase-key.oneline.txt
 google-services.json
@@ -32,3 +32,4 @@ google-services.json
 .vercel
 coverage/
 _blueprint_unpacked/
+PROKERALA_SECRET.txt

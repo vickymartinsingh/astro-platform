@@ -5,7 +5,7 @@ import { functions } from '../firebase.js';
 
 // Agora App ID. Baked in so packaged APK / iOS builds (which have no
 // NEXT_PUBLIC_* env at runtime) can still connect. An env override wins
-// if provided at build time. NOTE: this is App-ID/testing-mode auth —
+// if provided at build time. NOTE: this is App-ID/testing-mode auth -
 // the Agora project must have NO App Certificate enabled (token = null),
 // otherwise a token server is required.
 export const AGORA_APP_ID =

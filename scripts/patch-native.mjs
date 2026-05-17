@@ -1,7 +1,7 @@
 // Injects the mic/camera permissions Agora calls need into the native
 // projects. Capacitor regenerates android/ & ios/ from templates (and CI
-// runs `cap add` fresh), so this runs AFTER cap add/sync — locally and in
-// the iOS workflow — and is idempotent (safe to run repeatedly).
+// runs `cap add` fresh), so this runs AFTER cap add/sync - locally and in
+// the iOS workflow - and is idempotent (safe to run repeatedly).
 // Run: node scripts/patch-native.mjs
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -97,7 +97,7 @@ function patchGoogleServices(app) {
       && c.client_info.android_client_info.package_name);
   } catch (_) { return `gservices: bad json (${app})`; }
   if (!pkgs.includes(PKG[app])) {
-    return `gservices: ${PKG[app]} NOT in json — ${app} push stays off`;
+    return `gservices: ${PKG[app]} NOT in json - ${app} push stays off`;
   }
   writeFileSync(join(destDir, 'google-services.json'),
     readFileSync(src));

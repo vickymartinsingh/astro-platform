@@ -65,7 +65,9 @@ export default function Wallet() {
               signature: resp.razorpay_signature,
               amount,
             });
-            setMsg({ ok: true, t: `Payment successful, ₹${amount} added` });
+            setMsg({ ok: true, t: `Payment successful, ₹${amount} added`,
+              back: typeof router.query.return === 'string'
+                ? router.query.return : null });
           } catch {
             setMsg({ ok: false, t: 'Payment verification failed.' });
           }
@@ -86,6 +88,16 @@ export default function Wallet() {
 
   return (
     <Layout>
+      {typeof router.query.return === 'string' && (
+        <button
+          onClick={() => router.push(router.query.return)}
+          className="mb-3 flex w-full items-center justify-center gap-2
+            rounded-card bg-bg-light py-2.5 text-sm font-semibold
+            text-primary">
+          &#8249; Back to your consultation (it stays connected)
+        </button>
+      )}
+
       <div className="rounded-card bg-gradient-to-br from-primary
                       to-[#8B5CF6] p-6 text-center text-white">
         <div className="text-sm opacity-80">Wallet Balance</div>
@@ -127,11 +139,18 @@ export default function Wallet() {
             <div className={`rounded-card p-3 ${msg.ok
               ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}>
               {msg.ok ? '✅ ' : ''}{msg.t}
+              {msg.ok && msg.back && (
+                <button onClick={() => router.push(msg.back)}
+                  className="mt-2 block w-full rounded-card bg-primary
+                    py-2 text-sm font-semibold text-white">
+                  Back to your consultation
+                </button>
+              )}
             </div>
           )}
           <button onClick={pay} disabled={busy}
             className="btn-primary w-full">
-            {busy ? 'Processing…' : `Add ₹${amount} to Wallet`}
+            {busy ? 'Processing...' : `Add ₹${amount} to Wallet`}
           </button>
           <p className="text-center text-xs text-sub-text">
             🔒 Secured by Razorpay

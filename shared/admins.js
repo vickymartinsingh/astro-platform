@@ -5,7 +5,7 @@
 // after a delete during cleanup, or first login on the client app).
 // To make the owner account un-lockout-able, these emails are ALWAYS
 // treated as admin regardless of the stored role. Login still requires
-// the correct password — this only governs the role gate.
+// the correct password - this only governs the role gate.
 export const ADMIN_EMAILS = ['vickymartinsing@gmail.com'];
 
 const norm = (s) => String(s || '').trim().toLowerCase();

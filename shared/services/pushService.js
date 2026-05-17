@@ -1,4 +1,4 @@
-// pushService — real OS push notifications (lock-screen) for the native
+// pushService - real OS push notifications (lock-screen) for the native
 // apps via FCM + @capacitor/push-notifications.
 //
 // Design notes:
@@ -31,7 +31,7 @@ function plugin() {
     && window.Capacitor.Plugins.PushNotifications) || null;
 }
 
-// @capacitor/local-notifications — used ONLY to re-raise a push that
+// @capacitor/local-notifications - used ONLY to re-raise a push that
 // arrives while the app is in the foreground (Android/iOS suppress the
 // system banner in that state). Accessed via the runtime global so the
 // bundler never imports it (web/static builds stay untouched).
@@ -157,7 +157,7 @@ export async function registerForPush(uid) {
 }
 
 // Best-effort push send via the relay. NEVER throws (callers are core
-// flows like sending a chat message) — failures are swallowed.
+// flows like sending a chat message) - failures are swallowed.
 export async function sendPushToUser(payload) {
   if (!ENDPOINT) return;
   try {
@@ -170,5 +170,5 @@ export async function sendPushToUser(payload) {
       body: JSON.stringify(payload || {}),
       keepalive: true,
     });
-  } catch (_) { /* offline / not configured yet — ignore */ }
+  } catch (_) { /* offline / not configured yet - ignore */ }
 }

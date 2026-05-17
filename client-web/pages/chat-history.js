@@ -37,7 +37,7 @@ export default function ChatHistory() {
       ) : (
         <div className="space-y-2">
           {rows.map((c) => (
-            <Link key={c.id} href={`/chat/${c.astro?.id}`}
+            <Link key={c.id} href={`/chat/${c.astro?.id}?view=1`}
               className="card flex items-center gap-3">
               <img src={c.astro?.profileImage || '/avatar.png'}
                 className="h-12 w-12 rounded-full object-cover bg-bg-light"

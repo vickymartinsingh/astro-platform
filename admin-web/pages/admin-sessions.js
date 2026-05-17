@@ -34,8 +34,8 @@ export default function AdminSessions() {
       } catch (_) {}
       try {
         const u = await getDoc(doc(db, 'users', id));
-        map[id] = (u.exists() && u.data().name) || '—';
-      } catch (_) { map[id] = '—'; }
+        map[id] = (u.exists() && u.data().name) || '-';
+      } catch (_) { map[id] = '-'; }
     }));
     return map;
   }
@@ -76,7 +76,7 @@ export default function AdminSessions() {
     if (unsubRef.current) unsubRef.current();
     const chatId = chatService.conversationId(s.userId, s.astroId);
     // VIEW-ONLY: just a live read of the thread. No writes, no presence,
-    // nothing is sent — neither the client nor the astrologer is notified.
+    // nothing is sent - neither the client nor the astrologer is notified.
     unsubRef.current = chatService.listenMessages(chatId, setMsgs);
   }
   function closeMonitor() {
@@ -207,7 +207,7 @@ export default function AdminSessions() {
             </div>
             <div className="border-t bg-white p-3 text-center text-xs
                             text-sub-text">
-              View-only — nothing is sent. The client and astrologer are
+              View-only - nothing is sent. The client and astrologer are
               NOT notified that you are watching.
             </div>
           </div>

@@ -8,7 +8,7 @@ import { useOptionalClient } from '../lib/useAuth';
 import { useAstroActions } from '../lib/useAstroActions';
 import { useSettings } from '../lib/useSettings';
 
-// "Live" tab — astrologers who are online right now and ready to take a
+// "Live" tab - astrologers who are online right now and ready to take a
 // chat / call / video immediately.
 export default function LivePage() {
   const { profile } = useOptionalClient();
@@ -30,8 +30,8 @@ export default function LivePage() {
         <span className="flex h-2.5 w-2.5 animate-pulse rounded-full
                          bg-red-500" />
         <h1 className="text-lg font-bold">Live now</h1>
-        <span className="ml-1 rounded-full bg-brand-soft px-2 py-0.5
-                         text-xs font-semibold text-brand-dark">
+        <span className="ml-1 rounded-full bg-bg-light px-2 py-0.5
+                         text-xs font-semibold text-primary">
           {online.length} online
         </span>
       </div>
@@ -48,7 +48,7 @@ export default function LivePage() {
             comes online.
           </p>
           <button onClick={() => router.push('/astrologers')}
-            className="btn-brand mt-4">See all astrologers</button>
+            className="btn-primary mt-4">See all astrologers</button>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2

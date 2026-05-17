@@ -6,12 +6,12 @@
 // thing allowed to call FCM. Deploy it free on Vercel as its own project.
 //
 // Env vars (set in Vercel → Project → Settings → Environment Variables):
-//   FIREBASE_SERVICE_ACCOUNT  – the full service-account JSON (one line)
-//   PUSH_RELAY_KEY            – optional shared secret; if set, callers
+//   FIREBASE_SERVICE_ACCOUNT  - the full service-account JSON (one line)
+//   PUSH_RELAY_KEY            - optional shared secret; if set, callers
 //                               must send it as the x-push-key header
 //
 // POST JSON body:
-//   { toUid }                              – push to one user, OR
+//   { toUid }                              - push to one user, OR
 //   { target: 'all'|'clients'|'astrologers'|'user', userId }
 //   + title, body, data?
 const admin = require('firebase-admin');
