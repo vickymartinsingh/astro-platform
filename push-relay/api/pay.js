@@ -20,28 +20,53 @@ async function gateways() {
   return s.exists ? (s.data() || {}) : {};
 }
 
-async function creditWallet(uid, amount, gateway, ref) {
+async function creditWallet(uid, amount, gateway, meta) {
   const db = admin.firestore();
   const amt = Math.round(Number(amount));
+  const m = meta || {};
+  // Permanent, audit-grade payment record. The `payments` collection
+  // is admin-only writable and is NEVER deleted/reset (the admin
+  // revenue "reset" only moves a dashboard cutoff) - so the gateway
+  // recharge history with full user + transaction details survives.
+  const payRef = db.collection('payments').doc();
   await db.runTransaction(async (t) => {
     const uRef = db.collection('users').doc(uid);
     const u = await t.get(uRef);
-    const w = Number((u.data() || {}).wallet || 0) + amt;
+    const ud = u.data() || {};
+    const w = Number(ud.wallet || 0) + amt;
     t.update(uRef, { wallet: w });
     t.set(db.collection('transactions').doc(), {
       userId: uid, amount: amt, type: 'credit', reason: 'recharge',
-      referenceId: ref || gateway,
+      referenceId: payRef.id,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    t.set(payRef, {
+      userId: uid,
+      userName: ud.name || '',
+      userEmail: ud.email || '',
+      userPhone: ud.phone || '',
+      userCode: ud.userCode || '',
+      amount: amt,
+      currency: 'INR',
+      gateway,
+      paymentId: m.paymentId || '',
+      orderId: m.orderId || '',
+      status: 'success',
+      invoiceNo: 'INV-' + Date.now().toString(36).toUpperCase(),
+      paidAt: admin.firestore.FieldValue.serverTimestamp(),
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
   });
   try {
     await db.collection('notifications').add({
       userId: uid, title: 'Money added to your wallet',
-      message: `+ Rs ${amt} added to your wallet (recharge).`,
+      message: `+ Rs ${amt} added to your wallet (recharge via `
+        + `${gateway}).`,
       type: 'wallet', read: false,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
   } catch (_) {}
+  return payRef.id;
 }
 
 module.exports = async (req, res) => {
@@ -105,8 +130,9 @@ module.exports = async (req, res) => {
         if (expect !== signature) {
           return res.status(400).json({ error: 'signature mismatch' });
         }
-        await creditWallet(uid, amount, 'razorpay', paymentId);
-        return res.status(200).json({ success: true, amount });
+        const payId = await creditWallet(uid, amount, 'razorpay',
+          { paymentId, orderId });
+        return res.status(200).json({ success: true, amount, payId });
       }
     }
 
@@ -163,9 +189,10 @@ module.exports = async (req, res) => {
           { headers: H });
         const j = await r.json();
         if (j.order_status === 'PAID') {
-          await creditWallet(uid, j.order_amount, 'cashfree', orderId);
+          const payId = await creditWallet(uid, j.order_amount,
+            'cashfree', { orderId, paymentId: j.cf_order_id || '' });
           return res.status(200).json({
-            success: true, amount: j.order_amount });
+            success: true, amount: j.order_amount, payId });
         }
         return res.status(200).json({
           success: false, status: j.order_status || 'PENDING' });

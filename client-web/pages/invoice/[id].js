@@ -51,18 +51,28 @@ export default function Invoice() {
         </div>
         <div className="text-right text-sm">
           <div className="font-bold">TAX INVOICE</div>
-          <div>No: {String(id).slice(-10)}</div>
+          <div>No: {pay.invoiceNo || String(id).slice(-10)}</div>
           <div>
             {pay.paidAt?.toDate
-              ? pay.paidAt.toDate().toLocaleDateString() : ''}
+              ? pay.paidAt.toDate().toLocaleString() : ''}
           </div>
         </div>
       </div>
 
       <div className="mb-6 text-sm">
         <div className="font-semibold">Billed to</div>
-        <div>{profile?.name}</div>
-        <div className="text-sub-text">{profile?.email}</div>
+        <div>{pay.userName || profile?.name}</div>
+        <div className="text-sub-text">
+          {pay.userEmail || profile?.email}
+        </div>
+        {(pay.userPhone || profile?.phone) && (
+          <div className="text-sub-text">
+            {pay.userPhone || profile?.phone}
+          </div>
+        )}
+        {pay.userCode && (
+          <div className="text-sub-text">User ID: {pay.userCode}</div>
+        )}
       </div>
 
       <table className="w-full text-sm">
@@ -84,9 +94,17 @@ export default function Invoice() {
         </tbody>
       </table>
 
-      <p className="mt-6 text-xs text-sub-text">
-        Payment ID: {pay.paymentId} · Paid via Razorpay
-      </p>
+      <div className="mt-6 space-y-0.5 text-xs text-sub-text">
+        <div>Payment status: <b className="text-success">PAID</b></div>
+        {pay.gateway && (
+          <div>Paid via: <b className="capitalize">{pay.gateway}</b></div>
+        )}
+        {pay.paymentId && <div>Payment ID: {pay.paymentId}</div>}
+        {pay.orderId && <div>Order ID: {pay.orderId}</div>}
+        <div>Amount: ₹{Number(pay.amount || 0).toFixed(2)}</div>
+        <div>This is a system-generated tax invoice and a permanent
+          record of the transaction.</div>
+      </div>
 
       <button onClick={() => window.print()}
         className="btn-primary mt-6 print:hidden">

@@ -1,8 +1,7 @@
 import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { authService, db } from '@astro/shared';
-import { doc, getDoc } from 'firebase/firestore';
+import { authService, brandingService } from '@astro/shared';
 
 // Professional grouped admin nav: a search box that jumps to any page,
 // plus category dropdowns. Every admin page is included (nothing
@@ -56,10 +55,8 @@ export default function TopNav() {
   const [q, setQ] = useState('');
   const [logo, setLogo] = useState('');
   const router = useRouter();
-  useEffect(() => {
-    getDoc(doc(db, 'settings', 'config')).then((s) =>
-      setLogo((s.exists() && s.data().logo) || '')).catch(() => {});
-  }, []);
+  useEffect(() => brandingService.watchBranding((b) =>
+    setLogo(b.logo || '')), []);
 
   async function logout() {
     await authService.logoutUser();

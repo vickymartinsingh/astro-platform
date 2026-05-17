@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { authService, astrologerService, db } from '@astro/shared';
-import { doc, getDoc } from 'firebase/firestore';
+import {
+  authService, astrologerService, brandingService,
+} from '@astro/shared';
 import GoOnlineModal from './GoOnlineModal';
 import { useAuth } from '../lib/useAuth';
 
@@ -27,15 +28,9 @@ export default function TopNav({ astro }) {
   const { user } = useAuth();
   const online = astro?.status === 'online';
   const [brand, setBrand] = useState({ logo: '', name: 'AstroConnect' });
-  useEffect(() => {
-    getDoc(doc(db, 'settings', 'config')).then((s) => {
-      const d = s.exists() ? s.data() : {};
-      if (d.logo || d.platformName) {
-        setBrand({ logo: d.logo || '',
-          name: d.platformName || 'AstroConnect' });
-      }
-    }).catch(() => {});
-  }, []);
+  useEffect(() => brandingService.watchBranding((b) =>
+    setBrand({ logo: b.logo || '',
+      name: b.name || 'AstroConnect' })), []);
 
   async function logout() {
     await authService.logoutUser();

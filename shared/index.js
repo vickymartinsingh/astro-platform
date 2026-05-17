@@ -26,3 +26,4 @@ export * as cmsService from './services/cmsService.js';
 export * as remedyService from './services/remedyService.js';
 export * as liveService from './services/liveService.js';
 export * as themeService from './services/themeService.js';
+export * as brandingService from './services/brandingService.js';
