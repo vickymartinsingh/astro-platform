@@ -49,11 +49,18 @@ export async function sendMessage(chatId, senderId, text) {
     const toUid = String(chatId).split('_').find((p) => p && p !== senderId);
     if (toUid) {
       const senderName = await resolveName(senderId);
+      // Deep link: tapping the notification opens the right thread in
+      // whichever app received it (astrologer app vs client app).
+      let route = `/chat/${senderId}`;
+      try {
+        const aSnap = await getDoc(doc(db, 'astrologers', toUid));
+        if (aSnap.exists()) route = `/astro-chat/${senderId}`;
+      } catch (_) {}
       sendPushToUser({
         toUid,
         title: senderName ? `${senderName}` : 'New message',
         body: clean.slice(0, 140),
-        data: { type: 'chat', chatId, from: senderName || '' },
+        data: { type: 'chat', chatId, from: senderName || '', route },
       });
     }
   }
@@ -93,11 +100,16 @@ export async function sendImageMessage(chatId, senderId, file) {
         (p) => p && p !== senderId);
       if (toUid) {
         const senderName = await resolveName(senderId);
+        let route = `/chat/${senderId}`;
+        try {
+          const aSnap = await getDoc(doc(db, 'astrologers', toUid));
+          if (aSnap.exists()) route = `/astro-chat/${senderId}`;
+        } catch (_) {}
         sendPushToUser({
           toUid,
           title: senderName || 'New message',
           body: '📷 Photo',
-          data: { type: 'chat', chatId, from: senderName || '' },
+          data: { type: 'chat', chatId, from: senderName || '', route },
         });
       }
     }

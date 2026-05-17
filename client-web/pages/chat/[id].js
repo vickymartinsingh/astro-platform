@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
-import { chatService } from '@astro/shared';
+import { chatService, sessionService } from '@astro/shared';
 import Layout from '../../components/Layout';
 import RateModal from '../../components/RateModal';
 import VerifiedBadge from '../../components/VerifiedBadge';
@@ -50,6 +50,19 @@ export default function ChatScreen() {
     }
     router.push('/dashboard');
   }
+  // Cancelling a not-yet-accepted request MUST stop the astrologer from
+  // ever receiving / accepting it (and therefore must never bill). Mark
+  // the session 'cancelled' (a terminal state the astrologer feed and
+  // billing both ignore) before leaving the screen.
+  async function cancelRequest() {
+    const sid = session?.id;
+    if (sid) {
+      try {
+        await sessionService.updateSessionStatus(sid, 'cancelled');
+      } catch (_) {}
+    }
+    router.push('/astrologers');
+  }
   const mmss = `${Math.floor(Math.max(0, countdown) / 60)}:` +
     `${String(Math.max(0, countdown) % 60).padStart(2, '0')}`;
 
@@ -79,6 +92,17 @@ export default function ChatScreen() {
   useEffect(() => {
     if (session?.status === 'ended') setShowRate(true);
   }, [session?.status]);
+
+  // Keep a global "active session" handle so the rejoin bar shows from
+  // ANY screen (even when the user leaves via the bottom tab bar, not
+  // just the back button). The bar auto-hides while on this screen.
+  useEffect(() => {
+    if (isView || !session?.id) return;
+    if (['requesting', 'accepted', 'active'].includes(session.status)) {
+      track({ sessionId: session.id, astroId, astroName: astro?.name,
+        type: 'chat' });
+    }
+  }, [isView, session?.id, session?.status, astroId, astro?.name, track]);
 
   const active = session?.status === 'active' || session?.status === 'accepted';
   const ratePerSec = session?.ratePerSecond || 0;
@@ -137,6 +161,11 @@ export default function ChatScreen() {
   }
 
   const waiting = !isView && session && session.status === 'requesting';
+
+  if (!isView && session && session.status === 'cancelled') {
+    if (typeof window !== 'undefined') router.replace('/astrologers');
+    return <Layout nav={false}><div className="p-6">Cancelled.</div></Layout>;
+  }
 
   if (!isView && session && ['rejected', 'missed'].includes(session.status)) {
     return (
@@ -226,7 +255,7 @@ export default function ChatScreen() {
                        text-xs font-semibold text-white">
             Continue browsing
           </button>
-          <button onClick={() => router.push('/astrologers')}
+          <button onClick={cancelRequest}
             className="shrink-0 rounded-full border border-gray-300
                        px-3 py-2 text-xs">Cancel</button>
         </div>

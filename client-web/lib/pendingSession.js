@@ -22,7 +22,13 @@ export function PendingSessionProvider({ children }) {
 
   function track(i) {
     if (!i || !i.sessionId) return;
-    setInfo(i); setStatus('requesting'); setLeft(60);
+    // Idempotent: re-tracking the SAME session must not reset its
+    // state (prevents a render loop when pages auto-track on mount).
+    setInfo((prev) => {
+      if (prev && prev.sessionId === i.sessionId) return prev;
+      setStatus('requesting'); setLeft(60);
+      return i;
+    });
   }
   function clear() { setInfo(null); }
 
@@ -60,9 +66,18 @@ export function PendingSessionProvider({ children }) {
       : `/call/${i.astroId}?type=${i.type === 'video' ? 'video' : 'call'}`);
   }
 
+  // Auto-dismiss the bar entirely once the session is over.
+  useEffect(() => {
+    if (['ended', 'rejected', 'missed', 'cancelled'].includes(status)) {
+      const t = setTimeout(() => setInfo(null), 4000);
+      return () => clearTimeout(t);
+    }
+    return undefined;
+  }, [status]);
+
   const connected = status === 'accepted' || status === 'active';
   const overEl = status === 'rejected' || status === 'missed'
-    || status === 'ended';
+    || status === 'ended' || status === 'cancelled';
   const mm = `${Math.floor(left / 60)}:` +
     `${String(left % 60).padStart(2, '0')}`;
   // Hide only while actually on THIS session's own screen.
@@ -70,8 +85,8 @@ export function PendingSessionProvider({ children }) {
     new RegExp(`^/(chat|call)/${info.astroId}(\\?|$|/)`).test(router.asPath);
 
   const bar = (info && !onOwnScreen) ? (
-    <div className="fixed inset-x-0 bottom-4 z-[2147483645] flex
-                    justify-center px-3">
+    <div className="fixed inset-x-0 bottom-[76px] z-[2147483645] flex
+                    justify-center px-3 md:bottom-4">
       <div className="surface flex w-full max-w-md items-center gap-3 p-3
                       shadow-2xl ring-1 ring-black/5">
         {!overEl && !connected && (
@@ -100,7 +115,7 @@ export function PendingSessionProvider({ children }) {
                        px-3 py-2 text-sm">Close</button>
         ) : !connected && (
           <button onClick={() => {
-            sessionService.updateSessionStatus(info.sessionId, 'ended')
+            sessionService.updateSessionStatus(info.sessionId, 'cancelled')
               .catch(() => {});
             clear();
           }} className="shrink-0 rounded-full border border-gray-200

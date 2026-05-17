@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
-import { callService } from '@astro/shared';
+import { callService, sessionService } from '@astro/shared';
 import Layout from '../../components/Layout';
 import RateModal from '../../components/RateModal';
 import { useRequireClient } from '../../lib/useAuth';
@@ -73,9 +73,30 @@ export default function CallScreen() {
     }
   }, [session?.status]);
 
+  // Keep a global "active session" handle so the rejoin bar shows from
+  // any screen if the user navigates away during the call/request.
+  useEffect(() => {
+    if (!session?.id) return;
+    if (['requesting', 'accepted', 'active'].includes(session.status)) {
+      track({ sessionId: session.id, astroId, astroName: astro?.name,
+        type: callType });
+    }
+  }, [session?.id, session?.status, astroId, astro?.name, callType, track]);
+
   async function hangUp() {
     await callService.leaveAgoraChannel();
     await end();
+  }
+
+  // Cancelling a not-yet-accepted call must stop the astrologer ever
+  // receiving / accepting it, and must never bill.
+  async function cancelRequest() {
+    const sid = session?.id;
+    if (sid) {
+      try { await sessionService.updateSessionStatus(sid, 'cancelled'); }
+      catch (_) {}
+    }
+    router.push('/astrologers');
   }
 
   function toggleMute() {
@@ -89,7 +110,14 @@ export default function CallScreen() {
     `${String(elapsed % 60).padStart(2, '0')}`;
 
   if (loading || !astro) {
-    return <Layout nav={false}><div className="p-6">Loading…</div></Layout>;
+    return <Layout nav={false}><div className="p-6">Loading...</div></Layout>;
+  }
+
+  if (session && session.status === 'cancelled') {
+    if (typeof window !== 'undefined') router.replace('/astrologers');
+    return (
+      <Overlay><div className="text-white">Cancelled.</div></Overlay>
+    );
   }
 
   if (session && session.status === 'requesting') {
@@ -108,7 +136,7 @@ export default function CallScreen() {
             {String(Math.max(0, countdown) % 60).padStart(2, '0')}
           </p>
           <div className="mt-4 flex gap-2">
-            <button onClick={() => router.push('/astrologers')}
+            <button onClick={cancelRequest}
               className="btn-ghost flex-1">Cancel</button>
             <button onClick={() => {
               if (session?.id) {

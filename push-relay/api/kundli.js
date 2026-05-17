@@ -61,10 +61,17 @@ async function geocode(place) {
   return null;
 }
 
-// "DD-MM-YYYY" + "HH:MM" + AM/PM -> ISO8601 with tz offset.
+// "DD-MM-YYYY" OR "YYYY-MM-DD" + "HH:MM" (+ optional AM/PM) -> ISO8601
+// with tz offset. Tolerant of either date order and "/" separators so
+// the call never fails on a formatting mismatch.
 function toIso(dob, tob, ampm, tz) {
-  const [d, m, y] = String(dob || '').split('-').map((n) => parseInt(n, 10));
-  let [hh, mm] = String(tob || '12:00').split(':').map((n) => parseInt(n, 10));
+  const parts = String(dob || '').trim().split(/[-/]/).map(
+    (n) => parseInt(n, 10));
+  let d; let m; let y;
+  if (parts[0] > 31) { [y, m, d] = parts; }   // YYYY-MM-DD
+  else { [d, m, y] = parts; }                  // DD-MM-YYYY
+  let [hh, mm] = String(tob || '12:00').split(':').map(
+    (n) => parseInt(n, 10));
   if (Number.isNaN(hh)) hh = 12;
   if (Number.isNaN(mm)) mm = 0;
   const ap = String(ampm || '').toUpperCase();
