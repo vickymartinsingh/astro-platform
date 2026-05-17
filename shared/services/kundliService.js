@@ -49,6 +49,129 @@ export async function getProkeralaKundli(birth) {
   } catch (_) { return null; }
 }
 
+// Signature of the birth inputs - the report is regenerated ONLY when
+// one of these changes (saves the Prokerala API quota).
+export function birthSig(b) {
+  return [b && b.dob, b && b.tob, b && b.ampm, b && b.place]
+    .map((x) => String(x || '').trim().toLowerCase()).join('|');
+}
+
+const SIGN_TRAITS = {
+  Aries: { p: 'bold, energetic and a natural pioneer who leads from the front',
+    c: 'thrives in leadership, defence, sport, entrepreneurship and any fast-moving field',
+    h: 'strong vitality; watch the head, stress and a tendency to overexert',
+    l: 'passionate and direct in love; values honesty and excitement' },
+  Taurus: { p: 'patient, dependable and grounded with a love of comfort and beauty',
+    c: 'excels in finance, real estate, food, arts and steady long-term work',
+    h: 'robust constitution; mind the throat, neck and weight balance',
+    l: 'loyal and sensual; seeks security and lasting commitment' },
+  Gemini: { p: 'curious, witty and adaptable with a quick, communicative mind',
+    c: 'shines in media, writing, sales, teaching, IT and travel',
+    h: 'generally agile; protect the lungs, nerves and sleep routine',
+    l: 'playful and intellectual; needs mental connection and variety' },
+  Cancer: { p: 'caring, intuitive and protective with deep emotional intelligence',
+    c: 'does well in care-giving, hospitality, real estate and family business',
+    h: 'sensitive digestion and emotions; nurture rest and diet',
+    l: 'devoted and nurturing; family and emotional safety matter most' },
+  Leo: { p: 'confident, warm and creative with natural charisma and pride',
+    c: 'born for leadership, entertainment, politics and the limelight',
+    h: 'strong heart energy; guard the heart, back and over-confidence',
+    l: 'generous and loyal; loves admiration and grand romance' },
+  Virgo: { p: 'analytical, precise and service-minded with an eye for detail',
+    c: 'great in health, analysis, editing, accounts and quality work',
+    h: 'careful digestion and nerves; routine and clean diet help',
+    l: 'thoughtful and devoted; shows love through practical care' },
+  Libra: { p: 'balanced, charming and fair with a strong sense of harmony',
+    c: 'suited to law, design, diplomacy, partnerships and the arts',
+    h: 'watch kidneys and lower back; balance work and rest',
+    l: 'romantic and partnership-oriented; seeks an equal companion' },
+  Scorpio: { p: 'intense, determined and deeply perceptive with strong willpower',
+    c: 'powerful in research, finance, medicine, investigation and strategy',
+    h: 'strong recovery; manage stress and reproductive health',
+    l: 'passionate and loyal; bonds deeply and values trust' },
+  Sagittarius: { p: 'optimistic, free-spirited and philosophical, always seeking truth',
+    c: 'excels in teaching, law, travel, publishing and consulting',
+    h: 'active body; mind the hips, thighs and over-indulgence',
+    l: 'honest and adventurous; needs freedom with loyalty' },
+  Capricorn: { p: 'disciplined, ambitious and patient, building success steadily',
+    c: 'a natural in management, government, engineering and long-term ventures',
+    h: 'strong stamina; care for bones, knees and joints',
+    l: 'committed and steady; shows love through reliability' },
+  Aquarius: { p: 'original, humane and visionary with an independent mind',
+    c: 'innovates in technology, science, social work and networks',
+    h: 'guard circulation and ankles; avoid irregular routines',
+    l: 'friendly and unconventional; values mental freedom' },
+  Pisces: { p: 'compassionate, imaginative and spiritual with deep empathy',
+    c: 'gifted in arts, healing, spirituality, music and charity',
+    h: 'sensitive feet and immunity; needs emotional grounding',
+    l: 'tender and selfless; seeks a soulful, understanding bond' },
+};
+
+// Build a full, readable report from the Prokerala data. Deterministic
+// so it always has rich content even if a text endpoint is unavailable.
+export function generateNarrative(r) {
+  if (!r) return null;
+  const sign = r.zodiac || r.soorya_rasi || '';
+  const t = SIGN_TRAITS[sign] || {
+    p: 'a unique blend of strengths', c: 'a wide range of fields',
+    h: 'balanced wellbeing with mindful habits',
+    l: 'a sincere and caring approach to relationships' };
+  const ai = r.additional_info || {};
+  const moon = r.chandra_rasi ? `Moon in ${r.chandra_rasi}` : '';
+  const nak = r.nakshatra
+    ? `${r.nakshatra}${r.nakshatra_pada ? ` (pada ${r.nakshatra_pada})` : ''}`
+    : '';
+  return {
+    personality: `As a ${sign || 'native'}, you are ${t.p}. `
+      + `${moon ? `${moon} colours your emotional nature. ` : ''}`
+      + `${nak ? `Your birth star ${nak} adds its own signature to your `
+        + 'temperament and instincts.' : ''}`,
+    career: `Career: you ${t.c}. ${ai.planet
+      ? `Your ruling planet ${ai.planet} supports focused growth when `
+        + 'you align effort with timing.' : ''}`,
+    health: `Health: ${t.h}. ${ai.nadi
+      ? `Ayurvedic constitution leans ${ai.nadi}; favour foods and a `
+        + 'routine that balance it.' : ''}`,
+    love: `Love & relationships: you are ${t.l}. `
+      + `${ai.animal_sign ? `Your yoni (${ai.animal_sign}) influences `
+        + 'compatibility and bonding style.' : ''}`,
+    life: `Life path: with ${nak || 'your birth star'} and ${sign
+      || 'your sign'}, your journey rewards patience, dharma and using `
+      + 'your natural gifts in service of clear goals. Favourable '
+      + `direction ${ai.best_direction || 'as per chart'}, lucky colour `
+      + `${ai.color || '-'}, birth stone ${ai.birth_stone || '-'}.`,
+    lucky: {
+      deity: ai.deity || '-',
+      color: ai.color || '-',
+      stone: ai.birth_stone || '-',
+      direction: ai.best_direction || '-',
+      syllables: ai.syllables || '-',
+    },
+  };
+}
+
+// Full kundli with CACHING. The report is stored on the profile doc and
+// returned as-is unless dob / time / place changed (signature differs),
+// which avoids re-hitting the Prokerala API every time.
+export async function getFullKundli(profile) {
+  if (!profile) return null;
+  const sig = birthSig(profile);
+  if (profile.report && profile.reportSig === sig) {
+    return { ...profile.report, cached: true };
+  }
+  const data = await getProkeralaKundli(profile);
+  if (!data) return null;
+  const report = { ...data, narrative: generateNarrative(data) };
+  if (profile.id) {
+    try {
+      await updateDoc(doc(db, 'kundliProfiles', profile.id), {
+        report, reportSig: sig, reportAt: serverTimestamp(),
+      });
+    } catch (_) { /* still return it even if cache write fails */ }
+  }
+  return { ...report, cached: false };
+}
+
 export async function saveKundli(uid, data) {
   const ref = doc(collection(db, 'kundliProfiles'));
   await setDoc(ref, {

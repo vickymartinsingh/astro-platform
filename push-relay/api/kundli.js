@@ -108,22 +108,62 @@ module.exports = async (req, res) => {
     const base = 'https://api.prokerala.com/v2/astrology';
     const qs = `?ayanamsa=1&coordinates=${lat},${lng}`
       + `&datetime=${encodeURIComponent(datetime)}`;
-    const r = await fetch(`${base}/birth-details${qs}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const j = await r.json();
-    if (j.status === 'error' || j.errors) {
-      return res.status(502).json({ error: 'prokerala', detail: j });
+    const get = async (path, extra = '') => {
+      try {
+        const rr = await fetch(`${base}/${path}${qs}${extra}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const jj = await rr.json();
+        if (jj.status === 'error' || jj.errors) return null;
+        return jj.data || null;
+      } catch (_) { return null; }
+    };
+
+    // birth-details is required; the rest enrich the report and are
+    // best-effort so one missing endpoint never fails the whole call.
+    const [bd, pp, dp] = await Promise.all([
+      get('birth-details'),
+      get('planet-position', '&planet_position_format=detailed'),
+      get('dasha-periods'),
+    ]);
+    if (!bd) {
+      const rr = await fetch(`${base}/birth-details${qs}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const jj = await rr.json();
+      return res.status(502).json({ error: 'prokerala', detail: jj });
     }
-    const d = (j.data || {});
+
+    const planets = ((pp && (pp.planet_position
+      || pp.planets)) || []).map((p) => ({
+      name: p.name,
+      sign: p.rasi && p.rasi.name,
+      house: p.position || p.house,
+      degree: p.degree,
+      retrograde: p.is_retrograde,
+    }));
+    const dasha = (dp && (dp.dasha_periods || dp.periods) || [])
+      .slice(0, 9).map((x) => ({
+        planet: x.name,
+        start: x.start,
+        end: x.end,
+      }));
+
     return res.status(200).json({
-      datetime, coordinates: { lat, lng },
-      nakshatra: d.nakshatra && d.nakshatra.name,
-      chandra_rasi: d.chandra_rasi && d.chandra_rasi.name,
-      soorya_rasi: d.soorya_rasi && d.soorya_rasi.name,
-      zodiac: d.zodiac && d.zodiac.name,
-      additional_info: d.additional_info || null,
-      raw: d,
+      datetime,
+      coordinates: { lat, lng },
+      nakshatra: bd.nakshatra && bd.nakshatra.name,
+      nakshatra_lord: bd.nakshatra && bd.nakshatra.lord
+        && bd.nakshatra.lord.name,
+      nakshatra_pada: bd.nakshatra && bd.nakshatra.pada,
+      chandra_rasi: bd.chandra_rasi && bd.chandra_rasi.name,
+      soorya_rasi: bd.soorya_rasi && bd.soorya_rasi.name,
+      zodiac: bd.zodiac && bd.zodiac.name,
+      additional_info: bd.additional_info || null,
+      planets,
+      dasha,
+      generatedAt: Date.now(),
+      raw: bd,
     });
   } catch (e) {
     return res.status(500).json({ error: String((e && e.message) || e) });
