@@ -17,6 +17,7 @@ const LINKS = [
   { href: '/tarot', label: 'Tarot' },
   { href: '/kundli', label: 'Kundli' },
   { href: '/matching', label: 'Matching' },
+  { href: '/remedies', label: 'Remedies' },
   { href: '/wallet', tKey: 'nav.wallet' },
 ];
 const PROFILE_MENU = [

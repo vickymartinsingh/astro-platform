@@ -46,11 +46,11 @@ function Call(p) {
     </svg>
   );
 }
-function Remedies(p) {
+function Profile(p) {
   return (
     <svg {...I} {...p}>
-      <path d="M12 3c2.5 2 4 4.5 4 7a4 4 0 0 1-8 0c0-2.5 1.5-5 4-7z" />
-      <path d="M7 21h10M9 21l.7-4M15 21l-.7-4" />
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21a8 8 0 0 1 16 0" />
     </svg>
   );
 }
@@ -65,8 +65,8 @@ const TABS = [
     match: ['/live'] },
   { key: 'call', href: '/astrologers?mode=call', label: 'Call',
     Ico: Call, match: ['/call/[id]', '/call-history'] },
-  { key: 'remedies', href: '/remedies', label: 'Remedies',
-    Ico: Remedies, match: ['/remedies'] },
+  { key: 'profile', href: '/profile', label: 'Profile',
+    Ico: Profile, match: ['/profile'] },
 ];
 
 export default function BottomNav() {
@@ -78,8 +78,12 @@ export default function BottomNav() {
   const byKey = Object.fromEntries(TABS.map((t) => [t.key, t]));
   // Admin App Builder order (settings/features.nav_order); default
   // order otherwise. Then drop hidden tabs (+ legacy enable_live).
-  const order = Array.isArray(features.nav_order) && features.nav_order.length
-    ? features.nav_order : TABS.map((t) => t.key);
+  const defKeys = TABS.map((t) => t.key);
+  const saved = Array.isArray(features.nav_order)
+    ? features.nav_order.filter((k) => byKey[k]) : [];
+  // Always include any default tab missing from a saved order (so new
+  // tabs like Profile show even if the saved order predates them).
+  const order = [...saved, ...defKeys.filter((k) => !saved.includes(k))];
   const tabs = order
     .map((k) => byKey[k]).filter(Boolean)
     .filter((t) => !features[`nav_hidden_${t.key}`])

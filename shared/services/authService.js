@@ -16,6 +16,7 @@ import {
   updatePassword,
 } from 'firebase/auth';
 import { auth } from '../firebase.js';
+import { ensureUserDoc, updateUser } from './userService.js';
 
 // True only inside the packaged Android/iOS app (Capacitor injects this
 // global). On the web it stays false, so the browser keeps using the
@@ -32,7 +33,14 @@ function isNativeApp() {
 // (auth.onCreate trigger). The browser never writes wallet/role.
 export async function signupUser(name, email, password) {
   const cred = await createUserWithEmailAndPassword(auth, email, password);
-  if (name) await updateProfile(cred.user, { displayName: name });
+  const full = String(name || '').trim();
+  if (full) await updateProfile(cred.user, { displayName: full });
+  // Persist the full name into the Firestore user doc immediately, so
+  // it is never lost to the auth-state race (watchAuth -> ensureUserDoc
+  // can fire before updateProfile sets displayName).
+  try { await ensureUserDoc(cred.user); } catch (_) {}
+  if (full) { try { await updateUser(cred.user.uid, { name: full }); }
+    catch (_) {} }
   return cred.user;
 }
 

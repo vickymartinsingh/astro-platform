@@ -7,7 +7,7 @@ import { flash } from '../lib/flash';
 
 const TAB_DEFS = [
   ['home', 'Home'], ['chat', 'Chat'], ['live', 'Live'],
-  ['call', 'Call'], ['remedies', 'Remedies'],
+  ['call', 'Call'], ['profile', 'Profile'],
 ];
 const HOME_SECTIONS = [
   ['quickActions', 'Quick actions (Tarot/Kundli/etc.)'],
@@ -31,9 +31,11 @@ export default function AdminBuilder() {
       getDoc(doc(db, 'settings', 'content')),
     ]).then(([f, a, c]) => {
       const fd = f.exists() ? f.data() : {};
-      if (!Array.isArray(fd.nav_order)) {
-        fd.nav_order = TAB_DEFS.map(([k]) => k);
-      }
+      const keys = TAB_DEFS.map(([k]) => k);
+      const prev = Array.isArray(fd.nav_order)
+        ? fd.nav_order.filter((k) => keys.includes(k)) : [];
+      fd.nav_order = [...prev,
+        ...keys.filter((k) => !prev.includes(k))];
       setFeat(fd);
       setAnn(a.exists() ? a.data() : { text: '', ctaLabel: '',
         ctaLink: '', target: 'all', active: false });
