@@ -14,6 +14,10 @@ export function AuthProvider({ children }) {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Register this device for push on every launch, even before / without
+  // sign-in, so broadcast and announcement pushes always deliver.
+  useEffect(() => { pushService.registerDevice().catch(() => {}); }, []);
+
   useEffect(() => {
     let unsubProfile = null;
     let teardownPresence = null;

@@ -82,6 +82,20 @@ module.exports = async (req, res) => {
       seen.add(u.id);
       tokens = tokens.concat(tokensFrom(u));
     }
+
+    // Broadcasts (admin announcements) also go to every device that has
+    // opened the app, even ones never signed in, via the deviceTokens
+    // collection. Targeted (toUid / single user) pushes do not.
+    const isBroadcast = !toUid && target !== 'user';
+    if (isBroadcast) {
+      try {
+        const dt = await db.collection('deviceTokens').get();
+        dt.forEach((d) => {
+          const v = (d.data() || {}).token || d.id;
+          if (v) tokens.push(v);
+        });
+      } catch (_) { /* collection may not exist yet */ }
+    }
     tokens = [...new Set(tokens)];
     if (!tokens.length) return res.status(200).json({ sent: 0, reason: 'no tokens' });
 

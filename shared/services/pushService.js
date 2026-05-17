@@ -9,7 +9,7 @@
 //   POST to a tiny relay (push-relay/, deployed free on Vercel) whose URL
 //   is provided at build time via NEXT_PUBLIC_PUSH_ENDPOINT. If that env
 //   is not set, sends are a silent no-op so nothing in chat/session breaks.
-import { saveFCMToken } from './notificationService.js';
+import { saveFCMToken, saveDeviceToken } from './notificationService.js';
 
 const ENDPOINT =
   (typeof process !== 'undefined'
@@ -80,11 +80,17 @@ async function ensureChannel() {
 
 let wired = false;
 
-// Call once the user is signed in (native only). Requests permission,
-// registers with FCM/APNs, stores the device token on the user doc, and
-// routes taps to a sensible screen.
+let lastUid = null;
+
+// Native only. Requests permission, registers with FCM/APNs and stores
+// the device token. Works WITH or WITHOUT a signed-in user: the token
+// is always written to the deviceTokens collection (so broadcast pushes
+// reach every device even when nobody is logged in) and, when a uid is
+// known, also to that user doc (for targeted chat/call pushes). Call it
+// on every app launch and again right after sign-in.
 export async function registerForPush(uid) {
-  if (!uid || !isNativeApp()) return;
+  if (!isNativeApp()) return;
+  lastUid = uid || lastUid || null;
   const PN = plugin();
   if (!PN) return;
   try {
@@ -104,7 +110,11 @@ export async function registerForPush(uid) {
     wired = true;
 
     PN.addListener('registration', (t) => {
-      if (t && t.value) saveFCMToken(uid, t.value).catch(() => {});
+      if (!t || !t.value) return;
+      // Always record the device (broadcast / not-signed-in delivery).
+      saveDeviceToken(t.value, lastUid).catch(() => {});
+      // And map it to the user when we know who they are (targeted).
+      if (lastUid) saveFCMToken(lastUid, t.value).catch(() => {});
     });
     PN.addListener('registrationError', () => {});
 
@@ -155,6 +165,10 @@ export async function registerForPush(uid) {
     });
   } catch (_) { /* never block the app on push setup */ }
 }
+
+// Register the device on app launch with no user yet (so broadcast
+// pushes work even before / without signing in).
+export function registerDevice() { return registerForPush(null); }
 
 // Best-effort push send via the relay. NEVER throws (callers are core
 // flows like sending a chat message) - failures are swallowed.

@@ -3,7 +3,9 @@
 // runs `cap add` fresh), so this runs AFTER cap add/sync - locally and in
 // the iOS workflow - and is idempotent (safe to run repeatedly).
 // Run: node scripts/patch-native.mjs
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import {
+  readFileSync, writeFileSync, existsSync, readdirSync, statSync,
+} from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
@@ -32,27 +34,77 @@ function patchAppName(app) {
   return `name: "${name}" (${app})`;
 }
 
-const ANDROID_PERMS = `
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-    <uses-feature android:name="android.hardware.camera" android:required="false" />
-    <uses-feature android:name="android.hardware.microphone" android:required="false" />`;
+const NEED_PERMS = [
+  'android.permission.RECORD_AUDIO',
+  'android.permission.CAMERA',
+  'android.permission.MODIFY_AUDIO_SETTINGS',
+  'android.permission.POST_NOTIFICATIONS',
+  'android.permission.VIBRATE',
+];
 
 function patchAndroid(app) {
   const f = join(ROOT, app, 'android', 'app', 'src', 'main',
     'AndroidManifest.xml');
   if (!existsSync(f)) return `android: skipped (${app}, no project)`;
   let x = readFileSync(f, 'utf8');
-  if (x.includes('android.permission.RECORD_AUDIO')) {
-    return `android: already patched (${app})`;
+  // Idempotent per-permission: add only the ones not already present,
+  // right after the INTERNET permission Capacitor ships with.
+  const missing = NEED_PERMS.filter((p) => !x.includes(p));
+  if (!missing.length) return `android: already patched (${app})`;
+  let block = missing
+    .map((p) => `\n    <uses-permission android:name="${p}" />`).join('');
+  if (!x.includes('android.hardware.camera')) {
+    block += '\n    <uses-feature android:name="android.hardware.camera"'
+      + ' android:required="false" />';
   }
-  // Add right after the INTERNET permission Capacitor ships with.
   x = x.replace(
     /(<uses-permission android:name="android\.permission\.INTERNET" \/>)/,
-    `$1${ANDROID_PERMS}`);
+    `$1${block}`);
   writeFileSync(f, x);
-  return `android: patched (${app})`;
+  return `android: added ${missing.join(', ')} (${app})`;
+}
+
+// Clear FLAG_SECURE so the OS allows screenshots / screen recording in
+// the app (nothing here needs to block it). Capacitor regenerates
+// MainActivity on `cap add`, so this rewrites it every run. Idempotent;
+// derives the package from the existing file.
+function patchMainActivity(app) {
+  const base = join(ROOT, app, 'android', 'app', 'src', 'main', 'java');
+  if (!existsSync(base)) return `mainactivity: skipped (${app})`;
+  const found = [];
+  (function find(dir) {
+    let entries = [];
+    try { entries = readdirSync(dir); } catch (_) { return; }
+    for (const e of entries) {
+      const p = join(dir, e);
+      let st; try { st = statSync(p); } catch (_) { continue; }
+      if (st.isDirectory()) find(p);
+      else if (e === 'MainActivity.java') found.push(p);
+    }
+  }(base));
+  if (!found.length) return `mainactivity: not found (${app})`;
+  const f = found[0];
+  const cur = readFileSync(f, 'utf8');
+  const pkg = (cur.match(/package\s+([\w.]+);/) || [])[1];
+  if (!pkg) return `mainactivity: no package (${app})`;
+  const out = `package ${pkg};
+
+import android.os.Bundle;
+import android.view.WindowManager;
+import com.getcapacitor.BridgeActivity;
+
+public class MainActivity extends BridgeActivity {
+  @Override
+  public void onCreate(Bundle savedInstanceState) {
+    super.onCreate(savedInstanceState);
+    // Screenshots and screen recording are allowed (no FLAG_SECURE).
+    getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
+  }
+}
+`;
+  if (cur === out) return `mainactivity: already patched (${app})`;
+  writeFileSync(f, out);
+  return `mainactivity: patched (${app}, ${pkg})`;
 }
 
 const IOS_KEYS = `	<key>NSCameraUsageDescription</key>
@@ -111,5 +163,6 @@ for (const app of APPS) {
 }
 for (const app of NAME_APPS) {
   console.log(patchAppName(app));
+  console.log(patchMainActivity(app));
 }
 console.log('patch-native done');
