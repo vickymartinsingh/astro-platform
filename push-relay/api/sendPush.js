@@ -87,10 +87,30 @@ module.exports = async (req, res) => {
 
     const message = {
       notification: { title: String(title), body: String(msgBody || '') },
-      data: Object.fromEntries(
-        Object.entries(data || {}).map(([k, v]) => [k, String(v)])),
-      android: { priority: 'high', notification: { sound: 'default' } },
-      apns: { payload: { aps: { sound: 'default' } } },
+      // Mirror title/body into data so the app can re-raise the banner
+      // itself when the push arrives in the FOREGROUND (OS suppresses
+      // the system banner in that state).
+      data: {
+        ...Object.fromEntries(
+          Object.entries(data || {}).map(([k, v]) => [k, String(v)])),
+        title: String(title),
+        body: String(msgBody || ''),
+      },
+      android: {
+        priority: 'high',
+        notification: {
+          sound: 'default',
+          channelId: 'astro-default',     // high-importance -> heads-up
+          defaultSound: true,
+          defaultVibrateTimings: true,
+          visibility: 'PUBLIC',           // show on lock screen
+          notificationPriority: 'PRIORITY_MAX',
+        },
+      },
+      apns: {
+        headers: { 'apns-priority': '10' },
+        payload: { aps: { sound: 'default', 'interruption-level': 'time-sensitive' } },
+      },
     };
 
     let sent = 0; let failed = 0;

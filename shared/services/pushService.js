@@ -31,6 +31,53 @@ function plugin() {
     && window.Capacitor.Plugins.PushNotifications) || null;
 }
 
+// @capacitor/local-notifications — used ONLY to re-raise a push that
+// arrives while the app is in the foreground (Android/iOS suppress the
+// system banner in that state). Accessed via the runtime global so the
+// bundler never imports it (web/static builds stay untouched).
+function localPlugin() {
+  return (typeof window !== 'undefined'
+    && window.Capacitor && window.Capacitor.Plugins
+    && window.Capacitor.Plugins.LocalNotifications) || null;
+}
+
+// Single high-importance channel so notifications appear as a heads-up
+// banner even when the screen is ON (default/low channels stay silent
+// in the shade). The relay targets this same channelId for backgrounded
+// pushes; the foreground re-raise reuses it too.
+const CHANNEL_ID = 'astro-default';
+
+async function ensureChannel() {
+  try {
+    const PN = plugin();
+    if (PN && PN.createChannel) {
+      await PN.createChannel({
+        id: CHANNEL_ID,
+        name: 'AstroConnect',
+        description: 'Chats, calls, video and updates',
+        importance: 5,        // IMPORTANCE_HIGH -> heads-up banner
+        visibility: 1,        // VISIBILITY_PUBLIC -> show on lock screen
+        sound: 'default',
+        vibration: true,
+        lights: true,
+      });
+    }
+    const LN = localPlugin();
+    if (LN && LN.createChannel) {
+      await LN.createChannel({
+        id: CHANNEL_ID,
+        name: 'AstroConnect',
+        description: 'Chats, calls, video and updates',
+        importance: 5,
+        visibility: 1,
+        sound: 'default',
+        vibration: true,
+        lights: true,
+      });
+    }
+  } catch (_) { /* channel is best-effort */ }
+}
+
 let wired = false;
 
 // Call once the user is signed in (native only). Requests permission,
@@ -44,7 +91,14 @@ export async function registerForPush(uid) {
     let perm = await PN.checkPermissions();
     if (perm.receive !== 'granted') perm = await PN.requestPermissions();
     if (perm.receive !== 'granted') return;
+    await ensureChannel();
     await PN.register();
+
+    // Local-notifications permission (foreground re-raise on iOS).
+    try {
+      const LN = localPlugin();
+      if (LN && LN.requestPermissions) await LN.requestPermissions();
+    } catch (_) {}
 
     if (wired) return;            // listeners are process-wide singletons
     wired = true;
@@ -53,6 +107,43 @@ export async function registerForPush(uid) {
       if (t && t.value) saveFCMToken(uid, t.value).catch(() => {});
     });
     PN.addListener('registrationError', () => {});
+
+    // Fired when a push arrives while the app is in the FOREGROUND
+    // (screen on, user inside the app). The OS does NOT draw a banner
+    // in this state, so we re-raise it ourselves as a local
+    // notification on the high-importance channel -> heads-up banner.
+    PN.addListener('pushNotificationReceived', (notif) => {
+      try {
+        const LN = localPlugin();
+        if (!LN) return;
+        const d = (notif && notif.data) || {};
+        const title = (notif && notif.title) || d.title || 'AstroConnect';
+        const text = (notif && notif.body) || d.body || '';
+        LN.schedule({
+          notifications: [{
+            id: Math.floor(Date.now() % 2147483647),
+            title: String(title),
+            body: String(text),
+            channelId: CHANNEL_ID,
+            schedule: { at: new Date(Date.now() + 150) },
+            extra: d,
+          }],
+        }).catch(() => {});
+      } catch (_) {}
+    });
+
+    // Tap on the foreground-raised local notification -> deep link.
+    try {
+      const LN = localPlugin();
+      if (LN && LN.addListener) {
+        LN.addListener('localNotificationActionPerformed', (a) => {
+          const d = (a && a.notification && a.notification.extra) || {};
+          if (d.route && typeof window !== 'undefined') {
+            try { window.location.assign(d.route); } catch (_) {}
+          }
+        });
+      }
+    } catch (_) {}
 
     // Tap on a notification (app was background/closed) -> deep link.
     PN.addListener('pushNotificationActionPerformed', (action) => {
