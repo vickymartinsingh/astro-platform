@@ -12,6 +12,15 @@
     "FirebaseAuthentication": {
       "skipNativeAuth": false,
       "providers": ["google.com"]
+    },
+    "SplashScreen": {
+      "launchShowDuration": 2800,
+      "launchAutoHide": true,
+      "backgroundColor": "#0B0A1F",
+      "androidScaleType": "CENTER_CROP",
+      "showSpinner": false,
+      "splashFullScreen": true,
+      "splashImmersive": true
     }
   }
 }

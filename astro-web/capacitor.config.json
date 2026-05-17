@@ -7,5 +7,16 @@
     "androidScheme": "https",
     "url": "https://astrologer.vickymartinsingh.com",
     "cleartext": false
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 2800,
+      "launchAutoHide": true,
+      "backgroundColor": "#04231B",
+      "androidScaleType": "CENTER_CROP",
+      "showSpinner": false,
+      "splashFullScreen": true,
+      "splashImmersive": true
+    }
   }
 }
