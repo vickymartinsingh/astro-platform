@@ -3,7 +3,10 @@ import {
   doc, getDoc, setDoc, updateDoc, addDoc, collection, query, where,
   orderBy, onSnapshot, getDocs, serverTimestamp,
 } from 'firebase/firestore';
-import { db } from '../firebase.js';
+import {
+  ref as storageRef, uploadBytes, getDownloadURL,
+} from 'firebase/storage';
+import { db, storage } from '../firebase.js';
 import { sendPushToUser } from './pushService.js';
 
 // Deterministic conversation id prevents duplicate threads (blueprint 4.8):
@@ -54,6 +57,40 @@ export async function sendMessage(chatId, senderId, text) {
       });
     }
   }
+}
+
+// Send a photo in the chat (the "+" -> Choose Picture sheet). Uploads
+// to Storage then writes an image message. Returns true on success;
+// callers show a friendly message on false so text chat never breaks.
+export async function sendImageMessage(chatId, senderId, file) {
+  if (!chatId || !senderId || !file) return false;
+  try {
+    const path = `chat/${chatId}/${Date.now()}_${
+      String(file.name || 'photo').replace(/[^\w.\-]/g, '')}`;
+    const r = storageRef(storage, path);
+    await uploadBytes(r, file, { contentType: file.type || 'image/jpeg' });
+    const url = await getDownloadURL(r);
+    await addDoc(collection(db, 'chats', chatId, 'messages'), {
+      senderId, text: '', imageUrl: url, createdAt: serverTimestamp(),
+    });
+    await updateDoc(doc(db, 'chats', chatId), {
+      lastMessage: '📷 Photo', updatedAt: serverTimestamp(),
+    });
+    if (senderId !== 'system') {
+      const toUid = String(chatId).split('_').find(
+        (p) => p && p !== senderId);
+      if (toUid) {
+        const senderName = await resolveName(senderId);
+        sendPushToUser({
+          toUid,
+          title: senderName || 'New message',
+          body: '📷 Photo',
+          data: { type: 'chat', chatId, from: senderName || '' },
+        });
+      }
+    }
+    return true;
+  } catch (_) { return false; }
 }
 
 // Resolve a person's display name (astrologer profile first, then user).

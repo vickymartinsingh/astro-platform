@@ -25,6 +25,10 @@ input, textarea, select { font-size: 16px; }
   .btn-primary { @apply btn bg-primary text-white hover:opacity-90; }
   .btn-danger  { @apply btn bg-danger text-white hover:opacity-90; }
   .btn-ghost   { @apply btn border border-primary text-primary bg-white; }
+  /* Astrotalk signature: solid yellow pill with dark text. */
+  .btn-brand {
+    @apply btn bg-brand text-[#1A1A2E] hover:bg-brand-dark;
+  }
   .card {
     @apply bg-white rounded-card p-4 shadow-sm;
   }
@@ -96,3 +100,27 @@ input, textarea, select { font-size: 16px; }
 
 /* Smooth chat auto-scroll (blueprint 10.5). */
 .smooth-scroll { scroll-behavior: smooth; }
+
+/* Astrotalk-style chat canvas: warm paper tone + a faint astrology
+   doodle pattern, exactly like the reference screenshots. */
+.chat-doodle {
+  background-color: #ECE3D9;
+  background-image:
+    radial-gradient(rgba(120,90,40,0.05) 1px, transparent 1.5px),
+    radial-gradient(rgba(120,90,40,0.04) 1px, transparent 1.5px);
+  background-size: 26px 26px, 26px 26px;
+  background-position: 0 0, 13px 13px;
+}
+
+/* Bottom tab bar: respect the phone's home-indicator safe area. */
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+.pb-safe-nav { padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes popIn {
+  from { opacity: 0; transform: scale(.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
