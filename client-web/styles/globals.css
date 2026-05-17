@@ -9,6 +9,8 @@
   --c-bglight: 243 238 255;
   --grad-a: #6C2BD9;
   --grad-b: #8B5CF6;
+  --c-tarot: #0f0a23;
+  --c-tarot2: #2A1A63;
 }
 
 html, body, #__next { height: 100%; }
@@ -77,15 +79,15 @@ input, textarea, select { font-size: 16px; }
 /* Tarot card back: deep celestial night with a starfield + soft glow.
    No zodiac glyphs, just stars and an ornamental inner frame. */
 .card-back {
-  background-color: #1b1140;
+  background-color: var(--c-tarot);
   background-image:
     radial-gradient(circle at 50% 22%, rgba(255,255,255.35) 0 1.5px, transparent 2px),
     radial-gradient(circle at 22% 38%, rgba(255,255,255.22) 0 1px, transparent 2px),
     radial-gradient(circle at 78% 30%, rgba(255,255,255.22) 0 1px, transparent 2px),
     radial-gradient(circle at 30% 70%, rgba(255,255,255.18) 0 1px, transparent 2px),
     radial-gradient(circle at 70% 75%, rgba(255,255,255.18) 0 1px, transparent 2px),
-    radial-gradient(circle at 50% 48%, rgba(167,139,250.4), transparent 62%),
-    linear-gradient(160deg, #2a1a63 0%, #1b1140 60%, #120a2e 100%);
+    radial-gradient(circle at 50% 48%, rgba(255,255,255,.10), transparent 62%),
+    linear-gradient(160deg, var(--c-tarot2) 0%, var(--c-tarot) 65%, var(--c-tarot) 100%);
   position: relative;
 }
 .card-back::after {
@@ -96,13 +98,13 @@ input, textarea, select { font-size: 16px; }
   box-shadow: inset 0 0 0 4px rgba(255,255,255.06);
 }
 .card-face {
-  background: radial-gradient(circle at 50% 0%, #F3EEFF, #ffffff 60%);
+  background: radial-gradient(circle at 50% 0%, rgb(var(--c-bglight)), #ffffff 60%);
   position: relative;
 }
 .card-face::after {
   content: "";
   position: absolute; inset: 6px;
-  border: 1px solid rgba(108,43,217.35);
+  border: 1px solid rgb(var(--c-primary) / .35);
   border-radius: 10px;
 }
 
