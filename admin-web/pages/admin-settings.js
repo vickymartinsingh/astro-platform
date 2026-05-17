@@ -4,6 +4,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
+import { flash } from '../lib/flash';
 
 // settings/config is admin-writable (client-side fallback when Cloud
 // Functions are not deployed). Includes branding (logo / favicon).
@@ -12,6 +13,8 @@ export default function AdminSettings() {
   const [cfg, setCfg] = useState(null);
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
+  // Per-asset: { file, status: ''|'uploading'|'done'|'error' }
+  const [pick, setPick] = useState({ logo: {}, favicon: {} });
 
   useEffect(() => {
     getDoc(doc(db, 'settings', 'config')).then((s) =>
@@ -40,22 +43,42 @@ export default function AdminSettings() {
       favicon: cfg.favicon || '',
     });
     setMsg('Settings saved.');
+    flash('Settings saved');
   }
 
-  async function uploadBrand(kind, file) {
-    if (!file) return;
-    setBusy(true); setMsg('');
+  function choose(kind, file) {
+    setPick((p) => ({ ...p, [kind]: { file, status: '' } }));
+  }
+
+  async function uploadBrand(kind) {
+    const file = pick[kind] && pick[kind].file;
+    if (!file) { flash('Choose a file first', 'error'); return; }
+    setPick((p) => ({ ...p, [kind]: { ...p[kind], status: 'uploading' } }));
     try {
-      const r = ref(storage, `media/${kind}-${Date.now()}-${file.name}`);
-      await uploadBytes(r, file);
-      const url = await getDownloadURL(r);
-      const next = { ...cfg, [kind]: url };
-      setCfg(next);
-      await adminService.updateSettings('config', { [kind]: url });
-      setMsg(`${kind} uploaded and saved.`);
+      const safe = String(file.name || 'img')
+        .replace(/[^\w.\-]/g, '_');
+      const r = ref(storage, `media/branding/${kind}_${Date.now()}_${safe}`);
+      const withTimeout = (pr, ms) => Promise.race([
+        pr, new Promise((_, rej) => setTimeout(
+          () => rej(new Error('timeout - check Storage rules / bucket')),
+          ms)),
+      ]);
+      await withTimeout(uploadBytes(r, file,
+        { contentType: file.type || 'image/png' }), 30000);
+      const url = await withTimeout(getDownloadURL(r), 15000);
+      setCfg((c) => ({ ...c, [kind]: url }));
+      setPick((p) => ({ ...p, [kind]: { file, status: 'done', url } }));
+      flash(`${kind === 'logo' ? 'Logo' : 'Icon'} uploaded successfully`);
     } catch (e) {
-      setMsg(`Upload failed: ${e?.message || 'error'}`);
-    } finally { setBusy(false); }
+      setPick((p) => ({ ...p, [kind]: { ...p[kind], status: 'error' } }));
+      flash(`Upload failed: ${e?.message || 'error'}`, 'error');
+    }
+  }
+
+  async function saveBranding() {
+    await adminService.updateSettings('config', {
+      logo: cfg.logo || '', favicon: cfg.favicon || '' });
+    flash('Logo & icon saved - now live across all apps');
   }
 
   if (loading || !cfg) {
@@ -88,34 +111,56 @@ export default function AdminSettings() {
 
       <div className="surface mb-4 p-4">
         <div className="mb-3 font-semibold">Branding</div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <div className="text-sm text-sub-text">Platform logo</div>
-            {cfg.logo && (
-              <img src={cfg.logo} alt="logo"
-                className="my-2 h-12 rounded bg-bg-light object-contain" />
-            )}
-            <label className="btn-ghost cursor-pointer inline-block">
-              {busy ? 'Uploading…' : 'Upload logo'}
-              <input type="file" accept="image/*" hidden
-                onChange={(e) => uploadBrand('logo', e.target.files?.[0])} />
-            </label>
-          </div>
-          <div>
-            <div className="text-sm text-sub-text">Favicon / icon</div>
-            {cfg.favicon && (
-              <img src={cfg.favicon} alt="favicon"
-                className="my-2 h-12 w-12 rounded bg-bg-light
-                           object-contain" />
-            )}
-            <label className="btn-ghost cursor-pointer inline-block">
-              {busy ? 'Uploading…' : 'Upload icon'}
-              <input type="file" accept="image/*" hidden
-                onChange={(e) =>
-                  uploadBrand('favicon', e.target.files?.[0])} />
-            </label>
-          </div>
+        <div className="grid gap-6 sm:grid-cols-2">
+          {[['logo', 'Platform logo'],
+            ['favicon', 'Favicon / icon']].map(([kind, label]) => {
+            const st = pick[kind] || {};
+            return (
+              <div key={kind}>
+                <div className="text-sm font-medium text-sub-text">
+                  {label}
+                </div>
+                {cfg[kind] && (
+                  <img src={cfg[kind]} alt={kind}
+                    className="my-2 h-14 rounded bg-bg-light
+                               object-contain p-1" />
+                )}
+                <div className="mt-1 flex flex-wrap items-center gap-2">
+                  <label className="btn-ghost cursor-pointer
+                    inline-block !min-h-0 px-3 py-2 text-sm">
+                    Choose file
+                    <input type="file" accept="image/*" hidden
+                      onChange={(e) =>
+                        choose(kind, e.target.files?.[0])} />
+                  </label>
+                  <span className="max-w-[160px] truncate text-xs
+                    text-sub-text">
+                    {st.file ? st.file.name : 'No file chosen'}
+                  </span>
+                  <button onClick={() => uploadBrand(kind)}
+                    disabled={!st.file || st.status === 'uploading'}
+                    className="btn-primary !min-h-0 px-4 py-2 text-sm
+                      disabled:opacity-50">
+                    {st.status === 'uploading' ? 'Uploading...'
+                      : 'Upload'}
+                  </button>
+                </div>
+                {st.status === 'done' && (
+                  <div className="mt-1 text-xs font-semibold
+                    text-success">Uploaded successfully</div>
+                )}
+                {st.status === 'error' && (
+                  <div className="mt-1 text-xs font-semibold
+                    text-danger">Upload failed - try again</div>
+                )}
+              </div>
+            );
+          })}
         </div>
+        <button onClick={saveBranding}
+          className="btn-primary mt-4 w-full">
+          Save logo &amp; icon (apply everywhere)
+        </button>
       </div>
 
       <div className="surface space-y-3 p-4">

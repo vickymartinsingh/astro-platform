@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { authService, astrologerService } from '@astro/shared';
+import { authService, astrologerService, db } from '@astro/shared';
+import { doc, getDoc } from 'firebase/firestore';
 import GoOnlineModal from './GoOnlineModal';
 import { useAuth } from '../lib/useAuth';
 
@@ -25,6 +26,16 @@ export default function TopNav({ astro }) {
   const router = useRouter();
   const { user } = useAuth();
   const online = astro?.status === 'online';
+  const [brand, setBrand] = useState({ logo: '', name: 'AstroConnect' });
+  useEffect(() => {
+    getDoc(doc(db, 'settings', 'config')).then((s) => {
+      const d = s.exists() ? s.data() : {};
+      if (d.logo || d.platformName) {
+        setBrand({ logo: d.logo || '',
+          name: d.platformName || 'AstroConnect' });
+      }
+    }).catch(() => {});
+  }, []);
 
   async function logout() {
     await authService.logoutUser();
@@ -76,14 +87,21 @@ export default function TopNav({ astro }) {
       <div className="mx-auto flex max-w-6xl items-center justify-between
                       px-4 py-3">
         <Link href="/astro-dashboard" className="flex items-center gap-2">
-          <span className="flex h-9 w-9 items-center justify-center
-                           rounded-xl bg-gradient-to-br from-primary
-                           to-[#8B5CF6] font-bold text-white">A</span>
-          <span className="leading-tight">
-            <span className="block font-bold">AstroConnect</span>
-            <span className="block text-[10px] uppercase tracking-wide
-                             text-sub-text">Astrologer Portal</span>
-          </span>
+          {brand.logo ? (
+            <img src={brand.logo} alt={brand.name}
+              className="h-9 max-w-[150px] object-contain" />
+          ) : (
+            <>
+              <span className="flex h-9 w-9 items-center justify-center
+                               rounded-xl bg-gradient-to-br from-primary
+                               to-[#8B5CF6] font-bold text-white">A</span>
+              <span className="leading-tight">
+                <span className="block font-bold">{brand.name}</span>
+                <span className="block text-[10px] uppercase
+                  tracking-wide text-sub-text">Astrologer Portal</span>
+              </span>
+            </>
+          )}
         </Link>
 
         <nav className="hidden items-center gap-1 md:flex">

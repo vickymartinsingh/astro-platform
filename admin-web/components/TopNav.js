@@ -1,7 +1,8 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { authService } from '@astro/shared';
+import { authService, db } from '@astro/shared';
+import { doc, getDoc } from 'firebase/firestore';
 
 // Professional grouped admin nav: a search box that jumps to any page,
 // plus category dropdowns. Every admin page is included (nothing
@@ -51,7 +52,12 @@ export default function TopNav() {
   const [open, setOpen] = useState(false);
   const [menu, setMenu] = useState(null);  // open group name
   const [q, setQ] = useState('');
+  const [logo, setLogo] = useState('');
   const router = useRouter();
+  useEffect(() => {
+    getDoc(doc(db, 'settings', 'config')).then((s) =>
+      setLogo((s.exists() && s.data().logo) || '')).catch(() => {});
+  }, []);
 
   async function logout() {
     await authService.logoutUser();
@@ -70,8 +76,13 @@ export default function TopNav() {
     <header className="sticky top-0 z-40 bg-dark-text text-white">
       <div className="mx-auto flex max-w-6xl items-center gap-3 px-4
                       py-3">
-        <Link href="/admin-dashboard" className="shrink-0 text-lg
-          font-bold">⚙️ Admin</Link>
+        <Link href="/admin-dashboard"
+          className="flex shrink-0 items-center text-lg font-bold">
+          {logo ? (
+            <img src={logo} alt="logo"
+              className="h-8 max-w-[140px] object-contain" />
+          ) : '⚙️ Admin'}
+        </Link>
 
         {/* Search */}
         <div className="relative hidden flex-1 max-w-xs md:block">

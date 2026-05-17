@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { authService, notificationService } from '@astro/shared';
+import { authService, notificationService, db } from '@astro/shared';
+import { doc, getDoc } from 'firebase/firestore';
 import { useAuth } from '../lib/useAuth';
 import { useAuthModal } from '../lib/authModal';
 import { useI18n } from '../lib/i18n';
@@ -30,6 +31,7 @@ export default function TopNav() {
   const [open, setOpen] = useState(false);
   const [prof, setProf] = useState(false);
   const [unread, setUnread] = useState(0);
+  const [brand, setBrand] = useState({ logo: '', name: 'AstroConnect' });
   const router = useRouter();
   const { user } = useAuth();
   const { openLogin } = useAuthModal();
@@ -40,6 +42,16 @@ export default function TopNav() {
     return notificationService.listenNotifications(user.uid, (list) =>
       setUnread(list.filter((n) => !n.read).length));
   }, [user]);
+
+  useEffect(() => {
+    getDoc(doc(db, 'settings', 'config')).then((s) => {
+      const d = s.exists() ? s.data() : {};
+      if (d.logo || d.platformName) {
+        setBrand({ logo: d.logo || '',
+          name: d.platformName || 'AstroConnect' });
+      }
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => { setOpen(false); setProf(false); }, [router.asPath]);
 
@@ -55,14 +67,21 @@ export default function TopNav() {
       <div className="mx-auto flex max-w-6xl items-center justify-between
                       px-4 py-3">
         <Link href="/dashboard" className="flex items-center gap-2">
-          <span className="flex h-9 w-9 items-center justify-center
-                           rounded-xl bg-gradient-to-br from-primary
-                           to-[#8B5CF6] font-bold text-white">A</span>
-          <span className="leading-tight">
-            <span className="block font-bold">AstroConnect</span>
-            <span className="block text-[10px] uppercase tracking-wide
-                             text-sub-text">Trusted Astrologers</span>
-          </span>
+          {brand.logo ? (
+            <img src={brand.logo} alt={brand.name}
+              className="h-9 max-w-[150px] object-contain" />
+          ) : (
+            <>
+              <span className="flex h-9 w-9 items-center justify-center
+                               rounded-xl bg-gradient-to-br from-primary
+                               to-[#8B5CF6] font-bold text-white">A</span>
+              <span className="leading-tight">
+                <span className="block font-bold">{brand.name}</span>
+                <span className="block text-[10px] uppercase
+                  tracking-wide text-sub-text">Trusted Astrologers</span>
+              </span>
+            </>
+          )}
         </Link>
 
         <nav className="hidden items-center gap-1 md:flex">
