@@ -41,8 +41,11 @@ export function KundliGateProvider({ children }) {
       : type === 'video' ? eff(astro.priceVideo) : eff(astro.priceCall);
     const wallet = Number(profile?.wallet || 0);
     const firstFree = !profile?.freeUsed;
+    // Recommended top-up = this astrologer's per-minute price x 5 mins
+    // (rounded up to the nearest 10), minimum ₹10.
+    const recommend = Math.max(10, Math.ceil((perMin * 5) / 10) * 10);
     if (!firstFree && perMin > 0 && wallet < perMin) {
-      setLowBal({ astro, perMin });
+      setLowBal({ astro, perMin, recommend });
       return;
     }
     const list = await kundliService.getKundliProfiles(user.uid);
@@ -81,17 +84,18 @@ export function KundliGateProvider({ children }) {
             <p className="mt-2 text-sm text-sub-text">
               Your wallet balance is too low to start this
               {' '}{lowBal.astro?.name ? `session with ${lowBal.astro.name}`
-                : 'session'}. Please recharge your wallet with a minimum of
-              {' '}<b>₹100</b> to connect with this astrologer
-              {lowBal.perMin ? ` (₹${lowBal.perMin}/min)` : ''}.
+                : 'session'} ({`₹${lowBal.perMin}/min`}). We recommend
+              recharging at least <b>₹{lowBal.recommend}</b> (about 5
+              minutes) to connect with this astrologer.
             </p>
             <div className="mt-4 flex gap-2">
               <button onClick={() => setLowBal(null)}
                 className="btn-ghost flex-1">Cancel</button>
-              <button onClick={() => { setLowBal(null);
-                router.push('/wallet'); }}
+              <button onClick={() => { const a = lowBal.recommend;
+                setLowBal(null);
+                router.push(`/wallet?amt=${a}`); }}
                 className="btn-grad flex-1 justify-center">
-                Recharge ₹100+
+                Recharge ₹{lowBal.recommend}
               </button>
             </div>
           </div>

@@ -1,16 +1,19 @@
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/router';
 import { walletService } from '@astro/shared';
 import Layout from '../components/Layout';
 import { SkeletonList } from '../components/Skeleton';
 import { useRequireClient } from '../lib/useAuth';
 import { useRazorpay } from '../lib/useRazorpay';
 
-const QUICK = [100, 200, 500, 1000];
+const QUICK = [10, 50, 100, 500, 1000];
+const MIN_RECHARGE = 10;
 
 export default function Wallet() {
   const { user, profile, loading } = useRequireClient();
+  const router = useRouter();
   const [wallet, setWallet] = useState(0);
-  const [amount, setAmount] = useState(500);
+  const [amount, setAmount] = useState(100);
   const [coupon, setCoupon] = useState('');
   const [tab, setTab] = useState('add');
   const [txns, setTxns] = useState(null);
@@ -22,6 +25,13 @@ export default function Wallet() {
     if (user) return walletService.listenWallet(user.uid, setWallet);
   }, [user]);
 
+  // Prefill the amount when sent here from the "recharge to connect"
+  // prompt (e.g. /wallet?amt=120).
+  useEffect(() => {
+    const a = Number(router.query.amt);
+    if (a && a >= MIN_RECHARGE) setAmount(a);
+  }, [router.query.amt]);
+
   useEffect(() => {
     if (user && tab === 'history') {
       walletService.getTransactions(user.uid).then(setTxns);
@@ -31,7 +41,10 @@ export default function Wallet() {
   async function pay() {
     setMsg(null);
     if (!rzpReady) { setMsg({ ok: false, t: 'Payment not ready yet.' }); return; }
-    if (amount < 100) { setMsg({ ok: false, t: 'Minimum recharge is ₹100.' }); return; }
+    if (amount < MIN_RECHARGE) {
+      setMsg({ ok: false, t: `Minimum recharge is ₹${MIN_RECHARGE}.` });
+      return;
+    }
     setBusy(true);
     try {
       const order = await walletService.createRechargeOrder(amount, coupon);
@@ -103,7 +116,8 @@ export default function Wallet() {
               </button>
             ))}
           </div>
-          <input className="input" type="number" min={100} value={amount}
+          <input className="input" type="number" min={MIN_RECHARGE}
+            value={amount}
             onChange={(e) => setAmount(Number(e.target.value))}
             placeholder="Custom amount" />
           <input className="input" value={coupon}

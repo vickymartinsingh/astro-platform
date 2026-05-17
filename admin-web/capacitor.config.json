@@ -4,9 +4,7 @@
   "webDir": "out",
   "bundledWebRuntime": false,
   "server": {
-    "androidScheme": "https",
-    "url": "https://admin.vickymartinsingh.com",
-    "cleartext": false
+    "androidScheme": "https"
   },
   "plugins": {
     "SplashScreen": {
