@@ -11,6 +11,10 @@
   --grad-b: #8B5CF6;
   --c-tarot: #0f0a23;
   --c-tarot2: #2A1A63;
+  --c-accent: 219 39 119;
+  --c-success: 27 107 47;
+  --c-warning: 230 126 34;
+  --c-danger: 192 57 43;
 }
 
 html, body, #__next { height: 100%; }

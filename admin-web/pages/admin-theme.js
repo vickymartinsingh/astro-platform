@@ -4,10 +4,11 @@ import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
 import { flash } from '../lib/flash';
 
-const { THEMES, applyTheme } = themeService;
+const { THEMES, applyTheme, THEME_FIELDS } = themeService;
 const BLANK = {
-  label: '', primary: '#6C2BD9', bgLight: '#F3EEFF',
-  gradA: '#6C2BD9', gradB: '#8B5CF6', tarot: '#2A1A63',
+  label: '', primary: '#6C2BD9', gradA: '#6C2BD9', gradB: '#8B5CF6',
+  bgLight: '#F3EEFF', accent: '#DB2777', success: '#1B6B2F',
+  warning: '#E67E22', danger: '#C0392B', tarot: '#2A1A63',
 };
 
 export default function AdminTheme() {
@@ -120,11 +121,9 @@ export default function AdminTheme() {
         <input className="input" placeholder="Theme name"
           value={draft.label}
           onChange={(e) => setDraft({ ...draft, label: e.target.value })} />
-        <Field k="primary" label="Primary colour" />
-        <Field k="gradA" label="Gradient start" />
-        <Field k="gradB" label="Gradient end" />
-        <Field k="bgLight" label="Soft background" />
-        <Field k="tarot" label="Tarot card colour" />
+        {THEME_FIELDS.map(([k, label]) => (
+          <Field key={k} k={k} label={label} />
+        ))}
         <button onClick={saveCustom} className="btn-primary w-full">
           Save custom theme to the list
         </button>

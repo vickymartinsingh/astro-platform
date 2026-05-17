@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import { astrologerService, ZODIAC, getHoroscope } from '@astro/shared';
+import {
+  astrologerService, ZODIAC, getHoroscope, db,
+} from '@astro/shared';
+import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { SkeletonList } from '../components/Skeleton';
 import GuidedTour from '../components/GuidedTour';
@@ -47,6 +50,22 @@ export default function Dashboard() {
   const [showTour, setShowTour] = useState(false);
   const [sign, setSign] = useState('Aries');
   const [when, setWhen] = useState('today');
+  const [hero, setHero] = useState({
+    title: 'The stars have answers',
+    subtitle: 'Speak with verified astrologers on chat, call or video. '
+      + 'Clarity on love, career, marriage and the road ahead.',
+  });
+  useEffect(() => {
+    getDoc(doc(db, 'settings', 'content')).then((s) => {
+      const d = s.exists() ? s.data() : {};
+      if (d.homeHeroTitle || d.homeHeroSubtitle) {
+        setHero((h) => ({
+          title: d.homeHeroTitle || h.title,
+          subtitle: d.homeHeroSubtitle || h.subtitle,
+        }));
+      }
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     astrologerService.getAstrologers().then(setList).catch(() => setList([]));
@@ -71,11 +90,10 @@ export default function Dashboard() {
       {/* Hero */}
       <div className="hero-grad rounded-2xl p-6 text-white md:p-10">
         <h1 className="text-2xl font-bold md:text-4xl">
-          The stars have answers
+          {hero.title}
         </h1>
         <p className="mt-2 max-w-lg text-sm opacity-90 md:text-base">
-          Speak with verified astrologers on chat, call or video. Clarity on
-          love, career, marriage and the road ahead.
+          {hero.subtitle}
         </p>
         <div className="mt-5 flex flex-wrap gap-2">
           <Link href="/astrologers"

@@ -41,6 +41,7 @@ const GROUPS = [
     ['/admin-remedies', 'Remedies'],
   ]],
   ['Config', [
+    ['/admin-developer', 'Developer Mode'],
     ['/admin-settings', 'Settings'],
     ['/admin-features', 'Feature Toggles'],
     ['/admin-theme', 'App Theme'],

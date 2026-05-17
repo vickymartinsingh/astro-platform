@@ -21,32 +21,49 @@ function darken(hex, f) {
     .toString(16).padStart(2, '0')).join('');
 }
 
-// Built-in themes (hex form; custom themes from admin use the same
-// shape so everything resolves identically).
+// Every themeable colour. Built-in + custom themes share this shape.
+export const THEME_FIELDS = [
+  ['primary', 'Primary'],
+  ['gradA', 'Gradient start'],
+  ['gradB', 'Gradient end'],
+  ['bgLight', 'Soft background'],
+  ['accent', 'Accent'],
+  ['success', 'Success'],
+  ['warning', 'Warning'],
+  ['danger', 'Danger'],
+  ['tarot', 'Tarot card'],
+];
+
 export const THEMES = {
   classic: {
     label: 'Classic (Purple)',
-    primary: '#6C2BD9', bgLight: '#F3EEFF',
-    gradA: '#6C2BD9', gradB: '#8B5CF6', tarot: '#2A1A63',
+    primary: '#6C2BD9', gradA: '#6C2BD9', gradB: '#8B5CF6',
+    bgLight: '#F3EEFF', accent: '#DB2777', success: '#1B6B2F',
+    warning: '#E67E22', danger: '#C0392B', tarot: '#2A1A63',
     swatch: ['#6C2BD9', '#8B5CF6', '#DB2777'],
   },
   royal: {
     label: 'Royal (Maroon / Amber / Olive)',
-    primary: '#7F2020', bgLight: '#F7EFE3',
-    gradA: '#7F2020', gradB: '#F59E0B', tarot: '#84994F',
+    primary: '#7F2020', gradA: '#7F2020', gradB: '#F59E0B',
+    bgLight: '#F7EFE3', accent: '#F59E0B', success: '#84994F',
+    warning: '#E67E22', danger: '#C0392B', tarot: '#84994F',
     swatch: ['#7F2020', '#F59E0B', '#84994F'],
   },
 };
 
 export function themeVars(t) {
-  const o = t || THEMES.classic;
+  const o = { ...THEMES.classic, ...(t || {}) };
   return {
-    '--c-primary': hexTriplet(o.primary || '#6C2BD9'),
-    '--c-bglight': hexTriplet(o.bgLight || '#F3EEFF'),
-    '--grad-a': o.gradA || '#6C2BD9',
-    '--grad-b': o.gradB || '#8B5CF6',
-    '--c-tarot': darken(o.tarot || '#2A1A63', 0.35),
-    '--c-tarot2': o.tarot || '#2A1A63',
+    '--c-primary': hexTriplet(o.primary),
+    '--c-bglight': hexTriplet(o.bgLight),
+    '--grad-a': o.gradA,
+    '--grad-b': o.gradB,
+    '--c-accent': hexTriplet(o.accent),
+    '--c-success': hexTriplet(o.success),
+    '--c-warning': hexTriplet(o.warning),
+    '--c-danger': hexTriplet(o.danger),
+    '--c-tarot': darken(o.tarot, 0.35),
+    '--c-tarot2': o.tarot,
   };
 }
 
@@ -59,14 +76,12 @@ function setVars(vars) {
   } catch (_) {}
 }
 
-// Accepts a theme object, a built-in name, or nothing (cached/default).
 export function applyTheme(theme) {
   let t = theme;
   if (typeof theme === 'string') t = THEMES[theme] || THEMES.classic;
   setVars(themeVars(t || THEMES.classic));
 }
 
-// Instant, offline-safe paint on cold start (no colour flash).
 export function bootTheme() {
   try {
     const c = window.localStorage.getItem('appThemeVars');
@@ -78,18 +93,13 @@ export function bootTheme() {
   } catch (_) {}
 }
 
-// Resolve the active theme from the settings doc (built-in OR a custom
-// one saved by the admin).
 function resolve(data) {
   const d = data || {};
   const active = d.active || 'classic';
   if (THEMES[active]) return THEMES[active];
-  const custom = (d.custom && d.custom[active]) || null;
-  return custom || THEMES.classic;
+  return (d.custom && d.custom[active]) || THEMES.classic;
 }
 
-// Live-subscribe so EVERY installed app re-skins the instant the admin
-// changes the theme - no app update needed (read from the server).
 export function watchTheme() {
   bootTheme();
   try {
