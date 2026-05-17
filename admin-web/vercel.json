@@ -2,5 +2,6 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "buildCommand": "cd .. && npm install && npm run build --workspace admin-web",
   "outputDirectory": ".next",
-  "framework": "nextjs"
+  "framework": "nextjs",
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- . ../shared ../package.json ../package-lock.json"
 }
