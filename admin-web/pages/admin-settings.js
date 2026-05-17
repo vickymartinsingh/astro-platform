@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
-import { db, storage, adminService } from '@astro/shared';
+import { db, adminService } from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
 import { flash } from '../lib/flash';
@@ -50,25 +49,45 @@ export default function AdminSettings() {
     setPick((p) => ({ ...p, [kind]: { file, status: '' } }));
   }
 
+  // Store the image directly in Firestore as a data URL - no Firebase
+  // Storage / bucket / CORS needed, so it always works. Logos are tiny;
+  // we downscale to keep the doc well under Firestore's 1MB limit.
+  function fileToScaledDataUrl(file, maxW) {
+    return new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onerror = () => reject(new Error('could not read file'));
+      fr.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error('invalid image'));
+        img.onload = () => {
+          const scale = Math.min(1, maxW / (img.width || maxW));
+          const w = Math.max(1, Math.round((img.width || maxW) * scale));
+          const h = Math.max(1, Math.round((img.height || maxW) * scale));
+          const c = document.createElement('canvas');
+          c.width = w; c.height = h;
+          c.getContext('2d').drawImage(img, 0, 0, w, h);
+          // PNG keeps transparency for logos.
+          resolve(c.toDataURL('image/png'));
+        };
+        img.src = fr.result;
+      };
+      fr.readAsDataURL(file);
+    });
+  }
+
   async function uploadBrand(kind) {
     const file = pick[kind] && pick[kind].file;
     if (!file) { flash('Choose a file first', 'error'); return; }
     setPick((p) => ({ ...p, [kind]: { ...p[kind], status: 'uploading' } }));
     try {
-      const safe = String(file.name || 'img')
-        .replace(/[^\w.\-]/g, '_');
-      const r = ref(storage, `media/branding/${kind}_${Date.now()}_${safe}`);
-      const withTimeout = (pr, ms) => Promise.race([
-        pr, new Promise((_, rej) => setTimeout(
-          () => rej(new Error('timeout - check Storage rules / bucket')),
-          ms)),
-      ]);
-      await withTimeout(uploadBytes(r, file,
-        { contentType: file.type || 'image/png' }), 30000);
-      const url = await withTimeout(getDownloadURL(r), 15000);
-      setCfg((c) => ({ ...c, [kind]: url }));
-      setPick((p) => ({ ...p, [kind]: { file, status: 'done', url } }));
-      flash(`${kind === 'logo' ? 'Logo' : 'Icon'} uploaded successfully`);
+      const maxW = kind === 'favicon' ? 128 : 360;
+      const dataUrl = await fileToScaledDataUrl(file, maxW);
+      if (dataUrl.length > 850000) {
+        throw new Error('image too large - use a smaller / simpler logo');
+      }
+      setCfg((c) => ({ ...c, [kind]: dataUrl }));
+      setPick((p) => ({ ...p, [kind]: { file, status: 'done' } }));
+      flash(`${kind === 'logo' ? 'Logo' : 'Icon'} ready - now press Save`);
     } catch (e) {
       setPick((p) => ({ ...p, [kind]: { ...p[kind], status: 'error' } }));
       flash(`Upload failed: ${e?.message || 'error'}`, 'error');
