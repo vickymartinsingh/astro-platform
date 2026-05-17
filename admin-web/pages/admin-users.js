@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { adminService } from '@astro/shared';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
+import { flash } from '../lib/flash';
 
 export default function AdminUsers() {
   const { loading } = useRequireAdmin();
@@ -19,6 +20,7 @@ export default function AdminUsers() {
     await adminService.adjustWallet(gift.uid, amt,
       giftMsg.trim() || 'welcome_gift');
     setMsg(`Gifted ₹${amt} to ${gift.name}.`);
+    flash(`₹${amt} gifted to ${gift.name}`);
     setGift(null);
     load();
   }
@@ -97,6 +99,7 @@ export default function AdminUsers() {
     }
     setEdit(null);
     load();
+    flash('User saved');
   }
 
   if (loading || rows == null) {

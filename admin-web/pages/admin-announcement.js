@@ -3,6 +3,7 @@ import { db, adminService } from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
+import { flash } from '../lib/flash';
 
 export default function AdminAnnouncement() {
   const { loading } = useRequireAdmin();
@@ -19,6 +20,7 @@ export default function AdminAnnouncement() {
   async function save() {
     await adminService.updateSettings('announcement', a);
     setMsg('Saved.');
+    flash('Announcement saved');
   }
 
   if (loading || !a) {

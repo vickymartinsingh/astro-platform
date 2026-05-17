@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { remedyService } from '@astro/shared';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
+import { flash } from '../lib/flash';
 
 const CATS = ['General', 'Gemstone', 'Rudraksha', 'Yantra', 'Puja',
   'Mantra', 'Donation', 'Spiritual item'];
@@ -27,6 +28,7 @@ export default function AdminRemedies() {
       setF({ name: '', category: 'General', description: '',
         basePrice: 0 });
       setMsg('Remedy added to the catalog.');
+      flash('Remedy added to the catalog');
       refresh();
     } catch (e) {
       setMsg('Failed: ' + (e?.message || 'error'));

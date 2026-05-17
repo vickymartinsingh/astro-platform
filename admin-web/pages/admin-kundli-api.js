@@ -3,6 +3,7 @@ import { db, adminService } from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
+import { flash } from '../lib/flash';
 
 // Kundli API providers. `supported` = a working adapter is wired in the
 // relay (just paste the key and it works). The rest are listed so you
@@ -57,6 +58,7 @@ export default function AdminKundliApi() {
     const nm = (PROVIDERS.find((x) => x[0] === next.provider) || [])[1];
     setMsg(`Saved. ${nm} is now the active Kundli provider for the `
       + 'whole app.');
+    flash(`Saved - ${nm} is now the active Kundli provider`);
   }
 
   if (loading || !cfg) {

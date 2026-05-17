@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { adminService } from '@astro/shared';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
+import { flash } from '../lib/flash';
 
 export default function AdminGifts() {
   const { loading } = useRequireAdmin();
@@ -23,6 +24,7 @@ export default function AdminGifts() {
       const r = await adminService.createGiftCard(amount);
       setLast(r);
       setMsg(`Gift card for Rs ${r.amount} created.`);
+      flash(`Gift card ${r.code} created`);
       refresh();
     } catch (e) {
       setMsg('Failed: ' + (e?.message || 'error'));

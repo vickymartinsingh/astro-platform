@@ -40,51 +40,116 @@ export default function Wallet() {
     }
   }, [user, tab, wallet]);
 
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      if (document.querySelector(`script[src="${src}"]`)) {
+        resolve(); return;
+      }
+      const s = document.createElement('script');
+      s.src = src; s.onload = resolve; s.onerror = reject;
+      document.body.appendChild(s);
+    });
+  }
+
   async function pay() {
     setMsg(null);
-    if (!rzpReady) { setMsg({ ok: false, t: 'Payment not ready yet.' }); return; }
     if (amount < MIN_RECHARGE) {
       setMsg({ ok: false, t: `Minimum recharge is ₹${MIN_RECHARGE}.` });
       return;
     }
     setBusy(true);
+    const back = typeof router.query.return === 'string'
+      ? router.query.return : null;
     try {
-      const order = await walletService.createRechargeOrder(amount, coupon);
-      const rzp = new window.Razorpay({
-        key: order.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
-        amount: Math.round(order.amount * 100),
-        currency: 'INR',
-        name: 'AstroConnect',
-        description: 'Wallet recharge',
-        order_id: order.orderId,
-        prefill: { name: profile?.name, email: profile?.email },
-        theme: { color: '#6C2BD9' },
-        handler: async (resp) => {
-          try {
-            await walletService.verifyRecharge({
-              orderId: resp.razorpay_order_id,
-              paymentId: resp.razorpay_payment_id,
-              signature: resp.razorpay_signature,
-              amount,
-            });
-            setMsg({ ok: true, t: `Payment successful, ₹${amount} added`,
-              back: typeof router.query.return === 'string'
-                ? router.query.return : null });
-          } catch {
-            setMsg({ ok: false, t: 'Payment verification failed.' });
-          }
-        },
-        modal: { ondismiss: () => setBusy(false) },
+      const order = await walletService.payCall({
+        action: 'create', amount,
+        name: profile?.name, email: profile?.email,
+        phone: profile?.phone,
+        returnUrl: typeof window !== 'undefined'
+          ? `${window.location.origin}/wallet` : '',
       });
-      rzp.on('payment.failed', () =>
-        setMsg({ ok: false, t: 'Payment failed. Please try again.' }));
-      rzp.open();
+
+      if (order.gateway === 'razorpay') {
+        if (!rzpReady) {
+          setMsg({ ok: false, t: 'Payment not ready yet.' });
+          setBusy(false); return;
+        }
+        const rzp = new window.Razorpay({
+          key: order.keyId,
+          amount: Math.round(amount * 100),
+          currency: 'INR',
+          name: 'AstroConnect',
+          description: 'Wallet recharge',
+          order_id: order.orderId,
+          prefill: { name: profile?.name, email: profile?.email },
+          theme: { color: '#6C2BD9' },
+          handler: async (resp) => {
+            try {
+              await walletService.payCall({
+                action: 'verify',
+                orderId: resp.razorpay_order_id,
+                paymentId: resp.razorpay_payment_id,
+                signature: resp.razorpay_signature,
+                amount,
+              });
+              setMsg({ ok: true,
+                t: `Payment successful, ₹${amount} added`, back });
+            } catch {
+              setMsg({ ok: false, t: 'Payment verification failed.' });
+            }
+          },
+          modal: { ondismiss: () => setBusy(false) },
+        });
+        rzp.on('payment.failed', () =>
+          setMsg({ ok: false, t: 'Payment failed. Please try again.' }));
+        rzp.open();
+      } else if (order.gateway === 'cashfree') {
+        // Remember the order so we can verify after returning.
+        try {
+          sessionStorage.setItem('cfPending',
+            JSON.stringify({ orderId: order.orderId, amount, back }));
+        } catch (_) {}
+        await loadScript('https://sdk.cashfree.com/js/v3/cashfree.js');
+        // eslint-disable-next-line no-undef
+        const cf = window.Cashfree({ mode: 'production' });
+        cf.checkout({
+          paymentSessionId: order.paymentSessionId,
+          redirectTarget: '_self',
+        });
+      } else {
+        setMsg({ ok: false,
+          t: 'This gateway is not wired yet. Use Razorpay or Cashfree.' });
+      }
     } catch (e) {
       setMsg({ ok: false, t: e?.message || 'Could not start payment.' });
     } finally {
       setBusy(false);
     }
   }
+
+  // After returning from Cashfree hosted checkout, verify + credit.
+  useEffect(() => {
+    let raw;
+    try { raw = sessionStorage.getItem('cfPending'); } catch (_) {}
+    if (!raw || !user) return;
+    try { sessionStorage.removeItem('cfPending'); } catch (_) {}
+    const { orderId, amount: amt, back } = JSON.parse(raw);
+    (async () => {
+      try {
+        const r = await walletService.payCall({
+          action: 'verify', orderId });
+        if (r.success) {
+          setMsg({ ok: true,
+            t: `Payment successful, ₹${r.amount || amt} added`, back });
+        } else {
+          setMsg({ ok: false,
+            t: `Payment ${r.status || 'not completed'}.` });
+        }
+      } catch (e) {
+        setMsg({ ok: false, t: e?.message || 'Verification failed.' });
+      }
+    })();
+  }, [user]);
 
   async function redeemGift() {
     setMsg(null);

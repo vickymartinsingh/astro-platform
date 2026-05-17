@@ -44,6 +44,29 @@ export async function verifyRecharge({ orderId, paymentId, signature, amount }) 
   return res.data; // { success: true }
 }
 
+// Gateway-agnostic recharge via the relay (uses whatever gateway the
+// admin set active in the admin Payment Gateways page).
+export async function payCall(payload) {
+  const push = (typeof process !== 'undefined' && process.env
+    && process.env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
+  const url = push ? push.replace(/\/sendPush\/?$/, '/pay') : '';
+  if (!url) throw new Error('Payment service not configured.');
+  const token = auth && auth.currentUser
+    ? await auth.currentUser.getIdToken() : null;
+  if (!token) throw new Error('Please sign in first.');
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload || {}),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok || j.error) throw new Error(j.error || 'Payment failed');
+  return j;
+}
+
 // Redeem a gift card code into the wallet (server-side via the relay,
 // so the credit is atomic and a code can never be used twice).
 export async function redeemGiftCard(code) {

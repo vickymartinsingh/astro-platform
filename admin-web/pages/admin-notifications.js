@@ -3,6 +3,7 @@ import { adminService } from '@astro/shared';
 import Layout from '../components/Layout';
 import UserPicker from '../components/UserPicker';
 import { useRequireAdmin } from '../lib/useAuth';
+import { flash } from '../lib/flash';
 
 export default function AdminNotifications() {
   const { loading } = useRequireAdmin();
@@ -28,11 +29,13 @@ export default function AdminNotifications() {
           sent += (r && r.sent) || 1;
         }
         setMsg(`Sent to ${picked.length} selected user(s).`);
+        flash(`Notification sent to ${picked.length} user(s)`);
         setTitle(''); setMessage(''); setPicked([]);
       } else {
         const res = await adminService.sendNotification({
           target, title, message, userId: null });
         setMsg(`Sent to ${res.sent} user(s).`);
+        flash(`Notification sent to ${res.sent} user(s)`);
         setTitle(''); setMessage('');
       }
     } catch (e) {

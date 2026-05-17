@@ -3,6 +3,7 @@ import { db, adminService } from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
+import { flash } from '../lib/flash';
 
 const TOGGLES = [
   ['enable_chat', 'Chat'],
@@ -38,6 +39,7 @@ export default function AdminFeatures() {
   async function save() {
     await adminService.updateSettings('features', f);
     setMsg('Saved.');
+    flash('Settings saved');
   }
 
   if (loading || !f) {

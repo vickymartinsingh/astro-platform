@@ -3,6 +3,7 @@ import { db, adminService } from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
+import { flash } from '../lib/flash';
 
 // Every major Indian payment gateway. Admin picks the active one and
 // fills its keys. NOTE: the SECRET key must also be set in the relay
@@ -36,6 +37,7 @@ export default function AdminPayments() {
   async function save() {
     await adminService.updateSettings('payments', cfg);
     setMsg('Payment configuration saved.');
+    flash('Payment configuration saved');
   }
 
   if (loading || !cfg) {
