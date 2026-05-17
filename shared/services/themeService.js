@@ -31,6 +31,7 @@ export const THEME_FIELDS = [
   ['success', 'Success'],
   ['warning', 'Warning'],
   ['danger', 'Danger'],
+  ['verify', 'Verified badge'],
   ['tarot', 'Tarot card'],
 ];
 
@@ -39,14 +40,16 @@ export const THEMES = {
     label: 'Classic (Purple)',
     primary: '#6C2BD9', gradA: '#6C2BD9', gradB: '#8B5CF6',
     bgLight: '#F3EEFF', accent: '#DB2777', success: '#1B6B2F',
-    warning: '#E67E22', danger: '#C0392B', tarot: '#2A1A63',
+    warning: '#E67E22', danger: '#C0392B', verify: '#6C2BD9',
+    tarot: '#2A1A63',
     swatch: ['#6C2BD9', '#8B5CF6', '#DB2777'],
   },
   royal: {
     label: 'Royal (Maroon / Amber / Olive)',
     primary: '#7F2020', gradA: '#7F2020', gradB: '#F59E0B',
     bgLight: '#F7EFE3', accent: '#F59E0B', success: '#84994F',
-    warning: '#E67E22', danger: '#C0392B', tarot: '#84994F',
+    warning: '#E67E22', danger: '#C0392B', verify: '#7F2020',
+    tarot: '#84994F',
     swatch: ['#7F2020', '#F59E0B', '#84994F'],
   },
 };
@@ -62,6 +65,7 @@ export function themeVars(t) {
     '--c-success': hexTriplet(o.success),
     '--c-warning': hexTriplet(o.warning),
     '--c-danger': hexTriplet(o.danger),
+    '--c-verify': hexTriplet(o.verify || o.primary),
     '--c-tarot': darken(o.tarot, 0.35),
     '--c-tarot2': o.tarot,
   };

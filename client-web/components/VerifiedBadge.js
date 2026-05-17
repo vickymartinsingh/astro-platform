@@ -5,10 +5,10 @@ export default function VerifiedBadge({ size = 16, title = 'Verified' }) {
     <svg width={size} height={size} viewBox="0 0 24 24"
       role="img" aria-label={title}
       style={{ display: 'inline-block', verticalAlign: 'middle',
-        flexShrink: 0 }}>
+        flexShrink: 0, color: 'rgb(var(--c-verify))' }}>
       <title>{title}</title>
       <path
-        fill="#1D9BF0"
+        fill="currentColor"
         d="M12 1.5l2.2 2.06 3-.36 1.2 2.78 2.78 1.2-.36 3L23 12l-2.06 2.2.36 3-2.78 1.2-1.2 2.78-3-.36L12 22.5l-2.2-2.06-3 .36-1.2-2.78-2.78-1.2.36-3L1 12l2.06-2.2-.36-3 2.78-1.2 1.2-2.78 3 .36L12 1.5z"
       />
       <path
