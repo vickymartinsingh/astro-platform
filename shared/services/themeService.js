@@ -27,17 +27,33 @@ export const THEMES = {
 
 export function applyTheme(name) {
   if (typeof document === 'undefined') return;
-  const t = THEMES[name] || THEMES.classic;
+  const key = THEMES[name] ? name : 'classic';
+  const t = THEMES[key];
   const r = document.documentElement.style;
   r.setProperty('--c-primary', t.cPrimary);
   r.setProperty('--c-bglight', t.cBgLight);
   r.setProperty('--grad-a', t.gradA);
   r.setProperty('--grad-b', t.gradB);
+  // Remember the last theme so the NEXT cold start (any installed
+  // device) paints the right colours immediately, with no flash,
+  // even before Firestore responds.
+  try { window.localStorage.setItem('appTheme', key); } catch (_) {}
+}
+
+// Apply the cached theme synchronously on boot (instant, offline-safe).
+export function bootTheme() {
+  try {
+    const c = window.localStorage.getItem('appTheme');
+    if (c) applyTheme(c);
+  } catch (_) {}
 }
 
 // Live-subscribe to settings/theme and apply it everywhere. Returns an
-// unsubscribe. Safe if Firestore is unreachable (keeps the default).
+// unsubscribe. ANY installed app (signed in or not) re-skins the moment
+// the admin changes the theme - no app update / reinstall needed,
+// because the theme is read from the server, not baked into the build.
 export function watchTheme() {
+  bootTheme();
   try {
     return onSnapshot(doc(db, 'settings', 'theme'), (s) => {
       const name = (s.exists() && s.data().active) || 'classic';
