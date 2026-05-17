@@ -45,9 +45,15 @@ export default function LiveView() {
           }
           if (mediaType === 'audio') rUser.audioTrack?.play();
         });
+        liveService.announceJoin(astroUid,
+          { uid: user?.uid, name: profile?.name || 'Guest' });
+        liveService.bumpViewers(astroUid, 1);
       } catch (_) { /* stream may not be up yet */ }
     })();
-    return () => { callService.leaveAgoraChannel().catch(() => {}); };
+    return () => {
+      callService.leaveAgoraChannel().catch(() => {});
+      liveService.bumpViewers(astroUid, -1).catch(() => {});
+    };
   }, [astroUid]);
 
   const ended = info && info.live === false;
@@ -95,27 +101,44 @@ export default function LiveView() {
             WebkitMaskImage:
               'linear-gradient(to top, #000 80%, transparent)',
           }}>
-          {comments.map((c) => (
-            <div key={c.id} className="text-sm">
-              <span className="font-semibold">
-                {c.name}
-                {c.team && (
-                  <svg width="13" height="13" viewBox="0 0 24 24"
-                    style={{ display: 'inline-block',
-                      verticalAlign: 'middle', marginLeft: 3 }}>
-                    <path fill="#1D9BF0" d="M12 1.5l2.2 2.06 3-.36 1.2
-                      2.78 2.78 1.2-.36 3L23 12l-2.06 2.2.36 3-2.78
-                      1.2-1.2 2.78-3-.36L12 22.5l-2.2-2.06-3 .36-1.2-2.78
-                      -2.78-1.2.36-3L1 12l2.06-2.2-.36-3 2.78-1.2 1.2-2.78
-                      3 .36L12 1.5z" />
-                    <path fill="#fff" d="M10.6 14.4l-2.3-2.3-1.3 1.3 3.6
-                      3.6 6.4-6.4-1.3-1.3z" />
-                  </svg>
-                )}:
-              </span>{' '}
-              <span className="opacity-90">{c.text}</span>
-            </div>
-          ))}
+          {comments.map((c) => {
+            const ch = (c.name || '?').trim().charAt(0).toUpperCase();
+            const cols = ['#F59E0B', '#EC4899', '#8B5CF6', '#10B981',
+              '#3B82F6', '#EF4444'];
+            const bg = cols[(c.name || 'x').charCodeAt(0) % cols.length];
+            return (
+              <div key={c.id} className="flex items-start gap-2">
+                <span className="flex h-8 w-8 shrink-0 items-center
+                  justify-center rounded-full text-sm font-bold"
+                  style={{ background: bg }}>{ch}</span>
+                <div className="min-w-0">
+                  <div className="text-[13px] leading-tight opacity-90">
+                    <span className="font-semibold">{c.name}</span>
+                    {c.team && (
+                      <svg width="13" height="13" viewBox="0 0 24 24"
+                        style={{ display: 'inline-block',
+                          verticalAlign: 'middle', marginLeft: 3 }}>
+                        <path fill="#1FA855" d="M12 1.5l2.2 2.06 3-.36
+                          1.2 2.78 2.78 1.2-.36 3L23 12l-2.06 2.2.36
+                          3-2.78 1.2-1.2 2.78-3-.36L12 22.5l-2.2-2.06-3
+                          .36-1.2-2.78-2.78-1.2.36-3L1 12l2.06-2.2-.36-3
+                          2.78-1.2 1.2-2.78 3 .36L12 1.5z" />
+                        <path fill="#fff" d="M10.6 14.4l-2.3-2.3-1.3 1.3
+                          3.6 3.6 6.4-6.4-1.3-1.3z" />
+                      </svg>
+                    )}
+                  </div>
+                  {c.type === 'join' ? (
+                    <div className="text-[15px] font-medium">joined</div>
+                  ) : (
+                    <div className="text-[15px] leading-snug">
+                      {c.text}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
         <div className="flex items-center gap-2">
           <input

@@ -49,11 +49,14 @@ export default function AdminLive() {
           }
           if (mt === 'audio') rU.audioTrack?.play();
         });
+        liveService.announceJoin(sel, { team: true });
+        liveService.bumpViewers(sel, 1);
       } catch (_) {}
     })();
     return () => {
       joinedRef.current = false;
       callService.leaveAgoraChannel().catch(() => {});
+      liveService.bumpViewers(sel, -1).catch(() => {});
     };
   }, [sel]);
 

@@ -62,6 +62,29 @@ export async function setViewers(astroUid, n) {
   } catch (_) {}
 }
 
+export async function bumpViewers(astroUid, delta) {
+  try {
+    await updateDoc(doc(db, 'lives', astroUid),
+      { viewers: increment(delta) });
+  } catch (_) {}
+}
+
+// "<name> joined" event in the live feed (Astrotalk style).
+export async function announceJoin(astroUid, user) {
+  if (!astroUid || !user) return;
+  try {
+    await addDoc(collection(db, 'lives', astroUid, 'comments'), {
+      type: 'join',
+      name: user.team ? 'Complace Team' : (user.name || 'Guest'),
+      uid: user.uid || null,
+      code: user.code || null,
+      team: !!user.team,
+      text: '',
+      createdAt: serverTimestamp(),
+    });
+  } catch (_) {}
+}
+
 export async function addLiveComment(astroUid, user, text) {
   const clean = String(text || '').trim();
   if (!clean) return;
