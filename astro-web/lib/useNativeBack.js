@@ -1,11 +1,10 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/router';
 
-// Android hardware BACK. Never closes the app on a single press:
-//  - not on a root screen  -> go to the previous screen
-//  - on a root screen      -> must press BACK twice within 1s, then a
-//                             confirm dialog; only "OK" exits the app.
-const ROOTS = ['/', '/dashboard'];
+// Android hardware BACK (astrologer app). Single press never closes the
+// app: go to the previous screen, or on a root screen require a quick
+// double-press then a confirm dialog before exiting.
+const ROOTS = ['/', '/astro-dashboard'];
 
 export default function useNativeBack() {
   const router = useRouter();
@@ -23,14 +22,8 @@ export default function useNativeBack() {
     const sub = App.addListener('backButton', () => {
       const path = window.location.pathname;
       const onRoot = ROOTS.includes(path) || ROOTS.includes(router.pathname);
-
-      if (!onRoot && window.history.length > 1) {
-        router.back();
-        return;
-      }
-      if (!onRoot) { router.replace('/dashboard'); return; }
-
-      // On a root screen: require a quick double-press, then confirm.
+      if (!onRoot && window.history.length > 1) { router.back(); return; }
+      if (!onRoot) { router.replace('/astro-dashboard'); return; }
       const now = Date.now();
       if (now - lastBack < 1000) {
         lastBack = 0;
@@ -41,9 +34,7 @@ export default function useNativeBack() {
           catch (_) { try { App.minimizeApp && App.minimizeApp(); }
             catch (e) {} }
         }
-      } else {
-        lastBack = now;
-      }
+      } else { lastBack = now; }
     });
     Promise.resolve(sub).then((h) => { handle = h; }).catch(() => {});
     return () => {

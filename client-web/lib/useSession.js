@@ -37,24 +37,42 @@ export function useSession({ astroId, type, uid, clientName, view = false }) {
       // notify the astrologer, never bill. The user is only reading.
       if (view) return;
 
-      // Resume an existing live session for this pair ONLY if it is
-      // still genuinely live: a pending request, or one the astrologer
-      // already accepted (startTime set). A stale 'active'/'accepted'
-      // doc with no startTime, or anything older than 3h, must NOT be
-      // auto-resumed (that caused phantom "auto-connected" + billing).
-      const recent = (s) => {
-        const ms = s.createdAt?.toMillis ? s.createdAt.toMillis() : 0;
-        return ms && (Date.now() - ms) < 3 * 3600 * 1000;
-      };
-      const existing = (await sessionService.getUserSessions(uid))
-        .find((s) => s.astroId === astroId && recent(s) && (
-          s.status === 'requesting'
-          || ((s.status === 'active' || s.status === 'accepted')
-              && !!s.startTime)));
+      // EXPLICIT REJOIN: the floating "Join back" bar navigates here
+      // with ?resume=<sessionId>. Only that resumes a live session.
+      const resumeId = typeof router.query.resume === 'string'
+        ? router.query.resume : null;
+      const mine = (await sessionService.getUserSessions(uid))
+        .filter((s) => s.astroId === astroId);
+      const live = (s) => ['requesting', 'accepted', 'active']
+        .includes(s.status);
 
-      const sid = existing
-        ? existing.id
-        : await sessionService.createSessionRequest({
+      let sid = null;
+      if (resumeId) {
+        const r = mine.find((s) => s.id === resumeId && live(s));
+        if (r) sid = r.id;
+      }
+
+      if (!sid) {
+        // A brand-new initiation. To survive only a quick refresh while
+        // still WAITING, reuse a 'requesting' session created < 90s ago.
+        const freshReq = mine.find((s) => s.status === 'requesting'
+          && s.createdAt?.toMillis
+          && (Date.now() - s.createdAt.toMillis()) < 90 * 1000);
+        if (freshReq) {
+          sid = freshReq.id;
+        } else {
+          // Close any lingering session for this pair so the
+          // astrologer's old chat ends and a clean new request is
+          // sent that they must explicitly Accept.
+          for (const s of mine.filter(live)) {
+            try { await sessionService.endAndSettleClient(s.id); }
+            catch (_) {
+              try {
+                await sessionService.updateSessionStatus(s.id, 'ended');
+              } catch (e) {}
+            }
+          }
+          sid = await sessionService.createSessionRequest({
             userId: uid,
             astroId,
             type,
@@ -62,6 +80,8 @@ export function useSession({ astroId, type, uid, clientName, view = false }) {
               type === 'chat' ? a.priceChat
               : type === 'video' ? a.priceVideo : a.priceCall,
           });
+        }
+      }
       sessionIdRef.current = sid;
       unsubSession = sessionService.listenSession(sid, setSession);
     })();

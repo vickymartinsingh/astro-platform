@@ -46,11 +46,18 @@ export async function endAndSettleClient(sessionId) {
   let duration = startMs > 0
     ? Math.max(0, Math.floor((endMs - startMs) / 1000)) : 0;
 
+  // GRACE PERIOD: if the consultation lasted under 40 seconds (dropped
+  // call / quick disconnect) the client is NOT charged at all. duration
+  // is recorded for history but billing is zero.
+  const GRACE_SECS = 40;
+  const undersGrace = duration < GRACE_SECS;
+
   // Free seconds apply ONLY to the user's one eligible first session.
   const freeSecs = !s.freeEligible ? 0 : (s.type === 'chat'
     ? Number(cfg.free_chat_seconds || 0)
     : Number(cfg.free_call_seconds || 0));
-  const billableSecs = Math.max(0, duration - freeSecs);
+  const billableSecs = undersGrace
+    ? 0 : Math.max(0, duration - freeSecs);
   // Billed PER MINUTE (any started minute counts as a full minute).
   const billedMinutes = Math.ceil(billableSecs / 60);
   const perMin = Number(s.pricePerMinute
