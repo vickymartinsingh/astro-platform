@@ -54,9 +54,22 @@ export default function TopNav() {
   const [menu, setMenu] = useState(null);  // open group name
   const [q, setQ] = useState('');
   const [logo, setLogo] = useState('');
+  const [dev, setDev] = useState(false);
   const router = useRouter();
   useEffect(() => brandingService.watchBranding((b) =>
     setLogo(b.logo || '')), []);
+  useEffect(() => {
+    try { setDev(window.localStorage.getItem('devMode') === '1'); }
+    catch (_) {}
+  }, []);
+  function toggleDev() {
+    const next = !dev;
+    setDev(next);
+    try {
+      window.localStorage.setItem('devMode', next ? '1' : '0');
+    } catch (_) {}
+    if (next) router.push('/admin-developer');
+  }
 
   async function logout() {
     await authService.logoutUser();
@@ -128,8 +141,14 @@ export default function TopNav() {
               )}
             </div>
           ))}
+          <button onClick={toggleDev}
+            className={`ml-2 rounded-card px-3 py-2 text-sm font-semibold
+              ${dev ? 'bg-amber-400 text-dark-text'
+                : 'bg-white/15 text-white'}`}>
+            {dev ? 'Dev: ON' : 'Developer'}
+          </button>
           <button onClick={logout}
-            className="ml-2 rounded-card bg-white/15 px-3 py-2 text-sm">
+            className="ml-1 rounded-card bg-white/15 px-3 py-2 text-sm">
             Logout
           </button>
         </nav>
@@ -169,6 +188,21 @@ export default function TopNav() {
             className="mt-2 w-full rounded-card bg-white/15 px-3 py-3
               text-left">Logout</button>
         </nav>
+      )}
+      {dev && (
+        <div className="flex items-center justify-center gap-3
+          bg-amber-400 px-4 py-1.5 text-xs font-semibold
+          text-dark-text">
+          <span>DEVELOPER MODE - full platform control</span>
+          <Link href="/admin-developer"
+            className="rounded-full bg-dark-text px-3 py-1 text-white">
+            Open Developer Portal
+          </Link>
+          <button onClick={toggleDev}
+            className="rounded-full border border-dark-text px-3 py-1">
+            Exit
+          </button>
+        </div>
       )}
     </header>
   );

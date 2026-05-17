@@ -6,87 +6,181 @@ import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
 import { flash } from '../lib/flash';
 
-// Developer Mode: a single console with EVERY app config in one place.
-// (Later this can move to a dedicated developer account; for now it
-// lives in admin.)
-const SECTIONS = [
-  ['Appearance', [
-    ['/admin-builder', 'App Builder',
-      'No-code: drag menu, banner, sections, live preview'],
-    ['/admin-theme', 'Theme & Colours', 'Full palette + custom themes'],
-    ['/admin-settings', 'Branding & Settings',
-      'Logo, favicon, name, commission, recharge'],
-    ['/admin-features', 'Feature Toggles & Nav Labels',
-      'Enable/disable modules, rename bottom tabs'],
+// EVERY screen in the platform (kept complete - nothing hidden).
+const ALL = [
+  ['Overview', [
+    ['/admin-dashboard', 'Dashboard'], ['/admin-analytics', 'Analytics'],
+    ['/admin-reports', 'Reports'], ['/admin-audit', 'Audit Log'],
+    ['/admin-health', 'System Health'],
   ]],
-  ['Commerce', [
-    ['/admin-payments', 'Payment Gateways',
-      'Razorpay, Cashfree and more'],
-    ['/admin-coupons', 'Coupons', 'Discount codes'],
-    ['/admin-gifts', 'Gift Cards', 'Generate shareable codes'],
+  ['People', [
+    ['/admin-users', 'Users'], ['/admin-astrologers', 'Astrologers'],
+  ]],
+  ['Sessions', [
+    ['/admin-sessions', 'Sessions'], ['/admin-live', 'Monitor Live'],
+  ]],
+  ['Finance', [
+    ['/admin-transactions', 'Transactions'],
+    ['/admin-payouts', 'Payouts'],
+    ['/admin-payments', 'Payment Gateways'],
+    ['/admin-coupons', 'Coupons'], ['/admin-gifts', 'Gift Cards'],
+    ['/admin-disputes', 'Disputes'],
+  ]],
+  ['Content & Engagement', [
+    ['/admin-cms', 'CMS Builder'],
+    ['/admin-announcement', 'Announcement'],
+    ['/admin-notifications', 'Notifications'],
   ]],
   ['Astrology', [
-    ['/admin-kundli-api', 'Kundli API Provider',
-      'Switch provider + keys'],
-    ['/admin-remedies', 'Remedies Catalogue', 'Master remedy list'],
+    ['/admin-kundli-api', 'Kundli API'],
+    ['/admin-remedies', 'Remedies'],
   ]],
-  ['Engagement', [
-    ['/admin-announcement', 'Announcement Banner', 'Site-wide banner'],
-    ['/admin-notifications', 'Notifications', 'Push to users'],
-    ['/admin-cms', 'CMS Builder', 'Pages & blocks'],
-    ['/admin-live', 'Monitor Live', 'Watch live streams'],
+  ['Appearance & Build', [
+    ['/admin-builder', 'App Builder (menus/sections/banner)'],
+    ['/admin-theme', 'Theme & Colours'],
+    ['/admin-settings', 'Branding & System Settings'],
+    ['/admin-features', 'Feature Toggles & Nav Labels'],
   ]],
 ];
 
-// Editable app text/content (read by the apps where wired; safe to
-// extend - just add a key here and read it in the app).
-const TEXT_KEYS = [
-  ['homeHeroTitle', 'Home hero title'],
-  ['homeHeroSubtitle', 'Home hero subtitle'],
-  ['appTagline', 'App tagline'],
-  ['supportEmail', 'Support email'],
-  ['supportPhone', 'Support phone'],
-  ['aboutText', 'About / footer text'],
+// Every settings document = every configurable field/menu/option.
+const DOCS = [
+  ['config', 'System / branding / commission / GST'],
+  ['features', 'Feature toggles + bottom-nav labels/order/hidden'],
+  ['content', 'All app text, hero, section show/hide'],
+  ['theme', 'Active theme + custom theme presets'],
+  ['payments', 'Payment gateways + keys'],
+  ['announcement', 'Top banner'],
+  ['kundliApi', 'Kundli API provider + keys'],
 ];
+
+function Editor({ name }) {
+  const [data, setData] = useState(null);
+  const [raw, setRaw] = useState({});
+
+  useEffect(() => {
+    getDoc(doc(db, 'settings', name)).then((s) => {
+      const d = s.exists() ? s.data() : {};
+      setData(d);
+      const r = {};
+      Object.entries(d).forEach(([k, v]) => {
+        r[k] = (v && typeof v === 'object')
+          ? JSON.stringify(v, null, 2) : String(v);
+      });
+      setRaw(r);
+    });
+  }, [name]);
+
+  if (!data) return <div className="text-sm text-sub-text">Loading...</div>;
+
+  async function save() {
+    const out = {};
+    let bad = '';
+    Object.entries(raw).forEach(([k, v]) => {
+      const orig = data[k];
+      if (orig && typeof orig === 'object') {
+        try { out[k] = JSON.parse(v); }
+        catch (_) { bad = k; }
+      } else if (typeof orig === 'number') {
+        out[k] = v === '' ? 0 : Number(v);
+      } else if (typeof orig === 'boolean') {
+        out[k] = v === 'true' || v === true;
+      } else { out[k] = v; }
+    });
+    if (bad) { flash(`Invalid JSON in "${bad}"`, 'error'); return; }
+    await adminService.updateSettings(name, out);
+    flash(`settings/${name} saved - live everywhere`);
+  }
+
+  const keys = Object.keys(raw);
+  return (
+    <div className="space-y-2">
+      {keys.length === 0 && (
+        <div className="text-sm text-sub-text">
+          No fields yet. Add one below.
+        </div>
+      )}
+      {keys.map((k) => {
+        const isObj = data[k] && typeof data[k] === 'object';
+        const isBool = typeof data[k] === 'boolean';
+        return (
+          <div key={k}>
+            <label className="text-xs font-semibold text-sub-text">
+              {k}
+            </label>
+            {isObj ? (
+              <textarea className="input font-mono text-xs" rows={4}
+                value={raw[k]}
+                onChange={(e) => setRaw({ ...raw, [k]: e.target.value })} />
+            ) : isBool ? (
+              <select className="input" value={String(raw[k])}
+                onChange={(e) => setRaw({ ...raw, [k]: e.target.value })}>
+                <option value="true">true</option>
+                <option value="false">false</option>
+              </select>
+            ) : (
+              <input className="input" value={raw[k]}
+                onChange={(e) => setRaw({ ...raw, [k]: e.target.value })} />
+            )}
+          </div>
+        );
+      })}
+      <AddField onAdd={(k) => { setData({ ...data, [k]: '' });
+        setRaw({ ...raw, [k]: '' }); }} />
+      <button onClick={save} className="btn-primary w-full">
+        Save settings/{name}
+      </button>
+    </div>
+  );
+}
+
+function AddField({ onAdd }) {
+  const [k, setK] = useState('');
+  return (
+    <div className="flex gap-2">
+      <input className="input flex-1" placeholder="Add a new field key"
+        value={k} onChange={(e) => setK(e.target.value)} />
+      <button onClick={() => { if (k.trim()) { onAdd(k.trim()); setK(''); } }}
+        className="rounded-card border border-gray-300 px-3 text-sm">
+        Add
+      </button>
+    </div>
+  );
+}
 
 export default function AdminDeveloper() {
   const { loading } = useRequireAdmin();
-  const [content, setContent] = useState(null);
+  const [docName, setDocName] = useState('config');
 
-  useEffect(() => {
-    getDoc(doc(db, 'settings', 'content')).then((s) =>
-      setContent(s.exists() ? s.data() : {}));
-  }, []);
-
-  async function saveContent() {
-    await adminService.updateSettings('content', content);
-    flash('App text saved - live across the apps');
-  }
-
-  if (loading || !content) {
+  if (loading) {
     return <Layout><div className="card">Loading...</div></Layout>;
   }
 
   return (
     <Layout>
-      <h1 className="mb-1 text-xl font-bold">Developer Mode</h1>
+      <div className="mb-3 rounded-card bg-dark-text px-4 py-2 text-sm
+        font-semibold uppercase tracking-widest text-white">
+        Developer Portal
+      </div>
       <p className="mb-4 text-sm text-sub-text">
-        Everything that controls the apps - appearance, content, menus,
-        text, commerce - in one console. Changes apply across client,
-        astrologer and admin (and web) without a rebuild.
+        Full control of the entire platform from one place - every
+        screen, menu, field, text and option. Changes apply across
+        client + astrologer + admin (and web) with no code/deploy.
       </p>
 
-      {SECTIONS.map(([group, items]) => (
+      {ALL.map(([group, items]) => (
         <div key={group} className="mb-4">
           <div className="mb-2 text-xs font-semibold uppercase
             tracking-wide text-sub-text">{group}</div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2
             lg:grid-cols-3">
-            {items.map(([href, title, desc]) => (
+            {items.map(([href, title]) => (
               <Link key={href} href={href}
                 className="card transition hover:shadow-md">
                 <div className="font-semibold text-primary">{title}</div>
-                <div className="mt-0.5 text-xs text-sub-text">{desc}</div>
+                <div className="mt-0.5 text-xs text-sub-text">
+                  {href}
+                </div>
               </Link>
             ))}
           </div>
@@ -94,30 +188,24 @@ export default function AdminDeveloper() {
       ))}
 
       <div className="mb-2 mt-6 text-xs font-semibold uppercase
-        tracking-wide text-sub-text">App Text / Content</div>
+        tracking-wide text-sub-text">
+        Raw configuration (every field &amp; menu)
+      </div>
       <div className="card space-y-3">
         <p className="text-xs text-sub-text">
-          Edit the wording used across the apps. (More keys can be added
-          any time - the apps read these live.)
+          Edit ANY setting directly - menus, labels, toggles, text,
+          theme presets, gateway keys. Objects/arrays edit as JSON. Save
+          and it is live everywhere instantly.
         </p>
-        {TEXT_KEYS.map(([k, label]) => (
-          <div key={k}>
-            <label className="text-sm text-sub-text">{label}</label>
-            {k === 'aboutText' ? (
-              <textarea className="input" rows={3}
-                value={content[k] || ''}
-                onChange={(e) => setContent({
-                  ...content, [k]: e.target.value })} />
-            ) : (
-              <input className="input" value={content[k] || ''}
-                onChange={(e) => setContent({
-                  ...content, [k]: e.target.value })} />
-            )}
-          </div>
-        ))}
-        <button onClick={saveContent} className="btn-primary w-full">
-          Save app text
-        </button>
+        <select className="input" value={docName}
+          onChange={(e) => setDocName(e.target.value)}>
+          {DOCS.map(([id, desc]) => (
+            <option key={id} value={id}>
+              settings/{id} - {desc}
+            </option>
+          ))}
+        </select>
+        <Editor key={docName} name={docName} />
       </div>
     </Layout>
   );
