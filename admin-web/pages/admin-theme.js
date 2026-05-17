@@ -8,7 +8,7 @@ const { THEMES, applyTheme, THEME_FIELDS } = themeService;
 const BLANK = {
   label: '', primary: '#6C2BD9', gradA: '#6C2BD9', gradB: '#8B5CF6',
   bgLight: '#F3EEFF', accent: '#DB2777', success: '#1B6B2F',
-  warning: '#E67E22', danger: '#C0392B', verify: '#6C2BD9',
+  warning: '#E67E22', danger: '#C0392B', verify: '#7F2020',
   tarot: '#2A1A63',
 };
 const MAX_PRESETS = 5;

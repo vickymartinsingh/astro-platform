@@ -21,6 +21,7 @@ export const DEFAULT_CLIENT_PROFILE = [
   { href: '/call-history', label: 'Call history' },
   { href: '/transactions', label: 'Order history' },
   { href: '/notifications', label: 'Notifications', notif: true },
+  { href: '/support', label: 'Help & Support' },
 ];
 export const DEFAULT_ASTRO_MENU = [
   { href: '/astro-dashboard', label: 'Dashboard' },
@@ -32,6 +33,7 @@ export const DEFAULT_ASTRO_MENU = [
   { href: '/astro-profile', label: 'Profile' },
   { href: '/astro-reviews', label: 'Reviews' },
   { href: '/astro-notifications', label: 'Announcements' },
+  { href: '/astro-support', label: 'Help & Support' },
 ];
 
 // Merge a saved override list with the defaults: keep saved order +

@@ -17,6 +17,7 @@ const GROUPS = [
   ['People', [
     ['/admin-users', 'Users'],
     ['/admin-astrologers', 'Astrologers'],
+    ['/admin-support', 'Support Inbox'],
   ]],
   ['Sessions', [
     ['/admin-sessions', 'Sessions'],

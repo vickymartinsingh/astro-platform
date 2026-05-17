@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import {
-  walletService, sessionService, astrologerService,
+  walletService, sessionService, astrologerService, db,
 } from '@astro/shared';
+import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { SkeletonList, EmptyState } from '../components/Skeleton';
 import { useRequireClient } from '../lib/useAuth';
@@ -19,6 +20,7 @@ function clock(secs) {
   const s = Math.max(0, Math.round(secs || 0));
   return `${Math.floor(s / 60)}m ${s % 60}s`;
 }
+const SVC = { video: 'Video call', call: 'Voice call', chat: 'Chat' };
 
 export default function Transactions() {
   const { user, loading } = useRequireClient();
@@ -30,7 +32,6 @@ export default function Transactions() {
     (async () => {
       const txns = await walletService.getTransactions(user.uid);
       const out = await Promise.all(txns.map(async (t) => {
-        // Enrich consultation rows with astrologer + service + duration.
         if ((t.reason === 'session' || t.reason === 'earning')
             && t.referenceId) {
           try {
@@ -42,6 +43,12 @@ export default function Transactions() {
             }
           } catch (_) {}
         }
+        if (t.reason === 'recharge' && t.referenceId) {
+          try {
+            const p = await getDoc(doc(db, 'payments', t.referenceId));
+            if (p.exists()) return { ...t, pay: p.data() };
+          } catch (_) {}
+        }
         return t;
       }));
       setRows(out);
@@ -50,20 +57,19 @@ export default function Transactions() {
 
   if (loading) return <Layout><SkeletonList /></Layout>;
 
-  const label = (t) => {
-    if (t.s) {
-      const svc = t.s.type === 'video' ? 'Video call'
-        : t.s.type === 'call' ? 'Voice call' : 'Chat';
-      return `${svc} with ${t.astro?.name || 'Astrologer'}`;
-    }
+  const title = (t) => {
+    if (t.s) return `${SVC[t.s.type] || 'Chat'} with `
+      + `${t.astro?.name || 'Astrologer'}`;
     if (t.reason === 'recharge') return 'Wallet recharge';
+    if (t.reason === 'gift card') return 'Gift card redeemed';
     return String(t.reason || 'Transaction')
       .replace(/^\w/, (c) => c.toUpperCase());
   };
 
   return (
     <Layout>
-      <h1 className="mb-3 text-xl font-bold">Order History</h1>
+      <h1 className="mb-3 text-xl font-bold">Order &amp; Transaction
+        History</h1>
       {rows == null ? (
         <SkeletonList />
       ) : rows.length === 0 ? (
@@ -71,36 +77,58 @@ export default function Transactions() {
       ) : (
         <div className="space-y-2">
           {rows.map((t) => {
-            const clickable = t.s && t.s.astroId;
-            const Comp = clickable ? 'button' : 'div';
+            const clickable = (t.s && t.s.astroId) || t.pay;
             return (
-              <Comp key={t.id}
-                onClick={clickable
-                  ? () => router.push(
-                    `/chat/${t.s.astroId}?view=1`)
-                  : undefined}
-                className={`card flex w-full items-center justify-between
-                  gap-3 text-left ${clickable ? 'hover:shadow-md' : ''}`}>
+              <div key={t.id}
+                onClick={clickable ? () => router.push(t.pay
+                  ? `/invoice/${t.referenceId}`
+                  : `/chat/${t.s.astroId}?view=1`) : undefined}
+                className={`card flex w-full items-start justify-between
+                  gap-3 text-left ${clickable ? 'cursor-pointer '
+                  + 'hover:shadow-md' : ''}`}>
                 <div className="min-w-0">
-                  <div className="font-medium">{label(t)}</div>
+                  <div className="font-semibold">{title(t)}</div>
                   <div className="text-xs text-sub-text">
                     {fmt(t.createdAt)}
                   </div>
+
                   {t.s && (
-                    <div className="mt-0.5 text-xs text-sub-text">
-                      Duration {clock(t.s.duration)}
+                    <div className="mt-1 space-y-0.5 text-xs
+                                    text-sub-text">
+                      <div>Astrologer: <b>{t.astro?.name
+                        || 'Astrologer'}</b></div>
+                      <div>Mode: <b className="capitalize">
+                        {SVC[t.s.type] || t.s.type}</b></div>
+                      <div>Duration: <b>{clock(t.s.duration)}</b></div>
                       {t.s.startTime && (
-                        <> · {fmt(t.s.startTime)}</>
+                        <div>From {fmt(t.s.startTime)}
+                          {t.s.endTime ? ` to ${fmt(t.s.endTime)}` : ''}
+                        </div>
                       )}
-                      {t.s.endTime && (
-                        <> to {fmt(t.s.endTime)}</>
-                      )}
+                      <div className="font-semibold text-primary">
+                        Tap to view the conversation
+                      </div>
                     </div>
                   )}
-                  {clickable && (
-                    <div className="mt-0.5 text-xs font-semibold
-                                    text-primary">
-                      Tap to view conversation
+
+                  {t.pay && (
+                    <div className="mt-1 space-y-0.5 text-xs
+                                    text-sub-text">
+                      <div>Mode: Online payment</div>
+                      <div>Gateway: <b className="capitalize">
+                        {t.pay.gateway || '-'}</b></div>
+                      {t.pay.paymentId && (
+                        <div>Payment ID: {t.pay.paymentId}</div>
+                      )}
+                      {t.pay.orderId && (
+                        <div>Order ID: {t.pay.orderId}</div>
+                      )}
+                      {t.pay.invoiceNo && (
+                        <div>Invoice: {t.pay.invoiceNo}</div>
+                      )}
+                      <div className="font-semibold text-primary">
+                        Tap for the tax invoice
+                      </div>
                     </div>
                   )}
                 </div>
@@ -108,7 +136,7 @@ export default function Transactions() {
                   ? 'text-success' : 'text-danger'}`}>
                   {t.amount >= 0 ? '+' : ''}₹{Math.abs(t.amount)}
                 </div>
-              </Comp>
+              </div>
             );
           })}
         </div>

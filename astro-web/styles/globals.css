@@ -15,7 +15,7 @@
   --c-success: 27 107 47;
   --c-warning: 230 126 34;
   --c-danger: 192 57 43;
-  --c-verify: 108 43 217;
+  --c-verify: 127 32 32;
 }
 
 html, body, #__next { height: 100%; }
