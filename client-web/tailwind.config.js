@@ -8,13 +8,13 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        primary: '#6C2BD9',
+        primary: 'rgb(var(--c-primary) / <alpha-value>)',
         // Astrotalk-style warm yellow accent (used for the bottom tab
         // bar, primary CTAs and the in-chat system bubbles).
         brand: '#F7B500',
         'brand-dark': '#E0A200',
         'brand-soft': '#FFF6DC',
-        'bg-light': '#F3EEFF',
+        'bg-light': 'rgb(var(--c-bglight) / <alpha-value>)',
         'accent-blue': '#EAF4FF',
         success: '#1B6B2F',
         danger: '#C0392B',

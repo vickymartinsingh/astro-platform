@@ -2,7 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: light; }
+:root {
+  color-scheme: light;
+  /* Theme variables - overridden at runtime by themeService. */
+  --c-primary: 108 43 217;
+  --c-bglight: 243 238 255;
+  --grad-a: #6C2BD9;
+  --grad-b: #8B5CF6;
+}
 
 html, body, #__next { height: 100%; }
 body {
@@ -38,7 +45,7 @@ input, textarea, select { font-size: 16px; }
   .btn-grad {
     @apply inline-flex items-center justify-center gap-1 rounded-full
            px-4 py-2 text-sm font-semibold text-white;
-    background-image: linear-gradient(135deg, #6C2BD9, #8B5CF6);
+    background-image: linear-gradient(135deg, var(--grad-a), var(--grad-b));
   }
   .btn-grad:hover { opacity: .92; }
   .pill {
@@ -47,7 +54,7 @@ input, textarea, select { font-size: 16px; }
   }
   .pill-active {
     @apply border-transparent text-white;
-    background-image: linear-gradient(135deg, #6C2BD9, #8B5CF6);
+    background-image: linear-gradient(135deg, var(--grad-a), var(--grad-b));
   }
   .surface { @apply bg-white rounded-2xl shadow-sm; }
   .featured-badge {
@@ -59,7 +66,7 @@ input, textarea, select { font-size: 16px; }
 
 .hero-grad {
   background-image:
-    linear-gradient(135deg, #6C2BD9 0%, #7C3AED 45%, #DB2777 100%);
+    linear-gradient(135deg, var(--grad-a) 0%, var(--grad-b) 55%, var(--grad-a) 100%);
 }
 
 /* Tarot card back: deep celestial night with a starfield + soft glow.

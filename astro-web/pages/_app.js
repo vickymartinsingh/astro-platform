@@ -1,10 +1,13 @@
 import Head from 'next/head';
+import { useEffect } from 'react';
+import { themeService } from '@astro/shared';
 import '../styles/globals.css';
 import { AuthProvider } from '../lib/useAuth';
 import useNativeBack from '../lib/useNativeBack';
 
 export default function App({ Component, pageProps }) {
   useNativeBack();
+  useEffect(() => themeService.watchTheme(), []);
   return (
     <>
       <Head>

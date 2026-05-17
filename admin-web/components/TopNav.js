@@ -42,6 +42,7 @@ const GROUPS = [
   ['Config', [
     ['/admin-settings', 'Settings'],
     ['/admin-features', 'Feature Toggles'],
+    ['/admin-theme', 'App Theme'],
   ]],
 ];
 const ALL = GROUPS.flatMap(([, items]) => items);
