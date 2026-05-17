@@ -15,6 +15,7 @@ const ALL = [
   ]],
   ['People', [
     ['/admin-users', 'Users'], ['/admin-astrologers', 'Astrologers'],
+    ['/admin-reviews', 'Customer Reviews'],
     ['/admin-support', 'Support Inbox'],
   ]],
   ['Sessions', [
@@ -41,6 +42,7 @@ const ALL = [
     ['/admin-theme', 'Theme & Colours'],
     ['/admin-settings', 'Branding & System Settings'],
     ['/admin-features', 'Feature Toggles & Nav Labels'],
+    ['/admin-free', 'Free Sessions'],
   ]],
 ];
 
