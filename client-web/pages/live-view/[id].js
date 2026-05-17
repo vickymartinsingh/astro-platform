@@ -20,6 +20,19 @@ export default function LiveView() {
     if (el) el.scrollTop = el.scrollHeight; // auto-scroll to newest
   }, [comments]);
 
+  // Announce "<name> joined" exactly once, with the real profile name
+  // (waits for the profile so it is never a stale "Guest").
+  const announced = useRef(false);
+  useEffect(() => {
+    if (announced.current || !astroUid) return;
+    if (user && !profile) return; // signed in but profile still loading
+    announced.current = true;
+    liveService.announceJoin(astroUid, {
+      uid: user?.uid || null,
+      name: profile?.name || 'Guest',
+    });
+  }, [astroUid, user, profile]);
+
   useEffect(() => {
     if (!astroUid) return undefined;
     const u1 = liveService.listenLive(astroUid, setInfo);
@@ -45,8 +58,6 @@ export default function LiveView() {
           }
           if (mediaType === 'audio') rUser.audioTrack?.play();
         });
-        liveService.announceJoin(astroUid,
-          { uid: user?.uid, name: profile?.name || 'Guest' });
         liveService.bumpViewers(astroUid, 1);
       } catch (_) { /* stream may not be up yet */ }
     })();
