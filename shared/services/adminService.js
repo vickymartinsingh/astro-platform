@@ -16,12 +16,21 @@ import { db, functions, auth } from '../firebase.js';
 import { sendPushToUser } from './pushService.js';
 import { notifyWallet } from './walletNotify.js';
 
+// NOTE: Next.js only inlines the LITERAL `process.env.NEXT_PUBLIC_*`
+// expression at build time. Reading it through an alias (const env =
+// process.env; env.NEXT_PUBLIC_X) is NOT replaced and is undefined in
+// the static/APK build. So we must reference it directly.
+function pushEndpoint() {
+  return (typeof process !== 'undefined' && process.env
+    && process.env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
+}
+
 // Relay endpoint for admin Auth operations (derives from push endpoint).
 function adminRelay() {
-  const env = typeof process !== 'undefined' && process.env;
-  const explicit = (env && env.NEXT_PUBLIC_ADMIN_ENDPOINT) || '';
+  const explicit = (typeof process !== 'undefined' && process.env
+    && process.env.NEXT_PUBLIC_ADMIN_ENDPOINT) || '';
   if (explicit) return explicit;
-  const push = (env && env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
+  const push = pushEndpoint();
   return push ? push.replace(/\/sendPush\/?$/, '/adminUser') : '';
 }
 
@@ -140,8 +149,7 @@ export function adjustWallet(uid, amount, reason) {
 // Gift cards run through the relay (server-side admin SDK) so the
 // wallet credit on redeem is atomic and abuse-safe.
 function giftRelay() {
-  const env = typeof process !== 'undefined' && process.env;
-  const push = (env && env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
+  const push = pushEndpoint();
   return push ? push.replace(/\/sendPush\/?$/, '/giftCard') : '';
 }
 async function giftCall(payload) {

@@ -19,10 +19,15 @@ function parseZodiac(dob) {
 // Returns null if not configured / on any failure (caller shows the
 // basic zodiac instead - never throws).
 function kundliEndpoint() {
-  const env = typeof process !== 'undefined' && process.env;
-  const explicit = (env && env.NEXT_PUBLIC_KUNDLI_ENDPOINT) || '';
+  // Reference process.env.NEXT_PUBLIC_* DIRECTLY: Next.js only inlines
+  // the literal expression at build time, so an aliased read is
+  // undefined in the static / APK build (this is why Kundli appeared
+  // "not working" in the app even though the relay was fine).
+  const explicit = (typeof process !== 'undefined' && process.env
+    && process.env.NEXT_PUBLIC_KUNDLI_ENDPOINT) || '';
   if (explicit) return explicit;
-  const push = (env && env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
+  const push = (typeof process !== 'undefined' && process.env
+    && process.env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
   return push ? push.replace(/\/sendPush\/?$/, '/kundli') : '';
 }
 

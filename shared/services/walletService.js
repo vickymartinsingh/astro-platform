@@ -47,8 +47,10 @@ export async function verifyRecharge({ orderId, paymentId, signature, amount }) 
 // Redeem a gift card code into the wallet (server-side via the relay,
 // so the credit is atomic and a code can never be used twice).
 export async function redeemGiftCard(code) {
-  const env = typeof process !== 'undefined' && process.env;
-  const push = (env && env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
+  // Must reference process.env.NEXT_PUBLIC_* DIRECTLY (Next inlines only
+  // the literal form; an aliased read is undefined in the APK build).
+  const push = (typeof process !== 'undefined' && process.env
+    && process.env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
   const url = push ? push.replace(/\/sendPush\/?$/, '/giftCard') : '';
   if (!url) throw new Error('Gift card service not configured.');
   const token = auth && auth.currentUser
