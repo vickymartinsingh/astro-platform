@@ -2,24 +2,14 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import {
-  authService, astrologerService, brandingService,
+  authService, astrologerService, brandingService, menuService,
 } from '@astro/shared';
 import GoOnlineModal from './GoOnlineModal';
 import { useAuth } from '../lib/useAuth';
 
 // TOP NAV ONLY (Hard Rule 1). Premium white header to match the client
 // portal. Go Online/Offline is a prominent nav button.
-const LINKS = [
-  { href: '/astro-dashboard', label: 'Dashboard' },
-  { href: '/astro-live', label: 'Go Live' },
-  { href: '/astro-sessions', label: 'My Sessions' },
-  { href: '/astro-earnings', label: 'Earnings' },
-  { href: '/astro-kundli', label: 'Kundli Viewer' },
-  { href: '/astro-remedies', label: 'My Remedies' },
-  { href: '/astro-profile', label: 'Profile' },
-  { href: '/astro-reviews', label: 'Reviews' },
-  { href: '/astro-notifications', label: 'Announcements' },
-];
+// Astrologer menu is admin-editable via menuService (live overrides).
 
 export default function TopNav({ astro }) {
   const [open, setOpen] = useState(false);
@@ -31,6 +21,9 @@ export default function TopNav({ astro }) {
   useEffect(() => brandingService.watchBranding((b) =>
     setBrand({ logo: b.logo || '',
       name: b.name || 'AstroConnect' })), []);
+  const [links, setLinks] = useState(menuService.DEFAULT_ASTRO_MENU);
+  useEffect(() => menuService.watchMenus(
+    (m) => setLinks(m.astro)), []);
 
   async function logout() {
     await authService.logoutUser();
@@ -100,7 +93,7 @@ export default function TopNav({ astro }) {
         </Link>
 
         <nav className="hidden items-center gap-1 md:flex">
-          {LINKS.map((l) => (
+          {links.map((l) => (
             <Link key={l.href} href={l.href}
               className={`rounded-full px-3 py-2 text-sm font-medium
                 transition ${router.pathname === l.href
@@ -135,7 +128,7 @@ export default function TopNav({ astro }) {
               className="rounded-lg border border-gray-200 px-2.5 py-1
                          text-sm">✕</button>
           </div>
-          {LINKS.map((l) => (
+          {links.map((l) => (
             <Link key={l.href} href={l.href}
               className={`block rounded-xl px-3 py-3 text-base ${
                 router.pathname === l.href

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import {
-  authService, notificationService, brandingService,
+  authService, notificationService, brandingService, menuService,
 } from '@astro/shared';
 import { useAuth } from '../lib/useAuth';
 import { useAuthModal } from '../lib/authModal';
@@ -11,30 +11,20 @@ import { useI18n } from '../lib/i18n';
 // Hard Rule 1: TOP NAV ONLY. White premium header; on mobile it collapses
 // to a hamburger that drops DOWN (never a side drawer). Account-related
 // links live under a "Profile" sub menu (dropdown).
-const LINKS = [
-  { href: '/dashboard', tKey: 'nav.home' },
-  { href: '/astrologers', tKey: 'nav.astrologers' },
-  { href: '/horoscope', tKey: 'nav.horoscope' },
-  { href: '/tarot', label: 'Tarot' },
-  { href: '/kundli', label: 'Kundli' },
-  { href: '/matching', label: 'Matching' },
-  { href: '/remedies', label: 'Remedies' },
-  { href: '/wallet', tKey: 'nav.wallet' },
-];
-const PROFILE_MENU = [
-  { href: '/profile', label: 'My Profile' },
-  { href: '/chat-history', label: 'Consultation history' },
-  { href: '/call-history', label: 'Call history' },
-  { href: '/transactions', label: 'Order history' },
-  { href: '/notifications', label: 'Notifications', notif: true },
-];
+// Menus are admin-editable; defaults + live overrides via menuService.
 
 export default function TopNav() {
   const [open, setOpen] = useState(false);
   const [prof, setProf] = useState(false);
   const [unread, setUnread] = useState(0);
   const [brand, setBrand] = useState({ logo: '', name: 'AstroConnect' });
+  const [menu, setMenu] = useState(menuService.DEFAULT_CLIENT_MENU);
+  const [profileMenu, setProfileMenu] = useState(
+    menuService.DEFAULT_CLIENT_PROFILE);
   const router = useRouter();
+  useEffect(() => menuService.watchMenus((m) => {
+    setMenu(m.menu); setProfileMenu(m.profile);
+  }), []);
   const { user } = useAuth();
   const { openLogin } = useAuthModal();
   const { t } = useI18n();
@@ -56,7 +46,7 @@ export default function TopNav() {
     router.replace('/dashboard');
   }
 
-  const profActive = PROFILE_MENU.some((m) => m.href === router.pathname);
+  const profActive = profileMenu.some((m) => m.href === router.pathname);
 
   return (
     <header className="sticky top-0 z-40 border-b border-gray-100 bg-white">
@@ -81,14 +71,14 @@ export default function TopNav() {
         </Link>
 
         <nav className="hidden items-center gap-1 md:flex">
-          {LINKS.map((l) => {
+          {menu.map((l) => {
             const active = router.pathname === l.href;
             return (
               <Link key={l.href} href={l.href}
                 className={`rounded-full px-3 py-2 text-sm font-medium
                   transition ${active
                     ? 'pill-active' : 'text-dark-text hover:bg-bg-light'}`}>
-                {l.tKey ? t(l.tKey) : l.label}
+                {l.label}
               </Link>
             );
           })}
@@ -108,7 +98,7 @@ export default function TopNav() {
             {prof && (
               <div className="absolute right-0 z-50 mt-1 w-56 rounded-2xl
                               border border-gray-100 bg-white p-1 shadow-lg">
-                {PROFILE_MENU.map((m) => (
+                {profileMenu.map((m) => (
                   <Link key={m.href} href={m.href}
                     onClick={() => setProf(false)}
                     className="flex items-center justify-between rounded-xl
@@ -198,12 +188,12 @@ export default function TopNav() {
           </div>
           {/* Scrollable links */}
           <div className="flex-1 overflow-y-auto px-4 py-3">
-            {LINKS.map((l) => (
+            {menu.map((l) => (
               <Link key={l.href} href={l.href}
                 className={`block rounded-xl px-3 py-3 text-base ${
                   router.pathname === l.href
                     ? 'bg-bg-light font-semibold text-primary' : ''}`}>
-                {l.tKey ? t(l.tKey) : l.label}
+                {l.label}
               </Link>
             ))}
             <div className="mt-2 border-t border-gray-100 pt-2">
@@ -211,7 +201,7 @@ export default function TopNav() {
                               tracking-wide text-sub-text">
                 {t('nav.profile')}
               </div>
-              {PROFILE_MENU.map((m) => (
+              {profileMenu.map((m) => (
                 <Link key={m.href} href={m.href}
                   className={`flex items-center justify-between rounded-xl
                     px-3 py-3 text-base ${router.pathname === m.href

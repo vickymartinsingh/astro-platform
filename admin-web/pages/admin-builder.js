@@ -1,9 +1,55 @@
 import { useEffect, useRef, useState } from 'react';
-import { db, adminService } from '@astro/shared';
+import { db, adminService, menuService } from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
 import { flash } from '../lib/flash';
+
+// Drag-reorder + rename + show/hide editor for any menu (client menu,
+// profile menu, astrologer menu). Writes [{href,label,hidden}] to the
+// given settings/features key.
+function MenuEditor({ title, defaults, value, onChange }) {
+  const dragHref = useRef(null);
+  const merged = menuService.mergeMenu(defaults, value);
+  function update(href, patch) {
+    onChange(merged.map((m) => (m.href === href
+      ? { ...m, ...patch } : m)));
+  }
+  function reorder(from, to) {
+    if (from === to) return;
+    const a = [...merged];
+    const i = a.findIndex((x) => x.href === from);
+    const j = a.findIndex((x) => x.href === to);
+    a.splice(j, 0, a.splice(i, 1)[0]);
+    onChange(a);
+  }
+  return (
+    <div className="card">
+      <div className="mb-2 font-semibold">{title}</div>
+      {merged.map((m) => (
+        <div key={m.href} draggable
+          onDragStart={() => { dragHref.current = m.href; }}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={() => reorder(dragHref.current, m.href)}
+          className="mb-2 flex items-center gap-2 rounded-card border
+            border-gray-200 bg-white p-2">
+          <span className="cursor-grab select-none px-1
+            text-sub-text">≡</span>
+          <input className="w-40 rounded border border-gray-200 px-2
+            py-1 text-sm" value={m.label}
+            onChange={(e) => update(m.href, { label: e.target.value })} />
+          <span className="text-xs text-sub-text">{m.href}</span>
+          <label className="ml-auto flex items-center gap-1 text-sm">
+            <input type="checkbox" checked={!m.hidden}
+              onChange={(e) =>
+                update(m.href, { hidden: !e.target.checked })} />
+            Visible
+          </label>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 const TAB_DEFS = [
   ['home', 'Home'], ['chat', 'Chat'], ['live', 'Live'],
@@ -118,8 +164,25 @@ export default function AdminBuilder() {
               );
             })}
             <button onClick={saveMenu}
-              className="btn-primary mt-1 w-full">Save menu</button>
+              className="btn-primary mt-1 w-full">Save bottom menu</button>
           </div>
+
+          <MenuEditor title="Client top menu (web/desktop + drawer)"
+            defaults={menuService.DEFAULT_CLIENT_MENU}
+            value={feat.menu_links}
+            onChange={(v) => setFeat({ ...feat, menu_links: v })} />
+          <MenuEditor title="Client profile menu"
+            defaults={menuService.DEFAULT_CLIENT_PROFILE}
+            value={feat.profile_menu}
+            onChange={(v) => setFeat({ ...feat, profile_menu: v })} />
+          <MenuEditor title="Astrologer app menu"
+            defaults={menuService.DEFAULT_ASTRO_MENU}
+            value={feat.astro_links}
+            onChange={(v) => setFeat({ ...feat, astro_links: v })} />
+          <button onClick={saveMenu}
+            className="btn-primary w-full">
+            Save all menus (client + astrologer)
+          </button>
 
           {/* BANNER */}
           <div className="card space-y-2">
