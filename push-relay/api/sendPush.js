@@ -12,7 +12,7 @@
 //
 // POST JSON body:
 //   { toUid }                              - push to one user, OR
-//   { target: 'all'|'clients'|'astrologers'|'user', userId }
+//   { target: 'all'|'clients'|'astrologers'|'admins'|'user', userId }
 //   + title, body, data?
 const admin = require('firebase-admin');
 
@@ -75,6 +75,10 @@ module.exports = async (req, res) => {
     } else if (target === 'astrologers') {
       (await db.collection('users').get()).forEach((d) => {
         if (isAstro(d.data() || {})) users.push(d);
+      });
+    } else if (target === 'admins') {
+      (await db.collection('users').get()).forEach((d) => {
+        if ((d.data() || {}).role === 'admin') users.push(d);
       });
     } else { // 'all' or unspecified broadcast
       (await db.collection('users').get()).forEach((d) => users.push(d));
