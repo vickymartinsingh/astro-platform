@@ -5,16 +5,5 @@
   "bundledWebRuntime": false,
   "server": {
     "androidScheme": "https"
-  },
-  "plugins": {
-    "SplashScreen": {
-      "launchShowDuration": 2800,
-      "launchAutoHide": true,
-      "backgroundColor": "#04231B",
-      "androidScaleType": "CENTER_CROP",
-      "showSpinner": false,
-      "splashFullScreen": true,
-      "splashImmersive": true
-    }
   }
 }

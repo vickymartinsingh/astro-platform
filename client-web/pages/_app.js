@@ -1,5 +1,4 @@
 import Head from 'next/head';
-import { useAndroidBack } from '@astro/shared';
 import '../styles/globals.css';
 import { AuthProvider, useAuth } from '../lib/useAuth';
 import { I18nProvider } from '../lib/i18n';
@@ -21,7 +20,6 @@ function WithProviders({ children }) {
 }
 
 export default function App({ Component, pageProps }) {
-  useAndroidBack();
   return (
     <>
       <Head>
