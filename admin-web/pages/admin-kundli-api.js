@@ -49,9 +49,14 @@ export default function AdminKundliApi() {
       setCfg(s.exists() ? s.data() : { provider: 'prokerala' }));
   }, []);
 
-  async function save() {
-    await adminService.updateSettings('kundliApi', cfg);
-    setMsg('Saved. The Kundli service will use this provider now.');
+  async function save(nextProvider) {
+    const next = nextProvider
+      ? { ...cfg, provider: nextProvider } : cfg;
+    setCfg(next);
+    await adminService.updateSettings('kundliApi', next);
+    const nm = (PROVIDERS.find((x) => x[0] === next.provider) || [])[1];
+    setMsg(`Saved. ${nm} is now the active Kundli provider for the `
+      + 'whole app.');
   }
 
   if (loading || !cfg) {
@@ -59,6 +64,10 @@ export default function AdminKundliApi() {
   }
   const cur = PROVIDERS.find((p) => p[0] === cfg.provider) || PROVIDERS[0];
   const fields = cur[3];
+  const configured = PROVIDERS.filter(
+    (x) => (cfg[x[0]] || {}).key || (cfg[x[0]] || {}).secret);
+  const activeName = (PROVIDERS.find(
+    (x) => x[0] === cfg.provider) || [])[1] || cfg.provider;
 
   return (
     <Layout>
@@ -72,8 +81,39 @@ export default function AdminKundliApi() {
         <div className="card mb-3 bg-success/10 text-success">{msg}</div>
       )}
 
+      <div className="card mb-3 bg-primary/5">
+        <div className="text-xs uppercase tracking-wide text-sub-text">
+          Active provider
+        </div>
+        <div className="text-lg font-bold text-primary">{activeName}</div>
+        <div className="text-xs text-sub-text">
+          The whole app (client + astrologer) uses this for every Kundli.
+        </div>
+      </div>
+
+      {configured.length > 0 && (
+        <div className="card mb-3">
+          <div className="mb-2 text-sm font-semibold">
+            Providers with a saved key (tap to make active)
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {configured.map(([id, label]) => (
+              <button key={id} onClick={() => save(id)}
+                className={`rounded-full px-3 py-1.5 text-sm ${
+                  cfg.provider === id
+                    ? 'bg-primary text-white'
+                    : 'border border-gray-200'}`}>
+                {label}{cfg.provider === id ? ' (active)' : ''}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="card space-y-3">
-        <label className="text-sm font-semibold">Provider</label>
+        <label className="text-sm font-semibold">
+          Provider (select + add key, then Save to make it the default)
+        </label>
         <select className="input" value={cfg.provider}
           onChange={(e) => setCfg({ ...cfg, provider: e.target.value })}>
           {PROVIDERS.map(([id, label, sup]) => (
@@ -112,8 +152,8 @@ export default function AdminKundliApi() {
           </div>
         )}
 
-        <button onClick={save} className="btn-primary w-full">
-          Save provider configuration
+        <button onClick={() => save()} className="btn-primary w-full">
+          Save & set as default provider
         </button>
       </div>
 
