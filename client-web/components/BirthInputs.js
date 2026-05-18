@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CITIES, INDIAN_STATES } from '@astro/shared';
 
 // Date stored as DD-MM-YYYY (zodiac/matching expect this); the picker is a
@@ -12,13 +12,71 @@ export function fromInputDate(iso) {
   return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
 }
 
+// Shows + accepts the date strictly as DD/MM/YYYY (auto-inserts the
+// slashes as you type). A calendar button opens the native picker.
+// Value is still stored as DD-MM-YYYY (zodiac/matching expect that).
+function toDisplay(dmy) {
+  const m = /^(\d{2})-(\d{2})-(\d{4})$/.exec(dmy || '');
+  return m ? `${m[1]}/${m[2]}/${m[3]}` : '';
+}
+
 export function DateField({ value, onChange, label = 'Date of birth' }) {
+  const [txt, setTxt] = useState(toDisplay(value));
+  const dateRef = useRef(null);
+  useEffect(() => { setTxt(toDisplay(value)); }, [value]);
+
+  function onText(e) {
+    const v = e.target.value.replace(/\D/g, '').slice(0, 8);
+    let out = v;
+    if (v.length > 4) {
+      out = `${v.slice(0, 2)}/${v.slice(2, 4)}/${v.slice(4)}`;
+    } else if (v.length > 2) {
+      out = `${v.slice(0, 2)}/${v.slice(2)}`;
+    }
+    setTxt(out);
+    if (v.length === 8) {
+      const d = +v.slice(0, 2);
+      const mo = +v.slice(2, 4);
+      const y = +v.slice(4);
+      if (d >= 1 && d <= 31 && mo >= 1 && mo <= 12
+        && y >= 1900 && y <= 2100) {
+        onChange(`${v.slice(0, 2)}-${v.slice(2, 4)}-${v.slice(4)}`);
+        return;
+      }
+    }
+    onChange('');
+  }
+
+  function openPicker() {
+    const el = dateRef.current;
+    if (!el) return;
+    try { if (el.showPicker) el.showPicker(); else el.click(); }
+    catch (_) { el.click(); }
+  }
+
   return (
     <div>
       <label className="text-sm text-sub-text">{label}</label>
-      <input className="input mt-1" type="date" max="9999-12-31"
-        value={toInputDate(value)}
-        onChange={(e) => onChange(fromInputDate(e.target.value))} />
+      <div className="relative mt-1">
+        <input className="input pr-11" inputMode="numeric"
+          placeholder="DD/MM/YYYY" value={txt} onChange={onText} />
+        <button type="button" aria-label="Open calendar"
+          onClick={openPicker}
+          className="absolute right-1 top-1/2 -translate-y-1/2
+            rounded-lg px-2 py-1 text-sub-text">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="1.7"
+            strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="4" width="18" height="17" rx="2" />
+            <path d="M3 9h18M8 2v4M16 2v4" />
+          </svg>
+        </button>
+        <input ref={dateRef} type="date" max="9999-12-31"
+          tabIndex={-1} aria-hidden="true"
+          className="absolute right-0 bottom-0 h-0 w-0 opacity-0"
+          value={toInputDate(value)}
+          onChange={(e) => onChange(fromInputDate(e.target.value))} />
+      </div>
     </div>
   );
 }
