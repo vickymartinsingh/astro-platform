@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/router';
 import {
   drawCards, tarotReading, aspectReading, TAROT_ASPECTS,
   tarotService,
@@ -6,6 +7,17 @@ import {
 import Layout from '../components/Layout';
 import { useOptionalClient } from '../lib/useAuth';
 import { useSettings } from '../lib/useSettings';
+
+function BackBar({ onBack }) {
+  return (
+    <button type="button" onClick={onBack}
+      className="mb-3 inline-flex items-center gap-1 rounded-full
+        border border-gray-200 px-3 py-1.5 text-sm font-semibold
+        text-dark-text hover:border-primary hover:text-primary">
+      <span className="text-base leading-none">‹</span> Back
+    </button>
+  );
+}
 
 // Two presets, switched from the admin (features.tarot_mode):
 //  - 'classic' (default): the original pick-a-card flow (unchanged, so
@@ -78,6 +90,7 @@ function ReadingBody({ reading }) {
 }
 
 function Classic() {
+  const router = useRouter();
   const [count, setCount] = useState(1);
   const [drawn, setDrawn] = useState([]);
   const [revealed, setRevealed] = useState([]);
@@ -100,6 +113,11 @@ function Classic() {
 
   return (
     <>
+      <BackBar onBack={() => {
+        if (typeof window !== 'undefined' && window.history.length > 1) {
+          router.back();
+        } else { router.replace('/dashboard'); }
+      }} />
       <h1 className="text-2xl font-bold md:text-3xl">Pick your card</h1>
       <p className="mb-4 text-sub-text">
         Take a breath, focus on your question, and choose your card
@@ -148,6 +166,7 @@ function Classic() {
 
 function Guided({ features }) {
   const { user, profile } = useOptionalClient();
+  const router = useRouter();
   const [step, setStep] = useState('aspect');
   const [aspect, setAspect] = useState('');
   const [question, setQuestion] = useState('');
@@ -157,6 +176,61 @@ function Guided({ features }) {
   const [revealed, setRevealed] = useState([]);
   const [reading, setReading] = useState(null);
   const [showPopup, setShowPopup] = useState(false);
+
+  // Refs so the (once-registered) back handler always sees latest state.
+  const stepRef = useRef(step);
+  const aspectRef = useRef(aspect);
+  const popupRef = useRef(showPopup);
+  const trapRef = useRef(false);
+  useEffect(() => { stepRef.current = step; }, [step]);
+  useEffect(() => { aspectRef.current = aspect; }, [aspect]);
+  useEffect(() => { popupRef.current = showPopup; }, [showPopup]);
+
+  // Go back exactly ONE step inside the flow; only leave the page when
+  // already on the first step.
+  const back = useCallback(() => {
+    setQErr('');
+    if (popupRef.current) { setShowPopup(false); return; }
+    const s = stepRef.current;
+    if (s === 'pick') {
+      setRevealed([]); setReading(null); setShowPopup(false);
+      setStep('spread'); return;
+    }
+    if (s === 'spread') {
+      setStep(aspectRef.current === 'General' ? 'aspect' : 'question');
+      return;
+    }
+    if (s === 'question') { setStep('aspect'); return; }
+    // s === 'aspect' -> exit tarot to the previous screen.
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      router.back();
+    } else { router.replace('/dashboard'); }
+  }, [router]);
+
+  // Trap hardware / browser back so it steps through the flow instead
+  // of leaving. One buffered history entry; re-armed on each catch.
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    function onPop() {
+      if (stepRef.current !== 'aspect' || popupRef.current) {
+        window.history.pushState({ tarotTrap: 1 }, '');
+        back();
+      } else {
+        trapRef.current = false;
+      }
+    }
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, [back]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if ((step !== 'aspect' || showPopup) && !trapRef.current) {
+      trapRef.current = true;
+      window.history.pushState({ tarotTrap: 1 }, '');
+    }
+    if (step === 'aspect' && !showPopup) trapRef.current = false;
+  }, [step, showPopup]);
 
   const singleDef = features.tarot_single_def
     || 'One card focused on your question - a clear, direct answer.';
@@ -206,6 +280,7 @@ function Guided({ features }) {
 
   return (
     <>
+      <BackBar onBack={back} />
       <h1 className="text-2xl font-bold md:text-3xl">Pick your card</h1>
       <p className="mb-4 text-sub-text">
         {features.tarot_intro
