@@ -105,6 +105,11 @@ export default function Transactions() {
                           {t.s.endTime ? ` to ${fmt(t.s.endTime)}` : ''}
                         </div>
                       )}
+                      <div>Session ID: <b className="break-all">
+                        {t.referenceId}</b></div>
+                      <div>Chat ID: <b className="break-all">
+                        {[user.uid, t.s.astroId].sort().join('_')}</b>
+                      </div>
                       <div className="font-semibold text-primary">
                         Tap to view the conversation
                       </div>

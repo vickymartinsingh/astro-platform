@@ -34,6 +34,26 @@ function patchAppName(app) {
   return `name: "${name}" (${app})`;
 }
 
+// Distinct Android versionName per app so support can tell which app a
+// user is on (android/ is gitignored & regenerated, so re-apply every
+// build). Single source of truth - bump here per release.
+const VERSION = {
+  'client-web': '1.0.0-customer',
+  'astro-web': '1.0.0-astrologer',
+  'admin-web': '1.0.0-admin',
+};
+function patchVersion(app) {
+  const f = join(ROOT, app, 'android', 'app', 'build.gradle');
+  if (!existsSync(f)) return `version: skipped (${app})`;
+  const v = VERSION[app];
+  if (!v) return `version: no map (${app})`;
+  const x = readFileSync(f, 'utf8');
+  const next = x.replace(/versionName\s+"[^"]*"/, `versionName "${v}"`);
+  if (next === x) return `version: unchanged (${app}, ${v})`;
+  writeFileSync(f, next);
+  return `version: ${v} (${app})`;
+}
+
 const NEED_PERMS = [
   'android.permission.RECORD_AUDIO',
   'android.permission.CAMERA',
@@ -168,5 +188,6 @@ for (const app of APPS) {
 for (const app of NAME_APPS) {
   console.log(patchAppName(app));
   console.log(patchMainActivity(app));
+  console.log(patchVersion(app));
 }
 console.log('patch-native done');

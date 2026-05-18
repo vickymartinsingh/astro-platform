@@ -4,9 +4,11 @@ import { chatService, astrologerService } from '@astro/shared';
 import Layout from '../components/Layout';
 import { SkeletonList, EmptyState } from '../components/Skeleton';
 import { useRequireClient } from '../lib/useAuth';
+import { useAstroActions } from '../lib/useAstroActions';
 
 export default function ChatHistory() {
   const { user, loading } = useRequireClient();
+  const { go } = useAstroActions();
   const [rows, setRows] = useState(null);
 
   useEffect(() => {
@@ -37,29 +39,34 @@ export default function ChatHistory() {
       ) : (
         <div className="space-y-2">
           {rows.map((c) => (
-            <Link key={c.id} href={`/chat/${c.astro?.id}?view=1`}
-              className="card flex items-center gap-3">
-              <img src={c.astro?.profileImage || '/avatar.png'}
-                className="h-12 w-12 rounded-full object-cover bg-bg-light"
-                alt="" />
-              <div className="min-w-0 flex-1">
-                <div className="font-semibold">
-                  {c.astro?.name || 'Astrologer'}
-                  {c.returning && (
-                    <span className="badge ml-2 bg-success text-white">
-                      Welcome back ✅
-                    </span>
-                  )}
+            <div key={c.id} className="card flex items-center gap-3">
+              <Link href={`/chat/${c.astro?.id}?view=1`}
+                className="flex min-w-0 flex-1 items-center gap-3">
+                <img src={c.astro?.profileImage || '/avatar.png'}
+                  className="h-12 w-12 rounded-full object-cover
+                    bg-bg-light" alt="" />
+                <div className="min-w-0 flex-1">
+                  <div className="font-semibold">
+                    {c.astro?.name || 'Astrologer'}
+                    {c.returning && (
+                      <span className="badge ml-2 bg-success text-white">
+                        Welcome back ✅
+                      </span>
+                    )}
+                  </div>
+                  <div className="truncate text-sm text-sub-text">
+                    {c.lastMessage}
+                  </div>
                 </div>
-                <div className="truncate text-sm text-sub-text">
-                  {c.lastMessage}
-                </div>
-              </div>
-              <div className="text-xs text-sub-text">
-                {c.updatedAt?.toDate
-                  ? c.updatedAt.toDate().toLocaleDateString() : ''}
-              </div>
-            </Link>
+              </Link>
+              {c.astro && (
+                <button onClick={() => go('chat', c.astro)}
+                  className="shrink-0 rounded-full bg-primary px-4 py-2
+                    text-sm font-semibold text-white">
+                  Chat again
+                </button>
+              )}
+            </div>
           ))}
         </div>
       )}

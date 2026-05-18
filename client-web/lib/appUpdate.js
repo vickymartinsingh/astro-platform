@@ -3,7 +3,9 @@ import { useSettings } from './useSettings';
 // The build that is currently installed. BUMP APP_BUILD every release
 // and set the same number as "app_latest_build" in the admin App Update
 // page; the app then knows it is out of date.
-export const APP_VERSION = '1.0.0';
+// Per-app version string so support can tell which app a user is on
+// (customer / astrologer / admin each carry a distinct suffix).
+export const APP_VERSION = '1.0.0-customer';
 export const APP_BUILD = 1;
 
 // Reads the admin-managed update info from settings/config (cached by

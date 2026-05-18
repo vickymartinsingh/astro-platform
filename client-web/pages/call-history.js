@@ -4,6 +4,7 @@ import { sessionService, astrologerService } from '@astro/shared';
 import Layout from '../components/Layout';
 import { SkeletonList, EmptyState } from '../components/Skeleton';
 import { useRequireClient } from '../lib/useAuth';
+import { useAstroActions } from '../lib/useAstroActions';
 
 function fmt(ts) {
   try {
@@ -21,6 +22,7 @@ function clock(secs) {
 export default function CallHistory() {
   const { user, loading } = useRequireClient();
   const router = useRouter();
+  const { go } = useAstroActions();
   const [rows, setRows] = useState(null);
 
   useEffect(() => {
@@ -49,32 +51,43 @@ export default function CallHistory() {
       ) : (
         <div className="space-y-2">
           {rows.map((s) => (
-            <button key={s.id}
-              onClick={() => router.push(`/chat/${s.astroId}?view=1`)}
-              className="card flex w-full items-center gap-3 text-left
-                         hover:shadow-md">
-              <img src={s.astro?.profileImage || '/avatar.png'}
-                className="h-12 w-12 rounded-full object-cover bg-bg-light"
-                alt="" />
-              <div className="min-w-0 flex-1">
-                <div className="font-semibold">
-                  {s.type === 'video' ? 'Video call' : 'Voice call'}
-                  {' with '}{s.astro?.name || 'Astrologer'}
+            <div key={s.id}
+              className="card flex w-full items-center gap-3 text-left">
+              <button onClick={() => router.push(
+                `/chat/${s.astroId}?view=1`)}
+                className="flex min-w-0 flex-1 items-center gap-3
+                  text-left">
+                <img src={s.astro?.profileImage || '/avatar.png'}
+                  className="h-12 w-12 rounded-full object-cover
+                    bg-bg-light" alt="" />
+                <div className="min-w-0 flex-1">
+                  <div className="font-semibold">
+                    {s.type === 'video' ? 'Video call' : 'Voice call'}
+                    {' with '}{s.astro?.name || 'Astrologer'}
+                  </div>
+                  <div className="text-sm text-sub-text">
+                    Duration {clock(s.duration)} · ₹{s.cost || 0}
+                  </div>
+                  <div className="text-xs text-sub-text">
+                    {s.startTime
+                      ? <>From {fmt(s.startTime)}{s.endTime
+                        ? ` to ${fmt(s.endTime)}` : ''}</>
+                      : fmt(s.createdAt)}
+                  </div>
+                  <div className="mt-0.5 text-xs font-semibold
+                    text-primary">
+                    Tap to view conversation
+                  </div>
                 </div>
-                <div className="text-sm text-sub-text">
-                  Duration {clock(s.duration)} · ₹{s.cost || 0}
-                </div>
-                <div className="text-xs text-sub-text">
-                  {s.startTime
-                    ? <>From {fmt(s.startTime)}{s.endTime
-                      ? ` to ${fmt(s.endTime)}` : ''}</>
-                    : fmt(s.createdAt)}
-                </div>
-                <div className="mt-0.5 text-xs font-semibold text-primary">
-                  Tap to view conversation
-                </div>
-              </div>
-            </button>
+              </button>
+              {s.astro && (
+                <button onClick={() => go(s.type, s.astro)}
+                  className="shrink-0 rounded-full bg-primary px-4 py-2
+                    text-sm font-semibold text-white">
+                  {s.type === 'video' ? 'Video again' : 'Call again'}
+                </button>
+              )}
+            </div>
           ))}
         </div>
       )}

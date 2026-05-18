@@ -119,6 +119,17 @@ export default function AstroDashboard() {
   const sum = (arr) => arr.reduce((a, s) =>
     a + Number(s.astrologerEarning || 0), 0);
 
+  // Call/chat response stats from real session records.
+  const cnt = (st) => sessions.filter((s) => s.status === st).length;
+  const answered = sessions.filter((s) =>
+    ['ended', 'accepted', 'active'].includes(s.status)).length;
+  const missed = cnt('missed');
+  const rejected = cnt('rejected');
+  const cancelled = cnt('cancelled');
+  const respBase = answered + missed + rejected;
+  const respRate = respBase
+    ? Math.round((answered / respBase) * 100) : 100;
+
   const status = astro.status || 'offline';
   const statusStyle = { online: 'bg-success', busy: 'bg-warning',
     offline: 'bg-danger' }[status] || 'bg-danger';
@@ -247,9 +258,24 @@ export default function AstroDashboard() {
         <Stat label="Sessions Today" value={since(DAY).length} />
         <Stat label="Rating"
           value={<span className="text-gold">★ {astro.rating || 0}</span>} />
-        <Stat label="Response Rate" value={`${astro.responseRate || 0}%`} />
+        <Stat label="Response Rate" value={`${respRate}%`} />
         <Stat label="Total Sessions" value={astro.totalSessions || 0} />
         <Stat label="Reviews" value={astro.reviewsCount || 0} />
+      </div>
+
+      {/* Real response stats: answered vs missed/rejected/cancelled. */}
+      <div className="card mt-4">
+        <div className="mb-1 font-semibold">Call response</div>
+        <p className="mb-3 text-xs text-sub-text">
+          How you responded to incoming requests. Response rate counts
+          answered out of answered + missed + rejected.
+        </p>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <Stat label="Answered" value={answered} />
+          <Stat label="Missed" value={missed} />
+          <Stat label="Rejected" value={rejected} />
+          <Stat label="Cancelled" value={cancelled} />
+        </div>
       </div>
 
       <h2 className="mb-2 mt-8 text-lg font-bold">Recent requests</h2>
