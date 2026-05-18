@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
-import { userService, storage, authService } from '@astro/shared';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { userService, authService, ZODIAC } from '@astro/shared';
 import Layout from '../components/Layout';
+import Avatar from '../components/Avatar';
+import ZodiacGlyph from '../components/ZodiacGlyph';
 import { SkeletonList } from '../components/Skeleton';
 import { useRequireClient } from '../lib/useAuth';
 import { useI18n, LANGS } from '../lib/i18n';
@@ -53,16 +54,52 @@ export default function Profile() {
     } finally { setBusy(false); }
   }
 
+  // Stored as a downscaled data URL (no Storage/CORS dependency).
+  function fileToDataUrl(file, maxW) {
+    return new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onerror = () => reject(new Error('could not read file'));
+      fr.onload = () => {
+        const img = new Image();
+        img.onerror = () => reject(new Error('invalid image'));
+        img.onload = () => {
+          const sc = Math.min(1, maxW / (img.width || maxW));
+          const w = Math.max(1, Math.round((img.width || maxW) * sc));
+          const h = Math.max(1, Math.round((img.height || maxW) * sc));
+          const c = document.createElement('canvas');
+          c.width = w; c.height = h;
+          c.getContext('2d').drawImage(img, 0, 0, w, h);
+          resolve(c.toDataURL('image/jpeg', 0.85));
+        };
+        img.src = fr.result;
+      };
+      fr.readAsDataURL(file);
+    });
+  }
+
   async function uploadPhoto(e) {
     const file = e.target.files?.[0];
     if (!file) return;
     setBusy(true); setMsg('');
     try {
-      const r = ref(storage, `profileImages/${user.uid}/avatar`);
-      await uploadBytes(r, file);
-      const url = await getDownloadURL(r);
-      await userService.updateUser(user.uid, { profileImage: url });
+      const url = await fileToDataUrl(file, 256);
+      if (url.length > 850000) {
+        setMsg('Image too large - pick a smaller photo.');
+        return;
+      }
+      await userService.updateUser(user.uid,
+        { profileImage: url, avatarChoice: 'photo' });
       setMsg('Photo updated.');
+    } catch (_) {
+      setMsg('Could not update photo.');
+    } finally { setBusy(false); }
+  }
+
+  async function setAvatar(choice) {
+    setBusy(true); setMsg('');
+    try {
+      await userService.updateUser(user.uid, { avatarChoice: choice });
+      setMsg('Profile picture updated.');
     } finally { setBusy(false); }
   }
 
@@ -83,14 +120,42 @@ export default function Profile() {
       <h1 className="mb-3 text-xl font-bold">Profile</h1>
       <div className="card space-y-3">
         <div className="flex items-center gap-4">
-          <img src={profile.profileImage || '/avatar.png'}
-            className="h-20 w-20 rounded-full object-cover bg-bg-light"
-            alt="" />
-          <label className="btn-ghost cursor-pointer">
-            Upload photo
-            <input type="file" accept="image/*" hidden
-              onChange={uploadPhoto} />
-          </label>
+          <Avatar profile={profile} size={80} />
+          <div className="flex flex-wrap gap-2">
+            <label className="btn-ghost cursor-pointer !min-h-0 px-3
+              py-2 text-sm">
+              {busy ? 'Working...' : 'Upload photo'}
+              <input type="file" accept="image/*" hidden
+                onChange={uploadPhoto} />
+            </label>
+            <button onClick={() => setAvatar('auto')}
+              className="rounded-card border border-gray-200 px-3 py-2
+                text-sm">My zodiac</button>
+            <button onClick={() => setAvatar('none')}
+              className="rounded-card border border-gray-200 px-3 py-2
+                text-sm text-sub-text">Remove</button>
+          </div>
+        </div>
+        <div>
+          <div className="mb-1 text-xs font-semibold text-sub-text">
+            Or pick a zodiac avatar
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {ZODIAC.map((z) => {
+              const on = profile.avatarChoice === `sign:${z}`;
+              return (
+                <button key={z} onClick={() => setAvatar(`sign:${z}`)}
+                  title={z}
+                  className={`flex h-11 w-11 items-center justify-center
+                    rounded-full border ${on
+                      ? 'border-primary bg-bg-light'
+                      : 'border-gray-200'}`}>
+                  <ZodiacGlyph sign={z}
+                    className="h-6 w-6 text-gold" />
+                </button>
+              );
+            })}
+          </div>
         </div>
         <div>
           <label className="text-sm text-sub-text">Name</label>
