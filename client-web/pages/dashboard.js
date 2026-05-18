@@ -6,7 +6,7 @@ import {
   iconsService, horoscopeService, kundliService,
   signFromDOB, userService, db,
 } from '@astro/shared';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { SkeletonList } from '../components/Skeleton';
 import AstrologerCard from '../components/AstrologerCard';
@@ -42,6 +42,16 @@ const CUSTOMER_REVIEWS = [
     'Quick to connect, fair pricing, and genuinely helpful guidance.'],
 ];
 
+// App-wide cache of settings/content so a screen switch paints the
+// latest known values instantly (never the stale old ones).
+let CONTENT_CACHE;
+try {
+  if (typeof localStorage !== 'undefined') {
+    const s = localStorage.getItem('settings_content');
+    if (s) CONTENT_CACHE = JSON.parse(s);
+  }
+} catch (_) { /* ignore */ }
+
 export default function Dashboard() {
   const { user, profile, loading } = useOptionalClient();
   const { go } = useAstroActions();
@@ -61,18 +71,18 @@ export default function Dashboard() {
   const [statsCfg, setStatsCfg] = useState(null); // [{n,l}] from admin
   const [catLabels, setCatLabels] = useState({}); // key -> label
   useEffect(() => {
-    getDoc(doc(db, 'settings', 'content')).then((s) => {
-      const d = s.exists() ? s.data() : {};
+    // LIVE so an admin change is reflected immediately and a screen
+    // switch / refresh never shows the old content.
+    const apply = (d) => {
       if (d.homeHeroTitle || d.homeHeroSubtitle) {
         setHero((h) => ({
           title: d.homeHeroTitle || h.title,
           subtitle: d.homeHeroSubtitle || h.subtitle,
         }));
       }
-      if (Array.isArray(d.home_stats)) setStatsCfg(d.home_stats);
-      if (d.cat_labels && typeof d.cat_labels === 'object') {
-        setCatLabels(d.cat_labels);
-      }
+      setStatsCfg(Array.isArray(d.home_stats) ? d.home_stats : null);
+      setCatLabels(d.cat_labels && typeof d.cat_labels === 'object'
+        ? d.cat_labels : {});
       setSec({
         quickActions: d.sec_quickActions !== false,
         starsToday: d.sec_starsToday !== false,
@@ -80,9 +90,24 @@ export default function Dashboard() {
         topRated: d.sec_topRated !== false,
         reviews: d.sec_reviews !== false,
       });
-    }).catch(() => setSec({
-      quickActions: true, starsToday: true, categories: true,
-      topRated: true, reviews: true }));
+    };
+    if (CONTENT_CACHE) apply(CONTENT_CACHE);
+    try {
+      return onSnapshot(doc(db, 'settings', 'content'), (s) => {
+        const d = s.exists() ? s.data() : {};
+        CONTENT_CACHE = d;
+        try {
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem('settings_content', JSON.stringify(d));
+          }
+        } catch (_) { /* ignore */ }
+        apply(d);
+      }, () => {});
+    } catch (_) {
+      setSec({ quickActions: true, starsToday: true,
+        categories: true, topRated: true, reviews: true });
+      return undefined;
+    }
   }, []);
 
   useEffect(() => {
