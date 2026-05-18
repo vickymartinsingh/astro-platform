@@ -32,22 +32,23 @@ export const ZODIAC = [
   'Libra', 'Scorpio', 'Sagittarius', 'Capricorn', 'Aquarius', 'Pisces',
 ];
 
-// Indian (Vedic) Rashi names + Devanagari, keyed by the internal
-// Western key (kept as the key so horoscope/kundli data still resolves).
-// UI shows the Indian style; the Western name is only a tiny subtitle.
+// Indian (Vedic) Rashi: name + the VEDIC symbol icon (Dhanu = bow,
+// Makara = crocodile, Kumbha = water pot, Mithuna = couple - these
+// differ from the Western glyphs). Keyed by the internal Western key
+// so horoscope/kundli data still resolves. Icons render monochrome.
 export const ZODIAC_IN = {
-  Aries: { en: 'Mesha', dev: 'मेष' },
-  Taurus: { en: 'Vrishabha', dev: 'वृषभ' },
-  Gemini: { en: 'Mithuna', dev: 'मिथुन' },
-  Cancer: { en: 'Karka', dev: 'कर्क' },
-  Leo: { en: 'Simha', dev: 'सिंह' },
-  Virgo: { en: 'Kanya', dev: 'कन्या' },
-  Libra: { en: 'Tula', dev: 'तुला' },
-  Scorpio: { en: 'Vrishchika', dev: 'वृश्चिक' },
-  Sagittarius: { en: 'Dhanu', dev: 'धनु' },
-  Capricorn: { en: 'Makara', dev: 'मकर' },
-  Aquarius: { en: 'Kumbha', dev: 'कुम्भ' },
-  Pisces: { en: 'Meena', dev: 'मीन' },
+  Aries: { en: 'Mesha', icon: '🐏' },
+  Taurus: { en: 'Vrishabha', icon: '🐂' },
+  Gemini: { en: 'Mithuna', icon: '👫' },
+  Cancer: { en: 'Karka', icon: '🦀' },
+  Leo: { en: 'Simha', icon: '🦁' },
+  Virgo: { en: 'Kanya', icon: '👧' },
+  Libra: { en: 'Tula', icon: '⚖️' },
+  Scorpio: { en: 'Vrishchika', icon: '🦂' },
+  Sagittarius: { en: 'Dhanu', icon: '🏹' },
+  Capricorn: { en: 'Makara', icon: '🐊' },
+  Aquarius: { en: 'Kumbha', icon: '🏺' },
+  Pisces: { en: 'Meena', icon: '🐟' },
 };
 // "Mesha" (default) or "Mesha (Aries)" when full = true.
 export function zodiacLabel(w, full) {

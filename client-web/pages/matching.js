@@ -23,10 +23,10 @@ function Person({ label, p, set }) {
         <select className="input mt-1" value={p.sign}
           onChange={(e) => set({ ...p, sign: e.target.value })}>
           {ZODIAC.map((z) => {
-            const r = ZODIAC_IN[z] || { en: z, dev: '' };
+            const r = ZODIAC_IN[z] || { en: z };
             return (
               <option key={z} value={z}>
-                {r.dev} {r.en} ({z})
+                {r.en} ({z})
               </option>
             );
           })}

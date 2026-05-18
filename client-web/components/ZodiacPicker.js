@@ -2,10 +2,12 @@ import { useEffect, useRef } from 'react';
 import { ZODIAC, ZODIAC_IN } from '@astro/shared';
 
 // Swipeable zodiac selector (mobile-app style): slide left/right to see
-// every sign, tap to pick. Indian (Vedic) Rashi style - Devanagari +
-// Sanskrit name, not the Western glyphs. Falls back to the dropdown
-// when the admin sets features.zodiac_dropdown = true.
-const IN = (z) => ZODIAC_IN[z] || { en: z, dev: z };
+// every sign, tap to pick. Indian (Vedic) Rashi style - the Vedic
+// symbol icon + Rashi name, not the Western glyphs. Falls back to the
+// dropdown when the admin sets features.zodiac_dropdown = true.
+const IN = (z) => ZODIAC_IN[z] || { en: z, icon: '' };
+// Render the icon monochrome (no colour), matching the app's UI.
+const MONO = { filter: 'grayscale(1) contrast(1.1)' };
 
 export default function ZodiacPicker({ value, onChange, dropdown }) {
   const stripRef = useRef(null);
@@ -28,7 +30,7 @@ export default function ZodiacPicker({ value, onChange, dropdown }) {
         onChange={(e) => onChange(e.target.value)}>
         {ZODIAC.map((z) => (
           <option key={z} value={z}>
-            {IN(z).dev} {IN(z).en} ({z})
+            {IN(z).en} ({z})
           </option>
         ))}
       </select>
@@ -64,7 +66,9 @@ export default function ZodiacPicker({ value, onChange, dropdown }) {
                 transition-all ${on
                   ? 'border-primary bg-primary text-white shadow-md'
                   : 'border-gray-200 bg-white text-dark-text'}`}>
-              <span className="text-2xl leading-none">{IN(z).dev}</span>
+              <span className="text-2xl leading-none" style={MONO}>
+                {IN(z).icon}
+              </span>
               <span className="text-xs font-semibold">{IN(z).en}</span>
               <span className={`text-[10px] ${on
                 ? 'text-white/70' : 'text-sub-text'}`}>{z}</span>
