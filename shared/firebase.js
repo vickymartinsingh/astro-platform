@@ -14,14 +14,24 @@ import { getStorage } from 'firebase/storage';
 import { getFunctions } from 'firebase/functions';
 import { getDatabase } from 'firebase/database';
 
+// The Firebase WEB config is NOT secret (it ships in every client and
+// the Android APK already). Baking it as a default - with env override
+// still winning - means env-less builds (the iOS CI workflow, bare CI)
+// initialise Firebase too, instead of crashing with `auth` undefined.
+const E = (typeof process !== 'undefined' && process.env) || {};
 const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
-  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
-  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
-  databaseURL: process.env.NEXT_PUBLIC_FIREBASE_DATABASE_URL,
+  apiKey: E.NEXT_PUBLIC_FIREBASE_API_KEY
+    || 'AIzaSyB8uaBVHBjCsZj571O-urWntwJBMoUv5dQ',
+  authDomain: E.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+    || 'astrology-2092d.firebaseapp.com',
+  projectId: E.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'astrology-2092d',
+  storageBucket: E.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+    || 'astrology-2092d.firebasestorage.app',
+  messagingSenderId: E.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+    || '402763204723',
+  appId: E.NEXT_PUBLIC_FIREBASE_APP_ID
+    || '1:402763204723:web:b041d334be1eae5d498206',
+  databaseURL: E.NEXT_PUBLIC_FIREBASE_DATABASE_URL || '',
 };
 
 const hasConfig = !!firebaseConfig.apiKey;
