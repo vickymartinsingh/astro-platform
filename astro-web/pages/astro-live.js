@@ -4,6 +4,7 @@ import {
   callService, liveService, astrologerService, recordService,
 } from '@astro/shared';
 import { useRequireAstrologer } from '../lib/useAuth';
+import { useSettings } from '../lib/useSettings';
 
 function fmtWhen(ms) {
   if (!ms) return '';
@@ -49,6 +50,7 @@ function Avatar({ name }) {
 // Astrotalk-style full-screen Go Live for the astrologer.
 export default function AstroLive() {
   const { user, loading } = useRequireAstrologer();
+  const { features } = useSettings();
   const router = useRouter();
   const [astro, setAstro] = useState(null);
   const [live, setLive] = useState(false);
@@ -57,6 +59,8 @@ export default function AstroLive() {
   const [camOff, setCamOff] = useState(false);
   const [info, setInfo] = useState(null);
   const [comments, setComments] = useState([]);
+  const [fakes, setFakes] = useState([]);
+  const [, setVtick] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const [mode, setMode] = useState('choose');     // choose | sched
   const [sched, setSched] = useState(null);       // pending scheduled
@@ -81,7 +85,34 @@ export default function AstroLive() {
   useEffect(() => {
     const el = cRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [comments]);
+  }, [comments, fakes]);
+
+  // Refresh simulated viewer count while live.
+  useEffect(() => {
+    if (!live) return undefined;
+    const t = setInterval(() => setVtick((n) => n + 1), 4000);
+    return () => clearInterval(t);
+  }, [live]);
+
+  // Filler comments while live when real chatter is sparse.
+  useEffect(() => {
+    if (!live || !features || !features.live_fake_enabled) {
+      return undefined;
+    }
+    const ms = Math.max(3,
+      Number(features.live_fake_every_sec) || 12) * 1000;
+    const t = setInterval(() => {
+      setFakes((arr) => {
+        if (comments.length >= 12) return arr;
+        return [...arr, liveService.nextFillerComment(features)]
+          .slice(-25);
+      });
+    }, ms);
+    return () => clearInterval(t);
+  }, [live, features, comments.length]);
+
+  // Reset fillers each time a live ends/starts.
+  useEffect(() => { if (!live) setFakes([]); }, [live]);
 
   useEffect(() => {
     if (!live) return undefined;
@@ -189,6 +220,12 @@ export default function AstroLive() {
     + `${String(elapsed % 60).padStart(2, '0')}`;
   const rate = astro
     ? (astro.priceVideo || astro.priceCall || astro.priceChat || 0) : 0;
+  const feed = [
+    ...comments.map((c) => ({
+      ...c, _t: c.createdAt?.toMillis ? c.createdAt.toMillis() : 0,
+    })),
+    ...fakes.map((f) => ({ ...f, _t: f._ts })),
+  ].sort((a, b) => a._t - b._t);
 
   if (loading) {
     return (
@@ -218,7 +255,7 @@ export default function AstroLive() {
               stroke="currentColor" strokeWidth="2"><path d="M2 12s4-7
               10-7 10 7 10 7-4 7-10 7S2 12 2 12z" /><circle cx="12"
               cy="12" r="3" /></svg>
-            {info?.viewers || 0}
+            {liveService.liveSimViewers(info, features)}
           </span>
         )}
         <button onClick={() => (live ? stop() : router.back())}
@@ -408,7 +445,7 @@ export default function AstroLive() {
             WebkitMaskImage:
               'linear-gradient(to top, #000 75%, transparent)',
           }}>
-          {comments.map((c) => (
+          {feed.map((c) => (
             <div key={c.id} className="flex items-start gap-2">
               <Avatar name={c.name} />
               <div className="min-w-0">

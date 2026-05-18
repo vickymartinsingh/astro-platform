@@ -2,14 +2,18 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import { callService, liveService } from '@astro/shared';
 import { useOptionalClient } from '../../lib/useAuth';
+import { useSettings } from '../../lib/useSettings';
 
 // Client watches an astrologer's live stream + comments + likes.
 export default function LiveView() {
   const router = useRouter();
   const { id: astroUid } = router.query;
   const { user, profile } = useOptionalClient();
+  const { features } = useSettings();
   const [info, setInfo] = useState(null);
   const [comments, setComments] = useState([]);
+  const [fakes, setFakes] = useState([]);
+  const [, setTick] = useState(0);
   const [text, setText] = useState('');
   const remoteRef = useRef(null);
   const joinedRef = useRef(false);
@@ -40,6 +44,28 @@ export default function LiveView() {
     return () => { u1 && u1(); u2 && u2(); };
   }, [astroUid]);
 
+  // Refresh the simulated viewer count over time.
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 4000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Filler comments when real chatter is sparse (admin-controlled).
+  useEffect(() => {
+    if (!features || !features.live_fake_enabled) return undefined;
+    if (info && info.live === false) return undefined;
+    const ms = Math.max(3,
+      Number(features.live_fake_every_sec) || 12) * 1000;
+    const t = setInterval(() => {
+      setFakes((arr) => {
+        if (comments.length >= 12) return arr;
+        return [...arr, liveService.nextFillerComment(features)]
+          .slice(-25);
+      });
+    }, ms);
+    return () => clearInterval(t);
+  }, [features, info, comments.length]);
+
   useEffect(() => {
     if (!astroUid || joinedRef.current) return undefined;
     joinedRef.current = true;
@@ -68,6 +94,13 @@ export default function LiveView() {
   }, [astroUid]);
 
   const ended = info && info.live === false;
+  const feed = [
+    ...comments.map((c) => ({
+      ...c, _t: c.createdAt?.toMillis ? c.createdAt.toMillis() : 0,
+    })),
+    ...fakes.map((f) => ({ ...f, _t: f._ts })),
+  ].sort((a, b) => a._t - b._t);
+  const vcount = liveService.liveSimViewers(info, features);
 
   async function sendComment() {
     const v = text.trim();
@@ -91,8 +124,14 @@ export default function LiveView() {
           {info?.name || 'Astrologer'}
         </span>
       </div>
-      <div className="absolute right-3 top-3 rounded-full bg-black/50
-        px-2 py-0.5 text-xs">{info?.likes || 0} likes</div>
+      <div className="absolute right-3 top-3 flex items-center gap-2">
+        <span className="rounded-full bg-black/50 px-2 py-0.5 text-xs">
+          {vcount} watching
+        </span>
+        <span className="rounded-full bg-black/50 px-2 py-0.5 text-xs">
+          {info?.likes || 0} likes
+        </span>
+      </div>
 
       {ended && (
         <div className="absolute inset-0 flex flex-col items-center
@@ -112,7 +151,7 @@ export default function LiveView() {
             WebkitMaskImage:
               'linear-gradient(to top, #000 80%, transparent)',
           }}>
-          {comments.map((c) => {
+          {feed.map((c) => {
             const ch = (c.name || '?').trim().charAt(0).toUpperCase();
             const cols = ['#F59E0B', '#EC4899', '#8B5CF6', '#10B981',
               '#3B82F6', '#EF4444'];

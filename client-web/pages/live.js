@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { liveService } from '@astro/shared';
 import Layout from '../components/Layout';
+import { useSettings } from '../lib/useSettings';
 
 function countdown(ms) {
   const d = Math.max(0, ms - Date.now());
@@ -25,6 +26,7 @@ function whenStr(ms) {
 // "Live" tab: astrologers live right now, plus upcoming scheduled lives.
 export default function LivePage() {
   const router = useRouter();
+  const { features } = useSettings();
   const [lives, setLives] = useState(null);
   const [upcoming, setUpcoming] = useState([]);
   const [, setTick] = useState(0);
@@ -114,7 +116,7 @@ export default function LivePage() {
                 bg-red-600 px-2 py-0.5 text-[11px] font-bold">LIVE</span>
               <span className="absolute right-2 top-2 rounded-full
                 bg-black/50 px-2 py-0.5 text-[11px]">
-                {l.viewers || 0} watching
+                {liveService.liveSimViewers(l, features)} watching
               </span>
               <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t
                 from-black/80 to-transparent p-3">

@@ -8,11 +8,69 @@
 // has no rule and is denied by default - which is why joins/comments
 // were not appearing. No rules redeploy is needed this way.
 import {
-  doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query,
-  where, orderBy, limit, onSnapshot, serverTimestamp, increment,
+  doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, collection,
+  addDoc, query, where, orderBy, limit, onSnapshot, serverTimestamp,
+  increment, writeBatch,
 } from 'firebase/firestore';
 import { db } from '../firebase.js';
 import { notifyFollowers, pushFollowers } from './followService.js';
+
+// ---- Live engagement (admin-configurable, settings/features) ----
+// live_views_per_min : simulated viewers added per minute (0 = off)
+// live_fake_enabled  : show filler comments when real ones are sparse
+// live_fake_every_sec: seconds between filler comments (default 12)
+// live_fake_comments : newline list (admin-editable) of filler texts
+const FILLER_NAMES = ['Priya', 'Rahul', 'Anjali', 'Vikram', 'Sneha',
+  'Amit', 'Pooja', 'Ravi', 'Neha', 'Karan', 'Divya', 'Arjun', 'Meera',
+  'Sahil', 'Kavya', 'Rohit', 'Isha', 'Manish', 'Tara', 'Dev'];
+export const DEFAULT_FILLER_COMMENTS = [
+  'Pranam guruji', 'How is my career going?', 'Please guide me',
+  'When will I get married?', 'Thank you so much', 'Jai Mata Di',
+  'Very accurate reading', 'Please see my kundli', 'Om Namah Shivaya',
+  'What about my love life?', 'When will my problems end?',
+  'You are amazing guruji', 'Please reply to me', 'Health concerns',
+  'Money problems guruji', 'Blessed to be here', 'Namaste',
+  'My job situation?', 'Family issues please', 'Truly grateful'];
+
+export function liveFillerPool(feat) {
+  const raw = feat && feat.live_fake_comments;
+  let arr = [];
+  if (Array.isArray(raw)) arr = raw.filter(Boolean);
+  else if (typeof raw === 'string') {
+    arr = raw.split('\n').map((s) => s.trim()).filter(Boolean);
+  }
+  return arr.length ? arr : DEFAULT_FILLER_COMMENTS;
+}
+
+let _fillerSeq = 0;
+// Next synthetic comment - sequence + occasional random so it looks
+// like fresh, varied chatter. Pure display only (never written to DB).
+export function nextFillerComment(feat) {
+  const pool = liveFillerPool(feat);
+  const i = _fillerSeq;
+  _fillerSeq += 1;
+  const text = Math.random() < 0.5
+    ? pool[i % pool.length]
+    : pool[Math.floor(Math.random() * pool.length)];
+  const name = FILLER_NAMES[Math.floor(Math.random() * FILLER_NAMES.length)];
+  return {
+    id: `f_${Date.now()}_${i}`, type: 'comment', name, text,
+    _fake: true, _ts: Date.now(),
+  };
+}
+
+// Displayed viewer count = real + admin-rate * minutes-since-start.
+// Deterministic from startedAt so every client shows ~the same number
+// and there are NO extra DB writes.
+export function liveSimViewers(info, feat) {
+  const real = Math.max(0, Number(info && info.viewers) || 0);
+  const perMin = Number(feat && feat.live_views_per_min) || 0;
+  const startMs = info && info.startedAt && info.startedAt.toMillis
+    ? info.startedAt.toMillis() : 0;
+  if (perMin <= 0 || !startMs) return real;
+  const mins = Math.max(0, (Date.now() - startMs) / 60000);
+  return real + Math.floor(mins * perMin);
+}
 
 export function liveChannel(astroUid) { return `live_${astroUid}`; }
 function liveDoc(astroUid) { return doc(db, 'chats', `live_${astroUid}`); }
@@ -23,7 +81,23 @@ function liveMsgs(astroUid) {
   return collection(db, 'chats', `live_${astroUid}`, 'messages');
 }
 
+// Wipe the previous session's comments/joins so a NEW live starts
+// with a fresh, empty feed (the broadcaster is signed in -> allowed).
+export async function clearLiveMessages(astroUid) {
+  try {
+    const snap = await getDocs(liveMsgs(astroUid));
+    const docs = snap.docs;
+    for (let i = 0; i < docs.length; i += 400) {
+      const batch = writeBatch(db);
+      docs.slice(i, i + 400).forEach((d) => batch.delete(d.ref));
+      // eslint-disable-next-line no-await-in-loop
+      await batch.commit();
+    }
+  } catch (_) { /* best effort */ }
+}
+
 export async function goLive(astroUid, info = {}) {
+  await clearLiveMessages(astroUid);
   await setDoc(liveDoc(astroUid), {
     isLiveDoc: true,
     astroUid,
@@ -202,7 +276,7 @@ export async function announceJoin(astroUid, user) {
   try {
     await addDoc(liveMsgs(astroUid), {
       type: 'join',
-      name: user.team ? 'Complace Team' : (user.name || 'Guest'),
+      name: user.team ? 'Compliance Team' : (user.name || 'Guest'),
       uid: user.uid || null,
       code: user.code || null,
       team: !!user.team,
@@ -233,7 +307,7 @@ export async function addLiveComment(astroUid, user, text) {
   try {
     await addDoc(liveMsgs(astroUid), {
       type: 'comment',
-      name: user?.team ? 'Complace Team' : (user?.name || 'Guest'),
+      name: user?.team ? 'Compliance Team' : (user?.name || 'Guest'),
       uid: user?.uid || null,
       code: user?.code || null,
       team: !!user?.team,

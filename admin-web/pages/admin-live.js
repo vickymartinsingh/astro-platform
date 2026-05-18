@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { callService, liveService } from '@astro/shared';
+import { doc, getDoc } from 'firebase/firestore';
+import { callService, liveService, adminService, db } from '@astro/shared';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
+import { flash } from '../lib/flash';
 
 // Admin can monitor any live stream exactly as a client sees it
 // (video + comments) for quality control, and may post as the
-// verified "Complace Team".
+// verified "Compliance Team".
 export default function AdminLive() {
   const { loading } = useRequireAdmin();
   const [lives, setLives] = useState(null);
@@ -13,11 +15,46 @@ export default function AdminLive() {
   const [info, setInfo] = useState(null);
   const [comments, setComments] = useState([]);
   const [text, setText] = useState('');
+  const [eng, setEng] = useState(null);
+  const [savingEng, setSavingEng] = useState(false);
   const remoteRef = useRef(null);
   const cRef = useRef(null);
   const joinedRef = useRef(false);
 
   useEffect(() => liveService.listenLiveAstrologers(setLives), []);
+  useEffect(() => {
+    getDoc(doc(db, 'settings', 'features')).then((s) => {
+      const d = s.exists() ? s.data() : {};
+      setEng({
+        live_views_per_min: Number(d.live_views_per_min) || 0,
+        live_fake_enabled: d.live_fake_enabled === true,
+        live_fake_every_sec: Number(d.live_fake_every_sec) || 12,
+        live_fake_comments: Array.isArray(d.live_fake_comments)
+          ? d.live_fake_comments.join('\n')
+          : (d.live_fake_comments || ''),
+      });
+    }).catch(() => setEng({
+      live_views_per_min: 0, live_fake_enabled: false,
+      live_fake_every_sec: 12, live_fake_comments: '',
+    }));
+  }, []);
+
+  async function saveEng() {
+    if (!eng) return;
+    setSavingEng(true);
+    try {
+      await adminService.updateSettings('features', {
+        live_views_per_min: Number(eng.live_views_per_min) || 0,
+        live_fake_enabled: !!eng.live_fake_enabled,
+        live_fake_every_sec: Math.max(3,
+          Number(eng.live_fake_every_sec) || 12),
+        live_fake_comments: String(eng.live_fake_comments || '')
+          .split('\n').map((x) => x.trim()).filter(Boolean),
+      });
+      flash('Live engagement settings saved');
+    } catch (_) { flash('Could not save'); }
+    finally { setSavingEng(false); }
+  }
 
   useEffect(() => {
     const el = cRef.current;
@@ -72,6 +109,50 @@ export default function AdminLive() {
   return (
     <Layout>
       <h1 className="mb-3 text-xl font-bold">Monitor Live Stream</h1>
+
+      {eng && (
+        <div className="surface mb-4 space-y-3 p-4">
+          <div className="font-semibold">Live engagement</div>
+          <p className="text-xs text-sub-text">
+            Controls the customer &amp; astrologer view only. Admin
+            monitoring always shows the real numbers.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="text-sm">
+              Extra viewers per minute
+              <input type="number" min="0" className="input mt-1"
+                value={eng.live_views_per_min}
+                onChange={(e) => setEng({ ...eng,
+                  live_views_per_min: e.target.value })} />
+            </label>
+            <label className="text-sm">
+              Filler comment every (sec)
+              <input type="number" min="3" className="input mt-1"
+                value={eng.live_fake_every_sec}
+                onChange={(e) => setEng({ ...eng,
+                  live_fake_every_sec: e.target.value })} />
+            </label>
+          </div>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={eng.live_fake_enabled}
+              onChange={(e) => setEng({ ...eng,
+                live_fake_enabled: e.target.checked })} />
+            Show filler comments when real ones are sparse
+          </label>
+          <label className="block text-sm">
+            Filler comments (one per line)
+            <textarea className="input mt-1" rows={5}
+              placeholder="Leave blank to use the built-in set"
+              value={eng.live_fake_comments}
+              onChange={(e) => setEng({ ...eng,
+                live_fake_comments: e.target.value })} />
+          </label>
+          <button onClick={saveEng} disabled={savingEng}
+            className="btn-primary !min-h-0 px-5 py-2">
+            {savingEng ? 'Saving...' : 'Save engagement settings'}
+          </button>
+        </div>
+      )}
 
       {!sel ? (
         lives == null ? (
@@ -136,7 +217,7 @@ export default function AdminLive() {
               <input
                 className="h-10 flex-1 rounded-full bg-white/15 px-4
                   text-sm text-white placeholder-white/60 outline-none"
-                placeholder="Post as Complace Team..."
+                placeholder="Post as Compliance Team..."
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && sendTeam()} />
