@@ -1,8 +1,9 @@
 name: Build iOS IPA (unsigned)
 
-# Manual, ONE app at a time. Pick the app in the Run workflow dropdown
-# (default client-web). Produces an UNSIGNED .ipa artifact (sideload
-# with AltStore/Sideloadly, or re-sign with an Apple Developer account).
+# Manual, ONE app at a time (dropdown, default client-web). Produces an
+# UNSIGNED .ipa. The whole pipeline runs as a single traced script and
+# ALWAYS uploads a full log artifact ("ios-build-log") so the exact
+# failing command is visible without digging through step logs.
 on:
   workflow_dispatch:
     inputs:
@@ -24,7 +25,6 @@ jobs:
     runs-on: macos-14
     env:
       APP: ${{ inputs.app }}
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
     name: ${{ inputs.app }}
     steps:
       - name: Checkout
@@ -39,121 +39,113 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
-      - name: Diagnostics
+      - name: Build (full pipeline, traced)
+        id: build
         run: |
-          echo "app=$APP"
+          set -x
+          LOG="$RUNNER_TEMP/ios-build.log"
+          exec > >(tee -a "$LOG") 2>&1
+          set -euo pipefail
+
+          echo "::group::env"
+          echo "APP=$APP"
           node -v; npm -v
-          xcodebuild -version || true
-          pod --version || true
-          sw_vers || true
+          xcodebuild -version
+          pod --version
+          sw_vers
+          echo "::endgroup::"
 
-      - name: Resolve IPA name
-        id: meta
-        run: |
-          set -euxo pipefail
           case "$APP" in
             client-web)  IPA=AstroConnect ;;
             astro-web)   IPA=AstroConnect-Astrologer ;;
             admin-web)   IPA=AstroConnect-Admin ;;
             *)           IPA=App ;;
           esac
+          echo "IPA=$IPA" >> "$GITHUB_ENV"
           echo "ipa=$IPA" >> "$GITHUB_OUTPUT"
 
-      - name: Install dependencies
-        run: |
-          set -euxo pipefail
+          echo "::group::install deps"
           npm ci || npm install
+          echo "::endgroup::"
 
-      - name: Build web (static export -> out/)
-        run: npm run build --workspace=$APP
-        env:
-          CAPACITOR: 'true'
+          echo "::group::web build"
+          CAPACITOR=true npm run build --workspace="$APP"
+          echo "::endgroup::"
 
-      - name: Generate branded source icons (best effort)
-        run: node scripts/gen-icons.mjs || echo "icon gen skipped"
+          echo "::group::source icons (best effort)"
+          node scripts/gen-icons.mjs || echo "icon gen skipped"
+          echo "::endgroup::"
 
-      # Firebase native plugins crash iOS on launch without an iOS
-      # Firebase config + paid Apple Program. Strip them for the iOS
-      # build ONLY (CI-ephemeral). The app still works (email login,
-      # browsing, chat, calls).
-      - name: Strip Firebase native plugins for iOS
-        run: |
-          set -euxo pipefail
+          echo "::group::strip firebase native plugins"
           node -e "const f=process.env.APP+'/package.json';const fs=require('fs');const j=JSON.parse(fs.readFileSync(f));for(const k of ['@capacitor-firebase/authentication','@capacitor/push-notifications']){if(j.dependencies)delete j.dependencies[k];}fs.writeFileSync(f,JSON.stringify(j,null,2)+'\n');console.log('stripped',f);"
+          echo "::endgroup::"
 
-      - name: Add iOS platform
-        working-directory: ${{ inputs.app }}
-        run: |
-          set -euxo pipefail
-          npx cap add ios
-          test -d ios/App/App.xcworkspace || { echo "no workspace"; ls -la ios || true; exit 1; }
+          echo "::group::cap add ios"
+          ( cd "$APP" && npx cap add ios )
+          test -d "$APP/ios/App/App.xcworkspace" || { echo "NO WORKSPACE"; ls -la "$APP/ios" || true; exit 1; }
+          echo "::endgroup::"
 
-      - name: Generate iOS icons + splash (best effort)
-        working-directory: ${{ inputs.app }}
-        run: npx capacitor-assets generate --ios || echo "asset gen skipped"
+          echo "::group::ios assets (best effort)"
+          ( cd "$APP" && npx capacitor-assets generate --ios ) || echo "asset gen skipped"
+          echo "::endgroup::"
 
-      - name: Sync web + native into iOS project
-        working-directory: ${{ inputs.app }}
-        run: |
-          set -euxo pipefail
-          npx cap sync ios
+          echo "::group::cap sync ios"
+          ( cd "$APP" && npx cap sync ios )
+          echo "::endgroup::"
 
-      - name: Pod install (fallback to repo-update)
-        working-directory: ${{ inputs.app }}/ios/App
-        run: |
-          set -euxo pipefail
-          pod install || pod install --repo-update
+          echo "::group::pod install"
+          ( cd "$APP/ios/App" && (pod install || pod install --repo-update) )
+          echo "::endgroup::"
 
-      - name: Inject mic/camera permissions (Info.plist)
-        run: node scripts/patch-native.mjs || echo "patch-native skipped"
+          echo "::group::patch-native (best effort)"
+          node scripts/patch-native.mjs || echo "patch-native skipped"
+          echo "::endgroup::"
 
-      - name: Verify iOS workspace
-        working-directory: ${{ inputs.app }}
-        run: |
-          set -euxo pipefail
-          test -d ios/App/App.xcworkspace || { ls -la ios || true; exit 1; }
+          echo "::group::xcodebuild (unsigned build)"
+          ( cd "$APP" && xcodebuild \
+              -workspace ios/App/App.xcworkspace \
+              -scheme App \
+              -configuration Release \
+              -sdk iphoneos \
+              -derivedDataPath "$RUNNER_TEMP/dd" \
+              -destination 'generic/platform=iOS' \
+              clean build \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              CODE_SIGN_IDENTITY= \
+              CODE_SIGN_ENTITLEMENTS= \
+              PROVISIONING_PROFILE_SPECIFIER= \
+              DEVELOPMENT_TEAM= )
+          echo "::endgroup::"
 
-      # Unsigned BUILD (not archive: archive is far more signing
-      # sensitive). The .app is taken straight from build products.
-      - name: Build unsigned (.app)
-        working-directory: ${{ inputs.app }}
-        run: |
-          set -euxo pipefail
-          xcodebuild \
-            -workspace ios/App/App.xcworkspace \
-            -scheme App \
-            -configuration Release \
-            -sdk iphoneos \
-            -derivedDataPath "$RUNNER_TEMP/dd" \
-            -destination 'generic/platform=iOS' \
-            clean build \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY= \
-            CODE_SIGN_ENTITLEMENTS= \
-            PROVISIONING_PROFILE_SPECIFIER= \
-            DEVELOPMENT_TEAM=
-
-      - name: Package unsigned .ipa
-        run: |
-          set -euxo pipefail
+          echo "::group::package ipa"
           APP_PATH="$RUNNER_TEMP/dd/Build/Products/Release-iphoneos/App.app"
           if [ ! -d "$APP_PATH" ]; then
-            echo "App.app not found; searching..."
-            find "$RUNNER_TEMP/dd" -name "*.app" -maxdepth 6 -print || true
+            echo "App.app not found at $APP_PATH; searching:"
+            find "$RUNNER_TEMP/dd" -name '*.app' -maxdepth 6 -print || true
             exit 1
           fi
           mkdir -p "$RUNNER_TEMP/Payload"
           cp -R "$APP_PATH" "$RUNNER_TEMP/Payload/"
-          ( cd "$RUNNER_TEMP" && zip -qry "$GITHUB_WORKSPACE/${{ steps.meta.outputs.ipa }}.ipa" Payload )
-          ls -lh "$GITHUB_WORKSPACE/${{ steps.meta.outputs.ipa }}.ipa"
+          ( cd "$RUNNER_TEMP" && zip -qry "$GITHUB_WORKSPACE/$IPA.ipa" Payload )
+          ls -lh "$GITHUB_WORKSPACE/$IPA.ipa"
+          echo "::endgroup::"
 
-      - name: Upload IPA artifact
+      - name: Upload build log (always)
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.meta.outputs.ipa }}-ipa
-          path: ${{ steps.meta.outputs.ipa }}.ipa
+          name: ios-build-log
+          path: ${{ runner.temp }}/ios-build.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload IPA artifact
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.build.outputs.ipa }}-ipa
+          path: ${{ steps.build.outputs.ipa }}.ipa
           if-no-files-found: error
           retention-days: 14
