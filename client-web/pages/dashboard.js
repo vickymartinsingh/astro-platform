@@ -11,6 +11,7 @@ import Layout from '../components/Layout';
 import { SkeletonList } from '../components/Skeleton';
 import AstrologerCard from '../components/AstrologerCard';
 import ZodiacPicker from '../components/ZodiacPicker';
+import ZodiacGlyph from '../components/ZodiacGlyph';
 import { Icon } from '../components/Icons';
 import { DateField } from '../components/BirthInputs';
 import { useOptionalClient } from '../lib/useAuth';
@@ -260,6 +261,17 @@ export default function Dashboard() {
                 {pSign ? (
                 <div className="surface p-5">
                   <div className="flex flex-wrap items-center gap-3">
+                    <span className="flex h-9 w-9 items-center
+                      justify-center rounded-full bg-bg-light">
+                      {iconsService.isImage(icons[`zod:${pSign}`])
+                        ? (
+                          <img src={icons[`zod:${pSign}`]} alt=""
+                            className="h-6 w-6 object-contain" />
+                        ) : (
+                          <ZodiacGlyph sign={pSign}
+                            className="h-6 w-6 text-gold" />
+                        )}
+                    </span>
                     <span className="badge bg-bg-light text-primary">
                       {who} - {zodiacLabel(pSign, true)}
                     </span>
