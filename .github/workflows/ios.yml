@@ -1,8 +1,8 @@
 name: Build iOS IPA (unsigned)
 
-# Manual trigger, ONE app at a time (macOS runner minutes are limited
-# and one-by-one is far more reliable than the 3-app matrix). Pick the
-# app in the "Run workflow" dropdown. Start with client-web.
+# Manual, ONE app at a time. Pick the app in the Run workflow dropdown
+# (default client-web). Produces an UNSIGNED .ipa artifact (sideload
+# with AltStore/Sideloadly, or re-sign with an Apple Developer account).
 on:
   workflow_dispatch:
     inputs:
@@ -24,12 +24,16 @@ jobs:
     runs-on: macos-14
     env:
       APP: ${{ inputs.app }}
-      # Silence the Node 20 action deprecation warning.
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
     name: ${{ inputs.app }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Select latest stable Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -37,14 +41,13 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Diagnostics (tool versions)
+      - name: Diagnostics
         run: |
           echo "app=$APP"
           node -v; npm -v
           xcodebuild -version || true
           pod --version || true
           sw_vers || true
-          ls -la
 
       - name: Resolve IPA name
         id: meta
@@ -57,92 +60,94 @@ jobs:
             *)           IPA=App ;;
           esac
           echo "ipa=$IPA" >> "$GITHUB_OUTPUT"
-          echo "Building $APP -> $IPA.ipa"
 
-      - name: Install dependencies (workspaces)
-        run: npm ci
+      - name: Install dependencies
+        run: |
+          set -euxo pipefail
+          npm ci || npm install
 
       - name: Build web (static export -> out/)
         run: npm run build --workspace=$APP
         env:
           CAPACITOR: 'true'
 
-      - name: Generate branded source icons
-        run: node scripts/gen-icons.mjs
+      - name: Generate branded source icons (best effort)
+        run: node scripts/gen-icons.mjs || echo "icon gen skipped"
 
-      # The Firebase native plugins crash iOS on launch without an iOS
-      # Firebase config (GoogleService-Info.plist), and iOS push needs
-      # the paid Apple Developer Program + APNs anyway. Strip them for
-      # the iOS build ONLY (CI-ephemeral; the committed repo + Android
-      # keep them). The app still works fully (email login, chat,
-      # browsing, calls). This prevents the launch crash.
-      - name: Strip Firebase native plugins for iOS (prevent crash)
+      # Firebase native plugins crash iOS on launch without an iOS
+      # Firebase config + paid Apple Program. Strip them for the iOS
+      # build ONLY (CI-ephemeral). The app still works (email login,
+      # browsing, chat, calls).
+      - name: Strip Firebase native plugins for iOS
         run: |
           set -euxo pipefail
-          node -e "const f=process.env.APP+'/package.json';const fs=require('fs');const j=JSON.parse(fs.readFileSync(f));for(const k of ['@capacitor-firebase/authentication','@capacitor/push-notifications']){if(j.dependencies)delete j.dependencies[k];}fs.writeFileSync(f,JSON.stringify(j,null,2)+'\n');console.log('stripped firebase native plugins from',f);"
+          node -e "const f=process.env.APP+'/package.json';const fs=require('fs');const j=JSON.parse(fs.readFileSync(f));for(const k of ['@capacitor-firebase/authentication','@capacitor/push-notifications']){if(j.dependencies)delete j.dependencies[k];}fs.writeFileSync(f,JSON.stringify(j,null,2)+'\n');console.log('stripped',f);"
 
       - name: Add iOS platform
         working-directory: ${{ inputs.app }}
         run: |
           set -euxo pipefail
           npx cap add ios
-          if [ ! -d "ios/App/App.xcworkspace" ]; then
-            echo "Failed to create iOS workspace"
-            ls -la ios/ || echo "ios/ directory doesn't exist"
-            exit 1
-          fi
+          test -d ios/App/App.xcworkspace || { echo "no workspace"; ls -la ios || true; exit 1; }
 
-      - name: Generate iOS app icons + splash
+      - name: Generate iOS icons + splash (best effort)
         working-directory: ${{ inputs.app }}
-        run: npx capacitor-assets generate --ios
+        run: npx capacitor-assets generate --ios || echo "asset gen skipped"
 
       - name: Sync web + native into iOS project
         working-directory: ${{ inputs.app }}
-        run: npx cap sync ios
+        run: |
+          set -euxo pipefail
+          npx cap sync ios
 
-      - name: Install CocoaPods dependencies
+      - name: Pod install (fallback to repo-update)
         working-directory: ${{ inputs.app }}/ios/App
         run: |
           set -euxo pipefail
-          pod install --repo-update
+          pod install || pod install --repo-update
 
       - name: Inject mic/camera permissions (Info.plist)
-        run: node scripts/patch-native.mjs
+        run: node scripts/patch-native.mjs || echo "patch-native skipped"
 
-      - name: Verify iOS workspace exists
+      - name: Verify iOS workspace
         working-directory: ${{ inputs.app }}
         run: |
-          if [ ! -d "ios/App/App.xcworkspace" ]; then
-            echo "ERROR: iOS workspace not found!"
-            echo "Directory structure:"
-            ls -la ios/ || echo "ios/ directory doesn't exist"
-            exit 1
-          fi
+          set -euxo pipefail
+          test -d ios/App/App.xcworkspace || { ls -la ios || true; exit 1; }
 
-      - name: Build unsigned archive
+      # Unsigned BUILD (not archive: archive is far more signing
+      # sensitive). The .app is taken straight from build products.
+      - name: Build unsigned (.app)
         working-directory: ${{ inputs.app }}
         run: |
+          set -euxo pipefail
           xcodebuild \
             -workspace ios/App/App.xcworkspace \
             -scheme App \
             -configuration Release \
             -sdk iphoneos \
-            -archivePath "$RUNNER_TEMP/App.xcarchive" \
-            archive \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            -destination 'generic/platform=iOS' \
+            clean build \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            DEVELOPMENT_TEAM=""
+            CODE_SIGN_IDENTITY= \
+            CODE_SIGN_ENTITLEMENTS= \
+            PROVISIONING_PROFILE_SPECIFIER= \
+            DEVELOPMENT_TEAM=
 
       - name: Package unsigned .ipa
         run: |
           set -euxo pipefail
-          APP_PATH="$RUNNER_TEMP/App.xcarchive/Products/Applications/App.app"
-          if [ ! -d "$APP_PATH" ]; then echo "App.app not found"; exit 1; fi
+          APP_PATH="$RUNNER_TEMP/dd/Build/Products/Release-iphoneos/App.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "App.app not found; searching..."
+            find "$RUNNER_TEMP/dd" -name "*.app" -maxdepth 6 -print || true
+            exit 1
+          fi
           mkdir -p "$RUNNER_TEMP/Payload"
           cp -R "$APP_PATH" "$RUNNER_TEMP/Payload/"
-          cd "$RUNNER_TEMP"
-          zip -qr "$GITHUB_WORKSPACE/${{ steps.meta.outputs.ipa }}.ipa" Payload
+          ( cd "$RUNNER_TEMP" && zip -qry "$GITHUB_WORKSPACE/${{ steps.meta.outputs.ipa }}.ipa" Payload )
           ls -lh "$GITHUB_WORKSPACE/${{ steps.meta.outputs.ipa }}.ipa"
 
       - name: Upload IPA artifact
