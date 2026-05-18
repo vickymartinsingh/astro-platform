@@ -62,26 +62,32 @@ module.exports = async (req, res) => {
     // exclusive (the previous code leaked to both).
     const isAstro = (d) => d.role === 'astrologer' || d.isAstrologer === true;
 
+    const col = db.collection('users');
     if (toUid) {
-      const s = await db.collection('users').doc(toUid).get();
+      const s = await col.doc(toUid).get();
       if (s.exists) users.push(s);
     } else if (target === 'user' && userId) {
-      const s = await db.collection('users').doc(userId).get();
+      const s = await col.doc(userId).get();
       if (s.exists) users.push(s);
+    } else if (target === 'astrologers') {
+      // Targeted queries (no full-collection scan): role OR flag.
+      const [byRole, byFlag] = await Promise.all([
+        col.where('role', '==', 'astrologer').get(),
+        col.where('isAstrologer', '==', true).get(),
+      ]);
+      byRole.forEach((d) => users.push(d));
+      byFlag.forEach((d) => users.push(d));
+    } else if (target === 'admins') {
+      (await col.where('role', '==', 'admin').get())
+        .forEach((d) => users.push(d));
     } else if (target === 'clients') {
-      (await db.collection('users').get()).forEach((d) => {
+      // Clients = everyone who is not an astrologer; this one still
+      // needs a scan (no "not equal" + flag query in Firestore).
+      (await col.get()).forEach((d) => {
         if (!isAstro(d.data() || {})) users.push(d);
       });
-    } else if (target === 'astrologers') {
-      (await db.collection('users').get()).forEach((d) => {
-        if (isAstro(d.data() || {})) users.push(d);
-      });
-    } else if (target === 'admins') {
-      (await db.collection('users').get()).forEach((d) => {
-        if ((d.data() || {}).role === 'admin') users.push(d);
-      });
     } else { // 'all' or unspecified broadcast
-      (await db.collection('users').get()).forEach((d) => users.push(d));
+      (await col.get()).forEach((d) => users.push(d));
     }
 
     // De-dupe users, collect tokens.

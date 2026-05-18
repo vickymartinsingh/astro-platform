@@ -4,5 +4,8 @@
   "buildCommand": "echo no-build-needed",
   "outputDirectory": ".",
   "installCommand": "npm install",
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- ."
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- .",
+  "functions": {
+    "api/*.js": { "maxDuration": 60 }
+  }
 }
