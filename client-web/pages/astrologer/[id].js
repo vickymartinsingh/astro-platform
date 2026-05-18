@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
-import { astrologerService, reviewService } from '@astro/shared';
+import {
+  astrologerService, reviewService, followService,
+} from '@astro/shared';
 import Layout from '../../components/Layout';
 import { SkeletonList } from '../../components/Skeleton';
 import VerifiedBadge from '../../components/VerifiedBadge';
@@ -20,6 +22,8 @@ export default function AstrologerProfile() {
   const [a, setA] = useState(null);
   const [reviews, setReviews] = useState([]);
   const [report, setReport] = useState(false);
+  const [following, setFollowing] = useState(false);
+  const [followBusy, setFollowBusy] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -27,6 +31,22 @@ export default function AstrologerProfile() {
     reviewService.getReviews(id).then(setReviews);
     return () => unsub && unsub();
   }, [id]);
+  useEffect(() => {
+    if (user && id) {
+      followService.isFollowing(user.uid, id)
+        .then(setFollowing).catch(() => {});
+    }
+  }, [user, id]);
+
+  async function toggleFollow() {
+    if (!user) { router.push('/login'); return; }
+    setFollowBusy(true);
+    try {
+      const next = await followService.toggleFollow(
+        user.uid, id, following);
+      setFollowing(next);
+    } catch (_) { /* ignore */ } finally { setFollowBusy(false); }
+  }
 
   if (!a) return <Layout><SkeletonList /></Layout>;
 
@@ -60,6 +80,16 @@ export default function AstrologerProfile() {
                 </span>
               ))}
             </div>
+            <button onClick={toggleFollow} disabled={followBusy}
+              className={`mt-3 rounded-full px-4 py-1.5 text-sm
+                font-semibold ${following
+                  ? 'border border-gray-300 text-sub-text'
+                  : 'bg-primary text-white'}`}>
+              {following ? 'Following' : '+ Follow'}
+            </button>
+            <p className="mt-1 text-[11px] text-sub-text">
+              Get notified when this astrologer is Live or Online.
+            </p>
           </div>
         </div>
 

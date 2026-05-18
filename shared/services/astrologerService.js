@@ -58,7 +58,21 @@ export function listenAstrologer(id, callback) {
 // updateAvailability(id, options): go online/offline + service toggles.
 // earnings/rating/approved are blocked by Firestore rules.
 export async function updateAvailability(id, options) {
+  // Notify followers only on the transition INTO Online (not on every
+  // toggle) so it does not spam.
+  let wasOnline = true;
+  if (options && options.isOnline === true) {
+    try {
+      const s = await getDoc(doc(db, 'astrologers', id));
+      wasOnline = !!(s.exists() && s.data().isOnline);
+    } catch (_) { wasOnline = true; }
+  }
   await updateDoc(doc(db, 'astrologers', id), options);
+  if (options && options.isOnline === true && !wasOnline) {
+    import('./followService.js')
+      .then((m) => m.notifyFollowers(id, 'Online', `/astrologer/${id}`))
+      .catch(() => {});
+  }
 }
 
 export async function updateAstrologer(id, data) {

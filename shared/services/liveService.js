@@ -12,6 +12,7 @@ import {
   where, orderBy, limit, onSnapshot, serverTimestamp, increment,
 } from 'firebase/firestore';
 import { db } from '../firebase.js';
+import { notifyFollowers } from './followService.js';
 
 export function liveChannel(astroUid) { return `live_${astroUid}`; }
 function liveDoc(astroUid) { return doc(db, 'chats', `live_${astroUid}`); }
@@ -34,6 +35,7 @@ export async function goLive(astroUid, info = {}) {
   try {
     await updateDoc(doc(db, 'astrologers', astroUid), { isLive: true });
   } catch (_) {}
+  notifyFollowers(astroUid, 'Live', `/live-view/${astroUid}`);
 }
 
 export async function endLive(astroUid) {

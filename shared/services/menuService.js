@@ -21,6 +21,7 @@ export const DEFAULT_CLIENT_MENU = [
 //  - Account: review + notifications
 //  - Help: support (always last, never missed)
 export const DEFAULT_CLIENT_PROFILE = [
+  { href: '/following', label: 'Following', seg: 'Activity' },
   { href: '/chat-history', label: 'Consultation history', seg: 'Activity' },
   { href: '/call-history', label: 'Call history', seg: 'Activity' },
   { href: '/transactions', label: 'Order history', seg: 'Activity' },
