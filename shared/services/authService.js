@@ -31,16 +31,21 @@ function isNativeApp() {
 
 // The Firestore user record is created by the createUser Cloud Function
 // (auth.onCreate trigger). The browser never writes wallet/role.
-export async function signupUser(name, email, password) {
+export async function signupUser(name, email, password, extra = {}) {
   const cred = await createUserWithEmailAndPassword(auth, email, password);
   const full = String(name || '').trim();
   if (full) await updateProfile(cred.user, { displayName: full });
-  // Persist the full name into the Firestore user doc immediately, so
-  // it is never lost to the auth-state race (watchAuth -> ensureUserDoc
-  // can fire before updateProfile sets displayName).
+  // Persist name + mandatory mobile number + DOB into the Firestore
+  // user doc immediately (DOB also powers the zodiac avatar / personal
+  // stars), before the auth-state race can run ensureUserDoc.
   try { await ensureUserDoc(cred.user); } catch (_) {}
-  if (full) { try { await updateUser(cred.user.uid, { name: full }); }
-    catch (_) {} }
+  const patch = {};
+  if (full) patch.name = full;
+  if (extra && extra.phone) patch.phone = String(extra.phone).trim();
+  if (extra && extra.dob) patch.dob = extra.dob;
+  if (Object.keys(patch).length) {
+    try { await updateUser(cred.user.uid, patch); } catch (_) {}
+  }
   return cred.user;
 }
 

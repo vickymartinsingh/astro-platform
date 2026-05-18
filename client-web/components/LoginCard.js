@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { authService, userService } from '@astro/shared';
+import { DateField } from './BirthInputs';
 
 // Email + Google sign-in card. Reused by the /login page and the login
 // popup. Calls onDone(user) after a successful, allowed sign-in.
@@ -8,6 +9,8 @@ export default function LoginCard({ onDone, compact, initialMode }) {
   const [mode, setMode] = useState(
     initialMode === 'signup' ? 'signup' : 'login'); // login | signup
   const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [dob, setDob] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [err, setErr] = useState('');
@@ -35,11 +38,17 @@ export default function LoginCard({ onDone, compact, initialMode }) {
       let user;
       if (mode === 'signup') {
         if (!name.trim()) { setErr('Enter your name.'); return; }
+        if (phone.replace(/\D/g, '').length < 10) {
+          setErr('Enter a valid 10-digit mobile number.'); return;
+        }
+        if (!/^\d{2}-\d{2}-\d{4}$/.test(dob)) {
+          setErr('Please select your date of birth.'); return;
+        }
         if (password.length < 6) {
           setErr('Password must be at least 6 characters.'); return;
         }
         user = await authService.signupUser(name.trim(), email.trim(),
-          password);
+          password, { phone: phone.trim(), dob });
       } else {
         user = await authService.loginUser(email.trim(), password);
       }
@@ -112,8 +121,16 @@ export default function LoginCard({ onDone, compact, initialMode }) {
           )}
           <form onSubmit={submit} className="space-y-3">
             {mode === 'signup' && (
-              <input className="input" placeholder="Full name" value={name}
-                onChange={(e) => setName(e.target.value)} required />
+              <>
+                <input className="input" placeholder="Full name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)} required />
+                <input className="input" type="tel"
+                  placeholder="Mobile number" value={phone}
+                  onChange={(e) => setPhone(e.target.value)} required />
+                <DateField value={dob} onChange={setDob}
+                  label="Date of birth" />
+              </>
             )}
             <input className="input" type="email" placeholder="Email"
               value={email} onChange={(e) => setEmail(e.target.value)}
