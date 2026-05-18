@@ -7,6 +7,9 @@ import { useRequireAdmin } from '../lib/useAuth';
 import { flash } from '../lib/flash';
 
 // EVERY screen in the platform (kept complete - nothing hidden).
+// 3rd item = settings doc(s) that power this option. When present the
+// card can be edited INLINE here (no need to open the page) - every
+// menu / label / text / toggle / key for that option, right here.
 const ALL = [
   ['Overview', [
     ['/admin-dashboard', 'Dashboard'], ['/admin-analytics', 'Analytics'],
@@ -24,25 +27,26 @@ const ALL = [
   ['Finance', [
     ['/admin-transactions', 'Transactions'],
     ['/admin-payouts', 'Payouts'],
-    ['/admin-payments', 'Payment Gateways'],
+    ['/admin-payments', 'Payment Gateways', ['payments']],
     ['/admin-coupons', 'Coupons'], ['/admin-gifts', 'Gift Cards'],
     ['/admin-disputes', 'Disputes'],
   ]],
   ['Content & Engagement', [
-    ['/admin-cms', 'CMS Builder'],
-    ['/admin-announcement', 'Announcement'],
+    ['/admin-cms', 'CMS Builder', ['content']],
+    ['/admin-announcement', 'Announcement', ['announcement']],
     ['/admin-notifications', 'Notifications'],
   ]],
   ['Astrology', [
-    ['/admin-kundli-api', 'Kundli API'],
+    ['/admin-kundli-api', 'Kundli API', ['kundliApi']],
     ['/admin-remedies', 'Remedies'],
   ]],
   ['Appearance & Build', [
-    ['/admin-builder', 'App Builder (menus/sections/banner)'],
-    ['/admin-theme', 'Theme & Colours'],
-    ['/admin-settings', 'Branding & System Settings'],
-    ['/admin-features', 'Feature Toggles & Nav Labels'],
-    ['/admin-free', 'Free Sessions'],
+    ['/admin-builder', 'App Builder (menus/sections/banner)',
+      ['features', 'content', 'announcement']],
+    ['/admin-theme', 'Theme & Colours', ['theme']],
+    ['/admin-settings', 'Branding & System Settings', ['config']],
+    ['/admin-features', 'Feature Toggles & Nav Labels', ['features']],
+    ['/admin-free', 'Free Sessions', ['config']],
   ]],
 ];
 
@@ -151,6 +155,53 @@ function AddField({ onAdd }) {
   );
 }
 
+// One Developer Portal card. If it is backed by settings doc(s) it can
+// be edited inline here (the specific menu / content for that option),
+// or opened as the full page.
+function Card({ href, title, docs }) {
+  const [open, setOpen] = useState(false);
+  const [pick, setPick] = useState((docs && docs[0]) || '');
+  const hasDocs = Array.isArray(docs) && docs.length > 0;
+  return (
+    <div className="card">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="font-semibold text-primary">{title}</div>
+          <div className="mt-0.5 text-xs text-sub-text">{href}</div>
+        </div>
+        <Link href={href}
+          className="shrink-0 rounded-card border border-gray-200 px-2
+            py-1 text-xs font-semibold text-sub-text
+            hover:bg-bg-light">Open page</Link>
+      </div>
+      {hasDocs && (
+        <>
+          <button onClick={() => setOpen((v) => !v)}
+            className="mt-3 w-full rounded-card bg-bg-light px-3 py-2
+              text-sm font-semibold text-primary">
+            {open ? 'Close editor' : 'Edit here'}
+          </button>
+          {open && (
+            <div className="mt-3 border-t border-gray-100 pt-3">
+              {docs.length > 1 && (
+                <div className="mb-2 flex flex-wrap gap-1">
+                  {docs.map((d) => (
+                    <button key={d} onClick={() => setPick(d)}
+                      className={pick === d ? 'pill pill-active' : 'pill'}>
+                      settings/{d}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <Editor key={pick} name={pick} />
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function AdminDeveloper() {
   const { loading } = useRequireAdmin();
   const [docName, setDocName] = useState('config');
@@ -166,9 +217,11 @@ export default function AdminDeveloper() {
         Developer Portal
       </div>
       <p className="mb-4 text-sm text-sub-text">
-        Full control of the entire platform from one place - every
-        screen, menu, field, text and option. Changes apply across
-        client + astrologer + admin (and web) with no code/deploy.
+        Full control of the entire platform from one place. Tap
+        &quot;Edit here&quot; on any option to change its menu / content /
+        text / keys directly, or &quot;Open page&quot; for the full
+        screen. Changes apply across client + astrologer + admin (and
+        web) with no code/deploy.
       </p>
 
       {ALL.map(([group, items]) => (
@@ -177,14 +230,8 @@ export default function AdminDeveloper() {
             tracking-wide text-sub-text">{group}</div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2
             lg:grid-cols-3">
-            {items.map(([href, title]) => (
-              <Link key={href} href={href}
-                className="card transition hover:shadow-md">
-                <div className="font-semibold text-primary">{title}</div>
-                <div className="mt-0.5 text-xs text-sub-text">
-                  {href}
-                </div>
-              </Link>
+            {items.map(([href, title, docs]) => (
+              <Card key={href} href={href} title={title} docs={docs} />
             ))}
           </div>
         </div>
