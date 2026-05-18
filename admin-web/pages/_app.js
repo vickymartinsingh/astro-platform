@@ -4,12 +4,13 @@ import { themeService } from '@astro/shared';
 import '../styles/globals.css';
 import { AuthProvider } from '../lib/useAuth';
 import useNativeBack from '../lib/useNativeBack';
+import ErrorBoundary from '../components/ErrorBoundary';
 
 export default function App({ Component, pageProps }) {
   useNativeBack();
   useEffect(() => themeService.watchTheme(), []);
   return (
-    <>
+    <ErrorBoundary>
       <Head>
         <meta name="viewport"
           content="width=device-width, initial-scale=1, viewport-fit=cover" />
@@ -17,6 +18,6 @@ export default function App({ Component, pageProps }) {
       <AuthProvider>
         <Component {...pageProps} />
       </AuthProvider>
-    </>
+    </ErrorBoundary>
   );
 }

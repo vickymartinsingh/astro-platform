@@ -10,6 +10,7 @@ import { PendingSessionProvider } from '../lib/pendingSession';
 import useNativeBack from '../lib/useNativeBack';
 import GuidedTour from '../components/GuidedTour';
 import SplashScreen from '../components/SplashScreen';
+import ErrorBoundary from '../components/ErrorBoundary';
 
 function WithProviders({ children }) {
   const { user, profile } = useAuth();
@@ -34,7 +35,7 @@ export default function App({ Component, pageProps }) {
     return () => window.removeEventListener('app:refresh', onRefresh);
   }, []);
   return (
-    <>
+    <ErrorBoundary>
       <Head>
         {/* Auto-adapt: desktop layout on desktop, mobile layout on phones
             (Hard Rule 2). Without this phones render the desktop width. */}
@@ -48,6 +49,6 @@ export default function App({ Component, pageProps }) {
       </AuthProvider>
       <GuidedTour />
       <SplashScreen />
-    </>
+    </ErrorBoundary>
   );
 }
