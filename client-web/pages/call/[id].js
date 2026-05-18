@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
-import { callService, sessionService } from '@astro/shared';
+import { callService, sessionService, soundService } from '@astro/shared';
 import Layout from '../../components/Layout';
 import RateModal from '../../components/RateModal';
 import { useRequireClient } from '../../lib/useAuth';
@@ -30,6 +30,16 @@ export default function CallScreen() {
   const acceptedStatus = session?.status === 'active'
     || session?.status === 'accepted';
   const active = acceptedStatus && !!session?.startTime;
+  // Ringback while we are calling and not yet connected.
+  const st = session?.status;
+  const ringing = !!session && !active
+    && st !== 'ended' && st !== 'rejected' && st !== 'cancelled'
+    && st !== 'missed';
+  useEffect(() => {
+    if (ringing) soundService.startRing();
+    else soundService.stopRing();
+    return () => soundService.stopRing();
+  }, [ringing]);
   const ratePerSec = session?.ratePerSecond || 0;
   const lowBalance = active && wallet > 0 && wallet < ratePerSec * 60;
 

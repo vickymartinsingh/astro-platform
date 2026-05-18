@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
-import { chatService, sessionService } from '@astro/shared';
+import { chatService, sessionService, soundService } from '@astro/shared';
 import Layout from '../../components/Layout';
 import RateModal from '../../components/RateModal';
 import VerifiedBadge from '../../components/VerifiedBadge';
 import { useRequireClient } from '../../lib/useAuth';
 import { useSession } from '../../lib/useSession';
 import { usePendingSession } from '../../lib/pendingSession';
-import { playPing } from '../../lib/ping';
 
 function fmtTime(ts) {
   try {
@@ -114,7 +113,7 @@ export default function ChatScreen() {
       const last = messages[messages.length - 1];
       if (lastCount.current > 0 && last && last.senderId !== user?.uid
           && last.senderId !== 'system' && !isView) {
-        playPing();
+        soundService.playNotification();
       }
       lastCount.current = messages.length;
     }
