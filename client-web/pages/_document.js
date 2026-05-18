@@ -4,6 +4,29 @@ export default function Document() {
   return (
     <Html lang="en">
       <Head>
+        {/* Surface ANY startup error on screen (iOS WKWebView has no
+            visible console). Must be the first script so it catches
+            parse / runtime / promise errors before React mounts. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: "(function(){function show(m){try{var b="
+              + 'document.body||document.documentElement;var d='
+              + "document.getElementById('__bootErr');if(!d){d="
+              + "document.createElement('pre');d.id='__bootErr';"
+              + "d.style.cssText='position:fixed;left:0;top:0;right:0;"
+              + 'bottom:0;margin:0;padding:14px;background:#fff;'
+              + 'color:#b00020;font:12px/1.45 monospace;white-space:'
+              + 'pre-wrap;word-break:break-word;overflow:auto;z-index:'
+              + "2147483647';b.appendChild(d);}d.textContent='APP ERROR"
+              + " (screenshot this):\\n\\n'+m;}catch(e){}}"
+              + "window.addEventListener('error',function(e){show((e&&"
+              + 'e.error&&(e.error.stack||e.error.message))||(e&&'
+              + "e.message)||'Script error');});window."
+              + "addEventListener('unhandledrejection',function(e){"
+              + "var r=e&&e.reason;show('Unhandled promise:\\n'+((r&&"
+              + '(r.stack||r.message))||String(r)));});})();',
+          }}
+        />
         {/* Apply the cached theme colours SYNCHRONOUSLY before the
             first paint, so a reload never flashes the old/default
             colour for a frame. */}
