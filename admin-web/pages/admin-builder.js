@@ -205,10 +205,16 @@ export default function AdminBuilder() {
               className="btn-primary mt-2 w-full">Save bottom menu</button>
           </div>
 
-          <MenuEditor title="Client top menu (web/desktop + drawer)"
+          <MenuEditor title="Client menu - DESKTOP / web (top bar)"
             defaults={menuService.DEFAULT_CLIENT_MENU}
-            value={feat.menu_links}
-            onChange={(v) => setFeat({ ...feat, menu_links: v })} />
+            value={feat.menu_links_desktop || feat.menu_links}
+            onChange={(v) =>
+              setFeat({ ...feat, menu_links_desktop: v })} />
+          <MenuEditor title="Client menu - MOBILE (slide drawer)"
+            defaults={menuService.DEFAULT_CLIENT_MENU}
+            value={feat.menu_links_mobile || feat.menu_links}
+            onChange={(v) =>
+              setFeat({ ...feat, menu_links_mobile: v })} />
           <MenuEditor title="Client profile menu"
             defaults={menuService.DEFAULT_CLIENT_PROFILE}
             value={feat.profile_menu}

@@ -178,10 +178,14 @@ function MenusPanel() {
   }
   return (
     <div className="space-y-3">
-      <MenuEditor title="Client top menu (web/desktop + drawer)"
+      <MenuEditor title="Client menu - DESKTOP / web"
         defaults={menuService.DEFAULT_CLIENT_MENU}
-        value={feat.menu_links}
-        onChange={(v) => setFeat({ ...feat, menu_links: v })} />
+        value={feat.menu_links_desktop || feat.menu_links}
+        onChange={(v) => setFeat({ ...feat, menu_links_desktop: v })} />
+      <MenuEditor title="Client menu - MOBILE (drawer)"
+        defaults={menuService.DEFAULT_CLIENT_MENU}
+        value={feat.menu_links_mobile || feat.menu_links}
+        onChange={(v) => setFeat({ ...feat, menu_links_mobile: v })} />
       <MenuEditor title="Client profile menu"
         defaults={menuService.DEFAULT_CLIENT_PROFILE}
         value={feat.profile_menu}

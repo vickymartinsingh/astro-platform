@@ -59,11 +59,15 @@ export default function TopNav() {
   const [unread, setUnread] = useState(0);
   const [brand, setBrand] = useState({ logo: '', name: 'AstroConnect' });
   const [menu, setMenu] = useState(menuService.DEFAULT_CLIENT_MENU);
+  const [menuMobile, setMenuMobile] = useState(
+    menuService.DEFAULT_CLIENT_MENU);
   const [profileMenu, setProfileMenu] = useState(
     menuService.DEFAULT_CLIENT_PROFILE);
   const router = useRouter();
   useEffect(() => menuService.watchMenus((m) => {
-    setMenu(m.menu); setProfileMenu(m.profile);
+    setMenu(m.menu);
+    setMenuMobile(m.menuMobile || m.menu);
+    setProfileMenu(m.profile);
   }), []);
   const { user } = useAuth();
   const { openLogin } = useAuthModal();
@@ -254,7 +258,7 @@ export default function TopNav() {
           <div className="flex-1 overflow-y-auto px-4 pt-3 pb-safe-nav">
             <div className="px-3 pb-1 text-xs font-semibold uppercase
               tracking-wide text-sub-text">Explore</div>
-            {menu.map((l) => (
+            {menuMobile.map((l) => (
               <Link key={l.href} href={l.href}
                 className={`block rounded-xl px-3 py-3 text-base ${
                   router.pathname === l.href

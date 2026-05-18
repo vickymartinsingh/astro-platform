@@ -80,9 +80,16 @@ export function mergeMenu(defaults, saved) {
 
 export function resolveMenus(features) {
   const f = features || {};
+  // Separate DESKTOP and MOBILE client menus. menu_links_desktop /
+  // menu_links_mobile override per device; if not set they fall back to
+  // the shared menu_links so existing setups keep working.
+  const desktop = mergeMenu(DEFAULT_CLIENT_MENU,
+    f.menu_links_desktop || f.menu_links).filter((x) => !x.hidden);
+  const mobile = mergeMenu(DEFAULT_CLIENT_MENU,
+    f.menu_links_mobile || f.menu_links).filter((x) => !x.hidden);
   return {
-    menu: mergeMenu(DEFAULT_CLIENT_MENU, f.menu_links)
-      .filter((x) => !x.hidden),
+    menu: desktop,          // desktop top nav
+    menuMobile: mobile,     // mobile drawer
     profile: mergeMenu(DEFAULT_CLIENT_PROFILE, f.profile_menu)
       .filter((x) => !x.hidden),
     astro: mergeMenu(DEFAULT_ASTRO_MENU, f.astro_links)
