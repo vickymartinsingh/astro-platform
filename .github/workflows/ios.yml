@@ -1,30 +1,30 @@
-name: Build iOS IPAs (unsigned)
+name: Build iOS IPA (unsigned)
 
-# Manual trigger only - macOS runner minutes are limited on the free tier,
-# so we don't run this on every push. Go to the repo's Actions tab,
-# pick this workflow, and click "Run workflow".
+# Manual trigger, ONE app at a time (macOS runner minutes are limited
+# and one-by-one is far more reliable than the 3-app matrix). Pick the
+# app in the "Run workflow" dropdown. Start with client-web.
 on:
   workflow_dispatch:
+    inputs:
+      app:
+        description: Which app to build
+        type: choice
+        default: client-web
+        options:
+          - client-web
+          - astro-web
+          - admin-web
 
 concurrency:
-  group: ios-${{ github.ref }}
+  group: ios-${{ github.ref }}-${{ inputs.app }}
   cancel-in-progress: true
 
 jobs:
   build:
     runs-on: macos-14
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - app: client-web
-            ipa: AstroConnect
-          - app: astro-web
-            ipa: AstroConnect-Astrologer
-          - app: admin-web
-            ipa: AstroConnect-Admin
-
-    name: ${{ matrix.ipa }}
+    env:
+      APP: ${{ inputs.app }}
+    name: ${{ inputs.app }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,11 +35,23 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Resolve IPA name
+        id: meta
+        run: |
+          case "$APP" in
+            client-web)  IPA=AstroConnect ;;
+            astro-web)   IPA=AstroConnect-Astrologer ;;
+            admin-web)   IPA=AstroConnect-Admin ;;
+            *)           IPA=App ;;
+          esac
+          echo "ipa=$IPA" >> "$GITHUB_OUTPUT"
+          echo "Building $APP -> $IPA.ipa"
+
       - name: Install dependencies (workspaces)
         run: npm ci
 
       - name: Build web (static export -> out/)
-        run: npm run build --workspace=${{ matrix.app }}
+        run: npm run build --workspace=$APP
         env:
           CAPACITOR: 'true'
 
@@ -47,33 +59,52 @@ jobs:
         run: node scripts/gen-icons.mjs
 
       # The Firebase native plugins crash iOS on launch without an iOS
-      # Firebase config (GoogleService-Info.plist), and iOS push needs the
-      # paid Apple Developer Program + APNs anyway - neither is available
-      # on the free sideload path. Strip them for the iOS build ONLY
-      # (CI-ephemeral; the committed repo + Android keep them). The app
-      # still works fully: it loads the live site (email login, chat,
+      # Firebase config (GoogleService-Info.plist), and iOS push needs
+      # the paid Apple Developer Program + APNs anyway. Strip them for
+      # the iOS build ONLY (CI-ephemeral; the committed repo + Android
+      # keep them). The app still works fully (email login, chat,
       # browsing, calls). This prevents the launch crash.
       - name: Strip Firebase native plugins for iOS (prevent crash)
         run: |
-          node -e "const f='${{ matrix.app }}/package.json';const fs=require('fs');const j=JSON.parse(fs.readFileSync(f));for(const k of ['@capacitor-firebase/authentication','@capacitor/push-notifications']){if(j.dependencies)delete j.dependencies[k];}fs.writeFileSync(f,JSON.stringify(j,null,2)+'\n');console.log('stripped firebase native plugins from',f);"
+          node -e "const f=process.env.APP+'/package.json';const fs=require('fs');const j=JSON.parse(fs.readFileSync(f));for(const k of ['@capacitor-firebase/authentication','@capacitor/push-notifications']){if(j.dependencies)delete j.dependencies[k];}fs.writeFileSync(f,JSON.stringify(j,null,2)+'\n');console.log('stripped firebase native plugins from',f);"
 
       - name: Add iOS platform
-        working-directory: ${{ matrix.app }}
-        run: npx cap add ios
+        working-directory: ${{ inputs.app }}
+        run: |
+          npx cap add ios
+          if [ ! -d "ios/App/App.xcworkspace" ]; then
+            echo "Failed to create iOS workspace"
+            ls -la ios/ || echo "ios/ directory doesn't exist"
+            exit 1
+          fi
 
       - name: Generate iOS app icons + splash
-        working-directory: ${{ matrix.app }}
+        working-directory: ${{ inputs.app }}
         run: npx capacitor-assets generate --ios
 
       - name: Sync web + native into iOS project
-        working-directory: ${{ matrix.app }}
+        working-directory: ${{ inputs.app }}
         run: npx cap sync ios
+
+      - name: Install CocoaPods dependencies
+        working-directory: ${{ inputs.app }}/ios/App
+        run: pod install --repo-update
 
       - name: Inject mic/camera permissions (Info.plist)
         run: node scripts/patch-native.mjs
 
+      - name: Verify iOS workspace exists
+        working-directory: ${{ inputs.app }}
+        run: |
+          if [ ! -d "ios/App/App.xcworkspace" ]; then
+            echo "ERROR: iOS workspace not found!"
+            echo "Directory structure:"
+            ls -la ios/ || echo "ios/ directory doesn't exist"
+            exit 1
+          fi
+
       - name: Build unsigned archive
-        working-directory: ${{ matrix.app }}
+        working-directory: ${{ inputs.app }}
         run: |
           xcodebuild \
             -workspace ios/App/App.xcworkspace \
@@ -89,18 +120,18 @@ jobs:
 
       - name: Package unsigned .ipa
         run: |
-          APP="$RUNNER_TEMP/App.xcarchive/Products/Applications/App.app"
-          if [ ! -d "$APP" ]; then echo "App.app not found"; exit 1; fi
+          APP_PATH="$RUNNER_TEMP/App.xcarchive/Products/Applications/App.app"
+          if [ ! -d "$APP_PATH" ]; then echo "App.app not found"; exit 1; fi
           mkdir -p "$RUNNER_TEMP/Payload"
-          cp -R "$APP" "$RUNNER_TEMP/Payload/"
+          cp -R "$APP_PATH" "$RUNNER_TEMP/Payload/"
           cd "$RUNNER_TEMP"
-          zip -qr "$GITHUB_WORKSPACE/${{ matrix.ipa }}.ipa" Payload
-          ls -lh "$GITHUB_WORKSPACE/${{ matrix.ipa }}.ipa"
+          zip -qr "$GITHUB_WORKSPACE/${{ steps.meta.outputs.ipa }}.ipa" Payload
+          ls -lh "$GITHUB_WORKSPACE/${{ steps.meta.outputs.ipa }}.ipa"
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.ipa }}-ipa
-          path: ${{ matrix.ipa }}.ipa
+          name: ${{ steps.meta.outputs.ipa }}-ipa
+          path: ${{ steps.meta.outputs.ipa }}.ipa
           if-no-files-found: error
           retention-days: 14
