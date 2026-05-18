@@ -184,6 +184,16 @@ function wireMessageListeners(PN) {
 // pushes work even before / without signing in).
 export function registerDevice() { return registerForPush(null); }
 
+// Notify the admin team (the relay resolves admin recipients from
+// toRole). Best-effort.
+export async function sendPushToAdmins(payload) {
+  return sendPushToUser({
+    ...(payload || {}),
+    toRole: 'admin',
+    data: { ...((payload && payload.data) || {}), type: 'admin' },
+  });
+}
+
 // Best-effort push send via the relay. NEVER throws (callers are core
 // flows like sending a chat message) - failures are swallowed.
 export async function sendPushToUser(payload) {

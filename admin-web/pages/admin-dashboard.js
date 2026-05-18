@@ -78,17 +78,18 @@ export default function AdminDashboard() {
 
   return (
     <Layout>
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-bold">Dashboard</h1>
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row
+        sm:items-center sm:justify-between">
+        <h1 className="text-xl font-bold sm:text-2xl">Dashboard</h1>
         <div className="flex items-center gap-2">
           <Link href="/admin-test"
-            className="rounded-full border border-gray-300 px-4 py-2
-                       text-sm font-semibold">
+            className="flex-1 rounded-full border border-gray-300 px-4
+                       py-2 text-center text-sm font-semibold sm:flex-none">
             Test View
           </Link>
           <button onClick={resetRevenue} disabled={busy}
-            className="rounded-full bg-warning px-4 py-2 text-sm
-                       font-semibold text-white">
+            className="flex-1 rounded-full bg-warning px-4 py-2 text-sm
+                       font-semibold text-white sm:flex-none">
             {busy ? 'Resetting…' : 'Reset revenue'}
           </button>
         </div>

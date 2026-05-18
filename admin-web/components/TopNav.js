@@ -57,6 +57,7 @@ const GROUPS = [
     ['/admin-appupdate', 'App Update & Splash'],
     ['/admin-sounds', 'Notification & Ringtone'],
     ['/admin-theme', 'App Theme'],
+    ['/admin-email', 'Email & Alerts'],
   ]],
 ];
 // Developer Portal: a parallel nav (same look, different contents) that
@@ -90,6 +91,7 @@ const DEV_GROUPS = [
   ]],
   ['Advanced', [
     ['/admin-developer', 'Raw Config Editor'],
+    ['/admin-email', 'Email & Alerts'],
     ['/admin-audit', 'Audit Log'],
     ['/admin-health', 'System Health'],
   ]],
@@ -139,16 +141,17 @@ export default function TopNav() {
     <header className={`sticky top-0 z-40 text-white ${dev
       ? 'bg-[#1f1147]' : 'bg-dark-text'}`}>
       <div className="mx-auto flex max-w-6xl items-center gap-3 px-4
-                      py-3">
+                      py-2 md:py-3">
         <Link href={dev ? '/admin-builder' : '/admin-dashboard'}
-          className="flex shrink-0 items-center gap-2 text-lg font-bold">
+          className="flex shrink-0 items-center gap-2 text-base
+            font-bold md:text-lg">
           {logo ? (
             <img src={logo} alt="logo"
-              className="h-8 max-w-[140px] object-contain" />
+              className="h-7 max-w-[120px] object-contain md:h-8" />
           ) : (dev ? '🛠️' : '⚙️ Admin')}
           {dev && (
             <span className="rounded-full bg-amber-400 px-2 py-0.5
-              text-xs font-bold text-dark-text">DEV PORTAL</span>
+              text-[10px] font-bold text-dark-text">DEV</span>
           )}
         </Link>
 
@@ -210,15 +213,15 @@ export default function TopNav() {
           </button>
         </nav>
 
-        <button className="ml-auto rounded-card bg-white/15 px-3 py-2
-          md:hidden" onClick={() => setOpen((v) => !v)}>
-          {open ? '✕' : '☰'}
+        <button className="ml-auto rounded-card bg-white/15 px-3 py-1.5
+          text-sm md:hidden" onClick={() => setOpen((v) => !v)}>
+          {open ? '✕ Close' : '☰ Menu'}
         </button>
       </div>
 
       {open && (
-        <nav className="max-h-[80vh] overflow-y-auto border-t
-          border-white/20 px-4 pb-4 pt-2 md:hidden">
+        <nav className="max-h-[78vh] overflow-y-auto border-t
+          border-white/20 px-3 pb-4 pt-2 md:hidden">
           <input value={q} onChange={(e) => setQ(e.target.value)}
             placeholder={dev ? 'Search developer portal...'
               : 'Search admin...'}
@@ -227,42 +230,50 @@ export default function TopNav() {
           {q.trim() ? (
             results.map(([href, label]) => (
               <button key={href} onClick={() => go(href)}
-                className="block w-full rounded-card px-3 py-3 text-left">
+                className="block w-full rounded-card px-3 py-2 text-left
+                  text-sm">
                 {label}
               </button>
             ))
           ) : GR.map(([name, items]) => (
-            <div key={name} className="mb-2">
-              <div className="px-3 pb-1 pt-2 text-xs font-semibold
-                uppercase tracking-wide text-white/50">{name}</div>
-              {items.map(([href, label]) => (
-                <button key={href} onClick={() => go(href)}
-                  className="block w-full rounded-card px-3 py-3
-                    text-left text-sm">{label}</button>
-              ))}
+            <div key={name} className="mb-1.5">
+              <div className="px-2 pb-0.5 pt-1.5 text-[10px] font-semibold
+                uppercase tracking-wide text-white/45">{name}</div>
+              <div className="grid grid-cols-2 gap-1">
+                {items.map(([href, label]) => (
+                  <button key={href} onClick={() => go(href)}
+                    className={`truncate rounded-card px-2.5 py-2
+                      text-left text-[13px] ${router.pathname === href
+                        ? 'bg-white/20 font-semibold'
+                        : 'bg-white/5'}`}>{label}</button>
+                ))}
+              </div>
             </div>
           ))}
-          <button onClick={toggleDev}
-            className={`mt-2 w-full rounded-card px-3 py-3 text-left
-              font-semibold ${dev ? 'bg-amber-400 text-dark-text'
-              : 'bg-white/15'}`}>
-            {dev ? 'Switch to Admin' : 'Developer Mode'}
-          </button>
-          <button onClick={logout}
-            className="mt-2 w-full rounded-card bg-white/15 px-3 py-3
-              text-left">Logout</button>
+          <div className="mt-2 flex gap-2">
+            <button onClick={toggleDev}
+              className={`flex-1 rounded-card px-3 py-2 text-sm
+                font-semibold ${dev ? 'bg-amber-400 text-dark-text'
+                : 'bg-white/15'}`}>
+              {dev ? 'Admin' : 'Developer'}
+            </button>
+            <button onClick={logout}
+              className="flex-1 rounded-card bg-white/15 px-3 py-2
+                text-sm">Logout</button>
+          </div>
         </nav>
       )}
       {dev && (
-        <div className="flex items-center justify-center gap-3
-          bg-amber-400 px-4 py-1.5 text-xs font-semibold
+        <div className="flex items-center justify-center gap-2
+          bg-amber-400 px-3 py-1 text-[11px] font-semibold
           text-dark-text">
-          <span>DEVELOPER PORTAL - everything is editable, hideable and
-            new-addable here. Changes go live across all apps on Save.
-          </span>
+          <span className="hidden sm:inline">DEVELOPER PORTAL - changes
+            go live across all apps on Save.</span>
+          <span className="sm:hidden">DEVELOPER PORTAL</span>
           <button onClick={toggleDev}
-            className="rounded-full bg-dark-text px-3 py-1 text-white">
-            Switch to Admin
+            className="rounded-full bg-dark-text px-2.5 py-0.5
+              text-white">
+            Admin
           </button>
         </div>
       )}

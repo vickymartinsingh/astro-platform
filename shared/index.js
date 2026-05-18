@@ -40,3 +40,4 @@ export * as followService from './services/followService.js';
 export * as tarotService from './services/tarotService.js';
 export * as hoursService from './services/hoursService.js';
 export * as recordService from './services/recordService.js';
+export * as emailService from './services/emailService.js';

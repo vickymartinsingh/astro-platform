@@ -58,16 +58,45 @@ export function listenAstrologer(id, callback) {
 // updateAvailability(id, options): go online/offline + service toggles.
 // earnings/rating/approved are blocked by Firestore rules.
 export async function updateAvailability(id, options) {
-  // Notify followers only on the transition INTO Online (not on every
-  // toggle) so it does not spam.
-  let wasOnline = true;
-  if (options && options.isOnline === true) {
-    try {
-      const s = await getDoc(doc(db, 'astrologers', id));
-      wasOnline = !!(s.exists() && s.data().isOnline);
-    } catch (_) { wasOnline = true; }
-  }
+  // Snapshot the previous state once so we can detect transitions
+  // (followers on -> Online; admin alert on any status change).
+  let prev = {};
+  try {
+    const s = await getDoc(doc(db, 'astrologers', id));
+    if (s.exists()) prev = s.data();
+  } catch (_) { prev = {}; }
+  const wasOnline = !!prev.isOnline;
+  const prevStatus = prev.status || 'offline';
   await updateDoc(doc(db, 'astrologers', id), options);
+  // Admin alert on a real online/offline status change (gated by an
+  // admin-controlled flag, default OFF so it does not spam).
+  if (options && options.status && options.status !== prevStatus) {
+    (async () => {
+      try {
+        const fs = await getDoc(doc(db, 'settings', 'features'));
+        const on = fs.exists() && fs.data().admin_notify_status === true;
+        if (!on) return;
+        const p = await import('./pushService.js');
+        p.sendPushToAdmins({
+          title: `${prev.name || 'An astrologer'} is now `
+            + `${options.status}`,
+          body: `Availability changed from ${prevStatus} to `
+            + `${options.status}.`,
+          data: { route: '/admin-astrologers' },
+        });
+        const em = await import('./emailService.js');
+        const adminCfg = await import('./emailService.js')
+          .then((m) => m.getEmailConfig());
+        if (adminCfg && adminCfg.adminAlertTo) {
+          em.queueEmail({
+            to: adminCfg.adminAlertTo, kind: 'astro_status',
+            vars: { name: prev.name || 'Astrologer', uid: id,
+              status: options.status },
+          });
+        }
+      } catch (_) { /* best effort */ }
+    })();
+  }
   // Record this availability change for the online/offline hours report.
   if (options && (options.chat_enabled !== undefined
     || options.call_enabled !== undefined

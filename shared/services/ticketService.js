@@ -9,7 +9,26 @@ import {
   orderBy, limit, onSnapshot, getDocs, serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../firebase.js';
-import { sendPushToUser } from './pushService.js';
+import { sendPushToUser, sendPushToAdmins } from './pushService.js';
+import { queueEmail } from './emailService.js';
+
+async function featureFlag(name, def) {
+  try {
+    const s = await getDoc(doc(db, 'settings', 'features'));
+    const d = s.exists() ? s.data() : {};
+    return d[name] === undefined ? def : d[name];
+  } catch (_) { return def; }
+}
+async function lookupEmail(uid) {
+  try {
+    const s = await getDoc(doc(db, 'users', uid));
+    return s.exists() ? (s.data().email || '') : '';
+  } catch (_) { return ''; }
+}
+async function alertAdminsTicket(title, body, route) {
+  if ((await featureFlag('admin_notify_tickets', true)) === false) return;
+  sendPushToAdmins({ title, body, data: { route: route || '/admin-tickets' } });
+}
 
 export const TICKET_CATEGORIES = [
   ['order', 'Order / Consultation', 'Orders Team'],
@@ -112,10 +131,12 @@ export async function createTicket(uid, data) {
   }
   const ticketNo = genTicketNo();
   const id = `ticket_${ticketNo}`;
+  const email = data.email || await lookupEmail(uid);
   await setDoc(doc(db, 'chats', id), {
     isTicket: true,
     ticketNo,
     userId: uid,
+    email,
     name: data.name || 'User',
     role: data.role || 'client',
     category,
@@ -139,7 +160,65 @@ export async function createTicket(uid, data) {
       + 'reply here soon.',
     data: { type: 'ticket', route: '/support' },
   });
+  alertAdminsTicket(
+    `New ${data.role || 'client'} ticket ${ticketNo}`,
+    `${data.name || 'User'}: ${(data.subject || '').slice(0, 60)}`);
+  if (email) {
+    queueEmail({
+      to: email, kind: 'ticket_created', ticketId: id, ticketNo,
+      vars: { ticketNo, subject: data.subject || 'Support request',
+        name: data.name, category },
+    });
+  }
   return { id, ticketNo };
+}
+
+// Raise a ticket WITHOUT being signed in (e.g. an astrologer locked out
+// of their account), keyed by their registered email. Always alerts the
+// admin team; the ticket row persists when writes are permitted.
+export async function createEmailTicket(email, data = {}) {
+  const mail = String(email || '').trim().toLowerCase();
+  if (!/^\S+@\S+\.\S+$/.test(mail)) {
+    const e = new Error('Enter a valid email.'); e.code = 'BADEMAIL';
+    throw e;
+  }
+  const category = data.category || 'login';
+  const ticketNo = genTicketNo();
+  const id = `ticket_${ticketNo}`;
+  let persisted = false;
+  try {
+    await setDoc(doc(db, 'chats', id), {
+      isTicket: true,
+      ticketNo,
+      userId: `email:${mail}`,
+      email: mail,
+      name: data.name || mail,
+      role: data.role || 'astrologer',
+      category,
+      team: teamFor(category),
+      subject: (data.subject || '').slice(0, 120) || 'Account access',
+      orderRef: '',
+      status: 'open',
+      lastMessage: (data.message || '').slice(0, 120),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    await addDoc(collection(db, 'chats', id, 'messages'), {
+      senderId: `email:${mail}`, role: 'user',
+      text: String(data.message || '').slice(0, 2000),
+      createdAt: serverTimestamp(),
+    });
+    persisted = true;
+  } catch (_) { persisted = false; }
+  alertAdminsTicket(
+    `New ${data.role || 'astrologer'} ticket ${ticketNo}`,
+    `${mail}: ${(data.subject || 'Account access').slice(0, 60)}`);
+  queueEmail({
+    to: mail, kind: 'ticket_created', ticketId: id, ticketNo,
+    vars: { ticketNo, subject: data.subject || 'Account access',
+      name: data.name || mail, category },
+  });
+  return { id, ticketNo, persisted };
 }
 
 export function listenMyTickets(uid, cb) {
@@ -193,6 +272,18 @@ export async function sendTicketMessage(ticket, senderId, text, asAdmin) {
       body: clean.slice(0, 120),
       data: { type: 'ticket', route: '/support' },
     });
+    if (ticket.email) {
+      queueEmail({
+        to: ticket.email, kind: 'ticket_reply',
+        ticketId: ticket.id, ticketNo: ticket.ticketNo,
+        vars: { ticketNo: ticket.ticketNo, subject: ticket.subject,
+          name: ticket.name, message: clean },
+      });
+    }
+  } else {
+    alertAdminsTicket(
+      `Reply on ticket ${ticket.ticketNo}`,
+      `${ticket.name || 'User'}: ${clean.slice(0, 60)}`);
   }
 }
 
@@ -210,6 +301,14 @@ export async function closeTicket(ticket) {
       + 'reopen it, otherwise please open a new ticket.',
     data: { type: 'ticket', route: '/support' },
   });
+  if (ticket.email) {
+    queueEmail({
+      to: ticket.email, kind: 'ticket_closed',
+      ticketId: ticket.id, ticketNo: ticket.ticketNo,
+      vars: { ticketNo: ticket.ticketNo, subject: ticket.subject,
+        name: ticket.name },
+    });
+  }
 }
 
 // Admin: all tickets, newest first.
