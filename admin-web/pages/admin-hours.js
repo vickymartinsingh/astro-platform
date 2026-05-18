@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db, hoursService } from '@astro/shared';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
@@ -23,20 +23,33 @@ export default function AdminHours() {
       const toMs = new Date(`${to}T23:59:59`).getTime();
       const snap = await getDocs(collection(db, 'astrologers'));
       const astros = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      // All live-history docs once, grouped by astrologer.
+      const liveByAstro = {};
+      try {
+        const ls = await getDocs(query(collection(db, 'chats'),
+          where('isLiveHistDoc', '==', true)));
+        ls.docs.forEach((d) => {
+          const v = d.data();
+          (liveByAstro[v.astroUid] = liveByAstro[v.astroUid] || [])
+            .push(v);
+        });
+      } catch (_) { /* ignore */ }
       const out = [];
       for (let i = 0; i < astros.length; i += 1) {
         const a = astros[i];
         // eslint-disable-next-line no-await-in-loop
         const logs = await hoursService.getAvailLogs(a.id);
         const h = hoursService.computeHours(logs, fromMs, toMs);
+        const live = hoursService.liveMs(
+          liveByAstro[a.id] || [], fromMs, toMs);
         out.push({
           id: a.id, name: a.name || a.id.slice(0, 8),
-          on: h.onlineMs, off: h.offlineMs,
+          on: h.onlineMs, off: h.offlineMs, live,
         });
       }
       out.sort((x, y) =>
-        (y.on.chat + y.on.call + y.on.video)
-        - (x.on.chat + x.on.call + x.on.video));
+        (y.on.chat + y.on.call + y.on.video + y.live)
+        - (x.on.chat + x.on.call + x.on.video + x.live));
       setRows(out);
     } finally { setBusy(false); }
   }
@@ -45,11 +58,13 @@ export default function AdminHours() {
 
   function exportCsv() {
     const head = 'astrologer,uid,chat_online_h,chat_offline_h,'
-      + 'call_online_h,call_offline_h,video_online_h,video_offline_h\n';
+      + 'call_online_h,call_offline_h,video_online_h,video_offline_h,'
+      + 'live_online_h\n';
     const body = (rows || []).map((r) =>
       `"${r.name}",${r.id},${fH(r.on.chat)},${fH(r.off.chat)},`
       + `${fH(r.on.call)},${fH(r.off.call)},`
-      + `${fH(r.on.video)},${fH(r.off.video)}`).join('\n');
+      + `${fH(r.on.video)},${fH(r.off.video)},`
+      + `${fH(r.live || 0)}`).join('\n');
     const blob = new Blob([head + body], { type: 'text/csv' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -96,6 +111,7 @@ export default function AdminHours() {
                 <th className="p-2">Chat on/off</th>
                 <th className="p-2">Call on/off</th>
                 <th className="p-2">Video on/off</th>
+                <th className="p-2">Live</th>
               </tr>
             </thead>
             <tbody>
@@ -121,6 +137,9 @@ export default function AdminHours() {
                     <span className="text-success">
                       {hoursService.fmtHrs(r.on.video)}
                     </span> / {hoursService.fmtHrs(r.off.video)}
+                  </td>
+                  <td className="p-2 text-success">
+                    {hoursService.fmtHrs(r.live || 0)}
                   </td>
                 </tr>
               ))}

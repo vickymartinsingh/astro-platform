@@ -67,6 +67,7 @@ export async function endLive(astroUid) {
     const endedAt = Date.now();
     await addDoc(collection(db, 'chats'), {
       isLiveHistDoc: true,
+      status: 'ended',
       astroUid,
       name: info.name || 'Astrologer',
       photo: info.photo || '',
@@ -109,6 +110,29 @@ export async function scheduleLive(astroUid, info = {}) {
 }
 
 export async function cancelScheduledLive(astroUid) {
+  // Record the cancellation so it shows in the live activity history.
+  try {
+    const s = await getDoc(schedDoc(astroUid));
+    if (s.exists()) {
+      const d = s.data();
+      const nowMs = Date.now();
+      await addDoc(collection(db, 'chats'), {
+        isLiveHistDoc: true,
+        status: 'cancelled',
+        astroUid,
+        name: d.name || 'Astrologer',
+        photo: d.photo || '',
+        title: d.title || 'Live consultation',
+        viewers: 0,
+        likes: 0,
+        startedAtMs: d.startAt || nowMs,
+        endedAtMs: nowMs,
+        durationSec: 0,
+        ts: nowMs,
+        createdAt: serverTimestamp(),
+      });
+    }
+  } catch (_) { /* ignore */ }
   try { await deleteDoc(schedDoc(astroUid)); } catch (_) {}
 }
 

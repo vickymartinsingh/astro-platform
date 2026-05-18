@@ -307,43 +307,89 @@ export default function AstroLive() {
 
             <div className="rounded-2xl border border-white/15
               bg-white/5 p-4">
-              <div className="mb-2 font-semibold">Live history</div>
+              <div className="mb-1 font-semibold">
+                Today&apos;s live activity
+              </div>
+              <p className="mb-3 text-xs opacity-60">
+                Only today is shown here. Full history is in your
+                Activity report and with admin.
+              </p>
               {(() => {
                 const sod = new Date(); sod.setHours(0, 0, 0, 0);
-                const todays = history.filter(
-                  (h) => (h.ts || 0) >= sod.getTime());
-                const totSec = todays.reduce(
+                const todays = history
+                  .filter((h) => (h.ts || 0) >= sod.getTime())
+                  .sort((a, b) => (b.ts || 0) - (a.ts || 0));
+                const done = todays.filter((h) => h.status !== 'cancelled');
+                const totSec = done.reduce(
                   (a, h) => a + (h.durationSec || 0), 0);
                 return (
-                  <div className="mb-3 flex gap-3 text-sm">
-                    <span className="rounded-full bg-white/10 px-3 py-1">
-                      Today: <b>{todays.length}</b> live
-                      {todays.length === 1 ? '' : 's'}
-                    </span>
-                    <span className="rounded-full bg-white/10 px-3 py-1">
-                      Total <b>{fmtDur(totSec)}</b>
-                    </span>
-                  </div>
-                );
-              })()}
-              {history.length === 0 ? (
-                <div className="text-sm opacity-70">
-                  No live sessions yet.
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  {history.slice(0, 10).map((h) => (
-                    <div key={h.id}
-                      className="flex items-center justify-between
-                        rounded-xl bg-white/5 px-3 py-2 text-sm">
-                      <span>{fmtWhen(h.endedAtMs || h.ts)}</span>
-                      <span className="opacity-80">
-                        {fmtDur(h.durationSec)} - {h.viewers || 0} viewers
+                  <>
+                    <div className="mb-3 flex flex-wrap gap-2 text-sm">
+                      <span className="rounded-full bg-white/10 px-3
+                        py-1">
+                        Done today: <b>{done.length}</b>
+                      </span>
+                      <span className="rounded-full bg-white/10 px-3
+                        py-1">
+                        Total <b>{fmtDur(totSec)}</b>
+                      </span>
+                      <span className="rounded-full bg-white/10 px-3
+                        py-1">
+                        Cancelled: <b>
+                          {todays.length - done.length}</b>
                       </span>
                     </div>
-                  ))}
-                </div>
-              )}
+                    {todays.length === 0 ? (
+                      <div className="text-sm opacity-70">
+                        No live activity today yet.
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {todays.map((h) => {
+                          const cancelled = h.status === 'cancelled';
+                          return (
+                            <div key={h.id}
+                              className="rounded-xl bg-white/5 px-3
+                                py-2 text-sm">
+                              <div className="flex items-center
+                                justify-between gap-2">
+                                <span className="truncate font-medium">
+                                  {h.title || 'Live consultation'}
+                                </span>
+                                <span className={`shrink-0 rounded-full
+                                  px-2 py-0.5 text-[11px] font-semibold
+                                  ${cancelled ? 'bg-danger/30'
+                                    : 'bg-success/30'}`}>
+                                  {cancelled ? 'Cancelled' : 'Ended'}
+                                </span>
+                              </div>
+                              <div className="mt-1 text-[12px]
+                                opacity-75">
+                                {cancelled ? (
+                                  <>Was scheduled for {fmtWhen(
+                                    h.startedAtMs)}</>
+                                ) : (
+                                  <>Started {fmtWhen(h.startedAtMs)}
+                                    {' '}- Ended {fmtWhen(h.endedAtMs)}
+                                  </>
+                                )}
+                              </div>
+                              {!cancelled && (
+                                <div className="text-[12px]
+                                  opacity-75">
+                                  Duration <b>{fmtDur(h.durationSec)}</b>
+                                  {' '}- {h.viewers || 0} viewers,
+                                  {' '}{h.likes || 0} likes
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
 
             <button onClick={() => router.back()}

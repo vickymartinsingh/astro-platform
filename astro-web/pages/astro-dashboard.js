@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import {
   astrologerService, sessionService, userService, pushService,
-  hoursService,
+  hoursService, liveService,
 } from '@astro/shared';
 import Layout from '../components/Layout';
 import { useRequireAstrologer } from '../lib/useAuth';
@@ -11,6 +11,10 @@ import { useRequireAstrologer } from '../lib/useAuth';
 const DAY = 864e5;
 const SVCS = [['chat', 'Chat'], ['call', 'Voice Call'],
   ['video', 'Video Call']];
+const ONLINE_SVCS = [['chat', 'Chat'], ['call', 'Call'],
+  ['video', 'Video'], ['live', 'Live']];
+const RANGES = [['day', 'Today'], ['week', 'This week'],
+  ['month', 'This month'], ['custom', 'Custom']];
 
 export default function AstroDashboard() {
   const { user, profile, loading } = useRequireAstrologer();
@@ -20,7 +24,11 @@ export default function AstroDashboard() {
   const [cur, setCur] = useState([]);     // current/active sessions
   const [names, setNames] = useState({}); // uid -> name
   const [busy, setBusy] = useState(false);
-  const [hours, setHours] = useState(null); // today per-service hours
+  const [availLogs, setAvailLogs] = useState(null);
+  const [liveHist, setLiveHist] = useState([]);
+  const [hrange, setHrange] = useState('day');
+  const [cfrom, setCfrom] = useState('');
+  const [cto, setCto] = useState('');
 
   useEffect(() => {
     if (!user) return;
@@ -48,12 +56,10 @@ export default function AstroDashboard() {
   }, [user]);
 
   useEffect(() => {
-    if (!user) return;
-    hoursService.getAvailLogs(user.uid).then((logs) => {
-      const sod = new Date(); sod.setHours(0, 0, 0, 0);
-      setHours(hoursService.computeHours(
-        logs, sod.getTime(), Date.now()));
-    }).catch(() => {});
+    if (!user) return undefined;
+    hoursService.getAvailLogs(user.uid).then(setAvailLogs).catch(() => {});
+    const u = liveService.listenLiveHistory(user.uid, setLiveHist);
+    return () => { if (u) u(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, astro]);
 
@@ -130,6 +136,27 @@ export default function AstroDashboard() {
   const respRate = respBase
     ? Math.round((answered / respBase) * 100) : 100;
 
+  // Online-hours dashboard (Today / Week / Month / Custom).
+  const startToday = () => {
+    const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime();
+  };
+  const rb = hrange === 'custom'
+    ? {
+      from: cfrom ? new Date(`${cfrom}T00:00:00`).getTime() : startToday(),
+      to: cto ? new Date(`${cto}T23:59:59`).getTime() : Date.now(),
+    }
+    : hoursService.rangeBounds(hrange);
+  const oh = availLogs
+    ? hoursService.computeHours(availLogs, rb.from, rb.to) : null;
+  const ohLiveMs = hoursService.liveMs(liveHist, rb.from, rb.to);
+  const ohVal = (k) => {
+    if (k === 'live') return hoursService.fmtHrs(ohLiveMs);
+    return oh ? hoursService.fmtHrs(oh.onlineMs[k]) : '-';
+  };
+  const actHref = (svc) => `/astro-activity?range=${hrange}`
+    + `${cfrom ? `&from=${cfrom}` : ''}${cto ? `&to=${cto}` : ''}`
+    + `${svc ? `&svc=${svc}` : ''}`;
+
   const status = astro.status || 'offline';
   const statusStyle = { online: 'bg-success', busy: 'bg-warning',
     offline: 'bg-danger' }[status] || 'bg-danger';
@@ -195,27 +222,45 @@ export default function AstroDashboard() {
         </div>
       </div>
 
-      {/* Online / offline hours today, per service. */}
+      {/* Online-hours dashboard. Cards open the Activity report. */}
       <div className="card mt-4">
-        <div className="mb-2 font-semibold">Hours today</div>
-        <p className="mb-2 text-xs text-sub-text">
-          Time each service was Online vs Offline since midnight.
-        </p>
-        <div className="space-y-2">
-          {SVCS.map(([k, label]) => (
-            <div key={k} className="flex items-center justify-between
-              rounded-card border border-gray-200 p-3 text-sm">
-              <span className="font-medium">{label}</span>
-              <span className="text-sub-text">
-                <span className="font-semibold text-success">
-                  {hours ? hoursService.fmtHrs(hours.onlineMs[k]) : '-'}
-                </span>{' '}online
-                <span className="mx-1">/</span>
-                <span className="font-semibold">
-                  {hours ? hoursService.fmtHrs(hours.offlineMs[k]) : '-'}
-                </span>{' '}offline
-              </span>
-            </div>
+        <div className="flex items-center justify-between">
+          <div className="font-semibold">Online hours</div>
+          <Link href={actHref('')}
+            className="text-xs font-semibold text-primary">
+            View report
+          </Link>
+        </div>
+        <div className="mb-3 mt-2 flex flex-wrap gap-2">
+          {RANGES.map(([k, lbl]) => (
+            <button key={k} onClick={() => setHrange(k)}
+              className={`rounded-full px-3 py-1.5 text-xs font-semibold
+                ${hrange === k ? 'bg-primary text-white'
+                  : 'bg-bg-light text-sub-text'}`}>
+              {lbl}
+            </button>
+          ))}
+        </div>
+        {hrange === 'custom' && (
+          <div className="mb-3 flex flex-wrap items-end gap-2">
+            <label className="text-xs text-sub-text">
+              From
+              <input type="date" value={cfrom}
+                onChange={(e) => setCfrom(e.target.value)}
+                className="input mt-1 !min-h-0 py-1.5" />
+            </label>
+            <label className="text-xs text-sub-text">
+              To
+              <input type="date" value={cto}
+                onChange={(e) => setCto(e.target.value)}
+                className="input mt-1 !min-h-0 py-1.5" />
+            </label>
+          </div>
+        )}
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          {ONLINE_SVCS.map(([k, label]) => (
+            <Stat key={k} label={`${label} online`}
+              value={ohVal(k)} href={actHref(k)} />
           ))}
         </div>
       </div>
@@ -252,15 +297,24 @@ export default function AstroDashboard() {
       </div>
 
       <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label="Today" value={`₹${sum(since(DAY)).toFixed(0)}`} />
-        <Stat label="This Week" value={`₹${sum(since(7 * DAY)).toFixed(0)}`} />
-        <Stat label="Lifetime" value={`₹${Number(astro.earnings || 0)}`} />
-        <Stat label="Sessions Today" value={since(DAY).length} />
+        <Stat label="Today" value={`₹${sum(since(DAY)).toFixed(0)}`}
+          href="/astro-earnings" />
+        <Stat label="This Week"
+          value={`₹${sum(since(7 * DAY)).toFixed(0)}`}
+          href="/astro-earnings" />
+        <Stat label="Lifetime" value={`₹${Number(astro.earnings || 0)}`}
+          href="/astro-earnings" />
+        <Stat label="Sessions Today" value={since(DAY).length}
+          href="/astro-activity?tab=sessions&range=day" />
         <Stat label="Rating"
-          value={<span className="text-gold">★ {astro.rating || 0}</span>} />
-        <Stat label="Response Rate" value={`${respRate}%`} />
-        <Stat label="Total Sessions" value={astro.totalSessions || 0} />
-        <Stat label="Reviews" value={astro.reviewsCount || 0} />
+          value={<span className="text-gold">★ {astro.rating || 0}</span>}
+          href="/astro-reviews" />
+        <Stat label="Response Rate" value={`${respRate}%`}
+          href="/astro-activity?tab=sessions" />
+        <Stat label="Total Sessions" value={astro.totalSessions || 0}
+          href="/astro-activity?tab=sessions" />
+        <Stat label="Reviews" value={astro.reviewsCount || 0}
+          href="/astro-reviews" />
       </div>
 
       {/* Real response stats: answered vs missed/rejected/cancelled. */}
@@ -271,10 +325,14 @@ export default function AstroDashboard() {
           answered out of answered + missed + rejected.
         </p>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <Stat label="Answered" value={answered} />
-          <Stat label="Missed" value={missed} />
-          <Stat label="Rejected" value={rejected} />
-          <Stat label="Cancelled" value={cancelled} />
+          <Stat label="Answered" value={answered}
+            href="/astro-activity?tab=sessions" />
+          <Stat label="Missed" value={missed}
+            href="/astro-activity?tab=sessions" />
+          <Stat label="Rejected" value={rejected}
+            href="/astro-activity?tab=sessions" />
+          <Stat label="Cancelled" value={cancelled}
+            href="/astro-activity?tab=sessions" />
         </div>
       </div>
 
@@ -301,13 +359,23 @@ export default function AstroDashboard() {
   );
 }
 
-function Stat({ label, value }) {
-  return (
-    <div className="surface p-4 text-center">
+function Stat({ label, value, href }) {
+  const inner = (
+    <>
       <div className="text-xs uppercase tracking-wide text-sub-text">
         {label}
       </div>
       <div className="mt-1 text-lg font-bold">{value}</div>
-    </div>
+    </>
   );
+  if (href) {
+    return (
+      <Link href={href}
+        className="surface block p-4 text-center transition
+          hover:shadow-md active:scale-[.98]">
+        {inner}
+      </Link>
+    );
+  }
+  return <div className="surface p-4 text-center">{inner}</div>;
 }

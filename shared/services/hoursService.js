@@ -67,6 +67,32 @@ export function computeHours(logs, from, to) {
   };
 }
 
+// Live online milliseconds from live-history records in [from, to].
+// Only completed ('ended') lives have a duration; cancelled = 0.
+export function liveMs(history, from, to) {
+  return (history || []).reduce((a, h) => {
+    const t = h.ts || h.endedAtMs || 0;
+    if (h.status === 'cancelled') return a;
+    if (t < from || t > to) return a;
+    return a + (Number(h.durationSec) || 0) * 1000;
+  }, 0);
+}
+
+// Start/end ms for a named range. kind = 'day' | 'week' | 'month'.
+export function rangeBounds(kind, now = Date.now()) {
+  const d = new Date(now);
+  if (kind === 'week') {
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - 6);
+  } else if (kind === 'month') {
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - 29);
+  } else {
+    d.setHours(0, 0, 0, 0); // day (today)
+  }
+  return { from: d.getTime(), to: now };
+}
+
 export function fmtHrs(ms) {
   const totalMin = Math.round((ms || 0) / 60000);
   const h = Math.floor(totalMin / 60);

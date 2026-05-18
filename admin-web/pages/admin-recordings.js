@@ -112,6 +112,7 @@ export default function AdminRecordings() {
               <thead className="text-left text-sub-text">
                 <tr>
                   <th className="p-2">Astrologer</th>
+                  <th className="p-2">Status</th>
                   <th className="p-2">Started</th>
                   <th className="p-2">Duration</th>
                   <th className="p-2">Viewers</th>
@@ -126,6 +127,15 @@ export default function AdminRecordings() {
                       <div className="text-[11px] text-sub-text">
                         {String(h.astroUid || '').slice(0, 10)}
                       </div>
+                    </td>
+                    <td className="p-2">
+                      <span className={`rounded-full px-2 py-0.5
+                        text-[11px] font-semibold ${
+                        h.status === 'cancelled'
+                          ? 'bg-danger/15 text-danger'
+                          : 'bg-success/15 text-success'}`}>
+                        {h.status === 'cancelled' ? 'Cancelled' : 'Ended'}
+                      </span>
                     </td>
                     <td className="p-2">{fmt(h.startedAtMs || h.ts)}</td>
                     <td className="p-2">{dur(h.durationSec)}</td>
