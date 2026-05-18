@@ -49,6 +49,7 @@ const GROUPS = [
     ['/admin-settings', 'Settings'],
     ['/admin-features', 'Feature Toggles'],
     ['/admin-free', 'Free Sessions'],
+    ['/admin-appupdate', 'App Update & Splash'],
     ['/admin-theme', 'App Theme'],
   ]],
 ];
@@ -62,6 +63,7 @@ const DEV_GROUPS = [
     ['/admin-theme', 'Theme & Colors'],
     ['/admin-features', 'Feature Toggles'],
     ['/admin-free', 'Free Sessions'],
+    ['/admin-appupdate', 'App Update & Splash'],
   ]],
   ['Content', [
     ['/admin-cms', 'CMS / Text & Pages'],

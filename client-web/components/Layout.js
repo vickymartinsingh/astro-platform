@@ -1,6 +1,7 @@
 import TopNav from './TopNav';
 import BottomNav from './BottomNav';
 import AnnouncementBanner from './AnnouncementBanner';
+import UpdateBanner from './UpdateBanner';
 import PullToRefresh from './PullToRefresh';
 
 // Global layout. Desktop: top nav. Mobile: top nav + Astrotalk-style
@@ -12,6 +13,7 @@ export default function Layout({ children, nav = true }) {
       <PullToRefresh />
       {nav && <TopNav />}
       {nav && <AnnouncementBanner />}
+      {nav && <UpdateBanner />}
       <main className={`mx-auto w-full max-w-6xl px-4 py-4 ${
         nav ? 'pb-safe-nav md:pb-4' : ''}`}>{children}</main>
       {nav && <BottomNav />}

@@ -6,6 +6,7 @@ import Layout from '../components/Layout';
 import { SkeletonList } from '../components/Skeleton';
 import { useRequireClient } from '../lib/useAuth';
 import { useI18n, LANGS } from '../lib/i18n';
+import { useAppUpdate, startUpdate, APP_VERSION } from '../lib/appUpdate';
 
 export default function Profile() {
   const router = useRouter();
@@ -15,6 +16,7 @@ export default function Profile() {
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
   const { t, lang, setLang } = useI18n();
+  const upd = useAppUpdate();
   const [pw, setPw] = useState({ cur: '', next: '', conf: '' });
   const [pwMsg, setPwMsg] = useState('');
 
@@ -178,6 +180,30 @@ export default function Profile() {
           <a href="/page/terms">Terms</a>
           <a href="/page/privacy">Privacy</a>
           <a href="/page/refund">Refund Policy</a>
+        </div>
+      </div>
+
+      <div className="card mt-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="font-semibold">App version</div>
+            <div className="text-xs text-sub-text">
+              Installed: v{APP_VERSION}
+              {upd.updateAvailable
+                ? ` - latest v${upd.latestVersion}` : ''}
+            </div>
+          </div>
+          {upd.updateAvailable ? (
+            <button onClick={() => startUpdate(upd.apkUrl)}
+              className="btn-primary !min-h-0 px-4 py-2 text-sm">
+              Update
+            </button>
+          ) : (
+            <span className="rounded-full bg-success/15 px-3 py-1.5
+              text-xs font-semibold text-success">
+              App is up to date
+            </span>
+          )}
         </div>
       </div>
 

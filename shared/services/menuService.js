@@ -16,14 +16,19 @@ export const DEFAULT_CLIENT_MENU = [
   { href: '/remedies', label: 'Remedies' },
   { href: '/wallet', label: 'Wallet' },
 ];
+// Profile itself is now a bottom-nav tab, so it is NOT repeated here.
+// Grouped into segments for a clean breakup in the menu (see TopNav):
+//  - Activity: history + orders
+//  - Account: review + notifications
+//  - Help: support (always last, never missed)
 export const DEFAULT_CLIENT_PROFILE = [
-  { href: '/profile', label: 'My Profile' },
-  { href: '/chat-history', label: 'Consultation history' },
-  { href: '/call-history', label: 'Call history' },
-  { href: '/transactions', label: 'Order history' },
-  { href: '/review', label: 'Write a Review' },
-  { href: '/notifications', label: 'Notifications', notif: true },
-  { href: '/support', label: 'Help & Support' },
+  { href: '/chat-history', label: 'Consultation history', seg: 'Activity' },
+  { href: '/call-history', label: 'Call history', seg: 'Activity' },
+  { href: '/transactions', label: 'Order history', seg: 'Activity' },
+  { href: '/review', label: 'Write a Review', seg: 'Account' },
+  { href: '/notifications', label: 'Notifications', notif: true,
+    seg: 'Account' },
+  { href: '/support', label: 'Help & Support', seg: 'Help' },
 ];
 export const DEFAULT_ASTRO_MENU = [
   { href: '/astro-dashboard', label: 'Dashboard' },
@@ -61,6 +66,7 @@ export function mergeMenu(defaults, saved) {
       label: (s.label || '').trim() || (d && d.label) || s.href,
       hidden: !!s.hidden,
       notif: d ? d.notif : undefined,
+      seg: (d && d.seg) || s.seg,
       from: s.from || (d ? d.href : undefined),
       custom: !d,
     });

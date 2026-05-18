@@ -13,6 +13,22 @@ import { useI18n } from '../lib/i18n';
 // links live under a "Profile" sub menu (dropdown).
 // Menus are admin-editable; defaults + live overrides via menuService.
 
+// Group a menu list into ordered segments for a clean breakup.
+const SEG_ORDER = ['Activity', 'Account', 'Help'];
+function grouped(items) {
+  const g = {};
+  items.forEach((m) => {
+    const s = m.seg || 'Account';
+    if (!g[s]) g[s] = [];
+    g[s].push(m);
+  });
+  const order = [
+    ...SEG_ORDER.filter((s) => g[s]),
+    ...Object.keys(g).filter((s) => !SEG_ORDER.includes(s)),
+  ];
+  return order.map((s) => [s, g[s]]);
+}
+
 // Monochrome (no colour) outline bell for the notifications shortcut.
 function Bell() {
   return (
@@ -110,18 +126,27 @@ export default function TopNav() {
             {prof && (
               <div className="absolute right-0 z-50 mt-1 w-56 rounded-2xl
                               border border-gray-100 bg-white p-1 shadow-lg">
-                {profileMenu.map((m) => (
-                  <Link key={m.href} href={m.href}
-                    onClick={() => setProf(false)}
-                    className="flex items-center justify-between rounded-xl
-                               px-3 py-2.5 text-sm hover:bg-bg-light">
-                    {m.label}
-                    {m.notif && unread > 0 && (
-                      <span className="badge bg-rose-500 text-white">
-                        {unread}
-                      </span>
-                    )}
-                  </Link>
+                {grouped(profileMenu).map(([seg, items]) => (
+                  <div key={seg} className="border-b border-gray-100
+                    pb-1 last:border-0">
+                    <div className="px-3 pb-0.5 pt-2 text-[10px]
+                      font-semibold uppercase tracking-wide text-sub-text">
+                      {seg}
+                    </div>
+                    {items.map((m) => (
+                      <Link key={m.href} href={m.href}
+                        onClick={() => setProf(false)}
+                        className="flex items-center justify-between
+                          rounded-xl px-3 py-2.5 text-sm hover:bg-bg-light">
+                        {m.label}
+                        {m.notif && unread > 0 && (
+                          <span className="badge bg-rose-500 text-white">
+                            {unread}
+                          </span>
+                        )}
+                      </Link>
+                    ))}
+                  </div>
                 ))}
                 {user && (
                   <button onClick={logout}
@@ -205,8 +230,10 @@ export default function TopNav() {
               </div>
             )}
           </div>
-          {/* Scrollable links */}
+          {/* Scrollable links - clean segments */}
           <div className="flex-1 overflow-y-auto px-4 py-3">
+            <div className="px-3 pb-1 text-xs font-semibold uppercase
+              tracking-wide text-sub-text">Explore</div>
             {menu.map((l) => (
               <Link key={l.href} href={l.href}
                 className={`block rounded-xl px-3 py-3 text-base ${
@@ -215,25 +242,28 @@ export default function TopNav() {
                 {l.label}
               </Link>
             ))}
-            <div className="mt-2 border-t border-gray-100 pt-2">
-              <div className="px-3 pb-1 text-xs font-semibold uppercase
-                              tracking-wide text-sub-text">
-                {t('nav.profile')}
+            {grouped(profileMenu).map(([seg, items]) => (
+              <div key={seg} className="mt-2 border-t border-gray-100
+                pt-2">
+                <div className="px-3 pb-1 text-xs font-semibold uppercase
+                                tracking-wide text-sub-text">
+                  {seg}
+                </div>
+                {items.map((m) => (
+                  <Link key={m.href} href={m.href}
+                    className={`flex items-center justify-between rounded-xl
+                      px-3 py-3 text-base ${router.pathname === m.href
+                        ? 'bg-bg-light font-semibold text-primary' : ''}`}>
+                    {m.label}
+                    {m.notif && unread > 0 && (
+                      <span className="badge bg-rose-500 text-white">
+                        {unread}
+                      </span>
+                    )}
+                  </Link>
+                ))}
               </div>
-              {profileMenu.map((m) => (
-                <Link key={m.href} href={m.href}
-                  className={`flex items-center justify-between rounded-xl
-                    px-3 py-3 text-base ${router.pathname === m.href
-                      ? 'bg-bg-light font-semibold text-primary' : ''}`}>
-                  {m.label}
-                  {m.notif && unread > 0 && (
-                    <span className="badge bg-rose-500 text-white">
-                      {unread}
-                    </span>
-                  )}
-                </Link>
-              ))}
-            </div>
+            ))}
           </div>
           </nav>
         </div>

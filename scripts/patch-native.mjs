@@ -40,6 +40,10 @@ const NEED_PERMS = [
   'android.permission.MODIFY_AUDIO_SETTINGS',
   'android.permission.POST_NOTIFICATIONS',
   'android.permission.VIBRATE',
+  // Lets the in-app "Update" open the downloaded APK installer in one
+  // tap (Android still shows its own install confirmation - a normal
+  // app cannot fully silent-install, that needs system privileges).
+  'android.permission.REQUEST_INSTALL_PACKAGES',
 ];
 
 function patchAndroid(app) {

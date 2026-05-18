@@ -50,6 +50,7 @@ const ALL = [
     ['/admin-settings', 'Branding & System Settings', ['config']],
     ['/admin-features', 'Feature Toggles & Nav Labels', ['features']],
     ['/admin-free', 'Free Sessions', ['config']],
+    ['/admin-appupdate', 'App Update & Splash', ['config']],
   ]],
 ];
 
