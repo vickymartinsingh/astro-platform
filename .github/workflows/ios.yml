@@ -83,7 +83,9 @@ jobs:
 
           echo "::group::cap add ios"
           ( cd "$APP" && npx cap add ios )
-          test -d "$APP/ios/App/App.xcworkspace" || { echo "NO WORKSPACE"; ls -la "$APP/ios" || true; exit 1; }
+          # Capacitor 8 uses Swift Package Manager: it generates
+          # App.xcodeproj (no .xcworkspace, no Podfile).
+          test -d "$APP/ios/App/App.xcodeproj" || { echo "NO XCODEPROJ"; ls -la "$APP/ios/App" || true; exit 1; }
           echo "::endgroup::"
 
           echo "::group::ios assets (best effort)"
@@ -94,17 +96,20 @@ jobs:
           ( cd "$APP" && npx cap sync ios )
           echo "::endgroup::"
 
-          echo "::group::pod install"
-          ( cd "$APP/ios/App" && (pod install || pod install --repo-update) )
-          echo "::endgroup::"
-
           echo "::group::patch-native (best effort)"
           node scripts/patch-native.mjs || echo "patch-native skipped"
           echo "::endgroup::"
 
-          echo "::group::xcodebuild (unsigned build)"
+          echo "::group::resolve SPM packages"
           ( cd "$APP" && xcodebuild \
-              -workspace ios/App/App.xcworkspace \
+              -project ios/App/App.xcodeproj \
+              -scheme App \
+              -resolvePackageDependencies )
+          echo "::endgroup::"
+
+          echo "::group::xcodebuild (unsigned build, SPM)"
+          ( cd "$APP" && xcodebuild \
+              -project ios/App/App.xcodeproj \
               -scheme App \
               -configuration Release \
               -sdk iphoneos \
