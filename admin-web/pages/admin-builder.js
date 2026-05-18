@@ -39,6 +39,7 @@ export default function AdminBuilder() {
   const [ann, setAnn] = useState(null);       // settings/announcement
   const [content, setContent] = useState(null); // settings/content
   const [navNew, setNavNew] = useState({ label: '', href: '' });
+  const [plat, setPlat] = useState('app'); // 'app' | 'desktop'
   const dragKey = useRef(null);
 
   useEffect(() => {
@@ -133,8 +134,29 @@ export default function AdminBuilder() {
         client app everywhere on Save.
       </p>
 
+      <div className="mb-4 flex gap-2">
+        {[['app', 'App (mobile)'], ['desktop', 'Desktop (web)']].map(
+          ([v, l]) => (
+            <button key={v} onClick={() => setPlat(v)}
+              className={`flex-1 rounded-card border px-4 py-2 text-sm
+                font-semibold ${plat === v
+                  ? 'border-primary bg-primary text-white'
+                  : 'border-gray-200'}`}>
+              {l}
+            </button>
+          ))}
+      </div>
+      <p className="mb-3 text-xs text-sub-text">
+        {plat === 'app'
+          ? 'Configuring the MOBILE app: bottom tab bar + slide drawer.'
+          : 'Configuring the DESKTOP / web top navigation.'}
+        {' '}Shared sections below apply to both.
+      </p>
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-4">
+          {plat === 'app' && (
+          <>
           {/* MENU */}
           <div className="card">
             <div className="mb-2 font-semibold">Bottom menu (drag to
@@ -205,16 +227,24 @@ export default function AdminBuilder() {
               className="btn-primary mt-2 w-full">Save bottom menu</button>
           </div>
 
-          <MenuEditor title="Client menu - DESKTOP / web (top bar)"
-            defaults={menuService.DEFAULT_CLIENT_MENU}
-            value={feat.menu_links_desktop || feat.menu_links}
-            onChange={(v) =>
-              setFeat({ ...feat, menu_links_desktop: v })} />
           <MenuEditor title="Client menu - MOBILE (slide drawer)"
             defaults={menuService.DEFAULT_CLIENT_MENU}
             value={feat.menu_links_mobile || feat.menu_links}
             onChange={(v) =>
               setFeat({ ...feat, menu_links_mobile: v })} />
+          </>
+          )}
+
+          {plat === 'desktop' && (
+          <MenuEditor title="Client menu - DESKTOP / web (top bar)"
+            defaults={menuService.DEFAULT_CLIENT_MENU}
+            value={feat.menu_links_desktop || feat.menu_links}
+            onChange={(v) =>
+              setFeat({ ...feat, menu_links_desktop: v })} />
+          )}
+
+          <div className="text-xs font-semibold uppercase tracking-wide
+            text-sub-text">Shared (App + Web)</div>
           <MenuEditor title="Client profile menu"
             defaults={menuService.DEFAULT_CLIENT_PROFILE}
             value={feat.profile_menu}
