@@ -1,17 +1,15 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import {
-  kundliService, horoscopeService, zodiacLabel,
-} from '@astro/shared';
+import { horoscopeService, zodiacLabel } from '@astro/shared';
 import Layout from '../components/Layout';
 import { SkeletonList } from '../components/Skeleton';
 import ZodiacPicker from '../components/ZodiacPicker';
 import { useOptionalClient } from '../lib/useAuth';
 import { useSettings } from '../lib/useSettings';
 
-// Public. Always shows Today + Tomorrow via the built-in generator
-// (no DB / Cloud Function needed). Logged-in users with a default kundli
-// get their sign auto-selected.
+// GENERAL horoscope (everyone). Always starts at the first sign in
+// sequence (Aries / Mesha) - it is NOT auto-set from the user's kundli;
+// the personal reading lives in "Your stars today" on the home page.
 export default function Horoscope() {
   const { user, loading } = useOptionalClient();
   const { features } = useSettings();
@@ -19,12 +17,6 @@ export default function Horoscope() {
   const [when, setWhen] = useState('today');
   const [horo, setHoro] = useState({});
 
-  useEffect(() => {
-    if (!user) return;
-    kundliService.getDefaultKundli(user.uid)
-      .then((k) => { if (k?.zodiac) setSign(k.zodiac); })
-      .catch(() => {});
-  }, [user]);
   useEffect(() => horoscopeService.watchHoroscope(setHoro), []);
 
   if (loading) return <Layout><SkeletonList /></Layout>;
@@ -51,7 +43,8 @@ export default function Horoscope() {
           <p className="mt-2 text-xs text-sub-text">
             <Link href="/signup" className="font-semibold text-primary">
               Sign up
-            </Link>{' '}to save your birth details and skip this every time.
+            </Link>{' '}to also get your own personalised reading on the
+            home screen.
           </p>
         )}
       </div>
