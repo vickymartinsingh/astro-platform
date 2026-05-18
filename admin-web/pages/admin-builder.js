@@ -302,8 +302,8 @@ export default function AdminBuilder() {
                         ...feat, tarot_mode: v })}
                       className={`flex-1 rounded-card border px-3 py-2
                         text-sm ${
-                        (feat.tarot_mode === 'guided' ? 'guided'
-                          : 'classic') === v
+                        (feat.tarot_mode === 'classic' ? 'classic'
+                          : 'guided') === v
                           ? 'border-primary bg-primary text-white'
                           : 'border-gray-200'}`}>
                       {l}

@@ -323,7 +323,9 @@ export default function Tarot() {
   if (loading) {
     return <Layout><div className="surface p-6">Loading...</div></Layout>;
   }
-  const guided = features.tarot_mode === 'guided';
+  // Guided is the DEFAULT now; admin can switch back to Classic by
+  // setting features.tarot_mode = 'classic'.
+  const guided = features.tarot_mode !== 'classic';
   return (
     <Layout>
       {guided ? <Guided features={features} /> : <Classic />}
