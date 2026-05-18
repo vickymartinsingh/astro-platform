@@ -193,12 +193,13 @@ export default function TopNav() {
         </nav>
 
         <div className="flex items-center gap-2 md:hidden">
-          <Link href="/wallet" aria-label="Wallet"
+          <Link href="/wallet" aria-label="Wallet" data-tour="top-wallet"
             className="rounded-xl border border-gray-200 px-3 py-2
                        text-dark-text">
             <Wallet />
           </Link>
           <Link href="/notifications" aria-label="Notifications"
+            data-tour="top-bell"
             className="relative rounded-xl border border-gray-200 px-3
                        py-2 text-dark-text">
             <Bell />
@@ -207,7 +208,7 @@ export default function TopNav() {
                 bg-rose-500 text-white">{unread}</span>
             )}
           </Link>
-          <button aria-label="Menu"
+          <button aria-label="Menu" data-tour="top-menu"
             className="rounded-xl border border-gray-200 px-3 py-2"
             onClick={() => setOpen((v) => !v)}>
             {open ? '✕' : '☰'}

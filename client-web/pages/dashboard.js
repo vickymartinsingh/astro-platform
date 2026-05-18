@@ -3,7 +3,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import {
   astrologerService, reviewService, zodiacLabel,
-  iconsService, horoscopeService, kundliService, db,
+  iconsService, horoscopeService, kundliService,
+  signFromDOB, userService, db,
 } from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
@@ -11,6 +12,7 @@ import { SkeletonList } from '../components/Skeleton';
 import AstrologerCard from '../components/AstrologerCard';
 import ZodiacPicker from '../components/ZodiacPicker';
 import { Icon } from '../components/Icons';
+import { DateField } from '../components/BirthInputs';
 import { useOptionalClient } from '../lib/useAuth';
 import { useAstroActions } from '../lib/useAstroActions';
 import { useAuthModal } from '../lib/authModal';
@@ -102,6 +104,8 @@ export default function Dashboard() {
   const [kundlis, setKundlis] = useState([]);
   const [kIdx, setKIdx] = useState(0);
   const [pWhen, setPWhen] = useState('today');
+  const [dob, setDob] = useState('');
+  useEffect(() => { if (profile?.dob) setDob(profile.dob); }, [profile]);
   useEffect(() => {
     if (!user) { setKundlis([]); return; }
     kundliService.getKundliProfiles(user.uid).then((l) => {
@@ -191,10 +195,13 @@ export default function Dashboard() {
         const genericHead = split ? 'Horoscope' : 'Your stars today';
         const pk = kundlis[Math.min(kIdx, Math.max(0,
           kundlis.length - 1))] || null;
-        const showPersonal = split && !!user && !!pk;
-        const pSign = (pk && pk.zodiac) || sign;
-        const pReading = horoscopeService.resolveHoroscope(
-          pSign, pWhen, horo);
+        const pSign = (pk && pk.zodiac)
+          || (dob ? signFromDOB(dob) : null);
+        const showPersonal = split && !!user;
+        const pReading = pSign
+          ? horoscopeService.resolveHoroscope(pSign, pWhen, horo)
+          : null;
+        const who = (pk && pk.name) || profile?.name || 'You';
         return (
           <>
             {showPersonal && (
@@ -202,10 +209,11 @@ export default function Dashboard() {
                 <h2 className="mb-3 mt-8 text-lg font-bold">
                   Your stars today
                 </h2>
+                {pSign ? (
                 <div className="surface p-5">
                   <div className="flex flex-wrap items-center gap-3">
                     <span className="badge bg-bg-light text-primary">
-                      {(pk.name || 'You')} - {zodiacLabel(pSign, true)}
+                      {who} - {zodiacLabel(pSign, true)}
                     </span>
                     {kundlis.length > 1 && (
                       <select
@@ -245,6 +253,21 @@ export default function Dashboard() {
                       h={pReading} />
                   </div>
                 </div>
+                ) : (
+                <div className="surface p-5">
+                  <p className="mb-2 text-sm text-sub-text">
+                    Add your date of birth to see your own daily stars.
+                  </p>
+                  <DateField value={dob} label="Your date of birth"
+                    onChange={(v) => {
+                      setDob(v);
+                      if (user && v) {
+                        userService.updateUser(user.uid, { dob: v })
+                          .catch(() => {});
+                      }
+                    }} />
+                </div>
+                )}
               </>
             )}
 

@@ -33,3 +33,4 @@ export * as horoscopeService from './services/horoscopeService.js';
 export * as soundService from './services/soundService.js';
 export * as supportService from './services/supportService.js';
 export * as ticketService from './services/ticketService.js';
+export * as abuseService from './services/abuseService.js';

@@ -136,7 +136,7 @@ export default function BottomNav() {
             || (label === 'Chat' && path === '/astrologers'
                 && !query.startsWith('/astrologers?mode=call'));
           return (
-            <Link key={key} href={href}
+            <Link key={key} href={href} data-tour={`nav-${key}`}
               className={`flex flex-1 flex-col items-center gap-0.5 py-2
                 ${active ? 'text-primary' : 'text-sub-text'}`}>
               <span className={`flex h-9 w-12 items-center justify-center

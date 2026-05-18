@@ -4,6 +4,7 @@ import { astrologerService, reviewService } from '@astro/shared';
 import Layout from '../../components/Layout';
 import { SkeletonList } from '../../components/Skeleton';
 import VerifiedBadge from '../../components/VerifiedBadge';
+import ReportAstrologerModal from '../../components/ReportAstrologerModal';
 import { useOptionalClient } from '../../lib/useAuth';
 import { useAstroActions } from '../../lib/useAstroActions';
 
@@ -14,10 +15,11 @@ function discounted(base, d) {
 export default function AstrologerProfile() {
   const router = useRouter();
   const { id } = router.query;
-  useOptionalClient();
+  const { user, profile } = useOptionalClient();
   const { go } = useAstroActions();
   const [a, setA] = useState(null);
   const [reviews, setReviews] = useState([]);
+  const [report, setReport] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -116,6 +118,21 @@ export default function AstrologerProfile() {
             </div>
           ))}
         </div>
+      )}
+      <div className="mt-6 text-center">
+        <button onClick={() => setReport(true)}
+          className="text-sm font-semibold text-danger underline">
+          Report this astrologer
+        </button>
+      </div>
+
+      {report && (
+        <ReportAstrologerModal
+          astro={{ id, name: a.name }}
+          by={{ uid: user?.uid, name: profile?.name,
+            email: profile?.email, phone: profile?.phone,
+            dob: profile?.dob }}
+          onClose={() => setReport(false)} />
       )}
     </Layout>
   );
