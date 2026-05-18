@@ -285,6 +285,22 @@ export function listenIncomingRequests(astroId, callback) {
       .filter((s) => s.status === 'requesting')));
 }
 
+// Live "current sessions" for the astrologer: anything still actionable
+// (incoming requesting + accepted + active) so they never miss a call
+// or chat.
+export function listenActiveForAstro(astroId, callback) {
+  const q = query(
+    collection(db, 'sessions'),
+    where('astroId', '==', astroId),
+  );
+  return onSnapshot(q, (snap) =>
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+      .filter((s) => ['requesting', 'accepted', 'active']
+        .includes(s.status))
+      .sort((a, b) => (b.createdAt?.toMillis?.() || 0)
+        - (a.createdAt?.toMillis?.() || 0))));
+}
+
 const byCreatedDesc = (a, b) =>
   (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0);
 

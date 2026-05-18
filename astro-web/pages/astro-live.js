@@ -69,6 +69,18 @@ export default function AstroLive() {
 
   async function start() {
     if (!user || joinedRef.current) return;
+    // Must be fully OFFLINE (no Chat/Call/Video) before going Live.
+    try {
+      const a = await astrologerService.getAstrologer(user.uid);
+      const onAny = a && (a.status === 'online' || a.chat_enabled
+        || a.call_enabled || a.video_enabled);
+      if (onAny) {
+        window.alert('You are Online for Chat / Call / Video. Turn '
+          + 'those OFF (go offline from the Dashboard Availability) '
+          + 'before starting a Live session.');
+        return;
+      }
+    } catch (_) { /* allow if status unknown */ }
     if (!window.confirm('Go live now? Your video will be visible to '
       + 'clients.')) return;
     setStarting(true);
