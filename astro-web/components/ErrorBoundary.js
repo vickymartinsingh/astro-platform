@@ -1,8 +1,9 @@
 import React from 'react';
 
 // Renders the actual React error on screen (iOS WKWebView has no
-// console). Catches render/commit errors - that is exactly what Next's
-// generic "client-side exception" message hides.
+// console). IMPORTANT: WebKit's error.stack does NOT contain the
+// message (unlike V8), so we must show message + String(err) + stack
+// separately, and pad for the iOS status bar / notch.
 export default class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
@@ -20,31 +21,43 @@ export default class ErrorBoundary extends React.Component {
   render() {
     const { err, info } = this.state;
     if (!err) return this.props.children;
-    const txt = (err && (err.stack || err.message)) || String(err);
+    let msg = '';
+    try { msg = (err && err.message) ? err.message : String(err); }
+    catch (_) { msg = 'Unknown error'; }
+    let asStr = '';
+    try { asStr = String(err); } catch (_) { asStr = ''; }
+    const stack = (err && err.stack) || '';
     const comp = (info && info.componentStack) || '';
+    const text = `MESSAGE:\n${msg}\n\nTOSTRING:\n${asStr}`
+      + `\n\nSTACK:\n${stack}`
+      + (comp ? `\n\nCOMPONENT STACK:\n${comp}` : '');
     return (
       <div
         style={{
           position: 'fixed', inset: 0, background: '#fff',
-          color: '#b00020', padding: 14, overflow: 'auto',
-          font: '12px/1.45 monospace', whiteSpace: 'pre-wrap',
-          wordBreak: 'break-word', zIndex: 2147483647,
+          color: '#b00020', overflow: 'auto', zIndex: 2147483647,
+          padding: '14px',
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 54px)',
+          font: '12px/1.45 -apple-system, monospace',
         }}
       >
         <div style={{ fontWeight: 'bold', marginBottom: 8 }}>
-          APP ERROR (please screenshot this)
+          APP ERROR (screenshot the MESSAGE line)
         </div>
-        {txt}
-        {comp ? `\n\n--- component stack ---${comp}` : ''}
-        <div>
-          <button
-            type="button"
-            onClick={() => window.location.reload()}
-            style={{ marginTop: 14, padding: '8px 16px' }}
-          >
-            Reload
-          </button>
-        </div>
+        <pre
+          style={{
+            whiteSpace: 'pre-wrap', wordBreak: 'break-word', margin: 0,
+          }}
+        >
+          {text}
+        </pre>
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          style={{ marginTop: 14, padding: '8px 16px' }}
+        >
+          Reload
+        </button>
       </div>
     );
   }
