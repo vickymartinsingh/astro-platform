@@ -55,22 +55,30 @@ export default function LoginCard({ onDone, compact, initialMode }) {
 
   async function google() {
     setErr(''); setBusy(true);
-    try { await finish(await authService.loginWithGoogle()); }
-    catch (e) {
+    try {
+      const u = await authService.loginWithGoogle();
+      // null = a full-page redirect started; the browser navigates
+      // away and watchAuth finishes the sign-in on return.
+      if (u) await finish(u);
+    } catch (e) {
       const c = e?.code || '';
       if (c === 'auth/operation-not-allowed') {
-        setErr('Enable Google in Firebase: Authentication > ' +
-          'Sign-in method > Google.');
+        setErr('Google sign-in is disabled. Enable it in Firebase: '
+          + 'Authentication > Sign-in method > Google.');
       } else if (c === 'auth/unauthorized-domain') {
-        setErr('Add this domain in Firebase Auth > Settings > ' +
-          'Authorised domains.');
+        setErr('This domain is not authorised. Add it in Firebase '
+          + 'Auth > Settings > Authorised domains.');
       } else if (c === 'auth/popup-blocked') {
         setErr('Browser blocked the popup. Allow popups and retry.');
-      } else if (c === 'auth/popup-closed-by-user' ||
-                 c === 'auth/cancelled-popup-request') {
+      } else if (c === 'auth/popup-closed-by-user'
+                 || c === 'auth/cancelled-popup-request') {
         setErr('Google popup was closed. Try again.');
+      } else if (/unavailable/i.test(e?.message || '')) {
+        setErr('Google sign-in is not available in this app build. '
+          + 'Please use email and password here.');
       } else {
-        setErr(`Google sign-in failed (${c || 'unknown error'}).`);
+        setErr(`Google sign-in failed (${c || 'unknown error'}). `
+          + 'Try email/password.');
       }
     } finally { setBusy(false); }
   }

@@ -88,13 +88,21 @@ export async function loginWithGoogle() {
   }
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
+  // Desktop browsers: try the popup (instant, no navigation). Anything
+  // else (mobile browsers, PWAs, in-app browsers) -> full-page redirect,
+  // which is far more reliable; the result is finalised by watchAuth /
+  // resolveGoogleRedirect on the next load.
+  const ua = (typeof navigator !== 'undefined' && navigator.userAgent)
+    || '';
+  const isMobileWeb = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+  if (isMobileWeb) {
+    await signInWithRedirect(auth, provider);
+    return null;
+  }
   try {
     const cred = await signInWithPopup(auth, provider);
     return cred.user;
   } catch (e) {
-    // Popups are often blocked (in-app browsers, strict mobile browsers,
-    // some PWAs). Fall back to a full-page redirect - the result is
-    // finalised by resolveGoogleRedirect() on the next load.
     const code = e && e.code;
     if ([
       'auth/popup-blocked', 'auth/popup-closed-by-user',
