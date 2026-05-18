@@ -1,9 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import {
-  callService, liveService, astrologerService,
+  callService, liveService, astrologerService, recordService,
 } from '@astro/shared';
 import { useRequireAstrologer } from '../lib/useAuth';
+
+function fmtWhen(ms) {
+  if (!ms) return '';
+  return new Date(ms).toLocaleString('en-GB', {
+    weekday: 'short', day: '2-digit', month: 'short',
+    hour: '2-digit', minute: '2-digit',
+  });
+}
+function fmtDur(sec) {
+  const s = Math.max(0, Math.round(sec || 0));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return h ? `${h}h ${m}m` : `${m}m ${s % 60}s`;
+}
 
 function Tick({ green }) {
   return (
@@ -44,6 +58,12 @@ export default function AstroLive() {
   const [info, setInfo] = useState(null);
   const [comments, setComments] = useState([]);
   const [elapsed, setElapsed] = useState(0);
+  const [mode, setMode] = useState('choose');     // choose | sched
+  const [sched, setSched] = useState(null);       // pending scheduled
+  const [history, setHistory] = useState([]);     // own live history
+  const [liveTitle, setLiveTitle] = useState('');
+  const [schedAt, setSchedAt] = useState('');
+  const [schedTitle, setSchedTitle] = useState('');
   const localRef = useRef(null);
   const joinedRef = useRef(false);
   const cRef = useRef(null);
@@ -53,7 +73,9 @@ export default function AstroLive() {
     astrologerService.getAstrologer(user.uid).then(setAstro);
     const u1 = liveService.listenLive(user.uid, setInfo);
     const u2 = liveService.listenLiveComments(user.uid, setComments);
-    return () => { u1 && u1(); u2 && u2(); };
+    const u3 = liveService.listenScheduledLive(user.uid, setSched);
+    const u4 = liveService.listenLiveHistory(user.uid, setHistory);
+    return () => { u1 && u1(); u2 && u2(); u3 && u3(); u4 && u4(); };
   }, [user]);
 
   useEffect(() => {
@@ -99,15 +121,48 @@ export default function AstroLive() {
       await liveService.goLive(user.uid, {
         name: astro?.name || 'Astrologer',
         photo: astro?.profileImage || '',
+        title: (liveTitle || '').trim() || 'Live consultation',
       });
+      // Record the live session for admin monitoring (best effort).
+      recordService.startRecording({
+        sessionId: `live_${user.uid}`, type: 'live',
+        astroId: user.uid, userId: '',
+      }).catch(() => {});
       setLive(true);
     } catch (e) {
       window.alert('Could not start live. Check camera/mic permission.');
     } finally { setStarting(false); }
   }
 
+  async function schedule() {
+    const t = schedAt ? new Date(schedAt).getTime() : 0;
+    if (!t || t < Date.now() + 60000) {
+      window.alert('Pick a date and time at least a minute from now.');
+      return;
+    }
+    try {
+      await liveService.scheduleLive(user.uid, {
+        name: astro?.name || 'Astrologer',
+        photo: astro?.profileImage || '',
+        title: (schedTitle || '').trim() || 'Live consultation',
+        startAt: t,
+      });
+      setMode('choose'); setSchedAt(''); setSchedTitle('');
+      window.alert('Live scheduled. All your followers have been '
+        + 'notified and it now shows in their app as Upcoming.');
+    } catch (_) {
+      window.alert('Could not schedule. Try again.');
+    }
+  }
+
+  async function cancelSched() {
+    if (!window.confirm('Cancel the scheduled live?')) return;
+    try { await liveService.cancelScheduledLive(user.uid); } catch (_) {}
+  }
+
   async function stop() {
     if (!window.confirm('End the live session?')) return;
+    try { await recordService.stopRecording(); } catch (_) {}
     try { await callService.leaveAgoraChannel(); } catch (_) {}
     try { await liveService.endLive(user.uid); } catch (_) {}
     joinedRef.current = false;
@@ -117,6 +172,7 @@ export default function AstroLive() {
 
   useEffect(() => () => {
     if (joinedRef.current && user) {
+      recordService.stopRecording().catch(() => {});
       callService.leaveAgoraChannel().catch(() => {});
       liveService.endLive(user.uid).catch(() => {});
     }
@@ -171,17 +227,128 @@ export default function AstroLive() {
       </div>
 
       {!live && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center
-          justify-center gap-3 px-8 text-center">
-          <p className="text-sm opacity-80">
-            Start a live session. Clients can watch, comment and like in
-            real time, and you keep seeing yourself full-screen.
-          </p>
-          <button onClick={start} disabled={starting}
-            className="rounded-full bg-danger px-8 py-3 text-lg
-              font-bold">
-            {starting ? 'Starting...' : 'Go Live'}
-          </button>
+        <div className="absolute inset-0 z-10 overflow-y-auto
+          bg-black/85 px-5 py-8">
+          <div className="mx-auto max-w-md space-y-4">
+            <h1 className="text-center text-2xl font-bold">Go Live</h1>
+
+            {sched && (
+              <div className="rounded-2xl border border-white/15
+                bg-white/10 p-4">
+                <div className="text-xs uppercase tracking-wide
+                  opacity-70">Scheduled</div>
+                <div className="mt-1 font-semibold">
+                  {sched.title || 'Live consultation'}
+                </div>
+                <div className="text-sm opacity-90">
+                  {fmtWhen(sched.startAt)}
+                </div>
+                <p className="mt-1 text-xs opacity-70">
+                  Followers were notified. It shows as Upcoming in the
+                  client app.
+                </p>
+                <button onClick={cancelSched}
+                  className="mt-2 rounded-full border border-white/30
+                    px-4 py-1.5 text-sm">Cancel schedule</button>
+              </div>
+            )}
+
+            {mode === 'choose' ? (
+              <div className="space-y-3">
+                <div className="rounded-2xl border border-white/15
+                  bg-white/5 p-4">
+                  <input value={liveTitle}
+                    onChange={(e) => setLiveTitle(e.target.value)}
+                    placeholder="Live title (optional)"
+                    className="mb-3 w-full rounded-xl bg-white/10 px-3
+                      py-2.5 text-sm placeholder-white/50 outline-none" />
+                  <button onClick={start} disabled={starting}
+                    className="w-full rounded-full bg-danger px-8 py-3
+                      text-lg font-bold">
+                    {starting ? 'Starting...' : 'Go Live Now'}
+                  </button>
+                </div>
+                <button onClick={() => setMode('sched')}
+                  className="w-full rounded-full border border-white/30
+                    px-8 py-3 text-base font-semibold">
+                  Schedule a Live
+                </button>
+                <p className="text-center text-xs opacity-70">
+                  Going live notifies your followers. Scheduling also
+                  notifies them and shows a countdown in their app.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3 rounded-2xl border
+                border-white/15 bg-white/5 p-4">
+                <div className="font-semibold">Schedule a Live</div>
+                <label className="block text-sm">
+                  Date &amp; time
+                  <input type="datetime-local" value={schedAt}
+                    onChange={(e) => setSchedAt(e.target.value)}
+                    className="mt-1 w-full rounded-xl bg-white/10 px-3
+                      py-2.5 text-sm outline-none" />
+                </label>
+                <input value={schedTitle}
+                  onChange={(e) => setSchedTitle(e.target.value)}
+                  placeholder="Live title (optional)"
+                  className="w-full rounded-xl bg-white/10 px-3 py-2.5
+                    text-sm placeholder-white/50 outline-none" />
+                <div className="flex gap-2">
+                  <button onClick={() => setMode('choose')}
+                    className="flex-1 rounded-full border border-white/30
+                      px-4 py-2.5 text-sm">Back</button>
+                  <button onClick={schedule}
+                    className="flex-1 rounded-full bg-primary px-4 py-2.5
+                      text-sm font-bold">Schedule &amp; notify</button>
+                </div>
+              </div>
+            )}
+
+            <div className="rounded-2xl border border-white/15
+              bg-white/5 p-4">
+              <div className="mb-2 font-semibold">Live history</div>
+              {(() => {
+                const sod = new Date(); sod.setHours(0, 0, 0, 0);
+                const todays = history.filter(
+                  (h) => (h.ts || 0) >= sod.getTime());
+                const totSec = todays.reduce(
+                  (a, h) => a + (h.durationSec || 0), 0);
+                return (
+                  <div className="mb-3 flex gap-3 text-sm">
+                    <span className="rounded-full bg-white/10 px-3 py-1">
+                      Today: <b>{todays.length}</b> live
+                      {todays.length === 1 ? '' : 's'}
+                    </span>
+                    <span className="rounded-full bg-white/10 px-3 py-1">
+                      Total <b>{fmtDur(totSec)}</b>
+                    </span>
+                  </div>
+                );
+              })()}
+              {history.length === 0 ? (
+                <div className="text-sm opacity-70">
+                  No live sessions yet.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {history.slice(0, 10).map((h) => (
+                    <div key={h.id}
+                      className="flex items-center justify-between
+                        rounded-xl bg-white/5 px-3 py-2 text-sm">
+                      <span>{fmtWhen(h.endedAtMs || h.ts)}</span>
+                      <span className="opacity-80">
+                        {fmtDur(h.durationSec)} - {h.viewers || 0} viewers
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <button onClick={() => router.back()}
+              className="w-full py-2 text-sm opacity-70">Close</button>
+          </div>
         </div>
       )}
 

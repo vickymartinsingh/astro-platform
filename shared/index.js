@@ -38,3 +38,5 @@ export * as ticketService from './services/ticketService.js';
 export * as abuseService from './services/abuseService.js';
 export * as followService from './services/followService.js';
 export * as tarotService from './services/tarotService.js';
+export * as hoursService from './services/hoursService.js';
+export * as recordService from './services/recordService.js';

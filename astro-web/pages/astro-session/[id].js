@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import {
   sessionService, chatService, userService, kundliService, callService,
+  recordService,
 } from '@astro/shared';
 import { useRequireAstrologer } from '../../lib/useAuth';
 import { playPing } from '../../lib/ping';
@@ -72,6 +73,11 @@ export default function ActiveSession() {
         if (session.type === 'video' && tracks.video && localRef.current) {
           tracks.video.play(localRef.current);
         }
+        // Record the call/video for admin monitoring (best effort).
+        recordService.startRecording({
+          sessionId: id, type: session.type,
+          astroId: user.uid, userId: session.userId,
+        }).catch(() => {});
       } catch (e) { console.error(e); }
     })();
   }, [session?.status, session?.type, id, user]);
@@ -91,6 +97,7 @@ export default function ActiveSession() {
 
   useEffect(() => {
     if (session && ['ended', 'rejected', 'missed'].includes(session.status)) {
+      recordService.stopRecording().catch(() => {});
       callService.leaveAgoraChannel();
       router.replace('/astro-dashboard');
     }
@@ -105,6 +112,7 @@ export default function ActiveSession() {
 
   async function endSession() {
     if (!confirm('End this session?')) return;
+    try { await recordService.stopRecording(); } catch (_) {}
     await callService.leaveAgoraChannel();
     // Charge the client, then collect this astrologer's post-commission
     // earning into their wallet (client-side; no Cloud Functions needed).

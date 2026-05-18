@@ -89,6 +89,11 @@ export function subscribeToRemote(onRemote) {
   });
 }
 
+// Accessors so the recorder can tap the live Agora tracks without
+// changing the call flow.
+export function getClient() { return client; }
+export function getLocalTracks() { return localTracks; }
+
 export function setMuted(muted) {
   if (localTracks.audio) localTracks.audio.setEnabled(!muted);
 }

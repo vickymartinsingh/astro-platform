@@ -68,6 +68,18 @@ export async function updateAvailability(id, options) {
     } catch (_) { wasOnline = true; }
   }
   await updateDoc(doc(db, 'astrologers', id), options);
+  // Record this availability change for the online/offline hours report.
+  if (options && (options.chat_enabled !== undefined
+    || options.call_enabled !== undefined
+    || options.video_enabled !== undefined)) {
+    import('./hoursService.js')
+      .then((m) => m.logAvailability(id, {
+        chat: !!options.chat_enabled,
+        call: !!options.call_enabled,
+        video: !!options.video_enabled,
+      }))
+      .catch(() => {});
+  }
   if (options && options.isOnline === true && !wasOnline) {
     import('./followService.js')
       .then((m) => m.notifyFollowers(id, 'Online', `/astrologer/${id}`))

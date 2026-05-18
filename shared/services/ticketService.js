@@ -20,6 +20,22 @@ export const TICKET_CATEGORIES = [
   ['other', 'Something else', 'Support Team'],
 ];
 
+// Categories shown to ASTROLOGERS (their tickets reach the same admin
+// inbox, tagged role='astrologer').
+export const ASTRO_TICKET_CATEGORIES = [
+  ['customer', 'Customer / Session issue', 'Quality Team'],
+  ['login', 'Login / Account access', 'Accounts Team'],
+  ['error', 'App error / Bug', 'Tech Team'],
+  ['technical', 'Technical / Payout issue', 'Tech Team'],
+  ['issues', 'Other issue', 'Support Team'],
+];
+
+const ALL_CATEGORIES = [...TICKET_CATEGORIES, ...ASTRO_TICKET_CATEGORIES];
+
+export function categoryLabel(cat) {
+  return (ALL_CATEGORIES.find((c) => c[0] === cat) || [])[1] || cat;
+}
+
 export const SUPPORT_FAQS = [
   ['How do I get a refund?',
     'Open a ticket under "Payment / Wallet / Refund" with the order '
@@ -41,7 +57,7 @@ const REOPEN_MS = 24 * 60 * 60 * 1000;
 const ACTIVE = ['open', 'assigned', 'reopened'];
 
 function teamFor(cat) {
-  return (TICKET_CATEGORIES.find((c) => c[0] === cat) || [])[2]
+  return (ALL_CATEGORIES.find((c) => c[0] === cat) || [])[2]
     || 'Support Team';
 }
 function genTicketNo() {
@@ -86,9 +102,8 @@ export async function createTicket(uid, data) {
   if (dup) {
     const e = new Error(
       `You already have an open ticket (${dup.ticketNo}) for `
-      + `"${(TICKET_CATEGORIES.find((c) => c[0] === category)
-        || [])[1] || category}". Please continue on that ticket - you `
-      + 'cannot open another one for the same issue until it is '
+      + `"${categoryLabel(category)}". Please continue on that ticket - `
+      + 'you cannot open another one for the same issue until it is '
       + 'resolved.');
     e.code = 'DUPLICATE';
     e.ticketNo = dup.ticketNo;

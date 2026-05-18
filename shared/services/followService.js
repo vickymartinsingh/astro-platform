@@ -89,6 +89,22 @@ export async function toggleFollow(uid, astroId, currentlyFollowing) {
   return !currentlyFollowing;
 }
 
+// Push every follower with a custom title/body (best-effort).
+export async function pushFollowers(astroId, title, body, route) {
+  try {
+    const s = await getDoc(doc(db, 'astrologers', astroId));
+    if (!s.exists()) return;
+    const uids = Array.isArray(s.data().followerUids)
+      ? s.data().followerUids : [];
+    uids.slice(0, 500).forEach((toUid) => {
+      sendPushToUser({
+        toUid, title, body,
+        data: { type: 'follow', route: route || '' },
+      });
+    });
+  } catch (_) { /* ignore */ }
+}
+
 // Push every follower when the astrologer goes Live / Online.
 // kind = 'Live' | 'Online'. Best-effort (never throws).
 export async function notifyFollowers(astroId, kind, route) {

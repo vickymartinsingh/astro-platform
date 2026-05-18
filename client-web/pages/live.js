@@ -3,16 +3,80 @@ import { useRouter } from 'next/router';
 import { liveService } from '@astro/shared';
 import Layout from '../components/Layout';
 
-// "Live" tab: ONLY astrologers who are live streaming right now.
+function countdown(ms) {
+  const d = Math.max(0, ms - Date.now());
+  const s = Math.floor(d / 1000);
+  const dd = Math.floor(s / 86400);
+  const hh = Math.floor((s % 86400) / 3600);
+  const mm = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  if (dd > 0) return `${dd}d ${hh}h ${mm}m`;
+  if (hh > 0) return `${hh}h ${mm}m ${ss}s`;
+  return `${mm}m ${ss}s`;
+}
+function whenStr(ms) {
+  if (!ms) return '';
+  return new Date(ms).toLocaleString('en-GB', {
+    weekday: 'short', day: '2-digit', month: 'short',
+    hour: '2-digit', minute: '2-digit',
+  });
+}
+
+// "Live" tab: astrologers live right now, plus upcoming scheduled lives.
 export default function LivePage() {
   const router = useRouter();
   const [lives, setLives] = useState(null);
+  const [upcoming, setUpcoming] = useState([]);
+  const [, setTick] = useState(0);
 
   useEffect(() => liveService.listenLiveAstrologers(
     (l) => setLives(l)), []);
+  useEffect(() => liveService.listenScheduledLives(
+    (l) => setUpcoming(l)), []);
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
 
   return (
     <Layout>
+      {upcoming.length > 0 && (
+        <div className="mb-5">
+          <h2 className="mb-2 text-lg font-bold">Upcoming lives</h2>
+          <div className="space-y-2">
+            {upcoming.map((u) => (
+              <div key={u.id}
+                className="surface flex items-center gap-3 p-3">
+                {u.photo ? (
+                  <img src={u.photo} alt={u.name}
+                    className="h-12 w-12 shrink-0 rounded-full
+                      object-cover" />
+                ) : (
+                  <span className="flex h-12 w-12 shrink-0 items-center
+                    justify-center rounded-full bg-primary/15
+                    font-bold text-primary">
+                    {(u.name || 'A').charAt(0)}
+                  </span>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="font-semibold">{u.name}</div>
+                  <div className="line-clamp-1 text-xs text-sub-text">
+                    {u.title || 'Live consultation'}
+                  </div>
+                  <div className="text-xs text-sub-text">
+                    {whenStr(u.startAt)}
+                  </div>
+                </div>
+                <span className="shrink-0 rounded-full bg-primary/15
+                  px-3 py-1 text-xs font-bold text-primary">
+                  in {countdown(u.startAt)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="mb-4 flex items-center gap-2">
         <span className="flex h-2.5 w-2.5 animate-pulse rounded-full
                          bg-red-500" />

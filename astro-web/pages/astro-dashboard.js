@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import {
   astrologerService, sessionService, userService, pushService,
+  hoursService,
 } from '@astro/shared';
 import Layout from '../components/Layout';
 import { useRequireAstrologer } from '../lib/useAuth';
@@ -19,6 +20,7 @@ export default function AstroDashboard() {
   const [cur, setCur] = useState([]);     // current/active sessions
   const [names, setNames] = useState({}); // uid -> name
   const [busy, setBusy] = useState(false);
+  const [hours, setHours] = useState(null); // today per-service hours
 
   useEffect(() => {
     if (!user) return;
@@ -44,6 +46,16 @@ export default function AstroDashboard() {
     return () => { if (unsub) unsub(); if (u2) u2(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    hoursService.getAvailLogs(user.uid).then((logs) => {
+      const sod = new Date(); sod.setHours(0, 0, 0, 0);
+      setHours(hoursService.computeHours(
+        logs, sod.getTime(), Date.now()));
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, astro]);
 
   async function toggleSvc(key) {
     if (!astro) return;
@@ -169,6 +181,31 @@ export default function AstroDashboard() {
               </div>
             );
           })}
+        </div>
+      </div>
+
+      {/* Online / offline hours today, per service. */}
+      <div className="card mt-4">
+        <div className="mb-2 font-semibold">Hours today</div>
+        <p className="mb-2 text-xs text-sub-text">
+          Time each service was Online vs Offline since midnight.
+        </p>
+        <div className="space-y-2">
+          {SVCS.map(([k, label]) => (
+            <div key={k} className="flex items-center justify-between
+              rounded-card border border-gray-200 p-3 text-sm">
+              <span className="font-medium">{label}</span>
+              <span className="text-sub-text">
+                <span className="font-semibold text-success">
+                  {hours ? hoursService.fmtHrs(hours.onlineMs[k]) : '-'}
+                </span>{' '}online
+                <span className="mx-1">/</span>
+                <span className="font-semibold">
+                  {hours ? hoursService.fmtHrs(hours.offlineMs[k]) : '-'}
+                </span>{' '}offline
+              </span>
+            </div>
+          ))}
         </div>
       </div>
 

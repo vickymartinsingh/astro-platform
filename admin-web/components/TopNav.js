@@ -25,6 +25,8 @@ const GROUPS = [
   ['Sessions', [
     ['/admin-sessions', 'Sessions'],
     ['/admin-live', 'Monitor Live'],
+    ['/admin-recordings', 'Recordings & Live'],
+    ['/admin-hours', 'Astrologer Hours'],
   ]],
   ['Finance', [
     ['/admin-transactions', 'Transactions'],

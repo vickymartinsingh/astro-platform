@@ -17,14 +17,15 @@ function Bell() {
     </svg>
   );
 }
-function Coin() {
+function Life() {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
       stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"
       strokeLinejoin="round" aria-hidden="true">
-      <ellipse cx="12" cy="6" rx="7" ry="3" />
-      <path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6" />
-      <path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" />
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="3.4" />
+      <path d="M4.7 4.7l4.6 4.6M14.7 14.7l4.6 4.6M19.3 4.7l-4.6 4.6
+        M9.3 14.7l-4.6 4.6" />
     </svg>
   );
 }
@@ -84,8 +85,8 @@ export default function TopNav() {
             <IconBtn href="/astro-notifications" label="Notifications">
               <Bell />
             </IconBtn>
-            <IconBtn href="/astro-earnings" label="Earnings">
-              <Coin />
+            <IconBtn href="/astro-support" label="Support">
+              <Life />
             </IconBtn>
           </span>
         </nav>
@@ -94,8 +95,8 @@ export default function TopNav() {
           <IconBtn href="/astro-notifications" label="Notifications">
             <Bell />
           </IconBtn>
-          <IconBtn href="/astro-earnings" label="Earnings">
-            <Coin />
+          <IconBtn href="/astro-support" label="Support">
+            <Life />
           </IconBtn>
           <button aria-label="Menu"
             className="rounded-xl border border-gray-200 px-3 py-2"

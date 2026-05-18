@@ -8,14 +8,17 @@
 // has no rule and is denied by default - which is why joins/comments
 // were not appearing. No rules redeploy is needed this way.
 import {
-  doc, setDoc, updateDoc, deleteDoc, collection, addDoc, query,
+  doc, getDoc, setDoc, updateDoc, deleteDoc, collection, addDoc, query,
   where, orderBy, limit, onSnapshot, serverTimestamp, increment,
 } from 'firebase/firestore';
 import { db } from '../firebase.js';
-import { notifyFollowers } from './followService.js';
+import { notifyFollowers, pushFollowers } from './followService.js';
 
 export function liveChannel(astroUid) { return `live_${astroUid}`; }
 function liveDoc(astroUid) { return doc(db, 'chats', `live_${astroUid}`); }
+function schedDoc(astroUid) {
+  return doc(db, 'chats', `livesched_${astroUid}`);
+}
 function liveMsgs(astroUid) {
   return collection(db, 'chats', `live_${astroUid}`, 'messages');
 }
@@ -35,10 +38,22 @@ export async function goLive(astroUid, info = {}) {
   try {
     await updateDoc(doc(db, 'astrologers', astroUid), { isLive: true });
   } catch (_) {}
+  // Going live now clears any pending scheduled live.
+  try { await deleteDoc(schedDoc(astroUid)); } catch (_) {}
   notifyFollowers(astroUid, 'Live', `/live-view/${astroUid}`);
 }
 
 export async function endLive(astroUid) {
+  let started = 0;
+  let info = {};
+  try {
+    const s = await getDoc(liveDoc(astroUid));
+    if (s.exists()) {
+      info = s.data();
+      const st = info.startedAt;
+      started = st && st.toMillis ? st.toMillis() : 0;
+    }
+  } catch (_) { /* ignore */ }
   try {
     await updateDoc(liveDoc(astroUid),
       { live: false, endedAt: serverTimestamp() });
@@ -46,7 +61,83 @@ export async function endLive(astroUid) {
   try {
     await updateDoc(doc(db, 'astrologers', astroUid), { isLive: false });
   } catch (_) {}
+  // Append a live-history record (top-level chats doc so the astrologer
+  // sees their own and admin sees everyone's, with no rules redeploy).
+  try {
+    const endedAt = Date.now();
+    await addDoc(collection(db, 'chats'), {
+      isLiveHistDoc: true,
+      astroUid,
+      name: info.name || 'Astrologer',
+      photo: info.photo || '',
+      title: info.title || 'Live consultation',
+      viewers: info.viewers || 0,
+      likes: info.likes || 0,
+      startedAtMs: started || endedAt,
+      endedAtMs: endedAt,
+      durationSec: started
+        ? Math.max(0, Math.round((endedAt - started) / 1000)) : 0,
+      ts: endedAt,
+      createdAt: serverTimestamp(),
+    });
+  } catch (_) { /* ignore */ }
   try { await deleteDoc(liveDoc(astroUid)); } catch (_) {}
+}
+
+// ---- Scheduled lives ----
+// One upcoming scheduled live per astrologer (chats/livesched_<uid>).
+export async function scheduleLive(astroUid, info = {}) {
+  const startAt = Number(info.startAt) || 0;
+  await setDoc(schedDoc(astroUid), {
+    scheduledLive: true,
+    astroUid,
+    name: info.name || 'Astrologer',
+    photo: info.photo || '',
+    title: info.title || 'Live consultation',
+    startAt,
+    createdAt: serverTimestamp(),
+  }, { merge: true });
+  const when = startAt
+    ? new Date(startAt).toLocaleString('en-GB', {
+      day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+    }) : 'soon';
+  pushFollowers(
+    astroUid,
+    `${info.name || 'Your astrologer'} scheduled a Live`,
+    `${info.title || 'Live consultation'} on ${when}. Tap for details.`,
+    '/live');
+}
+
+export async function cancelScheduledLive(astroUid) {
+  try { await deleteDoc(schedDoc(astroUid)); } catch (_) {}
+}
+
+export function listenScheduledLive(astroUid, callback) {
+  return onSnapshot(schedDoc(astroUid), (s) =>
+    callback(s.exists() ? { id: s.id, ...s.data() } : null));
+}
+
+// All upcoming scheduled lives (for the client "Upcoming" rail).
+export function listenScheduledLives(callback) {
+  return onSnapshot(
+    query(collection(db, 'chats'),
+      where('scheduledLive', '==', true)),
+    (snap) => callback(snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((x) => x.astroUid
+        && (x.startAt || 0) > Date.now() - 60 * 60 * 1000)
+      .sort((a, b) => (a.startAt || 0) - (b.startAt || 0))));
+}
+
+// Live history. Astrologer sees own; admin sees all (no limit).
+export function listenLiveHistory(astroUid, callback) {
+  return onSnapshot(
+    query(collection(db, 'chats'),
+      where('isLiveHistDoc', '==', true)),
+    (snap) => callback(snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((x) => !astroUid || x.astroUid === astroUid)
+      .sort((a, b) => (b.ts || 0) - (a.ts || 0))));
 }
 
 // All currently-live astrologers.
