@@ -13,6 +13,18 @@ import { useI18n } from '../lib/i18n';
 // links live under a "Profile" sub menu (dropdown).
 // Menus are admin-editable; defaults + live overrides via menuService.
 
+// Monochrome (no colour) outline bell for the notifications shortcut.
+function Bell() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"
+      strokeLinejoin="round" aria-hidden="true">
+      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+    </svg>
+  );
+}
+
 export default function TopNav() {
   const [open, setOpen] = useState(false);
   const [prof, setProf] = useState(false);
@@ -143,11 +155,22 @@ export default function TopNav() {
           )}
         </nav>
 
-        <button aria-label="Menu"
-          className="rounded-xl border border-gray-200 px-3 py-2 md:hidden"
-          onClick={() => setOpen((v) => !v)}>
-          {open ? '✕' : '☰'}
-        </button>
+        <div className="flex items-center gap-2 md:hidden">
+          <Link href="/notifications" aria-label="Notifications"
+            className="relative rounded-xl border border-gray-200 px-3
+                       py-2 text-dark-text">
+            <Bell />
+            {unread > 0 && (
+              <span className="badge absolute -right-1 -top-1
+                bg-rose-500 text-white">{unread}</span>
+            )}
+          </Link>
+          <button aria-label="Menu"
+            className="rounded-xl border border-gray-200 px-3 py-2"
+            onClick={() => setOpen((v) => !v)}>
+            {open ? '✕' : '☰'}
+          </button>
+        </div>
       </div>
 
       {open && (
