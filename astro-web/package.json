@@ -19,7 +19,7 @@
     "@capacitor/push-notifications": "^8.1.1",
     "agora-rtc-sdk-ng": "^4.20.2",
     "autoprefixer": "^10.4.19",
-    "firebase": "^10.12.2",
+    "firebase": "^12.6.0",
     "next": "14.2.5",
     "postcss": "^8.4.39",
     "react": "18.3.1",

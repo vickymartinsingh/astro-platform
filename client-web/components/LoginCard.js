@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { authService, userService } from '@astro/shared';
 import { DateField } from './BirthInputs';
@@ -15,15 +15,6 @@ export default function LoginCard({ onDone, compact, initialMode }) {
   const [password, setPassword] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
-  // Native Google sign-in is not bundled in the APK, so the Google
-  // button is web-only. In the app, email + password is the only path.
-  const [native, setNative] = useState(false);
-  useEffect(() => {
-    try {
-      const C = typeof window !== 'undefined' ? window.Capacitor : null;
-      setNative(!!(C && C.isNativePlatform && C.isNativePlatform()));
-    } catch (_) { /* ignore */ }
-  }, []);
 
   async function finish(user) {
     const p = await userService.getUser(user.uid);
@@ -160,23 +151,19 @@ export default function LoginCard({ onDone, compact, initialMode }) {
             )}
           </form>
 
-          {!native && (
-            <>
-              <div className="my-4 flex items-center gap-3 text-sm
-                              text-sub-text">
-                <span className="h-px flex-1 bg-gray-200" /> OR
-                <span className="h-px flex-1 bg-gray-200" />
-              </div>
-              <button onClick={google} disabled={busy}
-                className="flex w-full items-center justify-center gap-2
-                           rounded-full border border-gray-200 py-3
-                           font-semibold hover:bg-bg-light">
-                <span className="text-lg font-bold text-[#4285F4]">G</span>
-                {mode === 'signup' ? 'Sign up with Google'
-                  : 'Sign in with Google'}
-              </button>
-            </>
-          )}
+          <div className="my-4 flex items-center gap-3 text-sm
+                          text-sub-text">
+            <span className="h-px flex-1 bg-gray-200" /> OR
+            <span className="h-px flex-1 bg-gray-200" />
+          </div>
+          <button onClick={google} disabled={busy}
+            className="flex w-full items-center justify-center gap-2
+                       rounded-full border border-gray-200 py-3
+                       font-semibold hover:bg-bg-light">
+            <span className="text-lg font-bold text-[#4285F4]">G</span>
+            {mode === 'signup' ? 'Sign up with Google'
+              : 'Sign in with Google'}
+          </button>
 
           <button
             onClick={() => { setErr(''); setMode(
