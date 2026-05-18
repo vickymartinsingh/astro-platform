@@ -24,6 +24,8 @@ jobs:
     runs-on: macos-14
     env:
       APP: ${{ inputs.app }}
+      # Silence the Node 20 action deprecation warning.
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
     name: ${{ inputs.app }}
     steps:
       - name: Checkout
@@ -35,9 +37,19 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Diagnostics (tool versions)
+        run: |
+          echo "app=$APP"
+          node -v; npm -v
+          xcodebuild -version || true
+          pod --version || true
+          sw_vers || true
+          ls -la
+
       - name: Resolve IPA name
         id: meta
         run: |
+          set -euxo pipefail
           case "$APP" in
             client-web)  IPA=AstroConnect ;;
             astro-web)   IPA=AstroConnect-Astrologer ;;
@@ -66,11 +78,13 @@ jobs:
       # browsing, calls). This prevents the launch crash.
       - name: Strip Firebase native plugins for iOS (prevent crash)
         run: |
+          set -euxo pipefail
           node -e "const f=process.env.APP+'/package.json';const fs=require('fs');const j=JSON.parse(fs.readFileSync(f));for(const k of ['@capacitor-firebase/authentication','@capacitor/push-notifications']){if(j.dependencies)delete j.dependencies[k];}fs.writeFileSync(f,JSON.stringify(j,null,2)+'\n');console.log('stripped firebase native plugins from',f);"
 
       - name: Add iOS platform
         working-directory: ${{ inputs.app }}
         run: |
+          set -euxo pipefail
           npx cap add ios
           if [ ! -d "ios/App/App.xcworkspace" ]; then
             echo "Failed to create iOS workspace"
@@ -88,7 +102,9 @@ jobs:
 
       - name: Install CocoaPods dependencies
         working-directory: ${{ inputs.app }}/ios/App
-        run: pod install --repo-update
+        run: |
+          set -euxo pipefail
+          pod install --repo-update
 
       - name: Inject mic/camera permissions (Info.plist)
         run: node scripts/patch-native.mjs
@@ -120,6 +136,7 @@ jobs:
 
       - name: Package unsigned .ipa
         run: |
+          set -euxo pipefail
           APP_PATH="$RUNNER_TEMP/App.xcarchive/Products/Applications/App.app"
           if [ ! -d "$APP_PATH" ]; then echo "App.app not found"; exit 1; fi
           mkdir -p "$RUNNER_TEMP/Payload"
