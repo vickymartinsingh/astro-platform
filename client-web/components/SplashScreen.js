@@ -3,9 +3,15 @@ import { brandingService, db } from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
 
 // Full-screen launch screen: themed background (app gradient) + the
-// splash image / logo, shown while the app boots, then it fades away.
-// Admin can upload a custom splash in App Update settings
+// splash image / logo, shown briefly while the app boots, then it
+// fades away. Admin can upload a custom splash in App Update settings
 // (settings/config.splash_image); falls back to the brand logo.
+//
+// Robust dismissal: the hide timers are scheduled FIRST and are never
+// cancelled, so a Firebase error / slow network can never leave the
+// splash stuck. A module flag shows it only once per app launch.
+let SPLASH_DONE = false;
+
 function cachedConfig() {
   try {
     if (typeof localStorage === 'undefined') return {};
@@ -13,31 +19,34 @@ function cachedConfig() {
   } catch (_) { return {}; }
 }
 
-function alreadyShown() {
-  try { return sessionStorage.getItem('splashShown') === '1'; }
-  catch (_) { return false; }
-}
-
 export default function SplashScreen() {
-  const [gone, setGone] = useState(alreadyShown());
+  const [gone, setGone] = useState(SPLASH_DONE);
   const [fade, setFade] = useState(false);
   const c0 = cachedConfig();
   const [img, setImg] = useState(c0.splash_image || '');
   const [logo, setLogo] = useState('');
 
   useEffect(() => {
-    if (alreadyShown()) { setGone(true); return undefined; }
-    try { sessionStorage.setItem('splashShown', '1'); } catch (_) {}
-    const unsub = brandingService.watchBranding((b) =>
-      setLogo(b.logo || ''));
-    getDoc(doc(db, 'settings', 'config')).then((s) => {
-      const d = s.exists() ? s.data() : {};
-      if (d.splash_image) setImg(d.splash_image);
-    }).catch(() => {});
-    const t1 = setTimeout(() => setFade(true), 1500);
-    const t2 = setTimeout(() => setGone(true), 2000);
-    return () => { clearTimeout(t1); clearTimeout(t2);
-      if (unsub) unsub(); };
+    if (SPLASH_DONE) { setGone(true); return undefined; }
+    // Guarantee dismissal NO MATTER WHAT - schedule before any other
+    // (possibly throwing / slow) work.
+    const t1 = setTimeout(() => setFade(true), 1400);
+    const t2 = setTimeout(() => {
+      SPLASH_DONE = true;
+      setGone(true);
+    }, 1900);
+    let unsub;
+    try {
+      unsub = brandingService.watchBranding((b) =>
+        setLogo((b && b.logo) || ''));
+    } catch (_) { /* ignore */ }
+    try {
+      getDoc(doc(db, 'settings', 'config')).then((s) => {
+        const d = s.exists() ? s.data() : {};
+        if (d.splash_image) setImg(d.splash_image);
+      }).catch(() => {});
+    } catch (_) { /* ignore */ }
+    return () => { if (unsub) { try { unsub(); } catch (_) {} } };
   }, []);
 
   if (gone) return null;
