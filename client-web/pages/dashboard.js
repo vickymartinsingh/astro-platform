@@ -192,7 +192,6 @@ export default function Dashboard() {
           features.stars_split = false. */}
       {sec.starsToday !== false && (() => {
         const split = features.stars_split !== false;
-        const genericHead = split ? 'Horoscope' : 'Your stars today';
         const pk = kundlis[Math.min(kIdx, Math.max(0,
           kundlis.length - 1))] || null;
         const pSign = (pk && pk.zodiac)
@@ -271,36 +270,43 @@ export default function Dashboard() {
               </>
             )}
 
-            <h2 className="mb-3 mt-8 text-lg font-bold">{genericHead}</h2>
-            <div className="surface p-5">
-              <div className="mb-3">
-                <ZodiacPicker value={sign} onChange={setSign}
-                  dropdown={features.zodiac_dropdown === true} />
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="badge bg-bg-light text-primary">
-                  Daily reading
-                </span>
-                <div className="flex gap-1">
-                  {['today', 'tomorrow'].map((w) => (
-                    <button key={w} onClick={() => setWhen(w)}
-                      className={when === w ? 'pill pill-active' : 'pill'}>
-                      {w === 'today' ? 'Today' : 'Tomorrow'}
-                    </button>
-                  ))}
+            {!split && (
+              <>
+                <h2 className="mb-3 mt-8 text-lg font-bold">
+                  Your stars today
+                </h2>
+                <div className="surface p-5">
+                  <div className="mb-3">
+                    <ZodiacPicker value={sign} onChange={setSign}
+                      dropdown={features.zodiac_dropdown === true} />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="badge bg-bg-light text-primary">
+                      Daily reading
+                    </span>
+                    <div className="flex gap-1">
+                      {['today', 'tomorrow'].map((w) => (
+                        <button key={w} onClick={() => setWhen(w)}
+                          className={when === w
+                            ? 'pill pill-active' : 'pill'}>
+                          {w === 'today' ? 'Today' : 'Tomorrow'}
+                        </button>
+                      ))}
+                    </div>
+                    <Link href="/tarot" className="btn-grad ml-auto">
+                      Pick your tarot card
+                    </Link>
+                  </div>
+                  <div className="mt-4">
+                    <Daily
+                      title={`${zodiacLabel(sign, true)} - `
+                        + `${when === 'today' ? 'Today' : 'Tomorrow'}, `
+                        + `${dateLabel(when)}`}
+                      h={reading} />
+                  </div>
                 </div>
-                <Link href="/tarot" className="btn-grad ml-auto">
-                  Pick your tarot card
-                </Link>
-              </div>
-              <div className="mt-4">
-                <Daily
-                  title={`${zodiacLabel(sign, true)} - `
-                    + `${when === 'today' ? 'Today' : 'Tomorrow'}, `
-                    + `${dateLabel(when)}`}
-                  h={reading} />
-              </div>
-            </div>
+              </>
+            )}
           </>
         );
       })()}
