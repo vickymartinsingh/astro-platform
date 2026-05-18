@@ -1,31 +1,44 @@
 name: Build iOS IPA (unsigned)
 
-# Manual, ONE app at a time (dropdown, default client-web). Produces an
-# UNSIGNED .ipa. The whole pipeline runs as a single traced script and
-# ALWAYS uploads a full log artifact ("ios-build-log") so the exact
-# failing command is visible without digging through step logs.
+# Manual. Default builds ALL three apps in one run (each is an
+# independent job, so one failing app does not stop the others). You
+# can also pick a single app. Produces UNSIGNED .ipa artifacts.
 on:
   workflow_dispatch:
     inputs:
       app:
-        description: Which app to build
+        description: Which app(s) to build
         type: choice
-        default: client-web
+        default: all
         options:
+          - all
           - client-web
           - astro-web
           - admin-web
 
-concurrency:
-  group: ios-${{ github.ref }}-${{ inputs.app }}
-  cancel-in-progress: true
-
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - id: set
+        run: |
+          if [ "${{ inputs.app }}" = "all" ]; then
+            echo 'matrix={"app":["client-web","astro-web","admin-web"]}' >> "$GITHUB_OUTPUT"
+          else
+            echo "matrix={\"app\":[\"${{ inputs.app }}\"]}" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
+    needs: prepare
     runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    name: ${{ matrix.app }}
     env:
-      APP: ${{ inputs.app }}
-    name: ${{ inputs.app }}
+      APP: ${{ matrix.app }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -62,7 +75,6 @@ jobs:
             admin-web)   IPA=AstroConnect-Admin ;;
             *)           IPA=App ;;
           esac
-          echo "IPA=$IPA" >> "$GITHUB_ENV"
           echo "ipa=$IPA" >> "$GITHUB_OUTPUT"
 
           echo "::group::install deps"
@@ -81,11 +93,9 @@ jobs:
           node -e "const f=process.env.APP+'/package.json';const fs=require('fs');const j=JSON.parse(fs.readFileSync(f));for(const k of ['@capacitor-firebase/authentication','@capacitor/push-notifications']){if(j.dependencies)delete j.dependencies[k];}fs.writeFileSync(f,JSON.stringify(j,null,2)+'\n');console.log('stripped',f);"
           echo "::endgroup::"
 
-          # Capacitor 8 defaults to Swift Package Manager, but the
-          # ionic-team/capacitor-swift-pm mirror drifts out of sync with
-          # the plugin source (CAPPluginCall.reject / getArray / etc not
-          # found). Force CocoaPods so Capacitor is built from the exact
-          # matching @capacitor/ios npm package.
+          # Capacitor 8 defaults to SPM; the capacitor-swift-pm mirror
+          # drifts and breaks plugin compile. Force CocoaPods so
+          # Capacitor builds from the exact matching npm package.
           echo "::group::cap add ios (CocoaPods)"
           ( cd "$APP" && npx cap add ios --packagemanager Cocoapods )
           echo "::endgroup::"
@@ -105,10 +115,10 @@ jobs:
           echo "::group::pod install"
           ( cd "$APP/ios/App" && (pod install --repo-update || pod install) )
           ls -la "$APP/ios/App"
-          test -d "$APP/ios/App/App.xcworkspace" || { echo "NO WORKSPACE (CocoaPods did not generate one)"; exit 1; }
+          test -d "$APP/ios/App/App.xcworkspace" || { echo "NO WORKSPACE"; exit 1; }
           echo "::endgroup::"
 
-          echo "::group::xcodebuild (unsigned build, CocoaPods)"
+          echo "::group::xcodebuild (unsigned, CocoaPods)"
           ( cd "$APP" && xcodebuild \
               -workspace ios/App/App.xcworkspace \
               -scheme App \
@@ -128,7 +138,7 @@ jobs:
           echo "::group::package ipa"
           APP_PATH="$RUNNER_TEMP/dd/Build/Products/Release-iphoneos/App.app"
           if [ ! -d "$APP_PATH" ]; then
-            echo "App.app not found at $APP_PATH; searching:"
+            echo "App.app not found; searching:"
             find "$RUNNER_TEMP/dd" -name '*.app' -maxdepth 6 -print || true
             exit 1
           fi
@@ -142,7 +152,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: ios-build-log
+          name: ios-build-log-${{ matrix.app }}
           path: ${{ runner.temp }}/ios-build.log
           if-no-files-found: warn
           retention-days: 14
