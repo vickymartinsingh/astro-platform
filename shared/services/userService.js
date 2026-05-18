@@ -15,7 +15,21 @@ export async function ensureUserDoc(authUser) {
   if (!authUser) return null;
   const ref = doc(db, 'users', authUser.uid);
   const snap = await getDoc(ref);
-  if (snap.exists()) return { uid: snap.id, ...snap.data() };
+  if (snap.exists()) {
+    const u = snap.data();
+    // Lazy migration: old long codes (e.g. 9 digits) -> new short
+    // 6-char ALL-CAPS alphanumeric, saved to the user's own doc.
+    if (!/^[A-Z0-9]{6}$/.test(String(u.userCode || ''))) {
+      let nc;
+      try {
+        nc = await generateUniqueUserCode(
+          u.name || u.email || authUser.email);
+      } catch { nc = randCode(6); }
+      try { await updateDoc(ref, { userCode: nc }); } catch (_) {}
+      return { uid: snap.id, ...u, userCode: nc };
+    }
+    return { uid: snap.id, ...u };
+  }
 
   let userCode;
   try {
