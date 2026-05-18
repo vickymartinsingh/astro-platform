@@ -64,6 +64,15 @@ function Profile(p) {
     </svg>
   );
 }
+// Generic icon for admin-added custom tabs.
+function Dot(p) {
+  return (
+    <svg {...I} {...p}>
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 8v8M8 12h8" />
+    </svg>
+  );
+}
 
 // key = stable id used by the admin App Builder (order/hide/label).
 const TABS = [
@@ -91,9 +100,17 @@ export default function BottomNav() {
   const { features } = useSettings();
 
   const byKey = Object.fromEntries(TABS.map((t) => [t.key, t]));
+  // Admin-added custom tabs (App Builder -> Bottom menu -> + Add tab).
+  const customTabs = (Array.isArray(features.nav_custom)
+    ? features.nav_custom : [])
+    .filter((c) => c && c.key && c.href)
+    .map((c) => ({ key: c.key, href: c.href,
+      label: c.label || c.href, Ico: Dot, match: [c.href] }));
+  customTabs.forEach((t) => { byKey[t.key] = t; });
   // Admin App Builder order (settings/features.nav_order); default
   // order otherwise. Then drop hidden tabs (+ legacy enable_live).
-  const defKeys = TABS.map((t) => t.key);
+  const defKeys = [...TABS.map((t) => t.key),
+    ...customTabs.map((t) => t.key)];
   const saved = Array.isArray(features.nav_order)
     ? features.nav_order.filter((k) => byKey[k]) : [];
   // Always include any default tab missing from a saved order (so new
