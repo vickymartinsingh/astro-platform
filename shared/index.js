@@ -28,4 +28,6 @@ export * as liveService from './services/liveService.js';
 export * as themeService from './services/themeService.js';
 export * as brandingService from './services/brandingService.js';
 export * as menuService from './services/menuService.js';
+export * as iconsService from './services/iconsService.js';
+export * as horoscopeService from './services/horoscopeService.js';
 export * as supportService from './services/supportService.js';

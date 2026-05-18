@@ -2,14 +2,14 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import {
-  astrologerService, getHoroscope, reviewService, zodiacLabel, db,
+  astrologerService, reviewService, zodiacLabel,
+  iconsService, horoscopeService, db,
 } from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { SkeletonList } from '../components/Skeleton';
 import AstrologerCard from '../components/AstrologerCard';
 import ZodiacPicker from '../components/ZodiacPicker';
-import { Icon } from '../components/Icons';
 import { useOptionalClient } from '../lib/useAuth';
 import { useAstroActions } from '../lib/useAstroActions';
 import { useAuthModal } from '../lib/authModal';
@@ -86,11 +86,19 @@ export default function Dashboard() {
       .then(setPubReviews).catch(() => setPubReviews([]));
   }, []);
 
+  const [icons, setIcons] = useState(iconsService.resolveIcons(null));
+  useEffect(() => iconsService.watchIcons(setIcons), []);
+  const [horo, setHoro] = useState({});
+  useEffect(() => horoscopeService.watchHoroscope(setHoro), []);
+
   if (loading) return <Layout><SkeletonList /></Layout>;
 
   const topRated = [...(list || [])]
     .sort((a, b) => (b.rating || 0) - (a.rating || 0)).slice(0, 8);
-  const reading = getHoroscope(sign, when);
+  const reading = horoscopeService.resolveHoroscope(sign, when, horo);
+  const iconNode = (slot) => (iconsService.isImage(icons[slot])
+    ? <img src={icons[slot]} alt="" className="h-8 w-8 object-contain" />
+    : <span className="text-2xl leading-none">{icons[slot]}</span>);
   const openProfile = (a) => router.push(`/astrologer/${a.id}`);
 
   return (
@@ -121,15 +129,15 @@ export default function Dashboard() {
       {sec.quickActions !== false && (
       <div className="mt-4 grid grid-cols-4 gap-3">
         {[
-          ['/tarot', 'Tarot', '🔮'],
-          ['/kundli', 'Kundli', '📜'],
-          ['/matching', 'Matching', '💞'],
-          ['/horoscope', 'Horoscope', '✨'],
-        ].map(([href, label, icon]) => (
+          ['/tarot', 'Tarot', 'qa:tarot'],
+          ['/kundli', 'Kundli', 'qa:kundli'],
+          ['/matching', 'Matching', 'qa:matching'],
+          ['/horoscope', 'Horoscope', 'qa:horoscope'],
+        ].map(([href, label, slot]) => (
           <Link key={href} href={href}
             className="surface flex flex-col items-center gap-1 p-3
                        text-center hover:shadow-md">
-            <span className="text-2xl">{icon}</span>
+            {iconNode(slot)}
             <span className="text-xs font-semibold">{label}</span>
           </Link>
         ))}
@@ -184,21 +192,18 @@ export default function Dashboard() {
       {sec.categories !== false && (
       <><h2 className="mb-3 mt-8 text-lg font-bold">Browse by category</h2>
       <div className="grid grid-cols-3 gap-3 md:grid-cols-6">
-        {CATEGORIES.map(([key, label]) => {
-          const Ico = Icon[key] || Icon.Star;
-          return (
-            <Link key={key}
-              href={`/astrologers?skill=${encodeURIComponent(key)}`}
-              className="surface flex flex-col items-center gap-2 p-4
-                         text-center hover:shadow-md">
-              <span className="flex h-11 w-11 items-center justify-center
-                rounded-xl bg-bg-light text-dark-text">
-                <Ico />
-              </span>
-              <span className="text-xs font-medium">{label}</span>
-            </Link>
-          );
-        })}
+        {CATEGORIES.map(([key, label]) => (
+          <Link key={key}
+            href={`/astrologers?skill=${encodeURIComponent(key)}`}
+            className="surface flex flex-col items-center gap-2 p-4
+                       text-center hover:shadow-md">
+            <span className="flex h-11 w-11 items-center justify-center
+              rounded-xl bg-bg-light text-dark-text">
+              {iconNode(`cat:${key}`)}
+            </span>
+            <span className="text-xs font-medium">{label}</span>
+          </Link>
+        ))}
       </div></>
       )}
 

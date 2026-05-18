@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { kundliService, getHoroscope, zodiacLabel } from '@astro/shared';
+import {
+  kundliService, horoscopeService, zodiacLabel,
+} from '@astro/shared';
 import Layout from '../components/Layout';
 import { SkeletonList } from '../components/Skeleton';
 import ZodiacPicker from '../components/ZodiacPicker';
@@ -15,6 +17,7 @@ export default function Horoscope() {
   const { features } = useSettings();
   const [sign, setSign] = useState('Aries');
   const [when, setWhen] = useState('today');
+  const [horo, setHoro] = useState({});
 
   useEffect(() => {
     if (!user) return;
@@ -22,10 +25,11 @@ export default function Horoscope() {
       .then((k) => { if (k?.zodiac) setSign(k.zodiac); })
       .catch(() => {});
   }, [user]);
+  useEffect(() => horoscopeService.watchHoroscope(setHoro), []);
 
   if (loading) return <Layout><SkeletonList /></Layout>;
 
-  const h = getHoroscope(sign, when);
+  const h = horoscopeService.resolveHoroscope(sign, when, horo);
   const dateStr = (w) => {
     const d = new Date();
     if (w === 'tomorrow') d.setDate(d.getDate() + 1);

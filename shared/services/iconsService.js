@@ -1,0 +1,72 @@
+// Admin-editable icons for the home quick actions and the "Browse by
+// category" tiles. Stored in settings/content.icons as { slotKey: value }
+// where value is an emoji OR an uploaded image data-URL. Live everywhere
+// (onSnapshot) and cached so it never glitches/flashes on navigation.
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase.js';
+
+// slot key -> default icon (emoji). Admin overrides any of these and can
+// also upload an image instead.
+export const DEFAULT_ICONS = {
+  'qa:tarot': '🃏',
+  'qa:kundli': '📜',
+  'qa:matching': '💞',
+  'qa:horoscope': '🌞',
+  'cat:Love': '❤️',
+  'cat:Career': '💼',
+  'cat:Marriage': '💍',
+  'cat:Health': '🩺',
+  'cat:Finance': '💰',
+  'cat:Education': '📚',
+};
+
+// For the admin editor UI (label per slot).
+export const ICON_SLOTS = [
+  ['qa:tarot', 'Quick action: Tarot'],
+  ['qa:kundli', 'Quick action: Kundli'],
+  ['qa:matching', 'Quick action: Matching'],
+  ['qa:horoscope', 'Quick action: Horoscope'],
+  ['cat:Love', 'Category: Love & Relationships'],
+  ['cat:Career', 'Category: Career'],
+  ['cat:Marriage', 'Category: Marriage'],
+  ['cat:Health', 'Category: Health'],
+  ['cat:Finance', 'Category: Finance'],
+  ['cat:Education', 'Category: Education'],
+];
+
+export function resolveIcons(content) {
+  const over = (content && content.icons) || {};
+  const out = { ...DEFAULT_ICONS };
+  Object.keys(over).forEach((k) => {
+    if (over[k]) out[k] = over[k];
+  });
+  return out;
+}
+
+export function isImage(v) {
+  return typeof v === 'string' && v.slice(0, 5) === 'data:';
+}
+
+let CACHE;
+try {
+  if (typeof localStorage !== 'undefined') {
+    const s = localStorage.getItem('iconMap');
+    if (s) CACHE = JSON.parse(s);
+  }
+} catch (_) { /* ignore */ }
+
+export function watchIcons(cb) {
+  if (cb) cb(CACHE || resolveIcons(null));
+  try {
+    return onSnapshot(doc(db, 'settings', 'content'), (s) => {
+      const map = resolveIcons(s.exists() ? s.data() : null);
+      CACHE = map;
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('iconMap', JSON.stringify(map));
+        }
+      } catch (_) { /* ignore */ }
+      if (cb) cb(map);
+    }, () => {});
+  } catch (_) { return () => {}; }
+}

@@ -6,8 +6,6 @@ import { ZODIAC, ZODIAC_IN } from '@astro/shared';
 // symbol icon + Rashi name, not the Western glyphs. Falls back to the
 // dropdown when the admin sets features.zodiac_dropdown = true.
 const IN = (z) => ZODIAC_IN[z] || { en: z, icon: '' };
-// Render the icon monochrome (no colour), matching the app's UI.
-const MONO = { filter: 'grayscale(1) contrast(1.1)' };
 
 export default function ZodiacPicker({ value, onChange, dropdown }) {
   const stripRef = useRef(null);
@@ -66,7 +64,7 @@ export default function ZodiacPicker({ value, onChange, dropdown }) {
                 transition-all ${on
                   ? 'border-primary bg-primary text-white shadow-md'
                   : 'border-gray-200 bg-white text-dark-text'}`}>
-              <span className="text-2xl leading-none" style={MONO}>
+              <span className="text-2xl leading-none">
                 {IN(z).icon}
               </span>
               <span className="text-xs font-semibold">{IN(z).en}</span>

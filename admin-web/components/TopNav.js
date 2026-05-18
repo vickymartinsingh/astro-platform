@@ -34,11 +34,13 @@ const GROUPS = [
   ]],
   ['Content', [
     ['/admin-cms', 'CMS Builder'],
+    ['/admin-icons', 'Icons'],
     ['/admin-announcement', 'Announcement'],
     ['/admin-notifications', 'Notifications'],
   ]],
   ['Astrology', [
     ['/admin-kundli-api', 'Kundli API'],
+    ['/admin-horoscope', 'Horoscope CSV'],
     ['/admin-remedies', 'Remedies'],
   ]],
   ['Config', [
@@ -63,6 +65,8 @@ const DEV_GROUPS = [
   ]],
   ['Content', [
     ['/admin-cms', 'CMS / Text & Pages'],
+    ['/admin-icons', 'Icons'],
+    ['/admin-horoscope', 'Horoscope CSV'],
     ['/admin-reviews', 'Customer Reviews'],
     ['/admin-announcement', 'Announcement Banner'],
     ['/admin-notifications', 'Push Notifications'],

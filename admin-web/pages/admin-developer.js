@@ -34,11 +34,13 @@ const ALL = [
   ]],
   ['Content & Engagement', [
     ['/admin-cms', 'CMS Builder', ['content']],
+    ['/admin-icons', 'Icons (emoji / upload)'],
     ['/admin-announcement', 'Announcement', ['announcement']],
     ['/admin-notifications', 'Notifications'],
   ]],
   ['Astrology', [
     ['/admin-kundli-api', 'Kundli API', ['kundliApi']],
+    ['/admin-horoscope', 'Horoscope CSV upload'],
     ['/admin-remedies', 'Remedies'],
   ]],
   ['Appearance & Build', [
