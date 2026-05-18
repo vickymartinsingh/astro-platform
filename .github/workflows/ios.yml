@@ -81,11 +81,13 @@ jobs:
           node -e "const f=process.env.APP+'/package.json';const fs=require('fs');const j=JSON.parse(fs.readFileSync(f));for(const k of ['@capacitor-firebase/authentication','@capacitor/push-notifications']){if(j.dependencies)delete j.dependencies[k];}fs.writeFileSync(f,JSON.stringify(j,null,2)+'\n');console.log('stripped',f);"
           echo "::endgroup::"
 
-          echo "::group::cap add ios"
-          ( cd "$APP" && npx cap add ios )
-          # Capacitor 8 uses Swift Package Manager: it generates
-          # App.xcodeproj (no .xcworkspace, no Podfile).
-          test -d "$APP/ios/App/App.xcodeproj" || { echo "NO XCODEPROJ"; ls -la "$APP/ios/App" || true; exit 1; }
+          # Capacitor 8 defaults to Swift Package Manager, but the
+          # ionic-team/capacitor-swift-pm mirror drifts out of sync with
+          # the plugin source (CAPPluginCall.reject / getArray / etc not
+          # found). Force CocoaPods so Capacitor is built from the exact
+          # matching @capacitor/ios npm package.
+          echo "::group::cap add ios (CocoaPods)"
+          ( cd "$APP" && npx cap add ios --packagemanager Cocoapods )
           echo "::endgroup::"
 
           echo "::group::ios assets (best effort)"
@@ -100,16 +102,15 @@ jobs:
           node scripts/patch-native.mjs || echo "patch-native skipped"
           echo "::endgroup::"
 
-          echo "::group::resolve SPM packages"
-          ( cd "$APP" && xcodebuild \
-              -project ios/App/App.xcodeproj \
-              -scheme App \
-              -resolvePackageDependencies )
+          echo "::group::pod install"
+          ( cd "$APP/ios/App" && (pod install --repo-update || pod install) )
+          ls -la "$APP/ios/App"
+          test -d "$APP/ios/App/App.xcworkspace" || { echo "NO WORKSPACE (CocoaPods did not generate one)"; exit 1; }
           echo "::endgroup::"
 
-          echo "::group::xcodebuild (unsigned build, SPM)"
+          echo "::group::xcodebuild (unsigned build, CocoaPods)"
           ( cd "$APP" && xcodebuild \
-              -project ios/App/App.xcodeproj \
+              -workspace ios/App/App.xcworkspace \
               -scheme App \
               -configuration Release \
               -sdk iphoneos \
