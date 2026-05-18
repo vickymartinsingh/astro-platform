@@ -71,6 +71,16 @@ export default function LoginCard({ onDone, compact, initialMode }) {
       if (u) await finish(u);
     } catch (e) {
       const c = e?.code || '';
+      const msg = String(e?.message || '');
+      const native = typeof window !== 'undefined'
+        && window.Capacitor
+        && typeof window.Capacitor.isNativePlatform === 'function'
+        && window.Capacitor.isNativePlatform();
+      // Android Google sign-in config not finished (SHA-1 / OAuth
+      // client not registered in Firebase): SDK throws code 10 /
+      // DEVELOPER_ERROR / ApiException with no auth/* code.
+      const isCfg = /DEVELOPER_ERROR|ApiException|: *10\b|status: *10|"?10"?:/i
+        .test(`${c} ${msg}`);
       if (c === 'auth/operation-not-allowed') {
         setErr('Google sign-in is disabled. Enable it in Firebase: '
           + 'Authentication > Sign-in method > Google.');
@@ -80,13 +90,19 @@ export default function LoginCard({ onDone, compact, initialMode }) {
       } else if (c === 'auth/popup-blocked') {
         setErr('Browser blocked the popup. Allow popups and retry.');
       } else if (c === 'auth/popup-closed-by-user'
-                 || c === 'auth/cancelled-popup-request') {
-        setErr('Google popup was closed. Try again.');
-      } else if (/unavailable/i.test(e?.message || '')) {
+                 || c === 'auth/cancelled-popup-request'
+                 || /cancel/i.test(msg)) {
+        setErr('Google sign-in was cancelled. Try again.');
+      } else if (native && (isCfg || !c)) {
+        setErr('Google sign-in for the app is still being set up on '
+          + 'the server (the app fingerprint must be added in '
+          + 'Firebase). Please sign in with email and password for '
+          + 'now - it works normally.');
+      } else if (/unavailable/i.test(msg)) {
         setErr('Google sign-in is not available in this app build. '
           + 'Please use email and password here.');
       } else {
-        setErr(`Google sign-in failed (${c || 'unknown error'}). `
+        setErr(`Google sign-in failed (${c || msg || 'unknown'}). `
           + 'Try email/password.');
       }
     } finally { setBusy(false); }
