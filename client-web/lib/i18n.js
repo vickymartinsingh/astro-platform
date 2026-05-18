@@ -1,13 +1,20 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import {
+  createContext, useContext, useEffect, useState,
+} from 'react';
 import { userService } from '@astro/shared';
 
-// Lightweight i18n. English is the source of truth; every other
-// language overrides per-key and falls back to English for any key it
-// does not define. The chosen language is stored in localStorage:
+// App-wide i18n. English is the source of truth. Because almost every
+// screen uses plain hard-coded English copy (not t() keys), a tiny
+// dictionary alone could never translate the app. So when a non-English
+// language is selected we run a live DOM translator: it walks the
+// rendered text, translates it (cached in localStorage so it is instant
+// after the first time and works offline once cached) and swaps it in.
+// Picking "English" / Reset instantly restores the original text.
+//
+// The chosen language is stored in localStorage:
 //  - APP UPDATE keeps localStorage  -> language is preserved.
 //  - UNINSTALL + REINSTALL clears it -> defaults back to English.
-// (We deliberately do NOT auto-restore from the server profile, so a
-// reinstall always starts in English as requested.)
+
 const DICT = {
   en: {
     'nav.home': 'Home', 'nav.astrologers': 'Astrologers',
@@ -24,94 +31,6 @@ const DICT = {
     'auth.email': 'Email', 'auth.password': 'Password',
     'common.loading': 'Loading…', 'common.retry': 'Try again',
     'profile.language': 'Language',
-  },
-  hi: {
-    'nav.home': 'होम', 'nav.astrologers': 'ज्योतिषी',
-    'nav.wallet': 'वॉलेट', 'nav.horoscope': 'राशिफल',
-    'nav.profile': 'प्रोफ़ाइल', 'nav.notifications': 'सूचनाएँ',
-    'nav.logout': 'लॉगआउट',
-    'auth.login': 'लॉगिन', 'auth.signup': 'साइन अप',
-    'common.loading': 'लोड हो रहा है…', 'profile.language': 'भाषा',
-  },
-  bn: {
-    'nav.home': 'হোম', 'nav.astrologers': 'জ্যোতিষী',
-    'nav.wallet': 'ওয়ালেট', 'nav.horoscope': 'রাশিফল',
-    'nav.profile': 'প্রোফাইল', 'nav.notifications': 'বিজ্ঞপ্তি',
-    'nav.logout': 'লগআউট',
-    'auth.login': 'লগইন', 'auth.signup': 'সাইন আপ',
-    'common.loading': 'লোড হচ্ছে…', 'profile.language': 'ভাষা',
-  },
-  te: {
-    'nav.home': 'హోమ్', 'nav.astrologers': 'జ్యోతిష్కులు',
-    'nav.wallet': 'వాలెట్', 'nav.horoscope': 'రాశిఫలం',
-    'nav.profile': 'ప్రొఫైల్', 'nav.notifications': 'నోటిఫికేషన్లు',
-    'nav.logout': 'లాగౌట్',
-    'auth.login': 'లాగిన్', 'auth.signup': 'సైన్ అప్',
-    'common.loading': 'లోడ్ అవుతోంది…', 'profile.language': 'భాష',
-  },
-  mr: {
-    'nav.home': 'होम', 'nav.astrologers': 'ज्योतिषी',
-    'nav.wallet': 'वॉलेट', 'nav.horoscope': 'राशीभविष्य',
-    'nav.profile': 'प्रोफाइल', 'nav.notifications': 'सूचना',
-    'nav.logout': 'लॉगआउट',
-    'auth.login': 'लॉगिन', 'auth.signup': 'साइन अप',
-    'common.loading': 'लोड होत आहे…', 'profile.language': 'भाषा',
-  },
-  ta: {
-    'nav.home': 'முகப்பு', 'nav.astrologers': 'ஜோதிடர்கள்',
-    'nav.wallet': 'வாலெட்', 'nav.horoscope': 'ராசிபலன்',
-    'nav.profile': 'சுயவிவரம்', 'nav.notifications': 'அறிவிப்புகள்',
-    'nav.logout': 'வெளியேறு',
-    'auth.login': 'உள்நுழை', 'auth.signup': 'பதிவு செய்',
-    'common.loading': 'ஏற்றுகிறது…', 'profile.language': 'மொழி',
-  },
-  gu: {
-    'nav.home': 'હોમ', 'nav.astrologers': 'જ્યોતિષી',
-    'nav.wallet': 'વોલેટ', 'nav.horoscope': 'રાશિફળ',
-    'nav.profile': 'પ્રોફાઇલ', 'nav.notifications': 'સૂચનાઓ',
-    'nav.logout': 'લૉગઆઉટ',
-    'auth.login': 'લૉગિન', 'auth.signup': 'સાઇન અપ',
-    'common.loading': 'લોડ થઈ રહ્યું છે…', 'profile.language': 'ભાષા',
-  },
-  kn: {
-    'nav.home': 'ಮುಖಪುಟ', 'nav.astrologers': 'ಜ್ಯೋತಿಷಿಗಳು',
-    'nav.wallet': 'ವಾಲೆಟ್', 'nav.horoscope': 'ರಾಶಿಫಲ',
-    'nav.profile': 'ಪ್ರೊಫೈಲ್', 'nav.notifications': 'ಅಧಿಸೂಚನೆಗಳು',
-    'nav.logout': 'ಲಾಗ್ ಔಟ್',
-    'auth.login': 'ಲಾಗಿನ್', 'auth.signup': 'ಸೈನ್ ಅಪ್',
-    'common.loading': 'ಲೋಡ್ ಆಗುತ್ತಿದೆ…', 'profile.language': 'ಭಾಷೆ',
-  },
-  ml: {
-    'nav.home': 'ഹോം', 'nav.astrologers': 'ജ്യോതിഷർ',
-    'nav.wallet': 'വാലറ്റ്', 'nav.horoscope': 'രാശിഫലം',
-    'nav.profile': 'പ്രൊഫൈൽ', 'nav.notifications': 'അറിയിപ്പുകൾ',
-    'nav.logout': 'ലോഗൗട്ട്',
-    'auth.login': 'ലോഗിൻ', 'auth.signup': 'സൈൻ അപ്പ്',
-    'common.loading': 'ലോഡ് ചെയ്യുന്നു…', 'profile.language': 'ഭാഷ',
-  },
-  pa: {
-    'nav.home': 'ਹੋਮ', 'nav.astrologers': 'ਜੋਤਸ਼ੀ',
-    'nav.wallet': 'ਵਾਲਿਟ', 'nav.horoscope': 'ਰਾਸ਼ੀਫਲ',
-    'nav.profile': 'ਪ੍ਰੋਫਾਈਲ', 'nav.notifications': 'ਸੂਚਨਾਵਾਂ',
-    'nav.logout': 'ਲੌਗਆਉਟ',
-    'auth.login': 'ਲੌਗਇਨ', 'auth.signup': 'ਸਾਈਨ ਅੱਪ',
-    'common.loading': 'ਲੋਡ ਹੋ ਰਿਹਾ ਹੈ…', 'profile.language': 'ਭਾਸ਼ਾ',
-  },
-  or: {
-    'nav.home': 'ହୋମ୍', 'nav.astrologers': 'ଜ୍ୟୋତିଷୀ',
-    'nav.wallet': 'ୱାଲେଟ୍', 'nav.horoscope': 'ରାଶିଫଳ',
-    'nav.profile': 'ପ୍ରୋଫାଇଲ୍', 'nav.notifications': 'ବିଜ୍ଞପ୍ତି',
-    'nav.logout': 'ଲଗଆଉଟ୍',
-    'auth.login': 'ଲଗଇନ୍', 'auth.signup': 'ସାଇନ୍ ଅପ୍',
-    'common.loading': 'ଲୋଡ୍ ହେଉଛି…', 'profile.language': 'ଭାଷା',
-  },
-  ur: {
-    'nav.home': 'ہوم', 'nav.astrologers': 'نجومی',
-    'nav.wallet': 'والیٹ', 'nav.horoscope': 'زائچہ',
-    'nav.profile': 'پروفائل', 'nav.notifications': 'اطلاعات',
-    'nav.logout': 'لاگ آؤٹ',
-    'auth.login': 'لاگ ان', 'auth.signup': 'سائن اپ',
-    'common.loading': 'لوڈ ہو رہا ہے…', 'profile.language': 'زبان',
   },
 };
 
@@ -131,35 +50,183 @@ export const LANGS = [
   { code: 'ur', label: 'اردو (Urdu)' },
 ];
 
+// ---------- live DOM translator ----------
+const TR_CACHE = {}; // lang -> { sourceText: translatedText }
+const SKIP_TAGS = {
+  SCRIPT: 1, STYLE: 1, NOSCRIPT: 1, CODE: 1, TEXTAREA: 1, SELECT: 1,
+};
+
+function loadCache(lang) {
+  if (TR_CACHE[lang]) return TR_CACHE[lang];
+  let c = {};
+  try {
+    c = JSON.parse(localStorage.getItem(`tr.${lang}`) || '{}') || {};
+  } catch (_) { c = {}; }
+  TR_CACHE[lang] = c;
+  return c;
+}
+function saveCache(lang) {
+  try {
+    localStorage.setItem(`tr.${lang}`, JSON.stringify(TR_CACHE[lang] || {}));
+  } catch (_) { /* quota - ignore */ }
+}
+
+async function fetchTr(text, lang) {
+  const url = 'https://translate.googleapis.com/translate_a/single'
+    + `?client=gtx&sl=en&tl=${encodeURIComponent(lang)}`
+    + `&dt=t&q=${encodeURIComponent(text)}`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`tr ${r.status}`);
+  const j = await r.json();
+  const out = (j && j[0]) ? j[0].map((s) => (s && s[0]) || '').join('') : '';
+  return out || text;
+}
+
+function skip(node) {
+  let el = node.parentElement;
+  while (el) {
+    if (SKIP_TAGS[el.tagName]) return true;
+    if (el.getAttribute
+      && (el.getAttribute('translate') === 'no'
+        || el.hasAttribute('data-no-tr'))) return true;
+    const cn = typeof el.className === 'string' ? el.className : '';
+    if (cn.indexOf('notranslate') >= 0) return true;
+    el = el.parentElement;
+  }
+  return false;
+}
+function translatable(s) {
+  const t = (s || '').trim();
+  if (t.length < 2) return false;
+  if (!/[A-Za-z]/.test(t)) return false; // skip numbers / symbols / glyphs
+  return true;
+}
+
+let observer = null;
+let busy = false;
+let pending = false;
+
+function connect() {
+  if (!observer) return;
+  observer.observe(document.body, {
+    childList: true, subtree: true, characterData: true,
+  });
+}
+
+async function runPass(lang) {
+  if (typeof document === 'undefined' || !document.body) return;
+  if (busy) { pending = true; return; }
+  busy = true;
+  try {
+    const walker = document.createTreeWalker(
+      document.body, NodeFilter.SHOW_TEXT, null);
+    const nodes = [];
+    let n = walker.nextNode();
+    while (n) {
+      if (n.__lang !== lang) {
+        if (typeof n.__en !== 'string') {
+          if (!translatable(n.nodeValue) || skip(n)) {
+            n.__en = n.nodeValue; n.__lang = lang;
+          } else { n.__en = n.nodeValue; nodes.push(n); }
+        } else nodes.push(n);
+      }
+      n = walker.nextNode();
+    }
+
+    if (lang === 'en') {
+      nodes.forEach((nd) => {
+        if (nd.nodeValue !== nd.__en) nd.nodeValue = nd.__en;
+        nd.__lang = 'en';
+      });
+      return;
+    }
+
+    const cache = loadCache(lang);
+    const need = [];
+    const seen = {};
+    nodes.forEach((nd) => {
+      const k = nd.__en.trim();
+      if (cache[k] == null && !seen[k]) { seen[k] = 1; need.push(k); }
+    });
+
+    if (need.length) {
+      let idx = 0;
+      const worker = async () => {
+        while (idx < need.length) {
+          const k = need[idx];
+          idx += 1;
+          try { cache[k] = await fetchTr(k, lang); }
+          catch (_) { /* leave English on failure */ }
+        }
+      };
+      await Promise.all([worker(), worker(), worker(), worker()]);
+      saveCache(lang);
+    }
+
+    if (observer) observer.disconnect();
+    nodes.forEach((nd) => {
+      const src = nd.__en;
+      const k = src.trim();
+      const tr = cache[k];
+      if (tr) {
+        const lead = (src.match(/^\s*/) || [''])[0];
+        const trail = (src.match(/\s*$/) || [''])[0];
+        const next = lead + tr + trail;
+        if (nd.nodeValue !== next) nd.nodeValue = next;
+      }
+      nd.__lang = lang;
+    });
+    if (observer) connect();
+  } finally {
+    busy = false;
+    if (pending) { pending = false; setTimeout(() => runPass(lang), 60); }
+  }
+}
+
 const I18nCtx = createContext({ lang: 'en', t: (k) => k, setLang: () => {} });
 
 export function I18nProvider({ children, uid }) {
   const [lang, setLangState] = useState('en');
 
-  // Language comes ONLY from localStorage (kept across app updates,
-  // wiped on uninstall -> reinstall starts in English).
   useEffect(() => {
     try {
       const saved = typeof window !== 'undefined'
         ? localStorage.getItem('lang') : null;
-      if (saved && DICT[saved]) setLangState(saved);
+      if (saved && saved !== 'en') setLangState(saved);
     } catch (_) { /* ignore */ }
   }, []);
+
+  // Live translate the whole rendered app whenever the language changes,
+  // and keep translating content that React mounts later.
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    let timer = null;
+    const schedule = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => runPass(lang), 250);
+    };
+    schedule();
+    observer = new MutationObserver(schedule);
+    connect();
+    return () => {
+      clearTimeout(timer);
+      if (observer) { observer.disconnect(); observer = null; }
+    };
+  }, [lang]);
 
   function setLang(code) {
     setLangState(code);
     try {
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('lang', code);
-      }
+      if (typeof window !== 'undefined') localStorage.setItem('lang', code);
     } catch (_) { /* ignore */ }
-    // Saved to the profile only as a record (not used to auto-restore).
-    if (uid) userService.updateUser(uid, { language: code }).catch(() => {});
+    if (uid) {
+      userService.updateUser(uid, { language: code }).catch(() => {});
+    }
   }
 
-  function t(key) {
-    return (DICT[lang] && DICT[lang][key]) || DICT.en[key] || key;
-  }
+  // English is always the source string; the DOM translator handles the
+  // visible language so every screen (not just t() keys) is translated.
+  function t(key) { return DICT.en[key] || key; }
 
   return (
     <I18nCtx.Provider value={{ lang, t, setLang }}>

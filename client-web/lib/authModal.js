@@ -41,9 +41,12 @@ export function AuthModalProvider({ children }) {
       cbRef.current = null; dismissRef.current = null;
       setShown(false);
       setTimeout(() => setOpen(false), 150);
+      // Always land on Home after a fresh sign-in / sign-up, unless a
+      // specific gated action is pending (then run that instead).
       if (cb) setTimeout(cb, 380);
+      else setTimeout(() => router.replace('/dashboard'), 380);
     }
-  }, [open, user]);
+  }, [open, user, router]);
 
   // Smoothly animate in after mount.
   useEffect(() => {
@@ -81,6 +84,7 @@ export function AuthModalProvider({ children }) {
     setShown(false);
     setTimeout(() => setOpen(false), 180);
     if (cb) setTimeout(cb, 420);
+    else setTimeout(() => router.replace('/dashboard'), 420);
   }
   function dismiss() {
     const d = dismissRef.current;

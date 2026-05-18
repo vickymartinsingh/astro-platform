@@ -18,6 +18,9 @@ export default function Profile() {
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
   const { t, lang, setLang } = useI18n();
+  const [langSel, setLangSel] = useState(lang);
+  const [langMsg, setLangMsg] = useState('');
+  useEffect(() => { setLangSel(lang); }, [lang]);
   const upd = useAppUpdate();
   const { cfg } = useSettings();
   const [pw, setPw] = useState({ cur: '', next: '', conf: '' });
@@ -209,12 +212,36 @@ export default function Profile() {
 
       <div className="card mt-3">
         <label className="text-sm text-sub-text">{t('profile.language')}</label>
-        <select className="input mt-1" value={lang}
-          onChange={(e) => setLang(e.target.value)}>
+        <select className="input mt-1" value={langSel} data-no-tr
+          onChange={(e) => setLangSel(e.target.value)}>
           {LANGS.map((l) => (
             <option key={l.code} value={l.code}>{l.label}</option>
           ))}
         </select>
+        {langMsg && (
+          <div className="mt-2 text-sm text-success">{langMsg}</div>
+        )}
+        <div className="mt-3 flex gap-2">
+          <button
+            onClick={() => {
+              setLang(langSel);
+              setLangMsg(langSel === 'en'
+                ? 'Language set to English.'
+                : 'Language saved. Applying…');
+            }}
+            className="btn-primary flex-1">
+            Save Language
+          </button>
+          <button
+            onClick={() => {
+              setLangSel('en'); setLang('en');
+              setLangMsg('Reset to default (English).');
+            }}
+            className="flex-1 rounded-card border border-gray-200
+              py-3 font-semibold text-sub-text">
+            Reset to Default
+          </button>
+        </div>
       </div>
 
       {cfg.refer_enabled !== false && (
