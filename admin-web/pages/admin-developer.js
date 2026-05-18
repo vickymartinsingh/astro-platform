@@ -4,6 +4,7 @@ import { db, adminService, menuService } from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import MenuEditor from '../components/MenuEditor';
+import BottomNavEditor from '../components/BottomNavEditor';
 import { useRequireAdmin } from '../lib/useAuth';
 import { flash } from '../lib/flash';
 
@@ -167,6 +168,7 @@ function AddField({ onAdd }) {
 // App Builder card - so you can SEE and edit the menu contents/text.
 function MenusPanel() {
   const [feat, setFeat] = useState(null);
+  const [plat, setPlat] = useState('app'); // 'app' | 'desktop'
   useEffect(() => {
     getDoc(doc(db, 'settings', 'features'))
       .then((s) => setFeat(s.exists() ? s.data() : {}));
@@ -176,18 +178,43 @@ function MenusPanel() {
   }
   async function save() {
     await adminService.updateSettings('features', feat);
-    flash('Menus saved - live across all apps');
+    flash('Saved - live across all apps');
   }
   return (
     <div className="space-y-3">
-      <MenuEditor title="Client menu - DESKTOP / web"
-        defaults={menuService.DEFAULT_CLIENT_MENU}
-        value={feat.menu_links_desktop || feat.menu_links}
-        onChange={(v) => setFeat({ ...feat, menu_links_desktop: v })} />
-      <MenuEditor title="Client menu - MOBILE (drawer)"
-        defaults={menuService.DEFAULT_CLIENT_MENU}
-        value={feat.menu_links_mobile || feat.menu_links}
-        onChange={(v) => setFeat({ ...feat, menu_links_mobile: v })} />
+      <div className="flex gap-2">
+        {[['app', 'Mobile App'], ['desktop', 'Desktop Web']].map(
+          ([v, l]) => (
+            <button key={v} onClick={() => setPlat(v)}
+              className={`flex-1 rounded-card border px-3 py-2 text-sm
+                font-semibold ${plat === v
+                  ? 'border-primary bg-primary text-white'
+                  : 'border-gray-200'}`}>
+              {l}
+            </button>
+          ))}
+      </div>
+
+      {plat === 'app' && (
+        <>
+          <BottomNavEditor feat={feat} setFeat={setFeat} />
+          <MenuEditor title="Client menu - MOBILE (slide drawer)"
+            defaults={menuService.DEFAULT_CLIENT_MENU}
+            value={feat.menu_links_mobile || feat.menu_links}
+            onChange={(v) =>
+              setFeat({ ...feat, menu_links_mobile: v })} />
+        </>
+      )}
+      {plat === 'desktop' && (
+        <MenuEditor title="Client menu - DESKTOP / web (top bar)"
+          defaults={menuService.DEFAULT_CLIENT_MENU}
+          value={feat.menu_links_desktop || feat.menu_links}
+          onChange={(v) =>
+            setFeat({ ...feat, menu_links_desktop: v })} />
+      )}
+
+      <div className="text-xs font-semibold uppercase tracking-wide
+        text-sub-text">Shared (App + Web)</div>
       <MenuEditor title="Client profile menu"
         defaults={menuService.DEFAULT_CLIENT_PROFILE}
         value={feat.profile_menu}
