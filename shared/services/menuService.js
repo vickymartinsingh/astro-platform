@@ -39,6 +39,7 @@ export const DEFAULT_ASTRO_MENU = [
   { href: '/astro-remedies', label: 'My Remedies' },
   { href: '/astro-profile', label: 'Profile' },
   { href: '/astro-reviews', label: 'Reviews' },
+  { href: '/astro-followers', label: 'Followers' },
   { href: '/astro-notifications', label: 'Announcements' },
   { href: '/astro-support', label: 'Help & Support' },
 ];

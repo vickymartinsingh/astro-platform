@@ -97,6 +97,21 @@ export async function announceJoin(astroUid, user) {
   } catch (_) {}
 }
 
+// "<name> started following you" event in the live feed.
+export async function announceFollow(astroUid, user) {
+  if (!astroUid || !user) return;
+  try {
+    await addDoc(liveMsgs(astroUid), {
+      type: 'follow',
+      name: user.name || 'Someone',
+      uid: user.uid || null,
+      code: user.code || null,
+      text: '',
+      createdAt: serverTimestamp(),
+    });
+  } catch (_) {}
+}
+
 export async function addLiveComment(astroUid, user, text) {
   const clean = String(text || '').trim();
   if (!clean) return;

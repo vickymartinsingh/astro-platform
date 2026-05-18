@@ -4,7 +4,7 @@
 // long as earnings/approved/status are unchanged) so we can notify
 // every follower when the astrologer goes Live / Online.
 import {
-  doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove,
+  doc, getDoc, setDoc, updateDoc, arrayUnion, arrayRemove, deleteField,
 } from 'firebase/firestore';
 import { db } from '../firebase.js';
 import { sendPushToUser } from './pushService.js';
@@ -18,6 +18,17 @@ export async function getFollowing(uid) {
 export async function isFollowing(uid, astroId) {
   if (!uid || !astroId) return false;
   return (await getFollowing(uid)).includes(astroId);
+}
+
+// The astrologer can see this limited follower card (no full profile).
+export async function getFollowers(astroId) {
+  if (!astroId) return [];
+  const s = await getDoc(doc(db, 'astrologers', astroId));
+  const m = (s.exists() && s.data().followers) || {};
+  return Object.entries(m).map(([uid, v]) => ({
+    uid, name: v.name || 'User', code: v.code || '',
+    dp: v.dp || '', at: v.at || 0,
+  })).sort((a, b) => (b.at || 0) - (a.at || 0));
 }
 
 // currentlyFollowing = the state BEFORE the tap. Returns the new state.
@@ -34,12 +45,47 @@ export async function toggleFollow(uid, astroId, currentlyFollowing) {
         ? arrayRemove(astroId) : arrayUnion(astroId),
     });
   }
+  // Limited follower record on the astrologer doc (name / code / dp /
+  // date) - never the full customer profile.
+  let me = {};
+  try {
+    const us = await getDoc(doc(db, 'users', uid));
+    if (us.exists()) {
+      const u = us.data();
+      me = { name: u.name || 'User', code: u.userCode || '',
+        dp: u.profileImage || '' };
+    }
+  } catch (_) { /* ignore */ }
   try {
     await updateDoc(doc(db, 'astrologers', astroId), {
       followerUids: currentlyFollowing
         ? arrayRemove(uid) : arrayUnion(uid),
+      [`followers.${uid}`]: currentlyFollowing
+        ? deleteField()
+        : { name: me.name || 'User', code: me.code || '',
+          dp: me.dp || '', at: Date.now() },
     });
   } catch (_) { /* ignore */ }
+
+  if (!currentlyFollowing) {
+    // Tell the astrologer, and surface it in their live feed if live.
+    try {
+      sendPushToUser({
+        toUid: astroId,
+        title: 'New follower',
+        body: `${me.name || 'Someone'} started following you`,
+        data: { type: 'follow' },
+      });
+    } catch (_) { /* ignore */ }
+    try {
+      const as = await getDoc(doc(db, 'astrologers', astroId));
+      if (as.exists() && as.data().isLive) {
+        import('./liveService.js').then((m) => m.announceFollow(
+          astroId, { name: me.name || 'Someone', uid, code: me.code }))
+          .catch(() => {});
+      }
+    } catch (_) { /* ignore */ }
+  }
   return !currentlyFollowing;
 }
 

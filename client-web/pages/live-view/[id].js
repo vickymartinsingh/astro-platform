@@ -140,7 +140,15 @@ export default function LiveView() {
                     )}
                   </div>
                   {c.type === 'join' ? (
-                    <div className="text-[15px] font-medium">joined</div>
+                    <div className="text-[15px] font-semibold"
+                      style={{ color: 'rgb(var(--c-accent))' }}>
+                      Joined
+                    </div>
+                  ) : c.type === 'follow' ? (
+                    <div className="text-[15px] font-semibold"
+                      style={{ color: 'rgb(var(--c-accent))' }}>
+                      started following you
+                    </div>
                   ) : (
                     <div className="text-[15px] leading-snug">
                       {c.text}

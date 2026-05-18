@@ -113,20 +113,52 @@ export default function AstrologerProfile() {
           <p className="mt-3 text-sub-text">Astrologer is Offline.</p>
         )}
 
-        <div className="mt-4 grid gap-2 md:grid-cols-3">
-          <button disabled={!online} onClick={() => go('chat', a)}
-            className={`btn-primary ${online ? '' : 'opacity-50'}`}>
-            {online ? 'Start Chat' : 'Astrologer is Offline'}
-          </button>
-          <button disabled={!online} onClick={() => go('call', a)}
-            className={`btn-ghost ${online ? '' : 'opacity-50'}`}>
-            Start Voice Call
-          </button>
-          <button disabled={!online} onClick={() => go('video', a)}
-            className={`btn-ghost ${online ? '' : 'opacity-50'}`}>
-            Start Video Call
-          </button>
-        </div>
+        {(() => {
+          const hasFlags = a.chat_enabled !== undefined
+            || a.call_enabled !== undefined
+            || a.video_enabled !== undefined;
+          const okC = !hasFlags || a.chat_enabled;
+          const okV = !hasFlags || a.call_enabled;
+          const okVid = !hasFlags || a.video_enabled;
+          return (
+            <>
+              {online && hasFlags
+                && !(a.chat_enabled && a.call_enabled
+                  && a.video_enabled) && (
+                <p className="mt-3 text-sm text-sub-text">
+                  Available now via{' '}
+                  <b>
+                    {['chat', 'call', 'video']
+                      .filter((k) => a[`${k}_enabled`])
+                      .map((k) => (k === 'chat' ? 'Chat'
+                        : k === 'call' ? 'Voice Call' : 'Video Call'))
+                      .join(', ') || 'none'}
+                  </b>{' '}only.
+                </p>
+              )}
+              <div className="mt-4 grid gap-2 md:grid-cols-3">
+                <button disabled={!online || !okC}
+                  onClick={() => go('chat', a)}
+                  className={`btn-primary ${
+                    online && okC ? '' : 'opacity-50'}`}>
+                  {online ? 'Start Chat' : 'Astrologer is Offline'}
+                </button>
+                <button disabled={!online || !okV}
+                  onClick={() => go('call', a)}
+                  className={`btn-ghost ${
+                    online && okV ? '' : 'opacity-50'}`}>
+                  Start Voice Call
+                </button>
+                <button disabled={!online || !okVid}
+                  onClick={() => go('video', a)}
+                  className={`btn-ghost ${
+                    online && okVid ? '' : 'opacity-50'}`}>
+                  Start Video Call
+                </button>
+              </div>
+            </>
+          );
+        })()}
       </div>
 
       <h2 className="mt-6 mb-2 font-bold">Reviews</h2>

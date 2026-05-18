@@ -22,6 +22,7 @@ export function KundliGateProvider({ children }) {
   const [form, setForm] = useState(BLANK);
   const [busy, setBusy] = useState(false);
   const [lowBal, setLowBal] = useState(null); // { astro, perMin }
+  const [svcBlock, setSvcBlock] = useState(null); // { type, avail, astro }
 
   async function requestSession(type, astro) {
     if (!astro) return;
@@ -31,6 +32,21 @@ export function KundliGateProvider({ children }) {
     if (!user) {
       // Popup login, then resume this exact action.
       openLogin(() => requestSession(type, astro));
+      return;
+    }
+    // Only connect via a service the astrologer has enabled. If they
+    // went online with just Chat, Call/Video must be blocked with a
+    // friendly nudge to the available option(s).
+    const en = {
+      chat: astro.chat_enabled, call: astro.call_enabled,
+      video: astro.video_enabled,
+    };
+    const hasFlags = astro.chat_enabled !== undefined
+      || astro.call_enabled !== undefined
+      || astro.video_enabled !== undefined;
+    if (hasFlags && !en[type]) {
+      const avail = ['chat', 'call', 'video'].filter((k) => en[k]);
+      setSvcBlock({ type, avail, astro });
       return;
     }
     // Wallet gate: a session must be able to fund at least 1 minute,
@@ -75,6 +91,40 @@ export function KundliGateProvider({ children }) {
   return (
     <Ctx.Provider value={{ requestSession }}>
       {children}
+      {svcBlock && (() => {
+        const L = { chat: 'Chat', call: 'Voice Call', video: 'Video Call' };
+        return (
+          <div className="fixed inset-0 z-50 flex items-center
+            justify-center bg-black/40 px-4">
+            <div className="w-full max-w-sm rounded-2xl bg-white p-5
+              text-center">
+              <div className="text-lg font-bold">
+                {svcBlock.astro?.name || 'Astrologer'} is unavailable
+                {' '}over {L[svcBlock.type]}
+              </div>
+              <p className="mt-2 text-sm text-sub-text">
+                {svcBlock.avail.length
+                  ? <>This astrologer is currently taking
+                    {' '}<b>{svcBlock.avail.map((k) => L[k]).join(', ')}
+                    </b> only. We recommend connecting via that.</>
+                  : 'This astrologer is not available right now.'}
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button onClick={() => setSvcBlock(null)}
+                  className="btn-ghost flex-1">Close</button>
+                {svcBlock.avail.map((k) => (
+                  <button key={k}
+                    onClick={() => { const a = svcBlock.astro;
+                      setSvcBlock(null); requestSession(k, a); }}
+                    className="btn-grad flex-1 justify-center">
+                    Connect via {L[k]}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       {lowBal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center
                         bg-black/40 px-4">
