@@ -165,13 +165,9 @@ export default function TopNav() {
                 className="rounded-lg border border-gray-200 px-2.5 py-1
                            text-sm">✕</button>
             </div>
-            {user ? (
-              <button onClick={logout}
-                className="w-full rounded-xl border border-gray-200
-                           px-3 py-3 text-center text-base font-semibold">
-                {t('nav.logout')}
-              </button>
-            ) : (
+            {/* Logout lives in Profile now, so it is not repeated here.
+                Guests still get login / signup. */}
+            {!user && (
               <div className="flex gap-2">
                 <button onClick={() => openLogin()}
                   className="flex-1 rounded-xl border border-gray-200 px-3
