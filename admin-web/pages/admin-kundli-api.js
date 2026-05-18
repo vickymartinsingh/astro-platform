@@ -66,10 +66,19 @@ export default function AdminKundliApi() {
   }
   const cur = PROVIDERS.find((p) => p[0] === cfg.provider) || PROVIDERS[0];
   const fields = cur[3];
-  const configured = PROVIDERS.filter(
+  const withKeys = PROVIDERS.filter(
     (x) => (cfg[x[0]] || {}).key || (cfg[x[0]] || {}).secret);
+  // ALWAYS include the active provider in the list (even Prokerala
+  // running from server credentials with no key saved here), so it is
+  // visible and you can enable / disable / switch it yourself.
+  const configured = withKeys.some((x) => x[0] === cfg.provider)
+    ? withKeys
+    : [PROVIDERS.find((x) => x[0] === cfg.provider), ...withKeys]
+      .filter(Boolean);
   const activeName = (PROVIDERS.find(
     (x) => x[0] === cfg.provider) || [])[1] || cfg.provider;
+  const selHasKey = !!((cfg[cfg.provider] || {}).key
+    || (cfg[cfg.provider] || {}).secret);
 
   return (
     <Layout>
@@ -96,18 +105,39 @@ export default function AdminKundliApi() {
       {configured.length > 0 && (
         <div className="card mb-3">
           <div className="mb-2 text-sm font-semibold">
-            Providers with a saved key (tap to make active)
+            Your providers - tap one to enable it (make it active)
           </div>
-          <div className="flex flex-wrap gap-2">
-            {configured.map(([id, label]) => (
-              <button key={id} onClick={() => save(id)}
-                className={`rounded-full px-3 py-1.5 text-sm ${
-                  cfg.provider === id
-                    ? 'bg-primary text-white'
-                    : 'border border-gray-200'}`}>
-                {label}{cfg.provider === id ? ' (active)' : ''}
-              </button>
-            ))}
+          <div className="space-y-2">
+            {configured.map(([id, label]) => {
+              const isActive = cfg.provider === id;
+              const hasKey = !!((cfg[id] || {}).key
+                || (cfg[id] || {}).secret);
+              return (
+                <div key={id}
+                  className="flex items-center justify-between gap-3
+                    rounded-card border border-gray-200 p-2">
+                  <div className="min-w-0">
+                    <div className="font-semibold">{label}</div>
+                    <div className="text-xs text-sub-text">
+                      {hasKey ? 'Key saved here'
+                        : 'No key saved here (server credentials)'}
+                    </div>
+                  </div>
+                  {isActive ? (
+                    <span className="rounded-full bg-success/15 px-3
+                      py-1 text-xs font-semibold text-success">
+                      Active / Enabled
+                    </span>
+                  ) : (
+                    <button onClick={() => save(id)}
+                      className="rounded-full border border-primary px-3
+                        py-1.5 text-sm font-semibold text-primary">
+                      Enable
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -144,6 +174,15 @@ export default function AdminKundliApi() {
             })} />
         )}
 
+        {!selHasKey && (
+          <div className="rounded-card bg-bg-light p-3 text-xs
+                          text-sub-text">
+            No key is stored here for {cur[1]}. If it is working anyway
+            it is running from server credentials. Paste the key above
+            and Save to manage it from this panel.
+          </div>
+        )}
+
         {!cur[2] && (
           <div className="rounded-card bg-warning/10 p-3 text-sm
                           text-warning">
@@ -153,6 +192,15 @@ export default function AdminKundliApi() {
             a key, or basic zodiac.
           </div>
         )}
+
+        <div className="rounded-card bg-warning/10 p-3 text-xs
+                        text-warning">
+          Note: a saved key only takes effect once the Kundli relay can
+          read settings. If new keys are &quot;not updating&quot;, the
+          relay&apos;s FIREBASE_SERVICE_ACCOUNT on Vercel is the cause
+          (same fix as push) - until then it falls back to Prokerala
+          server credentials.
+        </div>
 
         <button onClick={() => save()} className="btn-primary w-full">
           Save & set as default provider

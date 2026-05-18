@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { ZODIAC, ZODIAC_IN } from '@astro/shared';
+import ZodiacGlyph from './ZodiacGlyph';
 
 // Swipeable zodiac selector (mobile-app style): slide left/right to see
 // every sign, tap to pick. Indian (Vedic) Rashi style - the Vedic
@@ -62,14 +63,14 @@ export default function ZodiacPicker({ value, onChange, dropdown }) {
               className={`flex min-w-[76px] shrink-0 flex-col items-center
                 gap-0.5 rounded-2xl border px-3 py-2 text-center
                 transition-all ${on
-                  ? 'border-primary bg-primary text-white shadow-md'
-                  : 'border-gray-200 bg-white text-dark-text'}`}>
-              <span className="text-2xl leading-none">
-                {IN(z).icon}
+                  ? 'border-primary bg-bg-light shadow-md'
+                  : 'border-gray-200 bg-white'}`}>
+              <ZodiacGlyph sign={z} className="text-gold" />
+              <span className={`text-xs font-semibold ${on
+                ? 'text-primary' : 'text-dark-text'}`}>
+                {IN(z).en}
               </span>
-              <span className="text-xs font-semibold">{IN(z).en}</span>
-              <span className={`text-[10px] ${on
-                ? 'text-white/70' : 'text-sub-text'}`}>{z}</span>
+              <span className="text-[10px] text-sub-text">{z}</span>
             </button>
           );
         })}
