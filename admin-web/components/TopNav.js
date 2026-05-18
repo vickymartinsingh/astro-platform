@@ -19,6 +19,7 @@ const GROUPS = [
     ['/admin-astrologers', 'Astrologers'],
     ['/admin-reviews', 'Customer Reviews'],
     ['/admin-tickets', 'Support Tickets'],
+    ['/admin-tarot', 'Tarot Questions'],
     ['/admin-support', 'Support Inbox'],
   ]],
   ['Sessions', [
@@ -76,6 +77,7 @@ const DEV_GROUPS = [
     ['/admin-horoscope', 'Horoscope CSV'],
     ['/admin-reviews', 'Customer Reviews'],
     ['/admin-tickets', 'Support Tickets'],
+    ['/admin-tarot', 'Tarot Questions'],
     ['/admin-announcement', 'Announcement Banner'],
     ['/admin-notifications', 'Push Notifications'],
   ]],

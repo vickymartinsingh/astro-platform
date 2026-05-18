@@ -3,7 +3,9 @@ export { default as firebaseApp, auth, db, storage, functions, rtdb } from './fi
 export * from './theme.js';
 export { ADMIN_EMAILS, isAdminEmail, isAdminUser, hasRole } from './admins.js';
 export { getHoroscope, horoscopeText } from './horoscope.js';
-export { TAROT, drawCards, tarotReading } from './tarot.js';
+export {
+  TAROT, drawCards, tarotReading, aspectReading, TAROT_ASPECTS,
+} from './tarot.js';
 export { gunaMilan, signFromDOB } from './matching.js';
 export { CITIES, INDIAN_STATES } from './cities.js';
 
@@ -35,3 +37,4 @@ export * as supportService from './services/supportService.js';
 export * as ticketService from './services/ticketService.js';
 export * as abuseService from './services/abuseService.js';
 export * as followService from './services/followService.js';
+export * as tarotService from './services/tarotService.js';

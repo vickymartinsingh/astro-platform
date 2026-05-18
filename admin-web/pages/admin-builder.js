@@ -259,6 +259,46 @@ export default function AdminBuilder() {
                 onChange={(e) => setFeat({
                   ...feat, stars_split: e.target.checked })} />
             </label>
+            <div className="border-t border-gray-100 pt-2">
+              <div className="text-sm font-semibold">
+                Tarot &quot;Pick your card&quot; preset
+              </div>
+              <div className="mt-1 flex gap-2">
+                {[['classic', 'Classic (current)'],
+                  ['guided', 'Guided (aspect + question)']].map(
+                  ([v, l]) => (
+                    <button key={v}
+                      onClick={() => setFeat({
+                        ...feat, tarot_mode: v })}
+                      className={`flex-1 rounded-card border px-3 py-2
+                        text-sm ${
+                        (feat.tarot_mode === 'guided' ? 'guided'
+                          : 'classic') === v
+                          ? 'border-primary bg-primary text-white'
+                          : 'border-gray-200'}`}>
+                      {l}
+                    </button>
+                  ))}
+              </div>
+              <p className="mt-1 text-xs text-sub-text">
+                Switch back to Classic anytime - it is unchanged.
+              </p>
+              <input className="input mt-2"
+                placeholder="Guided intro line"
+                value={feat.tarot_intro || ''}
+                onChange={(e) => setFeat({
+                  ...feat, tarot_intro: e.target.value })} />
+              <input className="input mt-2"
+                placeholder="Single card description"
+                value={feat.tarot_single_def || ''}
+                onChange={(e) => setFeat({
+                  ...feat, tarot_single_def: e.target.value })} />
+              <input className="input mt-2"
+                placeholder="3 cards description"
+                value={feat.tarot_three_def || ''}
+                onChange={(e) => setFeat({
+                  ...feat, tarot_three_def: e.target.value })} />
+            </div>
             <button onClick={saveMenu}
               className="btn-primary w-full">Save display options</button>
           </div>

@@ -21,6 +21,7 @@ const ALL = [
     ['/admin-users', 'Users'], ['/admin-astrologers', 'Astrologers'],
     ['/admin-reviews', 'Customer Reviews'],
     ['/admin-tickets', 'Support Tickets'],
+    ['/admin-tarot', 'Tarot Questions'],
     ['/admin-support', 'Support Inbox'],
   ]],
   ['Sessions', [

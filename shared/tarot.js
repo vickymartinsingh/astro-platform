@@ -95,3 +95,46 @@ export function tarotReading(cards) {
     `when you act with intention.`;
   return { rows, summary };
 }
+
+// Aspect categories for the guided "Pick your card" flow.
+export const TAROT_ASPECTS = [
+  'General', 'Love & Relationships', 'Marriage', 'Career',
+  'Finance', 'Health', 'Education', 'Family', 'Business',
+  'Travel', 'Spiritual',
+];
+
+// Aspect-focused reading. For a specific aspect every line speaks ONLY
+// to that aspect (>= 20 words) and never mentions other aspects. For
+// "General" it covers past/present/future overall.
+export function aspectReading(cards, aspectRaw) {
+  const aspect = aspectRaw || 'General';
+  const general = aspect === 'General';
+  const pos = cards.length === 3
+    ? ['Past', 'Present', 'Future'] : ['Your card'];
+  const a = aspect.toLowerCase();
+  const rows = cards.map((c, i) => {
+    const where = pos[i] || 'Card';
+    let text;
+    if (general) {
+      text = `${c.name}: ${c.meaning} As a ${where.toLowerCase()} `
+        + `influence it shapes the overall direction of the question, `
+        + `so weigh it as part of the whole story.`;
+    } else {
+      text = `For your ${a} question, ${c.name} (${where}) indicates `
+        + `${c.meaning} Focused on ${a} alone, this points to a clear `
+        + `shift: act with intention in ${a}, stay patient, and let `
+        + `this energy guide your next ${a} decision with confidence.`;
+    }
+    return { position: where, name: c.name, meaning: c.meaning, text };
+  });
+  const names = cards.map((c) => c.name).join(', ');
+  const summary = general
+    ? `Overall the cards (${names}) suggest a meaningful turning `
+      + `point. Past sets the context, the present asks for honest `
+      + `action, and the future rewards steady intention.`
+    : `Reading strictly for ${aspect}: the cards (${names}) together `
+      + `say progress in ${a} comes from clarity and steady, `
+      + `intentional effort. Trust this guidance for ${a}; other `
+      + `areas are not part of this reading.`;
+  return { rows, summary, aspect };
+}
