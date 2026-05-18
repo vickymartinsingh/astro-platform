@@ -196,8 +196,59 @@ function MenusPanel() {
         defaults={menuService.DEFAULT_ASTRO_MENU}
         value={feat.astro_links}
         onChange={(v) => setFeat({ ...feat, astro_links: v })} />
+
+      <div className="rounded-card border border-gray-200 p-3
+        space-y-3">
+        <div className="font-semibold">Display options</div>
+        <label className="flex items-center justify-between text-sm">
+          <span>Zodiac selector as dropdown (off = swipe carousel)</span>
+          <input type="checkbox" checked={feat.zodiac_dropdown === true}
+            onChange={(e) => setFeat({
+              ...feat, zodiac_dropdown: e.target.checked })} />
+        </label>
+        <label className="flex items-center justify-between text-sm">
+          <span>Split stars sections (personal + Horoscope)</span>
+          <input type="checkbox" checked={feat.stars_split !== false}
+            onChange={(e) => setFeat({
+              ...feat, stars_split: e.target.checked })} />
+        </label>
+        <div>
+          <div className="mb-1 text-sm font-semibold">
+            Tarot &quot;Pick your card&quot; preset
+          </div>
+          <div className="flex gap-2">
+            {[['guided', 'Guided (default)'],
+              ['classic', 'Classic']].map(([v, l]) => (
+                <button key={v}
+                  onClick={() => setFeat({ ...feat, tarot_mode: v })}
+                  className={`flex-1 rounded-card border px-3 py-2
+                    text-sm ${(feat.tarot_mode === 'classic'
+                    ? 'classic' : 'guided') === v
+                    ? 'border-primary bg-primary text-white'
+                    : 'border-gray-200'}`}>
+                  {l}
+                </button>
+              ))}
+          </div>
+          <input className="input mt-2" placeholder="Guided intro line"
+            value={feat.tarot_intro || ''}
+            onChange={(e) => setFeat({
+              ...feat, tarot_intro: e.target.value })} />
+          <input className="input mt-2"
+            placeholder="Single card description"
+            value={feat.tarot_single_def || ''}
+            onChange={(e) => setFeat({
+              ...feat, tarot_single_def: e.target.value })} />
+          <input className="input mt-2"
+            placeholder="3 cards description"
+            value={feat.tarot_three_def || ''}
+            onChange={(e) => setFeat({
+              ...feat, tarot_three_def: e.target.value })} />
+        </div>
+      </div>
+
       <button onClick={save} className="btn-primary w-full">
-        Save menus
+        Save menus &amp; display options
       </button>
     </div>
   );
