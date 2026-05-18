@@ -47,19 +47,28 @@ export const DEFAULT_ASTRO_MENU = [
 export function mergeMenu(defaults, saved) {
   const byHref = Object.fromEntries(defaults.map((d) => [d.href, d]));
   const out = [];
+  // `from` = the original default href this saved item came from, so an
+  // admin can change a default item's path/label without it duplicating
+  // (the original default is then "claimed" and not re-appended).
+  const claimed = new Set();
   (Array.isArray(saved) ? saved : []).forEach((s) => {
     if (!s || !s.href) return;
-    const d = byHref[s.href];
+    const origin = s.from || s.href;
+    const d = byHref[origin] || byHref[s.href];
+    if (d) claimed.add(d.href);
     out.push({
       href: s.href,
       label: (s.label || '').trim() || (d && d.label) || s.href,
       hidden: !!s.hidden,
       notif: d ? d.notif : undefined,
+      from: s.from || (d ? d.href : undefined),
       custom: !d,
     });
   });
   defaults.forEach((d) => {
-    if (!out.find((o) => o.href === d.href)) out.push({ ...d });
+    if (!claimed.has(d.href) && !out.find((o) => o.href === d.href)) {
+      out.push({ ...d });
+    }
   });
   return out;
 }
@@ -76,12 +85,32 @@ export function resolveMenus(features) {
   };
 }
 
+// Last known settings/features, persisted so EVERY screen renders the
+// correct menus instantly on navigation. Without this each route change
+// re-subscribed and briefly emitted the hard defaults first, then the
+// saved menus a moment later - the visible "blink" while switching.
+let FEAT_CACHE;
+try {
+  if (typeof localStorage !== 'undefined') {
+    const s = localStorage.getItem('menuFeatures');
+    if (s) FEAT_CACHE = JSON.parse(s);
+  }
+} catch (_) { /* ignore */ }
+
 export function watchMenus(cb) {
-  // Default immediately.
-  if (cb) cb(resolveMenus(null));
+  // Emit the last known menus immediately (no defaults flash). Only
+  // falls back to hard defaults on a truly first-ever run.
+  if (cb) cb(resolveMenus(FEAT_CACHE || null));
   try {
     return onSnapshot(doc(db, 'settings', 'features'), (s) => {
-      if (cb) cb(resolveMenus(s.exists() ? s.data() : null));
+      FEAT_CACHE = s.exists() ? s.data() : null;
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem('menuFeatures',
+            JSON.stringify(FEAT_CACHE || {}));
+        }
+      } catch (_) { /* ignore */ }
+      if (cb) cb(resolveMenus(FEAT_CACHE));
     }, () => {});
   } catch (_) { return () => {}; }
 }

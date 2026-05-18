@@ -3,91 +3,9 @@ import { useEffect, useRef, useState } from 'react';
 import { db, adminService, menuService } from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
+import MenuEditor from '../components/MenuEditor';
 import { useRequireAdmin } from '../lib/useAuth';
 import { flash } from '../lib/flash';
-
-// Drag-reorder + rename + show/hide editor for any menu (client menu,
-// profile menu, astrologer menu). Writes [{href,label,hidden}] to the
-// given settings/features key.
-function MenuEditor({ title, defaults, value, onChange }) {
-  const dragHref = useRef(null);
-  const [nl, setNl] = useState('');
-  const [nh, setNh] = useState('');
-  const merged = menuService.mergeMenu(defaults, value);
-  function update(href, patch) {
-    onChange(merged.map((m) => (m.href === href
-      ? { ...m, ...patch } : m)));
-  }
-  function reorder(from, to) {
-    if (from === to) return;
-    const a = [...merged];
-    const i = a.findIndex((x) => x.href === from);
-    const j = a.findIndex((x) => x.href === to);
-    a.splice(j, 0, a.splice(i, 1)[0]);
-    onChange(a);
-  }
-  function remove(href) {
-    onChange(merged.filter((m) => m.href !== href));
-  }
-  function add() {
-    let href = nh.trim();
-    const label = nl.trim();
-    if (!label) return;
-    if (!href) href = '/' + label.toLowerCase().replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '');
-    if (!href.startsWith('/') && !/^https?:\/\//.test(href)) href = '/' + href;
-    if (merged.some((m) => m.href === href)) return;
-    onChange([...merged, { href, label, hidden: false, custom: true }]);
-    setNl(''); setNh('');
-  }
-  return (
-    <div className="card">
-      <div className="mb-2 font-semibold">{title}</div>
-      {merged.map((m) => (
-        <div key={m.href} draggable
-          onDragStart={() => { dragHref.current = m.href; }}
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={() => reorder(dragHref.current, m.href)}
-          className="mb-2 flex items-center gap-2 rounded-card border
-            border-gray-200 bg-white p-2">
-          <span className="cursor-grab select-none px-1
-            text-sub-text">≡</span>
-          <input className="w-40 rounded border border-gray-200 px-2
-            py-1 text-sm" value={m.label}
-            onChange={(e) => update(m.href, { label: e.target.value })} />
-          <span className="text-xs text-sub-text">{m.href}</span>
-          {m.custom && (
-            <span className="rounded-full bg-amber-100 px-2 py-0.5
-              text-[10px] font-semibold text-amber-700">CUSTOM</span>
-          )}
-          <label className="ml-auto flex items-center gap-1 text-sm">
-            <input type="checkbox" checked={!m.hidden}
-              onChange={(e) =>
-                update(m.href, { hidden: !e.target.checked })} />
-            Visible
-          </label>
-          {m.custom && (
-            <button onClick={() => remove(m.href)} title="Remove"
-              className="rounded-full border border-danger px-2 py-0.5
-                text-xs text-danger">✕</button>
-          )}
-        </div>
-      ))}
-      <div className="mt-2 flex flex-wrap items-center gap-2 border-t
-        border-gray-100 pt-2">
-        <input className="w-40 rounded border border-gray-200 px-2 py-1
-          text-sm" placeholder="New item label" value={nl}
-          onChange={(e) => setNl(e.target.value)} />
-        <input className="w-40 rounded border border-gray-200 px-2 py-1
-          text-sm" placeholder="/path or https://..." value={nh}
-          onChange={(e) => setNh(e.target.value)} />
-        <button onClick={add}
-          className="rounded-card bg-primary px-3 py-1 text-sm
-            font-semibold text-white">+ Add item</button>
-      </div>
-    </div>
-  );
-}
 
 const TAB_DEFS = [
   ['home', 'Home'], ['chat', 'Chat'], ['live', 'Live'],

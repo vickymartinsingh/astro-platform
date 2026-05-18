@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { db, adminService } from '@astro/shared';
+import { db, adminService, menuService } from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
+import MenuEditor from '../components/MenuEditor';
 import { useRequireAdmin } from '../lib/useAuth';
 import { flash } from '../lib/flash';
 
@@ -155,13 +156,52 @@ function AddField({ onAdd }) {
   );
 }
 
+// Friendly menu editors (real names + paths, not raw JSON) for the
+// App Builder card - so you can SEE and edit the menu contents/text.
+function MenusPanel() {
+  const [feat, setFeat] = useState(null);
+  useEffect(() => {
+    getDoc(doc(db, 'settings', 'features'))
+      .then((s) => setFeat(s.exists() ? s.data() : {}));
+  }, []);
+  if (!feat) {
+    return <div className="text-sm text-sub-text">Loading...</div>;
+  }
+  async function save() {
+    await adminService.updateSettings('features', feat);
+    flash('Menus saved - live across all apps');
+  }
+  return (
+    <div className="space-y-3">
+      <MenuEditor title="Client top menu (web/desktop + drawer)"
+        defaults={menuService.DEFAULT_CLIENT_MENU}
+        value={feat.menu_links}
+        onChange={(v) => setFeat({ ...feat, menu_links: v })} />
+      <MenuEditor title="Client profile menu"
+        defaults={menuService.DEFAULT_CLIENT_PROFILE}
+        value={feat.profile_menu}
+        onChange={(v) => setFeat({ ...feat, profile_menu: v })} />
+      <MenuEditor title="Astrologer app menu"
+        defaults={menuService.DEFAULT_ASTRO_MENU}
+        value={feat.astro_links}
+        onChange={(v) => setFeat({ ...feat, astro_links: v })} />
+      <button onClick={save} className="btn-primary w-full">
+        Save menus
+      </button>
+    </div>
+  );
+}
+
 // One Developer Portal card. If it is backed by settings doc(s) it can
 // be edited inline here (the specific menu / content for that option),
 // or opened as the full page.
 function Card({ href, title, docs }) {
+  const isBuilder = href === '/admin-builder';
+  const tabs = isBuilder
+    ? ['__menus', ...(docs || [])] : (docs || []);
   const [open, setOpen] = useState(false);
-  const [pick, setPick] = useState((docs && docs[0]) || '');
-  const hasDocs = Array.isArray(docs) && docs.length > 0;
+  const [pick, setPick] = useState(tabs[0] || '');
+  const hasDocs = tabs.length > 0;
   return (
     <div className="card">
       <div className="flex items-start justify-between gap-2">
@@ -183,17 +223,19 @@ function Card({ href, title, docs }) {
           </button>
           {open && (
             <div className="mt-3 border-t border-gray-100 pt-3">
-              {docs.length > 1 && (
+              {tabs.length > 1 && (
                 <div className="mb-2 flex flex-wrap gap-1">
-                  {docs.map((d) => (
+                  {tabs.map((d) => (
                     <button key={d} onClick={() => setPick(d)}
                       className={pick === d ? 'pill pill-active' : 'pill'}>
-                      settings/{d}
+                      {d === '__menus' ? 'Menus' : `settings/${d}`}
                     </button>
                   ))}
                 </div>
               )}
-              <Editor key={pick} name={pick} />
+              {pick === '__menus'
+                ? <MenusPanel />
+                : <Editor key={pick} name={pick} />}
             </div>
           )}
         </>

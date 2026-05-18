@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { reviewService } from '@astro/shared';
+import { reviewService, adminService } from '@astro/shared';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
 import { flash } from '../lib/flash';
@@ -13,12 +13,20 @@ import { flash } from '../lib/flash';
 export default function AdminReviews() {
   const { loading } = useRequireAdmin();
   const [list, setList] = useState(null);
+  const [users, setUsers] = useState({});   // uid -> user record
   const [filter, setFilter] = useState('all');
 
   async function refresh() {
     setList(await reviewService.listAllPlatformReviews());
   }
-  useEffect(() => { refresh(); }, []);
+  useEffect(() => {
+    refresh();
+    adminService.getAllUsers().then((all) => {
+      const m = {};
+      all.forEach((u) => { m[u.uid] = u; });
+      setUsers(m);
+    }).catch(() => {});
+  }, []);
 
   async function patch(id, p) {
     await reviewService.moderatePlatformReview(id, p);
@@ -51,6 +59,58 @@ export default function AdminReviews() {
           </button>
         ))}
       </div>
+
+      {(() => {
+        const ids = [...new Set(list.map((r) => r.userId)
+          .filter(Boolean))];
+        return (
+          <div className="card mb-4">
+            <div className="mb-2 font-semibold">
+              Reviewers ({ids.length})
+            </div>
+            <p className="mb-2 text-xs text-sub-text">
+              People who have written a review. They are real users (they
+              had a paid session) - open them in Users to view or sign
+              into their account.
+            </p>
+            <div className="space-y-1">
+              {ids.length === 0 ? (
+                <div className="text-sm text-sub-text">No reviewers yet.</div>
+              ) : ids.map((uid) => {
+                const u = users[uid] || {};
+                const rs = list.filter((r) => r.userId === uid);
+                const nm = u.name || rs[0]?.userName || 'User';
+                return (
+                  <div key={uid}
+                    className="flex flex-wrap items-center gap-x-3 gap-y-1
+                      rounded-card border border-gray-100 p-2 text-sm">
+                    <span className="font-semibold">{nm}</span>
+                    {u.email && (
+                      <span className="text-sub-text">{u.email}</span>
+                    )}
+                    {u.phone && (
+                      <span className="text-sub-text">{u.phone}</span>
+                    )}
+                    {u.userCode && (
+                      <span className="text-xs text-sub-text">
+                        #{u.userCode}
+                      </span>
+                    )}
+                    <span className="text-xs text-sub-text">
+                      {rs.length} review{rs.length > 1 ? 's' : ''}
+                    </span>
+                    <Link href={`/admin-users?q=${encodeURIComponent(
+                      u.email || u.userCode || uid)}`}
+                      className="ml-auto font-semibold text-primary">
+                      Open in Users
+                    </Link>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       <div className="space-y-2">
         {shown.length === 0 ? (
@@ -86,11 +146,23 @@ export default function AdminReviews() {
               </div>
               <p className="text-sm text-sub-text">{r.text}</p>
               <div className="text-xs text-sub-text">
-                Author UID: {r.userId}{' '}
-                <Link href="/admin-users"
-                  className="font-semibold text-primary">
-                  (open in Users)
-                </Link>
+                {(() => {
+                  const u = users[r.userId] || {};
+                  const parts = [u.email, u.phone,
+                    u.userCode ? '#' + u.userCode : null].filter(Boolean);
+                  return (
+                    <>
+                      Author: {u.name || r.userName || 'User'}
+                      {parts.length ? ` - ${parts.join(' - ')}` : ''}
+                      {' '}
+                      <Link href={`/admin-users?q=${encodeURIComponent(
+                        u.email || u.userCode || r.userId)}`}
+                        className="font-semibold text-primary">
+                        (open in Users)
+                      </Link>
+                    </>
+                  );
+                })()}
               </div>
               <div className="flex flex-wrap gap-2">
                 {r.status === 'approved' ? (
