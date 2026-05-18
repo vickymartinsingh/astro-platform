@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import {
   astrologerService, reviewService, zodiacLabel,
-  iconsService, horoscopeService, db,
+  iconsService, horoscopeService, kundliService, db,
 } from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
@@ -98,6 +98,19 @@ export default function Dashboard() {
   const [horo, setHoro] = useState({});
   useEffect(() => horoscopeService.watchHoroscope(setHoro), []);
 
+  // Personalised "Your stars today" - from the user's saved kundli(s).
+  const [kundlis, setKundlis] = useState([]);
+  const [kIdx, setKIdx] = useState(0);
+  const [pWhen, setPWhen] = useState('today');
+  useEffect(() => {
+    if (!user) { setKundlis([]); return; }
+    kundliService.getKundliProfiles(user.uid).then((l) => {
+      const arr = (Array.isArray(l) ? l : []).slice()
+        .sort((a, b) => (b.isDefault ? 1 : 0) - (a.isDefault ? 1 : 0));
+      setKundlis(arr); setKIdx(0);
+    }).catch(() => setKundlis([]));
+  }, [user]);
+
   if (loading) return <Layout><SkeletonList /></Layout>;
 
   const topRated = [...(list || [])]
@@ -170,41 +183,104 @@ export default function Dashboard() {
         <Stat n="12+" l="Languages" />
       </div>
 
-      {/* Your stars today (Today by default, Tomorrow on tap) */}
-      {sec.starsToday !== false && (
-      <><h2 className="mb-3 mt-8 text-lg font-bold">Your stars today</h2>
-      <div className="surface p-5">
-        <div className="mb-3">
-          <ZodiacPicker value={sign} onChange={setSign}
-            dropdown={features.zodiac_dropdown === true} />
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="badge bg-bg-light text-primary">Daily reading</span>
-          <div className="flex gap-1">
-            {['today', 'tomorrow'].map((w) => (
-              <button key={w} onClick={() => setWhen(w)}
-                className={when === w ? 'pill pill-active' : 'pill'}>
-                {w === 'today' ? 'Today' : 'Tomorrow'}
-              </button>
-            ))}
-          </div>
-          <Link href="/tarot" className="btn-grad ml-auto">
-            Pick your tarot card
-          </Link>
-        </div>
-        <div className="mt-4">
-          <Daily
-            title={`${zodiacLabel(sign, true)} - `
-              + `${when === 'today' ? 'Today' : 'Tomorrow'}, `
-              + `${(() => { const d = new Date();
-                if (when === 'tomorrow') d.setDate(d.getDate() + 1);
-                return d.toLocaleDateString('en-GB', { weekday: 'short',
-                  day: '2-digit', month: 'short', year: 'numeric' });
-              })()}`}
-            h={reading} />
-        </div>
-      </div></>
-      )}
+      {/* Personalised stars (from the user's kundli) + generic
+          Horoscope. Admin can revert to a single combined section via
+          features.stars_split = false. */}
+      {sec.starsToday !== false && (() => {
+        const split = features.stars_split !== false;
+        const genericHead = split ? 'Horoscope' : 'Your stars today';
+        const pk = kundlis[Math.min(kIdx, Math.max(0,
+          kundlis.length - 1))] || null;
+        const showPersonal = split && !!user && !!pk;
+        const pSign = (pk && pk.zodiac) || sign;
+        const pReading = horoscopeService.resolveHoroscope(
+          pSign, pWhen, horo);
+        return (
+          <>
+            {showPersonal && (
+              <>
+                <h2 className="mb-3 mt-8 text-lg font-bold">
+                  Your stars today
+                </h2>
+                <div className="surface p-5">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="badge bg-bg-light text-primary">
+                      {(pk.name || 'You')} - {zodiacLabel(pSign, true)}
+                    </span>
+                    {kundlis.length > 1 && (
+                      <select
+                        className="rounded-card border border-gray-200
+                          px-2 py-1 text-sm"
+                        value={kIdx}
+                        onChange={(e) =>
+                          setKIdx(Number(e.target.value))}>
+                        {kundlis.map((k, i) => (
+                          <option key={k.id} value={i}>
+                            {(k.name || 'Kundli')}
+                            {k.isDefault ? ' (default)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    <div className="flex gap-1">
+                      {['today', 'tomorrow'].map((w) => (
+                        <button key={w} onClick={() => setPWhen(w)}
+                          className={pWhen === w
+                            ? 'pill pill-active' : 'pill'}>
+                          {w === 'today' ? 'Today' : 'Tomorrow'}
+                        </button>
+                      ))}
+                    </div>
+                    <Link href="/kundli"
+                      className="ml-auto text-sm font-semibold
+                        text-primary">
+                      Manage kundli
+                    </Link>
+                  </div>
+                  <div className="mt-4">
+                    <Daily
+                      title={`${zodiacLabel(pSign, true)} - `
+                        + `${pWhen === 'today' ? 'Today' : 'Tomorrow'}, `
+                        + `${dateLabel(pWhen)}`}
+                      h={pReading} />
+                  </div>
+                </div>
+              </>
+            )}
+
+            <h2 className="mb-3 mt-8 text-lg font-bold">{genericHead}</h2>
+            <div className="surface p-5">
+              <div className="mb-3">
+                <ZodiacPicker value={sign} onChange={setSign}
+                  dropdown={features.zodiac_dropdown === true} />
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="badge bg-bg-light text-primary">
+                  Daily reading
+                </span>
+                <div className="flex gap-1">
+                  {['today', 'tomorrow'].map((w) => (
+                    <button key={w} onClick={() => setWhen(w)}
+                      className={when === w ? 'pill pill-active' : 'pill'}>
+                      {w === 'today' ? 'Today' : 'Tomorrow'}
+                    </button>
+                  ))}
+                </div>
+                <Link href="/tarot" className="btn-grad ml-auto">
+                  Pick your tarot card
+                </Link>
+              </div>
+              <div className="mt-4">
+                <Daily
+                  title={`${zodiacLabel(sign, true)} - `
+                    + `${when === 'today' ? 'Today' : 'Tomorrow'}, `
+                    + `${dateLabel(when)}`}
+                  h={reading} />
+              </div>
+            </div>
+          </>
+        );
+      })()}
 
       {/* Categories */}
       {sec.categories !== false && (
@@ -298,6 +374,14 @@ export default function Dashboard() {
       )}
     </Layout>
   );
+}
+
+function dateLabel(w) {
+  const d = new Date();
+  if (w === 'tomorrow') d.setDate(d.getDate() + 1);
+  return d.toLocaleDateString('en-GB', {
+    weekday: 'short', day: '2-digit', month: 'short', year: 'numeric',
+  });
 }
 
 function Stat({ n, l }) {

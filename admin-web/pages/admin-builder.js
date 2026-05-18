@@ -227,6 +227,21 @@ export default function AdminBuilder() {
                 onChange={(e) => setFeat({
                   ...feat, zodiac_dropdown: e.target.checked })} />
             </label>
+            <label className="flex items-center justify-between text-sm">
+              <span>
+                Split stars sections
+                <span className="block text-xs text-sub-text">
+                  On (default) = a personal &quot;Your stars today&quot;
+                  from the user&apos;s kundli PLUS a generic
+                  &quot;Horoscope&quot;. Off = one combined &quot;Your
+                  stars today&quot; sign picker (the old layout).
+                </span>
+              </span>
+              <input type="checkbox"
+                checked={feat.stars_split !== false}
+                onChange={(e) => setFeat({
+                  ...feat, stars_split: e.target.checked })} />
+            </label>
             <button onClick={saveMenu}
               className="btn-primary w-full">Save display options</button>
           </div>
