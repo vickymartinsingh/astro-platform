@@ -127,9 +127,13 @@ input, textarea, select { font-size: 16px; }
   background-position: 0 0, 13px 13px;
 }
 
-/* Bottom tab bar: respect the phone's home-indicator safe area. */
+/* Bottom tab bar: respect the phone's home-indicator safe area. The
+   tab bar is ~76px tall; reserve that PLUS a cushion so nothing (text,
+   buttons) is ever hidden behind it on any screen. */
 .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
-.pb-safe-nav { padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
+.pb-safe-nav {
+  padding-bottom: calc(92px + env(safe-area-inset-bottom, 0px));
+}
 
 @keyframes slideUp {
   from { opacity: 0; transform: translateY(16px); }
