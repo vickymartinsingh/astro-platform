@@ -28,9 +28,21 @@ export default function AdminReviews() {
     }).catch(() => {});
   }, []);
 
-  async function patch(id, p) {
-    await reviewService.moderatePlatformReview(id, p);
-    flash('Review updated - live on the app');
+  async function approve(r) {
+    await reviewService.approvePlatformReview(r.id, r);
+    flash(r.selected
+      ? 'Approved - updated review is now live'
+      : 'Approved');
+    refresh();
+  }
+  async function unapprove(r) {
+    await reviewService.unapprovePlatformReview(r.id);
+    flash('Moved back to pending');
+    refresh();
+  }
+  async function feature(r, on) {
+    await reviewService.setFeaturedPlatformReview(r.id, r, on);
+    flash(on ? 'Featured - live on the home page' : 'Unfeatured');
     refresh();
   }
 
@@ -116,6 +128,14 @@ export default function AdminReviews() {
         {shown.length === 0 ? (
           <div className="card text-sub-text">No reviews here.</div>
         ) : shown.map((r) => {
+          const editPending = r.selected
+            && (r.status !== 'approved'
+              || (r.pub && r.pub.text !== r.text));
+          const chip = r.status === 'approved' && r.selected
+            ? 'Featured'
+            : r.selected && r.status !== 'approved'
+              ? 'Featured (edit pending)'
+              : r.status === 'approved' ? 'Approved' : 'Pending';
           const featured = r.status === 'approved' && r.selected;
           return (
             <div key={r.id} className="card space-y-2">
@@ -140,11 +160,25 @@ export default function AdminReviews() {
                     : r.status === 'approved'
                       ? 'bg-primary/15 text-primary'
                       : 'bg-warning/15 text-warning'}`}>
-                  {featured ? 'Featured'
-                    : r.status === 'approved' ? 'Approved' : 'Pending'}
+                  {chip}
                 </span>
               </div>
-              <p className="text-sm text-sub-text">{r.text}</p>
+              <p className="text-sm text-sub-text">
+                {r.text}
+                {' '}
+                <span className="text-xs italic text-sub-text">
+                  ({r.status === 'approved' ? 'approved content'
+                    : 'new / edited - awaiting approval'})
+                </span>
+              </p>
+              {editPending && r.pub && r.pub.text
+                && r.pub.text !== r.text && (
+                <div className="rounded-card bg-bg-light p-2 text-xs
+                  text-sub-text">
+                  Currently shown to customers (until you approve the
+                  edit): &quot;{r.pub.text}&quot;
+                </div>
+              )}
               <div className="text-xs text-sub-text">
                 {(() => {
                   const u = users[r.userId] || {};
@@ -166,19 +200,19 @@ export default function AdminReviews() {
               </div>
               <div className="flex flex-wrap gap-2">
                 {r.status === 'approved' ? (
-                  <button onClick={() => patch(r.id,
-                    { status: 'pending', selected: false })}
+                  <button onClick={() => unapprove(r)}
                     className="rounded-full border border-warning px-3
                       py-1.5 text-sm text-warning">Un-approve</button>
                 ) : (
-                  <button onClick={() => patch(r.id,
-                    { status: 'approved' })}
+                  <button onClick={() => approve(r)}
                     className="rounded-full border border-primary px-3
-                      py-1.5 text-sm text-primary">Approve</button>
+                      py-1.5 text-sm text-primary">
+                    {r.selected ? 'Approve update' : 'Approve'}
+                  </button>
                 )}
                 <button
                   disabled={r.status !== 'approved'}
-                  onClick={() => patch(r.id, { selected: !r.selected })}
+                  onClick={() => feature(r, !r.selected)}
                   className={`rounded-full px-3 py-1.5 text-sm
                     ${r.status !== 'approved'
                       ? 'border border-gray-200 text-gray-300'

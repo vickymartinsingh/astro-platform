@@ -48,21 +48,17 @@ export default function ReviewPage() {
     return <Layout><SkeletonList /></Layout>;
   }
 
-  const visible = mine && mine.status === 'approved' && mine.selected;
-  const statusLabel = !mine ? '' : visible
-    ? 'Live on the home page'
-    : mine.status === 'approved'
-      ? 'Approved - waiting to be featured by admin'
-      : 'Pending admin approval';
-  const statusColor = visible ? 'text-success'
-    : mine?.status === 'approved' ? 'text-primary' : 'text-warning';
+  const approved = mine && mine.status === 'approved';
+  const statusLabel = !mine ? ''
+    : approved ? 'Approved' : 'Pending admin approval';
+  const statusColor = approved ? 'text-success' : 'text-warning';
 
   return (
     <Layout>
       <h1 className="mb-1 text-2xl font-bold">Write a Review</h1>
       <p className="mb-4 text-sm text-sub-text">
-        Share your experience. Only you can see your review until an admin
-        approves and features it on the home page.
+        Share your experience. You can always see your own review here;
+        other customers see it only after it is approved.
       </p>
 
       {mine && (

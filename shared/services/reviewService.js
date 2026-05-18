@@ -94,36 +94,62 @@ export async function getMyPlatformReview(uid) {
   return list[0] || null;
 }
 
+// The published snapshot = what other customers see. It only ever
+// changes when an admin approves a featured review, so an edit never
+// instantly changes what the public sees.
+function pubSnap(r) {
+  return {
+    name: r.userName || 'AstroConnect user',
+    city: r.city || '',
+    rating: r.rating || 5,
+    text: r.text || '',
+  };
+}
+
 export async function submitPlatformReview(uid, data) {
   const existing = await getMyPlatformReview(uid);
-  const payload = {
+  // CURRENT content the reviewer sees in their own app. status -> pending
+  // so every create/edit goes back to the admin. We deliberately do NOT
+  // touch `selected` or `pub` here: if it was already featured, the
+  // previously approved version stays live for everyone else until the
+  // admin approves the edit.
+  const content = {
     kind: 'platform',
     userId: uid,
     userName: (data.name || '').trim() || 'AstroConnect user',
     city: (data.city || '').trim(),
     rating: Math.max(1, Math.min(5, Number(data.rating) || 5)),
     text: (data.text || '').trim(),
-    status: 'pending',     // re-moderated on every create/edit
-    selected: false,
+    status: 'pending',
     updatedAt: serverTimestamp(),
   };
   if (existing) {
-    await updateDoc(doc(db, 'reviews', existing.id), payload);
+    await updateDoc(doc(db, 'reviews', existing.id), content);
     return existing.id;
   }
   const ref = await addDoc(collection(db, 'reviews'), {
-    ...payload, createdAt: serverTimestamp(),
+    ...content, selected: false, createdAt: serverTimestamp(),
   });
   return ref.id;
 }
 
-// Public dashboard: only admin approved + selected reviews.
+// Public dashboard: only featured reviews, and ONLY the last approved
+// snapshot (pub) - never an unreviewed pending edit.
 export async function getPublicPlatformReviews() {
   try {
     const snap = await getDocs(query(
       collection(db, 'reviews'), where('kind', '==', 'platform')));
     return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
-      .filter((r) => r.status === 'approved' && r.selected === true)
+      .filter((r) => r.selected === true && r.pub && r.pub.text)
+      .map((r) => ({
+        id: r.id,
+        userName: r.pub.name,
+        city: r.pub.city,
+        rating: r.pub.rating,
+        text: r.pub.text,
+        updatedAt: r.updatedAt,
+        createdAt: r.createdAt,
+      }))
       .sort((a, b) =>
         (b.updatedAt?.toMillis?.() || b.createdAt?.toMillis?.() || 0)
         - (a.updatedAt?.toMillis?.() || a.createdAt?.toMillis?.() || 0));
@@ -139,6 +165,30 @@ export async function listAllPlatformReviews() {
       (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0));
 }
 
+// Approve the CURRENT content. If the review is already featured, this
+// also republishes (refreshes the public snapshot to the new content) -
+// so an edited review only becomes visible to others once re-approved.
+export async function approvePlatformReview(id, review) {
+  const patch = { status: 'approved' };
+  if (review && review.selected) patch.pub = pubSnap(review);
+  await updateDoc(doc(db, 'reviews', id), patch);
+}
+
+// Feature / unfeature. Featuring publishes the current approved content.
+export async function setFeaturedPlatformReview(id, review, on) {
+  const patch = { selected: !!on };
+  if (on && review && review.status === 'approved') {
+    patch.pub = pubSnap(review);
+  }
+  await updateDoc(doc(db, 'reviews', id), patch);
+}
+
+export async function unapprovePlatformReview(id) {
+  await updateDoc(doc(db, 'reviews', id),
+    { status: 'pending', selected: false });
+}
+
+// Kept for compatibility.
 export async function moderatePlatformReview(id, patch) {
   await updateDoc(doc(db, 'reviews', id), patch);
 }
