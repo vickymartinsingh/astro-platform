@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
-import { astrologerService, payoutService, db, storage } from '@astro/shared';
+import { useRouter } from 'next/router';
+import {
+  astrologerService, payoutService, authService, db, storage,
+} from '@astro/shared';
 import { doc, setDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import Layout from '../components/Layout';
@@ -12,6 +15,11 @@ const BLANK = {
 
 export default function AstroProfile() {
   const { user, profile, loading } = useRequireAstrologer();
+  const router = useRouter();
+  async function logout() {
+    try { await authService.logoutUser(); } catch (_) {}
+    router.replace('/astro-login');
+  }
   const [f, setF] = useState(BLANK);
   const [exists, setExists] = useState(false);
   const [msg, setMsg] = useState('');
@@ -170,6 +178,12 @@ export default function AstroProfile() {
           </div>
         ))}
       </div>
+
+      <button onClick={logout}
+        className="mt-4 w-full rounded-card border border-danger py-3
+          font-semibold text-danger">
+        Log out
+      </button>
     </Layout>
   );
 }

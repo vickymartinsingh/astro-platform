@@ -144,17 +144,27 @@ export default function AstroDashboard() {
         <div className="space-y-2">
           {SVCS.map(([k, label]) => {
             const on = !!astro[`${k}_enabled`];
+            const dis = busy || !astro.approved;
             return (
               <div key={k} className="flex items-center justify-between
                 rounded-card border border-gray-200 p-3">
-                <span className="font-medium">{label}</span>
-                <button onClick={() => toggleSvc(k)} disabled={busy
-                  || !astro.approved}
-                  className={`rounded-full px-4 py-1.5 text-sm
-                    font-semibold ${on
-                      ? 'bg-success text-white'
-                      : 'border border-gray-300 text-sub-text'}`}>
-                  {on ? 'Online' : 'Offline'}
+                <span className="font-medium">
+                  {label}
+                  <span className={`ml-2 text-xs font-semibold ${on
+                    ? 'text-success' : 'text-sub-text'}`}>
+                    {on ? 'Online' : 'Offline'}
+                  </span>
+                </span>
+                <button type="button" role="switch" aria-checked={on}
+                  aria-label={`${label} availability`}
+                  onClick={() => !dis && toggleSvc(k)}
+                  disabled={dis}
+                  className={`relative h-7 w-12 shrink-0 rounded-full
+                    transition-colors ${on ? 'bg-success'
+                      : 'bg-gray-300'} ${dis ? 'opacity-50' : ''}`}>
+                  <span className={`absolute top-0.5 h-6 w-6 rounded-full
+                    bg-white shadow transition-all ${on
+                      ? 'left-[22px]' : 'left-0.5'}`} />
                 </button>
               </div>
             );

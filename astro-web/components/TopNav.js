@@ -1,22 +1,37 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
-import {
-  authService, astrologerService, brandingService, menuService,
-} from '@astro/shared';
-import GoOnlineModal from './GoOnlineModal';
-import { useAuth } from '../lib/useAuth';
+import { brandingService, menuService } from '@astro/shared';
 
-// TOP NAV ONLY (Hard Rule 1). Premium white header to match the client
-// portal. Go Online/Offline is a prominent nav button.
-// Astrologer menu is admin-editable via menuService (live overrides).
+// TOP NAV. Go Online/Offline is NOT here anymore - availability is set
+// from the Dashboard (per-service switches). Beside the menu button:
+// monochrome Notifications + Earnings shortcuts. Logout lives in
+// Profile. Menu is admin-editable via menuService.
+function Bell() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"
+      strokeLinejoin="round" aria-hidden="true">
+      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
+      <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+    </svg>
+  );
+}
+function Coin() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"
+      strokeLinejoin="round" aria-hidden="true">
+      <ellipse cx="12" cy="6" rx="7" ry="3" />
+      <path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6" />
+      <path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" />
+    </svg>
+  );
+}
 
-export default function TopNav({ astro }) {
+export default function TopNav() {
   const [open, setOpen] = useState(false);
-  const [modal, setModal] = useState(false);
   const router = useRouter();
-  const { user } = useAuth();
-  const online = astro?.status === 'online';
   const [brand, setBrand] = useState({ logo: '', name: 'AstroConnect' });
   useEffect(() => brandingService.watchBranding((b) =>
     setBrand({ logo: b.logo || '',
@@ -25,55 +40,19 @@ export default function TopNav({ astro }) {
   useEffect(() => menuService.watchMenus(
     (m) => setLinks(m.astro)), []);
 
-  async function logout() {
-    await authService.logoutUser();
-    router.replace('/astro-login');
-  }
-
-  // Quick toggle: flip availability without the service dialog. Going
-  // online with no service enables Chat by default.
-  async function quickToggle() {
-    if (!astro || !user) { setModal(true); return; }
-    if (online) {
-      await astrologerService.updateAvailability(user.uid, {
-        status: 'offline', chat_enabled: false,
-        call_enabled: false, video_enabled: false });
-    } else {
-      const anySvc = astro.chat_enabled || astro.call_enabled
-        || astro.video_enabled;
-      await astrologerService.updateAvailability(user.uid, {
-        status: 'online',
-        chat_enabled: anySvc ? !!astro.chat_enabled : true,
-        call_enabled: !!astro.call_enabled,
-        video_enabled: !!astro.video_enabled });
-    }
-  }
-
-  const Toggle = ({ extra }) => (
-    <button onClick={quickToggle} title="Quick online/offline"
-      className={`flex items-center gap-2 rounded-full border px-3 py-2
-        text-sm font-semibold ${extra} ${online
-          ? 'border-emerald-300 text-emerald-700'
-          : 'border-gray-200 text-sub-text'}`}>
-      <span className={`h-2.5 w-2.5 rounded-full ${
-        online ? 'bg-emerald-500' : 'bg-gray-300'}`} />
-      {online ? 'Online' : 'Offline'}
-    </button>
-  );
-
-  const StatusBtn = ({ extra }) => (
-    <button onClick={() => setModal(true)}
-      className={`rounded-full px-4 py-2 text-sm font-semibold ${extra} ${
-        online ? 'bg-success text-white'
-          : 'bg-gradient-to-br from-primary to-[#8B5CF6] text-white'}`}>
-      {online ? 'Go Offline' : 'Go Online'}
-    </button>
+  const IconBtn = ({ href, label, children }) => (
+    <Link href={href} aria-label={label}
+      className="rounded-xl border border-gray-200 px-3 py-2
+        text-dark-text">
+      {children}
+    </Link>
   );
 
   return (
-    <header className="sticky top-0 z-40 border-b border-gray-100 bg-white">
-      <div className="mx-auto flex max-w-6xl items-center justify-between
-                      px-4 py-3">
+    <header className="sticky top-0 z-40 border-b border-gray-100
+      bg-white">
+      <div className="mx-auto flex max-w-6xl items-center
+        justify-between px-4 py-3">
         <Link href="/astro-dashboard" className="flex items-center gap-2">
           {brand.logo ? (
             <img src={brand.logo} alt={brand.name}
@@ -81,8 +60,8 @@ export default function TopNav({ astro }) {
           ) : (
             <>
               <span className="flex h-9 w-9 items-center justify-center
-                               rounded-xl bg-gradient-to-br from-primary
-                               to-[#8B5CF6] font-bold text-white">A</span>
+                rounded-xl bg-gradient-to-br from-primary to-[#8B5CF6]
+                font-bold text-white">A</span>
               <span className="leading-tight">
                 <span className="block font-bold">{brand.name}</span>
                 <span className="block text-[10px] uppercase
@@ -101,18 +80,27 @@ export default function TopNav({ astro }) {
               {l.label}
             </Link>
           ))}
-          <Toggle extra="ml-2" />
-          <StatusBtn extra="ml-1" />
-          <button onClick={logout}
-            className="ml-1 rounded-full border border-gray-200 px-4 py-2
-                       text-sm font-semibold hover:bg-bg-light">
-            Logout
-          </button>
+          <span className="ml-2 flex items-center gap-2">
+            <IconBtn href="/astro-notifications" label="Notifications">
+              <Bell />
+            </IconBtn>
+            <IconBtn href="/astro-earnings" label="Earnings">
+              <Coin />
+            </IconBtn>
+          </span>
         </nav>
 
-        <button aria-label="Menu"
-          className="rounded-xl border border-gray-200 px-3 py-2 md:hidden"
-          onClick={() => setOpen((v) => !v)}>{open ? '✕' : '☰'}</button>
+        <div className="flex items-center gap-2 md:hidden">
+          <IconBtn href="/astro-notifications" label="Notifications">
+            <Bell />
+          </IconBtn>
+          <IconBtn href="/astro-earnings" label="Earnings">
+            <Coin />
+          </IconBtn>
+          <button aria-label="Menu"
+            className="rounded-xl border border-gray-200 px-3 py-2"
+            onClick={() => setOpen((v) => !v)}>{open ? '✕' : '☰'}</button>
+        </div>
       </div>
 
       {open && (
@@ -120,29 +108,23 @@ export default function TopNav({ astro }) {
           <div className="absolute inset-0 bg-black/40"
             onClick={() => setOpen(false)} />
           <nav className="absolute right-0 top-0 h-full w-[78%] max-w-xs
-                          overflow-y-auto bg-white px-4 pb-6 pt-4 shadow-2xl
-                          animate-[slideIn_.2s_ease-out]">
-          <div className="mb-3 flex items-center justify-between">
-            <span className="font-bold">Menu</span>
-            <button aria-label="Close" onClick={() => setOpen(false)}
-              className="rounded-lg border border-gray-200 px-2.5 py-1
-                         text-sm">✕</button>
-          </div>
-          {links.map((l) => (
-            <Link key={l.href} href={l.href}
-              className={`block rounded-xl px-3 py-3 text-base ${
-                router.pathname === l.href
-                  ? 'bg-bg-light font-semibold text-primary' : ''}`}>
-              {l.label}
-            </Link>
-          ))}
-          <div className="mt-2 space-y-2">
-            <Toggle extra="w-full justify-center" />
-            <StatusBtn extra="w-full" />
-          </div>
-          <button onClick={logout}
-            className="mt-2 w-full rounded-xl border border-gray-200 px-3
-                       py-3 text-left text-base">Logout</button>
+            overflow-y-auto bg-white px-4 pb-6 pt-4 shadow-2xl
+            animate-[slideIn_.2s_ease-out]">
+            <div className="mb-3 flex items-center justify-between">
+              <span className="font-bold">Menu</span>
+              <button aria-label="Close" onClick={() => setOpen(false)}
+                className="rounded-lg border border-gray-200 px-2.5
+                  py-1 text-sm">✕</button>
+            </div>
+            {links.map((l) => (
+              <Link key={l.href} href={l.href}
+                onClick={() => setOpen(false)}
+                className={`block rounded-xl px-3 py-3 text-base ${
+                  router.pathname === l.href
+                    ? 'bg-bg-light font-semibold text-primary' : ''}`}>
+                {l.label}
+              </Link>
+            ))}
           </nav>
         </div>
       )}
@@ -152,11 +134,6 @@ export default function TopNav({ astro }) {
           to   { opacity: 1; transform: translateX(0); }
         }
       `}</style>
-
-      {modal && (
-        <GoOnlineModal astro={astro} uid={user?.uid}
-          onClose={() => setModal(false)} />
-      )}
     </header>
   );
 }

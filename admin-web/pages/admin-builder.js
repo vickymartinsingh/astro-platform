@@ -4,7 +4,9 @@ import { db, adminService, menuService } from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import MenuEditor from '../components/MenuEditor';
-import BottomNavEditor from '../components/BottomNavEditor';
+import BottomNavEditor, {
+  ASTRO_NAV_DEFS,
+} from '../components/BottomNavEditor';
 import { useRequireAdmin } from '../lib/useAuth';
 import { flash } from '../lib/flash';
 
@@ -127,6 +129,9 @@ export default function AdminBuilder() {
             defaults={menuService.DEFAULT_ASTRO_MENU}
             value={feat.astro_links}
             onChange={(v) => setFeat({ ...feat, astro_links: v })} />
+          <BottomNavEditor feat={feat} setFeat={setFeat}
+            ns="anav" defs={ASTRO_NAV_DEFS} defaultHidden={{}}
+            title="Astrologer bottom tab bar - drag to reorder" />
           <button onClick={saveMenu}
             className="btn-primary w-full">
             Save all menus (client + astrologer)

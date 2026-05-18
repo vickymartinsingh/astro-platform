@@ -110,3 +110,9 @@ input, textarea, select { font-size: 16px; }
 
 /* Smooth chat auto-scroll (blueprint 10.5). */
 .smooth-scroll { scroll-behavior: smooth; }
+
+/* Bottom tab bar spacing (mobile). */
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
+.pb-safe-nav {
+  padding-bottom: calc(92px + env(safe-area-inset-bottom, 0px));
+}

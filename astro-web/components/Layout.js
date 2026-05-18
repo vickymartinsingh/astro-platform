@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { astrologerService } from '@astro/shared';
 import TopNav from './TopNav';
+import BottomNav from './BottomNav';
 import IncomingRequest from './IncomingRequest';
 import AnnouncementBanner from './AnnouncementBanner';
 import PullToRefresh from './PullToRefresh';
@@ -31,8 +32,10 @@ export default function Layout({ children, nav = true }) {
       </div>
       <AnnouncementBanner />
       {nav && <TopNav astro={astro} />}
-      <main className="mx-auto w-full max-w-6xl px-4 py-4">{children}</main>
+      <main className={`mx-auto w-full max-w-6xl px-4 pt-4 ${
+        nav ? 'pb-safe-nav md:pb-4' : 'pb-4'}`}>{children}</main>
       {user && <IncomingRequest uid={user.uid} isOnCall={inSession} />}
+      {nav && <BottomNav />}
     </div>
   );
 }
