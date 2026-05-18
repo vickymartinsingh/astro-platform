@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import {
-  astrologerService, getHoroscope, reviewService, db,
+  astrologerService, getHoroscope, reviewService, zodiacLabel, db,
 } from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
@@ -168,7 +168,8 @@ export default function Dashboard() {
         </div>
         <div className="mt-4">
           <Daily
-            title={`${sign} - ${when === 'today' ? 'Today' : 'Tomorrow'}, `
+            title={`${zodiacLabel(sign, true)} - `
+              + `${when === 'today' ? 'Today' : 'Tomorrow'}, `
               + `${(() => { const d = new Date();
                 if (when === 'tomorrow') d.setDate(d.getDate() + 1);
                 return d.toLocaleDateString('en-GB', { weekday: 'short',

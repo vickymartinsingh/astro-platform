@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { kundliService, getHoroscope } from '@astro/shared';
+import { kundliService, getHoroscope, zodiacLabel } from '@astro/shared';
 import Layout from '../components/Layout';
 import { SkeletonList } from '../components/Skeleton';
 import ZodiacPicker from '../components/ZodiacPicker';
@@ -61,7 +61,8 @@ export default function Horoscope() {
         ))}
       </div>
       <Reading
-        title={`${sign} - ${when === 'today' ? 'Today' : 'Tomorrow'}, `
+        title={`${zodiacLabel(sign, true)} - `
+          + `${when === 'today' ? 'Today' : 'Tomorrow'}, `
           + `${dateStr(when)}`}
         h={h} />
       <p className="mt-3 text-xs text-sub-text">

@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { gunaMilan, signFromDOB, ZODIAC } from '@astro/shared';
+import {
+  gunaMilan, signFromDOB, ZODIAC, ZODIAC_IN,
+} from '@astro/shared';
 import Layout from '../components/Layout';
 import { useOptionalClient } from '../lib/useAuth';
 import { DateField, CityField } from '../components/BirthInputs';
@@ -20,7 +22,14 @@ function Person({ label, p, set }) {
         <label className="text-sm text-sub-text">Zodiac sign</label>
         <select className="input mt-1" value={p.sign}
           onChange={(e) => set({ ...p, sign: e.target.value })}>
-          {ZODIAC.map((z) => <option key={z} value={z}>{z}</option>)}
+          {ZODIAC.map((z) => {
+            const r = ZODIAC_IN[z] || { en: z, dev: '' };
+            return (
+              <option key={z} value={z}>
+                {r.dev} {r.en} ({z})
+              </option>
+            );
+          })}
         </select>
       </div>
     </div>

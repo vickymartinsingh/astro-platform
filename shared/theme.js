@@ -32,6 +32,30 @@ export const ZODIAC = [
   'Libra', 'Scorpio', 'Sagittarius', 'Capricorn', 'Aquarius', 'Pisces',
 ];
 
+// Indian (Vedic) Rashi names + Devanagari, keyed by the internal
+// Western key (kept as the key so horoscope/kundli data still resolves).
+// UI shows the Indian style; the Western name is only a tiny subtitle.
+export const ZODIAC_IN = {
+  Aries: { en: 'Mesha', dev: 'मेष' },
+  Taurus: { en: 'Vrishabha', dev: 'वृषभ' },
+  Gemini: { en: 'Mithuna', dev: 'मिथुन' },
+  Cancer: { en: 'Karka', dev: 'कर्क' },
+  Leo: { en: 'Simha', dev: 'सिंह' },
+  Virgo: { en: 'Kanya', dev: 'कन्या' },
+  Libra: { en: 'Tula', dev: 'तुला' },
+  Scorpio: { en: 'Vrishchika', dev: 'वृश्चिक' },
+  Sagittarius: { en: 'Dhanu', dev: 'धनु' },
+  Capricorn: { en: 'Makara', dev: 'मकर' },
+  Aquarius: { en: 'Kumbha', dev: 'कुम्भ' },
+  Pisces: { en: 'Meena', dev: 'मीन' },
+};
+// "Mesha" (default) or "Mesha (Aries)" when full = true.
+export function zodiacLabel(w, full) {
+  const x = ZODIAC_IN[w];
+  if (!x) return w;
+  return full ? `${x.en} (${w})` : x.en;
+}
+
 // Zodiac from DOB month+day, no external API (blueprint 4.12).
 export function zodiacFromDOB(day, month) {
   const d = Number(day), m = Number(month);
