@@ -6,8 +6,8 @@ import { useAppUpdate, startUpdate } from '../lib/appUpdate';
 // moment the app is up to date. Also drives a once-per-launch popup
 // (admin can switch the popup off in App Update settings).
 export default function UpdateBanner() {
-  const { updateAvailable, latestVersion, apkUrl, notes, popupEnabled }
-    = useAppUpdate();
+  const { updateAvailable, latestVersion, updateUrl, notes,
+    popupEnabled } = useAppUpdate();
   const [hideBanner, setHideBanner] = useState(false);
   const [showPopup, setShowPopup] = useState(false);
 
@@ -30,7 +30,7 @@ export default function UpdateBanner() {
           <span className="flex-1">
             A new version ({latestVersion}) is available.
           </span>
-          <button onClick={() => startUpdate(apkUrl)}
+          <button onClick={() => startUpdate(updateUrl)}
             className="rounded-full bg-white px-3 py-1 text-xs
               font-bold text-primary">
             Update
@@ -69,7 +69,7 @@ export default function UpdateBanner() {
                 </button>
                 <button
                   onClick={() => { setShowPopup(false);
-                    startUpdate(apkUrl); }}
+                    startUpdate(updateUrl); }}
                   className="btn-primary flex-[2] !min-h-0 py-2.5
                     text-sm">
                   Update now

@@ -20,8 +20,10 @@ export const Icon = {
   ),
   Marriage: (p) => (
     <svg {...base} {...p}>
-      <circle cx="9" cy="14" r="5" /><circle cx="15" cy="14" r="5" />
-      <path d="M9 9V5M9 5l-2 1M9 5l2 1" />
+      <circle cx="8" cy="6" r="2.4" />
+      <circle cx="16" cy="6" r="2.4" />
+      <path d="M5 21v-4a3 3 0 0 1 3-3 3 3 0 0 1 3 3v4" />
+      <path d="M13 21v-4a3 3 0 0 1 3-3 3 3 0 0 1 3 3v4" />
     </svg>
   ),
   Health: (p) => (
@@ -31,8 +33,10 @@ export const Icon = {
   ),
   Finance: (p) => (
     <svg {...base} {...p}>
-      <circle cx="12" cy="12" r="8" />
-      <path d="M9 9h4.5a2 2 0 0 1 0 4H9m0-4v8m0-4h6" />
+      <path d="M10 4c-1 1.5-2 2.5-2 4 0 1 1 2 4 2s4 1 4 2c0 1.5-1 2.5-2 4" />
+      <path d="M7 14c-1 1-2 2.5-2 4 0 2 3 2 7 2s7 0 7-2c0-1.5-1-3-2-4
+        a7 7 0 0 0-10 0z" />
+      <path d="M12 11v6" />
     </svg>
   ),
   Education: (p) => (

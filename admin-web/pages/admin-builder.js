@@ -14,6 +14,17 @@ const TAB_DEFS = [
 // Tabs hidden by default (kept in sync with client BottomNav). The admin
 // can switch Call back on / hide Tarot here at any time.
 const NAV_DEFAULT_HIDDEN = { call: true };
+const DEFAULT_STATS = [
+  { n: '{experts}+', l: 'Verified Experts' },
+  { n: '1M+', l: 'Consultations' },
+  { n: '4.8', l: 'Rating Average' },
+  { n: '12+', l: 'Languages' },
+];
+const CAT_KEYS = [
+  ['Love', 'Love & Relationships'], ['Career', 'Career'],
+  ['Marriage', 'Marriage'], ['Health', 'Health'],
+  ['Finance', 'Finance'], ['Education', 'Education'],
+];
 const HOME_SECTIONS = [
   ['quickActions', 'Quick actions (Tarot/Kundli/etc.)'],
   ['starsToday', 'Your stars today'],
@@ -295,6 +306,58 @@ export default function AdminBuilder() {
                 {label}
               </label>
             ))}
+            <div className="pt-2 text-xs font-semibold text-sub-text">
+              Stats row (label + value, or hide). Use {'{experts}'} for
+              the live astrologer count.
+            </div>
+            {(() => {
+              const stats = Array.isArray(content.home_stats)
+                && content.home_stats.length
+                ? content.home_stats : DEFAULT_STATS;
+              const upd = (i, patch) => setContent({
+                ...content,
+                home_stats: stats.map((s, idx) => (idx === i
+                  ? { ...s, ...patch } : { ...s })),
+              });
+              return stats.slice(0, 4).map((s, i) => (
+                /* eslint-disable-next-line react/no-array-index-key */
+                <div key={i} className="flex items-center gap-2">
+                  <input className="w-24 rounded border border-gray-200
+                    px-2 py-1 text-sm" placeholder="Value"
+                    value={s.n || ''}
+                    onChange={(e) => upd(i, { n: e.target.value })} />
+                  <input className="flex-1 rounded border
+                    border-gray-200 px-2 py-1 text-sm"
+                    placeholder="Label" value={s.l || ''}
+                    onChange={(e) => upd(i, { l: e.target.value })} />
+                  <label className="flex items-center gap-1 text-xs">
+                    <input type="checkbox" checked={s.show !== false}
+                      onChange={(e) => upd(i,
+                        { show: e.target.checked })} />
+                    Show
+                  </label>
+                </div>
+              ));
+            })()}
+
+            <div className="pt-2 text-xs font-semibold text-sub-text">
+              Category labels
+            </div>
+            {CAT_KEYS.map(([k, def]) => (
+              <div key={k} className="flex items-center gap-2">
+                <span className="w-20 text-xs text-sub-text">{k}</span>
+                <input className="flex-1 rounded border border-gray-200
+                  px-2 py-1 text-sm" placeholder={def}
+                  value={(content.cat_labels || {})[k] || ''}
+                  onChange={(e) => setContent({
+                    ...content,
+                    cat_labels: {
+                      ...(content.cat_labels || {}),
+                      [k]: e.target.value },
+                  })} />
+              </div>
+            ))}
+
             <input className="input" placeholder="Client site URL (for
               the live preview, e.g. https://...)"
               value={content.previewUrl || ''}

@@ -58,6 +58,8 @@ export default function Dashboard() {
       + 'Clarity on love, career, marriage and the road ahead.',
   });
   const [sec, setSec] = useState({}); // section show/hide from admin
+  const [statsCfg, setStatsCfg] = useState(null); // [{n,l}] from admin
+  const [catLabels, setCatLabels] = useState({}); // key -> label
   useEffect(() => {
     getDoc(doc(db, 'settings', 'content')).then((s) => {
       const d = s.exists() ? s.data() : {};
@@ -66,6 +68,10 @@ export default function Dashboard() {
           title: d.homeHeroTitle || h.title,
           subtitle: d.homeHeroSubtitle || h.subtitle,
         }));
+      }
+      if (Array.isArray(d.home_stats)) setStatsCfg(d.home_stats);
+      if (d.cat_labels && typeof d.cat_labels === 'object') {
+        setCatLabels(d.cat_labels);
       }
       setSec({
         quickActions: d.sec_quickActions !== false,
@@ -179,13 +185,31 @@ export default function Dashboard() {
       </div>
       )}
 
-      {/* Stats */}
-      <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat n={`${(list || []).length || 0}+`} l="Verified Experts" />
-        <Stat n="1M+" l="Consultations" />
-        <Stat n="4.8" l="Rating Average" />
-        <Stat n="12+" l="Languages" />
-      </div>
+      {/* Stats (admin-editable: settings/content.home_stats). Use the
+          {experts} placeholder to show the live astrologer count. */}
+      {(() => {
+        const DEF = [
+          { n: '{experts}+', l: 'Verified Experts' },
+          { n: '1M+', l: 'Consultations' },
+          { n: '4.8', l: 'Rating Average' },
+          { n: '12+', l: 'Languages' },
+        ];
+        const rows = (Array.isArray(statsCfg) && statsCfg.length
+          ? statsCfg : DEF)
+          .filter((s) => s && s.show !== false
+            && (s.l || s.n));
+        if (!rows.length) return null;
+        const cnt = (list || []).length || 0;
+        return (
+          <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+            {rows.map((s) => (
+              <Stat key={`${s.l || ''}|${s.n || ''}`}
+                n={String(s.n || '').replace('{experts}', String(cnt))}
+                l={s.l || ''} />
+            ))}
+          </div>
+        );
+      })()}
 
       {/* Personalised stars (from the user's kundli) + generic
           Horoscope. Admin can revert to a single combined section via
@@ -324,7 +348,9 @@ export default function Dashboard() {
               rounded-xl bg-bg-light">
               {catIcon(key)}
             </span>
-            <span className="text-xs font-medium">{label}</span>
+            <span className="text-xs font-medium">
+              {catLabels[key] || label}
+            </span>
           </Link>
         ))}
       </div></>

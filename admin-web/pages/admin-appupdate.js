@@ -74,7 +74,9 @@ export default function AdminAppUpdate() {
     await adminService.updateSettings('config', {
       app_latest_build: Number(c.app_latest_build || 0),
       app_latest_version: c.app_latest_version || '',
+      app_update_mode: c.app_update_mode === 'store' ? 'store' : 'apk',
       app_apk_url: c.app_apk_url || '',
+      app_store_url: c.app_store_url || '',
       app_update_notes: c.app_update_notes || '',
       app_update_popup: c.app_update_popup !== false,
       splash_image: c.splash_image || '',
@@ -106,6 +108,30 @@ export default function AdminAppUpdate() {
           <input className="input mt-1"
             value={c.app_latest_version || ''}
             onChange={(e) => set('app_latest_version', e.target.value)} />
+        </label>
+        <label className="block text-sm">
+          How users update
+          <select className="input mt-1"
+            value={c.app_update_mode === 'store' ? 'store' : 'apk'}
+            onChange={(e) => set('app_update_mode', e.target.value)}>
+            <option value="apk">
+              Download APK (now, before Play Store)
+            </option>
+            <option value="store">
+              Redirect to Play Store (after publishing)
+            </option>
+          </select>
+          <span className="mt-1 block text-xs text-sub-text">
+            Switch to &quot;Play Store&quot; once the app is live on
+            the store - the Update button then opens the store listing.
+          </span>
+        </label>
+        <label className="block text-sm">
+          Play Store URL
+          <input className="input mt-1"
+            placeholder="https://play.google.com/store/apps/details?id=..."
+            value={c.app_store_url || ''}
+            onChange={(e) => set('app_store_url', e.target.value)} />
         </label>
         <label className="block text-sm">
           APK download URL

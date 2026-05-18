@@ -194,7 +194,7 @@ export default function Profile() {
             </div>
           </div>
           {upd.updateAvailable ? (
-            <button onClick={() => startUpdate(upd.apkUrl)}
+            <button onClick={() => startUpdate(upd.updateUrl)}
               className="btn-primary !min-h-0 px-4 py-2 text-sm">
               Update
             </button>

@@ -12,13 +12,21 @@ export function useAppUpdate() {
   const { cfg } = useSettings();
   const latestBuild = Number(cfg.app_latest_build || 0);
   const apkUrl = (cfg.app_apk_url || '').trim();
-  const updateAvailable = latestBuild > APP_BUILD && !!apkUrl;
+  const storeUrl = (cfg.app_store_url || '').trim();
+  // 'store' once the app is on the Play Store, else 'apk' (sideload).
+  const mode = cfg.app_update_mode === 'store' ? 'store' : 'apk';
+  const target = mode === 'store' ? storeUrl : apkUrl;
+  const updateAvailable = latestBuild > APP_BUILD && !!target;
   return {
     updateAvailable,
     upToDate: !updateAvailable,
     currentVersion: APP_VERSION,
     latestVersion: (cfg.app_latest_version || '').trim() || APP_VERSION,
+    mode,
     apkUrl,
+    storeUrl,
+    // What the Update button should open (store link or APK).
+    updateUrl: target,
     notes: (cfg.app_update_notes || '').trim(),
     // Admin decides if the launch popup shows (default ON).
     popupEnabled: cfg.app_update_popup !== false,
