@@ -352,7 +352,16 @@ export async function createAstrologer(data) {
     await setDoc(doc(db, 'users', uid), {
       name: data.name, email, phone: data.phone || '', role: 'astrologer',
       isAstrologer: true,
-      userCode: String(Math.floor(1e8 + Math.random() * 9e8)),
+      userCode: ((s) => {
+        const C = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        const b = String(s || '').toUpperCase()
+          .replace(/[^A-Z0-9]/g, '').slice(0, 3);
+        let r = b;
+        while (r.length < 6) {
+          r += C[Math.floor(Math.random() * C.length)];
+        }
+        return r.slice(0, 6);
+      })(data.name || email),
       wallet: 0, isOnline: false, isOnCall: false, isBlocked: false,
       hasSeenTour: true, status: 'active', createdAt: serverTimestamp(),
     });

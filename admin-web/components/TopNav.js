@@ -31,6 +31,7 @@ const GROUPS = [
     ['/admin-payments', 'Payment Gateways'],
     ['/admin-coupons', 'Coupons'],
     ['/admin-gifts', 'Gift Cards'],
+    ['/admin-refer', 'Refer & Earn'],
     ['/admin-disputes', 'Disputes'],
   ]],
   ['Content', [
@@ -67,6 +68,7 @@ const DEV_GROUPS = [
     ['/admin-free', 'Free Sessions'],
     ['/admin-appupdate', 'App Update & Splash'],
     ['/admin-sounds', 'Notification & Ringtone'],
+    ['/admin-refer', 'Refer & Earn'],
   ]],
   ['Content', [
     ['/admin-cms', 'CMS / Text & Pages'],

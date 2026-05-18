@@ -31,6 +31,7 @@ const ALL = [
     ['/admin-payouts', 'Payouts'],
     ['/admin-payments', 'Payment Gateways', ['payments']],
     ['/admin-coupons', 'Coupons'], ['/admin-gifts', 'Gift Cards'],
+    ['/admin-refer', 'Refer & Earn', ['config']],
     ['/admin-disputes', 'Disputes'],
   ]],
   ['Content & Engagement', [

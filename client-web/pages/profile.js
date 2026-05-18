@@ -7,6 +7,7 @@ import { SkeletonList } from '../components/Skeleton';
 import { useRequireClient } from '../lib/useAuth';
 import { useI18n, LANGS } from '../lib/i18n';
 import { useAppUpdate, startUpdate, APP_VERSION } from '../lib/appUpdate';
+import { useSettings } from '../lib/useSettings';
 
 export default function Profile() {
   const router = useRouter();
@@ -17,6 +18,7 @@ export default function Profile() {
   const [busy, setBusy] = useState(false);
   const { t, lang, setLang } = useI18n();
   const upd = useAppUpdate();
+  const { cfg } = useSettings();
   const [pw, setPw] = useState({ cur: '', next: '', conf: '' });
   const [pwMsg, setPwMsg] = useState('');
 
@@ -150,12 +152,25 @@ export default function Profile() {
         </select>
       </div>
 
+      {cfg.refer_enabled !== false && (
       <div className="card mt-3">
-        <div className="font-semibold">Refer &amp; Earn</div>
+        <div className="font-semibold">
+          {cfg.refer_title || 'Refer & Earn'}
+        </div>
         <p className="mt-1 text-sm text-sub-text">
-          Share your code, you and your friend both get wallet credit when
-          they join.
+          {cfg.refer_desc
+            || 'Share your code, you and your friend both get wallet '
+              + 'credit when they join.'}
         </p>
+        {(Number(cfg.refer_reward) > 0
+          || Number(cfg.refer_friend_reward) > 0) && (
+          <p className="mt-1 text-sm font-semibold text-primary">
+            You get Rs {Number(cfg.refer_reward) || 0}
+            {Number(cfg.refer_friend_reward) > 0
+              ? `, your friend gets Rs ${Number(cfg.refer_friend_reward)}`
+              : ''}.
+          </p>
+        )}
         <div className="mt-2 flex items-center gap-2">
           <code className="rounded-card bg-bg-light px-3 py-2 font-bold">
             {profile.userCode}
@@ -170,7 +185,13 @@ export default function Profile() {
             Copy link
           </button>
         </div>
+        {cfg.refer_terms && (
+          <p className="mt-2 text-xs text-sub-text whitespace-pre-line">
+            {cfg.refer_terms}
+          </p>
+        )}
       </div>
+      )}
 
       <div className="card mt-3 space-y-2">
         <button onClick={replayTour} className="btn-ghost w-full">

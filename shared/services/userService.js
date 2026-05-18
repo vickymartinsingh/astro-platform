@@ -18,8 +18,10 @@ export async function ensureUserDoc(authUser) {
   if (snap.exists()) return { uid: snap.id, ...snap.data() };
 
   let userCode;
-  try { userCode = await generateUniqueUserCode(); }
-  catch { userCode = String(Math.floor(1e8 + Math.random() * 9e8)); }
+  try {
+    userCode = await generateUniqueUserCode(
+      authUser.displayName || authUser.email);
+  } catch { userCode = randCode(6); }
 
   const data = {
     name: authUser.displayName || '',
@@ -74,13 +76,26 @@ export async function setOffline(uid) {
   await updateDoc(doc(db, 'users', uid), { isOnline: false });
 }
 
-// 9-digit unique userCode (server also generates one on createUser; this is
-// a client-side fallback / collision-checked generator for tooling).
-export async function generateUniqueUserCode() {
-  for (let i = 0; i < 8; i++) {
-    const code = String(Math.floor(100000000 + Math.random() * 900000000));
-    const q = query(collection(db, 'users'), where('userCode', '==', code));
-    const snap = await getDocs(q);
+// Short 6-character user code: ALL CAPS letters + digits, seeded from
+// the customer's name (or email) so it is meaningful, e.g. "VIC4K9".
+// Collision-checked against existing users.
+const CODE_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+export function randCode(n) {
+  let o = '';
+  for (let i = 0; i < n; i += 1) {
+    o += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
+  }
+  return o;
+}
+export async function generateUniqueUserCode(seed) {
+  const base = String(seed || '').toUpperCase()
+    .replace(/[^A-Z0-9]/g, '').slice(0, 3);
+  for (let i = 0; i < 14; i += 1) {
+    const code = (base + randCode(6 - base.length)).slice(0, 6);
+    /* eslint-disable no-await-in-loop */
+    const snap = await getDocs(query(
+      collection(db, 'users'), where('userCode', '==', code)));
+    /* eslint-enable no-await-in-loop */
     if (snap.empty) return code;
   }
   throw new Error('Could not generate a unique user code');
