@@ -111,7 +111,6 @@ export function aspectReading(cards, aspectRaw) {
   const general = aspect === 'General';
   const pos = cards.length === 3
     ? ['Past', 'Present', 'Future'] : ['Your card'];
-  const a = aspect.toLowerCase();
   const rows = cards.map((c, i) => {
     const where = pos[i] || 'Card';
     let text;
@@ -120,10 +119,9 @@ export function aspectReading(cards, aspectRaw) {
         + `influence it shapes the overall direction of the question, `
         + `so weigh it as part of the whole story.`;
     } else {
-      text = `For your ${a} question, ${c.name} (${where}) indicates `
-        + `${c.meaning} Focused on ${a} alone, this points to a clear `
-        + `shift: act with intention in ${a}, stay patient, and let `
-        + `this energy guide your next ${a} decision with confidence.`;
+      text = `${c.name} (${where}): ${c.meaning} Here it points to a `
+        + `meaningful shift, so move with clarity and patience and let `
+        + `it guide your next step with quiet confidence.`;
     }
     return { position: where, name: c.name, meaning: c.meaning, text };
   });
@@ -132,9 +130,8 @@ export function aspectReading(cards, aspectRaw) {
     ? `Overall the cards (${names}) suggest a meaningful turning `
       + `point. Past sets the context, the present asks for honest `
       + `action, and the future rewards steady intention.`
-    : `Reading strictly for ${aspect}: the cards (${names}) together `
-      + `say progress in ${a} comes from clarity and steady, `
-      + `intentional effort. Trust this guidance for ${a}; other `
-      + `areas are not part of this reading.`;
+    : `Together (${names}), the cards say steady, intentional effort `
+      + `brings real progress in ${aspect.toLowerCase()}. Trust this `
+      + `guidance and act with a calm, clear mind.`;
   return { rows, summary, aspect };
 }
