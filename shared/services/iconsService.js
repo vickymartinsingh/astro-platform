@@ -18,6 +18,21 @@ export const DEFAULT_ICONS = {
   'cat:Health': '🩺',
   'cat:Finance': '💰',
   'cat:Education': '📚',
+  // Zodiac: blank by default = use the built-in single-colour emblem.
+  // Upload your own Indian-style art per sign to override it.
+  'zod:Aries': '', 'zod:Taurus': '', 'zod:Gemini': '',
+  'zod:Cancer': '', 'zod:Leo': '', 'zod:Virgo': '',
+  'zod:Libra': '', 'zod:Scorpio': '', 'zod:Sagittarius': '',
+  'zod:Capricorn': '', 'zod:Aquarius': '', 'zod:Pisces': '',
+};
+// Internal Western key -> Rashi label, for the admin editor rows.
+const ZOD_LABEL = {
+  Aries: 'Mesha (Aries)', Taurus: 'Vrishabha (Taurus)',
+  Gemini: 'Mithuna (Gemini)', Cancer: 'Karka (Cancer)',
+  Leo: 'Simha (Leo)', Virgo: 'Kanya (Virgo)',
+  Libra: 'Tula (Libra)', Scorpio: 'Vrishchika (Scorpio)',
+  Sagittarius: 'Dhanu (Sagittarius)', Capricorn: 'Makara (Capricorn)',
+  Aquarius: 'Kumbha (Aquarius)', Pisces: 'Meena (Pisces)',
 };
 
 // For the admin editor UI (label per slot).
@@ -32,6 +47,8 @@ export const ICON_SLOTS = [
   ['cat:Health', 'Category: Health'],
   ['cat:Finance', 'Category: Finance'],
   ['cat:Education', 'Category: Education'],
+  ...Object.keys(ZOD_LABEL).map((z) => [
+    `zod:${z}`, `Zodiac: ${ZOD_LABEL[z]}`]),
 ];
 
 export function resolveIcons(content) {

@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react';
-import { ZODIAC, ZODIAC_IN } from '@astro/shared';
+import { useEffect, useRef, useState } from 'react';
+import { ZODIAC, ZODIAC_IN, iconsService } from '@astro/shared';
 import ZodiacGlyph from './ZodiacGlyph';
 
 // Swipeable zodiac selector (mobile-app style): slide left/right to see
@@ -10,6 +10,15 @@ const IN = (z) => ZODIAC_IN[z] || { en: z, icon: '' };
 
 export default function ZodiacPicker({ value, onChange, dropdown }) {
   const stripRef = useRef(null);
+  const [icons, setIcons] = useState(iconsService.resolveIcons(null));
+  useEffect(() => iconsService.watchIcons(setIcons), []);
+  const glyph = (z) => {
+    const ov = icons[`zod:${z}`];
+    if (iconsService.isImage(ov)) {
+      return <img src={ov} alt="" className="h-8 w-8 object-contain" />;
+    }
+    return <ZodiacGlyph sign={z} className="text-gold" />;
+  };
 
   useEffect(() => {
     const el = stripRef.current;
@@ -65,7 +74,7 @@ export default function ZodiacPicker({ value, onChange, dropdown }) {
                 transition-all ${on
                   ? 'border-primary bg-bg-light shadow-md'
                   : 'border-gray-200 bg-white'}`}>
-              <ZodiacGlyph sign={z} className="text-gold" />
+              {glyph(z)}
               <span className={`text-xs font-semibold ${on
                 ? 'text-primary' : 'text-dark-text'}`}>
                 {IN(z).en}
