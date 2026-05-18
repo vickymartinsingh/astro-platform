@@ -14,7 +14,6 @@ export const DEFAULT_CLIENT_MENU = [
   { href: '/kundli', label: 'Kundli' },
   { href: '/matching', label: 'Matching' },
   { href: '/remedies', label: 'Remedies' },
-  { href: '/wallet', label: 'Wallet' },
 ];
 // Profile itself is now a bottom-nav tab, so it is NOT repeated here.
 // Grouped into segments for a clean breakup in the menu (see TopNav):

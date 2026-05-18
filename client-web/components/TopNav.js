@@ -40,6 +40,18 @@ function Bell() {
     </svg>
   );
 }
+// Monochrome wallet icon for the quick wallet shortcut.
+function Wallet() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+      stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"
+      strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2H3z" />
+      <path d="M3 9v8a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7H6" />
+      <circle cx="17" cy="14" r="1.4" />
+    </svg>
+  );
+}
 
 export default function TopNav() {
   const [open, setOpen] = useState(false);
@@ -181,6 +193,11 @@ export default function TopNav() {
         </nav>
 
         <div className="flex items-center gap-2 md:hidden">
+          <Link href="/wallet" aria-label="Wallet"
+            className="rounded-xl border border-gray-200 px-3 py-2
+                       text-dark-text">
+            <Wallet />
+          </Link>
           <Link href="/notifications" aria-label="Notifications"
             className="relative rounded-xl border border-gray-200 px-3
                        py-2 text-dark-text">
@@ -230,8 +247,10 @@ export default function TopNav() {
               </div>
             )}
           </div>
-          {/* Scrollable links - clean segments */}
-          <div className="flex-1 overflow-y-auto px-4 py-3">
+          {/* Scrollable links - clean segments. Extra bottom padding
+              so the last items (Help) are never hidden behind the
+              bottom tab bar. */}
+          <div className="flex-1 overflow-y-auto px-4 pt-3 pb-safe-nav">
             <div className="px-3 pb-1 text-xs font-semibold uppercase
               tracking-wide text-sub-text">Explore</div>
             {menu.map((l) => (

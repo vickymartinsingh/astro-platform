@@ -1,5 +1,5 @@
 import Head from 'next/head';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { themeService } from '@astro/shared';
 import '../styles/globals.css';
 import { AuthProvider, useAuth } from '../lib/useAuth';
@@ -26,7 +26,13 @@ function WithProviders({ children }) {
 }
 
 export default function App({ Component, pageProps }) {
+  const [refreshKey, setRefreshKey] = useState(0);
   useEffect(() => themeService.watchTheme(), []);
+  useEffect(() => {
+    const onRefresh = () => setRefreshKey((k) => k + 1);
+    window.addEventListener('app:refresh', onRefresh);
+    return () => window.removeEventListener('app:refresh', onRefresh);
+  }, []);
   return (
     <>
       <Head>
@@ -37,7 +43,7 @@ export default function App({ Component, pageProps }) {
       </Head>
       <AuthProvider>
         <WithProviders>
-          <Component {...pageProps} />
+          <Component key={refreshKey} {...pageProps} />
         </WithProviders>
       </AuthProvider>
       <GuidedTour />

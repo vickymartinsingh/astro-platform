@@ -24,7 +24,13 @@ export default function PullToRefresh() {
     function onEnd() {
       if (pull > TH) {
         setRefreshing(true);
-        setTimeout(() => window.location.reload(), 200);
+        // Soft refresh: re-mount the current page (re-runs its data
+        // load) WITHOUT a full reload - so no splash screen and we
+        // stay on the exact same menu/route.
+        setTimeout(() => {
+          window.dispatchEvent(new Event('app:refresh'));
+          setTimeout(() => setRefreshing(false), 400);
+        }, 150);
       }
       setPull(0);
       startY.current = null;

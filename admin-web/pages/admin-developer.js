@@ -20,6 +20,7 @@ const ALL = [
   ['People', [
     ['/admin-users', 'Users'], ['/admin-astrologers', 'Astrologers'],
     ['/admin-reviews', 'Customer Reviews'],
+    ['/admin-tickets', 'Support Tickets'],
     ['/admin-support', 'Support Inbox'],
   ]],
   ['Sessions', [

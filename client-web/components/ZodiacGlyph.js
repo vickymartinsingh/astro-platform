@@ -3,8 +3,8 @@
 // emoji. Vedic forms: Dhanu = bow, Makara = crocodile, Kumbha = water
 // pot, Mithuna = couple. Reference: standard Rashi sign chart.
 const P = {
-  width: 30, height: 30, viewBox: '0 0 24 24', fill: 'none',
-  stroke: 'currentColor', strokeWidth: 1.6,
+  width: 34, height: 34, viewBox: '0 0 24 24', fill: 'none',
+  stroke: 'currentColor', strokeWidth: 1.9,
   strokeLinecap: 'round', strokeLinejoin: 'round',
 };
 

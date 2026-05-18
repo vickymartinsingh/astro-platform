@@ -13,14 +13,21 @@ function cachedConfig() {
   } catch (_) { return {}; }
 }
 
+function alreadyShown() {
+  try { return sessionStorage.getItem('splashShown') === '1'; }
+  catch (_) { return false; }
+}
+
 export default function SplashScreen() {
-  const [gone, setGone] = useState(false);
+  const [gone, setGone] = useState(alreadyShown());
   const [fade, setFade] = useState(false);
   const c0 = cachedConfig();
   const [img, setImg] = useState(c0.splash_image || '');
   const [logo, setLogo] = useState('');
 
   useEffect(() => {
+    if (alreadyShown()) { setGone(true); return undefined; }
+    try { sessionStorage.setItem('splashShown', '1'); } catch (_) {}
     const unsub = brandingService.watchBranding((b) =>
       setLogo(b.logo || ''));
     getDoc(doc(db, 'settings', 'config')).then((s) => {
