@@ -12,12 +12,14 @@ export const DEFAULT_ICONS = {
   'qa:kundli': '📜',
   'qa:matching': '💞',
   'qa:horoscope': '🌞',
-  'cat:Love': '❤️',
-  'cat:Career': '💼',
-  'cat:Marriage': '💍',
-  'cat:Health': '🩺',
-  'cat:Finance': '💰',
-  'cat:Education': '📚',
+  // Categories default to the built-in monochrome SVG (NOT a colour
+  // emoji). Admin can still upload an image or set an emoji per slot.
+  'cat:Love': '',
+  'cat:Career': '',
+  'cat:Marriage': '',
+  'cat:Health': '',
+  'cat:Finance': '',
+  'cat:Education': '',
   // Zodiac: blank by default = use the built-in single-colour emblem.
   // Upload your own Indian-style art per sign to override it.
   'zod:Aries': '', 'zod:Taurus': '', 'zod:Gemini': '',

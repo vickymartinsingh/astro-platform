@@ -15,9 +15,9 @@ export default function ZodiacPicker({ value, onChange, dropdown }) {
   const glyph = (z) => {
     const ov = icons[`zod:${z}`];
     if (iconsService.isImage(ov)) {
-      return <img src={ov} alt="" className="h-8 w-8 object-contain" />;
+      return <img src={ov} alt="" className="h-7 w-7 object-contain" />;
     }
-    return <ZodiacGlyph sign={z} className="text-gold" />;
+    return <ZodiacGlyph sign={z} className="h-7 w-7 text-gold" />;
   };
 
   useEffect(() => {
@@ -60,7 +60,8 @@ export default function ZodiacPicker({ value, onChange, dropdown }) {
         ‹
       </button>
       <div ref={stripRef}
-        className="flex flex-1 gap-2 overflow-x-auto scroll-smooth py-1"
+        className="no-scrollbar flex flex-1 gap-2 overflow-x-auto
+          scroll-smooth py-1"
         style={{ scrollSnapType: 'x mandatory',
           WebkitOverflowScrolling: 'touch' }}>
         {ZODIAC.map((z) => {
@@ -68,15 +69,18 @@ export default function ZodiacPicker({ value, onChange, dropdown }) {
           return (
             <button key={z} type="button" data-sel={on ? '1' : '0'}
               onClick={() => onChange(z)}
-              style={{ scrollSnapAlign: 'center' }}
-              className={`flex min-w-[76px] shrink-0 flex-col items-center
-                gap-0.5 rounded-2xl border px-3 py-2 text-center
+              style={{ scrollSnapAlign: 'center',
+                flex: '0 0 calc((100% - 1rem) / 3)' }}
+              className={`flex h-[84px] flex-col items-center
+                justify-center gap-0.5 rounded-2xl border text-center
                 transition-all ${on
                   ? 'border-primary bg-bg-light shadow-md'
                   : 'border-gray-200 bg-white'}`}>
-              {glyph(z)}
-              <span className={`text-xs font-semibold ${on
-                ? 'text-primary' : 'text-dark-text'}`}>
+              <span className="flex h-8 w-8 items-center
+                justify-center">{glyph(z)}</span>
+              <span className={`w-full truncate px-1 text-xs
+                font-semibold ${on
+                  ? 'text-primary' : 'text-dark-text'}`}>
                 {IN(z).en}
               </span>
               <span className="text-[10px] text-sub-text">{z}</span>

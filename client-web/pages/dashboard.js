@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import {
@@ -10,6 +10,7 @@ import Layout from '../components/Layout';
 import { SkeletonList } from '../components/Skeleton';
 import AstrologerCard from '../components/AstrologerCard';
 import ZodiacPicker from '../components/ZodiacPicker';
+import { Icon } from '../components/Icons';
 import { useOptionalClient } from '../lib/useAuth';
 import { useAstroActions } from '../lib/useAstroActions';
 import { useAuthModal } from '../lib/authModal';
@@ -86,6 +87,12 @@ export default function Dashboard() {
       .then(setPubReviews).catch(() => setPubReviews([]));
   }, []);
 
+  const revRef = useRef(null);
+  const revStep = (dir) => {
+    const el = revRef.current;
+    if (el) el.scrollBy({ left: dir * el.clientWidth,
+      behavior: 'smooth' });
+  };
   const [icons, setIcons] = useState(iconsService.resolveIcons(null));
   useEffect(() => iconsService.watchIcons(setIcons), []);
   const [horo, setHoro] = useState({});
@@ -99,6 +106,17 @@ export default function Dashboard() {
   const iconNode = (slot) => (iconsService.isImage(icons[slot])
     ? <img src={icons[slot]} alt="" className="h-8 w-8 object-contain" />
     : <span className="text-2xl leading-none">{icons[slot]}</span>);
+  // Category icon: admin image/emoji override, else the built-in
+  // monochrome SVG (single theme colour, never a colour emoji).
+  const catIcon = (key) => {
+    const ov = icons[`cat:${key}`];
+    if (iconsService.isImage(ov)) {
+      return <img src={ov} alt="" className="h-7 w-7 object-contain" />;
+    }
+    if (ov) return <span className="text-2xl leading-none">{ov}</span>;
+    const C = Icon[key] || Icon.Star;
+    return <C className="h-6 w-6 text-primary" />;
+  };
   const openProfile = (a) => router.push(`/astrologer/${a.id}`);
 
   return (
@@ -198,8 +216,8 @@ export default function Dashboard() {
             className="surface flex flex-col items-center gap-2 p-4
                        text-center hover:shadow-md">
             <span className="flex h-11 w-11 items-center justify-center
-              rounded-xl bg-bg-light text-dark-text">
-              {iconNode(`cat:${key}`)}
+              rounded-xl bg-bg-light">
+              {catIcon(key)}
             </span>
             <span className="text-xs font-medium">{label}</span>
           </Link>
@@ -235,34 +253,48 @@ export default function Dashboard() {
           4.8 / 5 average
         </span>
       </div>
-      <div className="flex gap-4 overflow-x-auto pb-2"
-        style={{ scrollSnapType: 'x mandatory',
-          WebkitOverflowScrolling: 'touch' }}>
-        {((pubReviews && pubReviews.length)
-          ? pubReviews.map((r) => [r.userName, r.city, r.rating, r.text])
-          : CUSTOMER_REVIEWS
-        ).map(([name, city, stars, text]) => (
-          <div key={name + '|' + String(text).slice(0, 12)}
-            style={{ scrollSnapAlign: 'start' }}
-            className="surface w-[85%] shrink-0 p-4 sm:w-[46%]
-              lg:w-[31%]">
-            <div className="flex items-center justify-between">
-              <div className="font-semibold">{name}</div>
-              <div className="text-sm text-gold">
-                {'★'.repeat(stars)}
-                <span className="text-gray-300">
-                  {'★'.repeat(5 - stars)}
-                </span>
+      <div className="flex items-center gap-2">
+        <button type="button" aria-label="Previous review"
+          onClick={() => revStep(-1)}
+          className="flex h-9 w-9 shrink-0 items-center justify-center
+            rounded-full bg-bg-light text-lg text-primary">
+          ‹
+        </button>
+        <div ref={revRef}
+          className="no-scrollbar flex flex-1 overflow-x-auto"
+          style={{ scrollSnapType: 'x mandatory',
+            WebkitOverflowScrolling: 'touch' }}>
+          {((pubReviews && pubReviews.length)
+            ? pubReviews.map((r) => [r.userName, r.city, r.rating,
+              r.text])
+            : CUSTOMER_REVIEWS
+          ).map(([name, city, stars, text]) => (
+            <div key={name + '|' + String(text).slice(0, 12)}
+              style={{ scrollSnapAlign: 'center' }}
+              className="w-full shrink-0 px-1">
+              <div className="surface p-4">
+                <div className="flex items-center justify-between">
+                  <div className="font-semibold">{name}</div>
+                  <div className="text-sm text-gold">
+                    {'★'.repeat(stars)}
+                    <span className="text-gray-300">
+                      {'★'.repeat(5 - stars)}
+                    </span>
+                  </div>
+                </div>
+                <div className="text-xs text-sub-text">{city}</div>
+                <p className="mt-2 text-sm text-sub-text">{text}</p>
               </div>
             </div>
-            <div className="text-xs text-sub-text">{city}</div>
-            <p className="mt-2 text-sm text-sub-text">{text}</p>
-          </div>
-        ))}
-      </div>
-      <p className="mt-1 text-xs text-sub-text">
-        Swipe to see more reviews.
-      </p></>
+          ))}
+        </div>
+        <button type="button" aria-label="Next review"
+          onClick={() => revStep(1)}
+          className="flex h-9 w-9 shrink-0 items-center justify-center
+            rounded-full bg-bg-light text-lg text-primary">
+          ›
+        </button>
+      </div></>
       )}
     </Layout>
   );
