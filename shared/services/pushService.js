@@ -11,9 +11,12 @@
 //   is not set, sends are a silent no-op so nothing in chat/session breaks.
 import { saveFCMToken, saveDeviceToken } from './notificationService.js';
 
+// Baked default (not a secret - it is just the relay URL) so every
+// build, incl. env-less iOS CI, can deliver pushes. Env override wins.
 const ENDPOINT =
   (typeof process !== 'undefined'
-    && process.env && process.env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
+    && process.env && process.env.NEXT_PUBLIC_PUSH_ENDPOINT)
+  || 'https://astro-platform-push-relay.vercel.app/api/sendPush';
 const RELAY_KEY =
   (typeof process !== 'undefined'
     && process.env && process.env.NEXT_PUBLIC_PUSH_KEY) || '';
