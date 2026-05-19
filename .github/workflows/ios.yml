@@ -95,7 +95,7 @@ jobs:
           # present, Firebase iOS initialises fine and native Google
           # sign-in works, so we keep the plugin.
           echo "::group::strip firebase native plugins"
-          node -e "const fs=require('fs');const f=process.env.APP+'/package.json';const j=JSON.parse(fs.readFileSync(f));const hasPlist=fs.existsSync('GoogleService-Info.plist');const strip=['@capacitor/push-notifications'];if(!hasPlist)strip.push('@capacitor-firebase/authentication');for(const k of strip){if(j.dependencies)delete j.dependencies[k];}fs.writeFileSync(f,JSON.stringify(j,null,2)+'\n');console.log('plist='+hasPlist+' stripped='+strip.join(','));"
+          node -e "const fs=require('fs');const app=process.env.APP;const f=app+'/package.json';const j=JSON.parse(fs.readFileSync(f));const keepGoogle=app==='client-web'&&fs.existsSync('GoogleService-Info.plist');const strip=['@capacitor/push-notifications'];if(!keepGoogle)strip.push('@capacitor-firebase/authentication');for(const k of strip){if(j.dependencies)delete j.dependencies[k];}fs.writeFileSync(f,JSON.stringify(j,null,2)+'\n');console.log('keepGoogle='+keepGoogle+' stripped='+strip.join(','));"
           echo "::endgroup::"
 
           # Capacitor 8 defaults to SPM; the capacitor-swift-pm mirror
@@ -109,12 +109,12 @@ jobs:
           echo "::endgroup::"
 
           echo "::group::ios firebase config"
-          if [ -f GoogleService-Info.plist ]; then
+          if [ "$APP" = "client-web" ] && [ -f GoogleService-Info.plist ]; then
             cp GoogleService-Info.plist \
               "$APP/ios/App/App/GoogleService-Info.plist";
-            echo "GoogleService-Info.plist installed - native Google ON";
+            echo "GoogleService-Info.plist installed - native Google ON (client)";
           else
-            echo "no GoogleService-Info.plist - native Google OFF on iOS (web fallback)";
+            echo "no plist for $APP - native Google OFF on iOS (web fallback)";
           fi
           echo "::endgroup::"
 
