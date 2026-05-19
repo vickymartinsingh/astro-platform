@@ -222,8 +222,20 @@ export default function TopNav() {
       </div>
 
       {open && (
-        <nav className="max-h-[78vh] overflow-y-auto border-t
-          border-white/20 px-3 pb-4 pt-2 md:hidden">
+        <div className="fixed inset-0 z-[60] md:hidden">
+          <div className="absolute inset-0 bg-black/50"
+            onClick={() => setOpen(false)} />
+          <nav className={`absolute right-0 top-0 flex h-full w-[80%]
+            max-w-xs flex-col overflow-y-auto px-3 pb-6 pt-3 shadow-2xl
+            ${dev ? 'bg-[#1f1147]' : 'bg-dark-text'}`}>
+          <div className="mb-2 flex items-center justify-between">
+            <span className="text-sm font-bold">
+              {dev ? 'Developer' : 'Admin'} menu
+            </span>
+            <button onClick={() => setOpen(false)}
+              className="rounded-card bg-white/15 px-2.5 py-1
+                text-sm">✕</button>
+          </div>
           <input value={q} onChange={(e) => setQ(e.target.value)}
             placeholder={dev ? 'Search developer portal...'
               : 'Search admin...'}
@@ -263,7 +275,8 @@ export default function TopNav() {
               className="flex-1 rounded-card bg-white/15 px-3 py-2
                 text-sm">Logout</button>
           </div>
-        </nav>
+          </nav>
+        </div>
       )}
       {dev && (
         <div className="flex items-center justify-center gap-2

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/router';
 import {
   drawCards, tarotReading, aspectReading, TAROT_ASPECTS,
@@ -167,7 +167,14 @@ function Classic() {
 function Guided({ features }) {
   const { user, profile } = useOptionalClient();
   const router = useRouter();
-  const [step, setStep] = useState('aspect');
+  // The step lives in the URL (?tstep=...). That makes EVERY back
+  // (on-screen button, browser, Android hardware via useNativeBack ->
+  // router.back()) move exactly one screen, and only leave /tarot when
+  // already on the first step. No fragile history traps.
+  const step = String(router.query.tstep || 'aspect');
+  const go = (next) => router.push(
+    { pathname: '/tarot', query: { tstep: next } },
+    undefined, { shallow: true });
   const [aspect, setAspect] = useState('');
   const [question, setQuestion] = useState('');
   const [qErr, setQErr] = useState('');
@@ -177,60 +184,23 @@ function Guided({ features }) {
   const [reading, setReading] = useState(null);
   const [showPopup, setShowPopup] = useState(false);
 
-  // Refs so the (once-registered) back handler always sees latest state.
-  const stepRef = useRef(step);
-  const aspectRef = useRef(aspect);
-  const popupRef = useRef(showPopup);
-  const trapRef = useRef(false);
-  useEffect(() => { stepRef.current = step; }, [step]);
-  useEffect(() => { aspectRef.current = aspect; }, [aspect]);
-  useEffect(() => { popupRef.current = showPopup; }, [showPopup]);
+  // Refresh / deep-link straight to a later step with no aspect chosen:
+  // send them back to the start so the flow is never half-built.
+  useEffect(() => {
+    if (step !== 'aspect' && !aspect) {
+      router.replace({ pathname: '/tarot', query: { tstep: 'aspect' } },
+        undefined, { shallow: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
 
-  // Go back exactly ONE step inside the flow; only leave the page when
-  // already on the first step.
-  const back = useCallback(() => {
+  // Top-left Back: close the reading popup first, otherwise step back
+  // one screen via real history (leaves /tarot only at the first step).
+  const back = () => {
     setQErr('');
-    if (popupRef.current) { setShowPopup(false); return; }
-    const s = stepRef.current;
-    if (s === 'pick') {
-      setRevealed([]); setReading(null); setShowPopup(false);
-      setStep('spread'); return;
-    }
-    if (s === 'spread') {
-      setStep(aspectRef.current === 'General' ? 'aspect' : 'question');
-      return;
-    }
-    if (s === 'question') { setStep('aspect'); return; }
-    // s === 'aspect' -> exit tarot to the previous screen.
-    if (typeof window !== 'undefined' && window.history.length > 1) {
-      router.back();
-    } else { router.replace('/dashboard'); }
-  }, [router]);
-
-  // Trap hardware / browser back so it steps through the flow instead
-  // of leaving. One buffered history entry; re-armed on each catch.
-  useEffect(() => {
-    if (typeof window === 'undefined') return undefined;
-    function onPop() {
-      if (stepRef.current !== 'aspect' || popupRef.current) {
-        window.history.pushState({ tarotTrap: 1 }, '');
-        back();
-      } else {
-        trapRef.current = false;
-      }
-    }
-    window.addEventListener('popstate', onPop);
-    return () => window.removeEventListener('popstate', onPop);
-  }, [back]);
-
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    if ((step !== 'aspect' || showPopup) && !trapRef.current) {
-      trapRef.current = true;
-      window.history.pushState({ tarotTrap: 1 }, '');
-    }
-    if (step === 'aspect' && !showPopup) trapRef.current = false;
-  }, [step, showPopup]);
+    if (showPopup) { setShowPopup(false); return; }
+    router.back();
+  };
 
   const singleDef = features.tarot_single_def
     || 'One card focused on your question - a clear, direct answer.';
@@ -239,7 +209,7 @@ function Guided({ features }) {
 
   function chooseAspect(a) {
     setAspect(a);
-    setStep(a === 'General' ? 'spread' : 'question');
+    go(a === 'General' ? 'spread' : 'question');
   }
   function submitQuestion() {
     const words = question.trim().split(/\s+/).filter(Boolean);
@@ -247,7 +217,7 @@ function Guided({ features }) {
       setQErr('Your question must be 5 to 10 words.'); return;
     }
     setQErr('');
-    setStep('spread');
+    go('spread');
   }
   function chooseSpread(n) {
     setCount(n);
@@ -259,7 +229,7 @@ function Guided({ features }) {
         aspect, question, spread: n === 3 ? 'three' : 'single',
       });
     }
-    setStep('pick');
+    go('pick');
   }
   function pick(slot) {
     if (revealed.includes(slot) || revealed.length >= count) return;
@@ -271,8 +241,9 @@ function Guided({ features }) {
     }
   }
   function startOver() {
-    setStep('aspect'); setAspect(''); setQuestion(''); setQErr('');
+    setAspect(''); setQuestion(''); setQErr('');
     setRevealed([]); setReading(null); setShowPopup(false);
+    go('aspect');
   }
 
   const labels = count === 3
