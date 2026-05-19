@@ -1,9 +1,26 @@
 import { Html, Head, Main, NextScript } from 'next/document';
+import { APP_BUILD } from '@astro/shared';
 
 export default function Document() {
   return (
     <Html lang="en">
       <Head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `window.__APPB=${APP_BUILD};(function(){`
+              + 'function add(){try{if(document.getElementById('
+              + "'__b'))return;var b=document.body;if(!b){return;}"
+              + "var d=document.createElement('div');d.id='__b';"
+              + "d.textContent='b'+window.__APPB;d.style.cssText="
+              + "'position:fixed;left:3px;bottom:3px;font:10px "
+              + 'monospace;color:#888;background:rgba(255,255,255,.6);'
+              + "padding:1px 4px;border-radius:4px;z-index:2147483646;"
+              + "pointer-events:none';b.appendChild(d);}catch(e){}}"
+              + "if(document.readyState!=='loading'){add();}else{"
+              + "document.addEventListener('DOMContentLoaded',add);}"
+              + 'setTimeout(add,1500);})();',
+          }}
+        />
         {/* Show only REAL errors; ignore iOS WKWebView's opaque
             "Script error." / benign noise. Real React crashes ->
             ErrorBoundary (full detail). */}

@@ -1,4 +1,5 @@
 import React from 'react';
+import { APP_BUILD } from '@astro/shared';
 
 // Renders the actual React error on screen (iOS WKWebView has no
 // console). IMPORTANT: WebKit's error.stack does NOT contain the
@@ -42,7 +43,7 @@ export default class ErrorBoundary extends React.Component {
         }}
       >
         <div style={{ fontWeight: 'bold', marginBottom: 8 }}>
-          APP ERROR (screenshot the MESSAGE line)
+          APP ERROR - build b{APP_BUILD} (screenshot this whole screen)
         </div>
         <pre
           style={{
