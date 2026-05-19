@@ -5,6 +5,7 @@ import '../styles/globals.css';
 import { AuthProvider } from '../lib/useAuth';
 import useNativeBack from '../lib/useNativeBack';
 import ErrorBoundary from '../components/ErrorBoundary';
+import SplashScreen from '../components/SplashScreen';
 
 export default function App({ Component, pageProps }) {
   useNativeBack();
@@ -18,6 +19,7 @@ export default function App({ Component, pageProps }) {
       <AuthProvider>
         <Component {...pageProps} />
       </AuthProvider>
+      <SplashScreen />
     </ErrorBoundary>
   );
 }

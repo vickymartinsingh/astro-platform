@@ -118,8 +118,16 @@ jobs:
           fi
           echo "::endgroup::"
 
-          echo "::group::ios assets (best effort)"
-          ( cd "$APP" && npx capacitor-assets generate --ios ) || echo "asset gen skipped"
+          echo "::group::ios assets (icon + splash on theme bg)"
+          # $APP/assets/{logo,splash,splash-dark}.png are committed
+          # (produced by scripts/gen-assets.mjs from brand/logo.png).
+          # Force the dark theme bg #0F0A23 so the mark sits on-theme.
+          ( cd "$APP" && npx capacitor-assets generate --ios \
+              --iconBackgroundColor '#0F0A23' \
+              --iconBackgroundColorDark '#0F0A23' \
+              --splashBackgroundColor '#0F0A23' \
+              --splashBackgroundColorDark '#0F0A23' ) \
+            || echo "asset gen skipped"
           echo "::endgroup::"
 
           echo "::group::cap sync ios"

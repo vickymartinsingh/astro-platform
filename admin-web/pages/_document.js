@@ -49,6 +49,11 @@ export default function Document() {
           }}
         />
         <meta name="theme-color" content="#6C2BD9" />
+        <link rel="icon" type="image/png" href="/favicon.png" />
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        <meta property="og:image" content="/og.png" />
+        <meta property="og:title" content="AstroSeer Admin" />
+        <meta name="twitter:card" content="summary_large_image" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link
           href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"

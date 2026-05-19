@@ -25,6 +25,9 @@ export default function SplashScreen() {
   const c0 = cachedConfig();
   const [img, setImg] = useState(c0.splash_image || '');
   const [logo, setLogo] = useState('');
+  // Set true if the bundled /logo.png fallback fails to load (not yet
+  // added) so we cleanly show the text wordmark instead of a broken img.
+  const [logoMissing, setLogoMissing] = useState(false);
 
   useEffect(() => {
     if (SPLASH_DONE) { setGone(true); return undefined; }
@@ -50,7 +53,11 @@ export default function SplashScreen() {
   }, []);
 
   if (gone) return null;
-  const src = img || logo;
+  // Bundled brand logo is the always-available fallback so the splash
+  // shows the mark centred on the themed background even offline /
+  // before Firebase branding loads.
+  const fallback = logoMissing ? '' : '/logo.png';
+  const src = img || logo || fallback;
 
   return (
     <div
@@ -59,6 +66,7 @@ export default function SplashScreen() {
         fade ? 'opacity-0' : 'opacity-100'}`}>
       {src ? (
         <img src={src} alt="AstroSeer"
+          onError={() => { if (src === '/logo.png') setLogoMissing(true); }}
           className="max-h-[55vh] max-w-[78%] object-contain
             drop-shadow-2xl" />
       ) : (
