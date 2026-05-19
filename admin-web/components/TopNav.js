@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { authService, brandingService } from '@astro/shared';
+import { usePortal } from '../lib/portal';
 
 // Professional grouped admin nav: a search box that jumps to any page,
 // plus category dropdowns. Every admin page is included (nothing
@@ -21,6 +22,7 @@ const GROUPS = [
     ['/admin-tickets', 'Support Tickets'],
     ['/admin-tarot', 'Tarot Questions'],
     ['/admin-support', 'Support Inbox'],
+    ['/admin-team', 'Team Access'],
   ]],
   ['Sessions', [
     ['/admin-sessions', 'Sessions'],
@@ -98,30 +100,45 @@ const DEV_GROUPS = [
     ['/admin-health', 'System Health'],
   ]],
 ];
+// Support portal: a focused support-desk subset (no settings / payouts
+// / developer). Shown when you "Switch to Support".
+const SUPPORT_GROUPS = [
+  ['Support', [
+    ['/admin-support', 'Support Inbox'],
+    ['/admin-tickets', 'Support Tickets'],
+    ['/admin-reviews', 'Customer Reviews'],
+    ['/admin-disputes', 'Disputes'],
+  ]],
+  ['Lookup', [
+    ['/admin-users', 'Users'],
+    ['/admin-astrologers', 'Astrologers'],
+    ['/admin-sessions', 'Sessions'],
+    ['/admin-recordings', 'Recordings & Live'],
+  ]],
+  ['Live', [
+    ['/admin-live', 'Monitor Live'],
+  ]],
+];
 const ALL = GROUPS.flatMap(([, items]) => items);
 const DEV_ALL = DEV_GROUPS.flatMap(([, items]) => items);
+const SUPPORT_ALL = SUPPORT_GROUPS.flatMap(([, items]) => items);
 
 export default function TopNav() {
   const [open, setOpen] = useState(false);
   const [menu, setMenu] = useState(null);  // open group name
   const [q, setQ] = useState('');
   const [logo, setLogo] = useState('');
-  const [dev, setDev] = useState(false);
+  const [portal, setPortal] = usePortal();
+  const dev = portal === 'developer';
+  const support = portal === 'support';
   const router = useRouter();
   useEffect(() => brandingService.watchBranding((b) =>
     setLogo(b.logo || '')), []);
-  useEffect(() => {
-    try { setDev(window.localStorage.getItem('devMode') === '1'); }
-    catch (_) {}
-  }, []);
   function toggleDev() {
-    const next = !dev;
-    setDev(next);
-    try {
-      window.localStorage.setItem('devMode', next ? '1' : '0');
-    } catch (_) {}
+    const next = dev ? 'admin' : 'developer';
+    setPortal(next);
     setMenu(null); setOpen(false);
-    router.push(next ? '/admin-builder' : '/admin-dashboard');
+    router.push(next === 'developer' ? '/admin-builder' : '/admin-dashboard');
   }
 
   async function logout() {
@@ -146,8 +163,8 @@ export default function TopNav() {
     } else { router.replace('/admin-dashboard'); }
   }
 
-  const GR = dev ? DEV_GROUPS : GROUPS;
-  const POOL = dev ? DEV_ALL : ALL;
+  const GR = dev ? DEV_GROUPS : support ? SUPPORT_GROUPS : GROUPS;
+  const POOL = dev ? DEV_ALL : support ? SUPPORT_ALL : ALL;
   const results = useMemo(() => {
     const s = q.trim().toLowerCase();
     if (!s) return [];

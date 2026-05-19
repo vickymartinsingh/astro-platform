@@ -4,7 +4,10 @@ export * from './theme.js';
 export {
   APP_BUILD, APP_VERSION, APP_SUFFIX, appVersionName,
 } from './appVersion.js';
-export { ADMIN_EMAILS, isAdminEmail, isAdminUser, hasRole } from './admins.js';
+export {
+  ADMIN_EMAILS, isAdminEmail, isAdminUser, hasRole, TEAM_ROLES,
+  isDeveloperUser, isSupportUser,
+} from './admins.js';
 export { getHoroscope, horoscopeText } from './horoscope.js';
 export {
   TAROT, drawCards, tarotReading, aspectReading, TAROT_ASPECTS,

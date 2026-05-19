@@ -82,6 +82,25 @@ export async function updateUser(uid, data) {
   await updateDoc(doc(db, 'users', uid), safe);
 }
 
+// Admin-only: set a user's role. Unlike updateUser (which strips role
+// because Firestore rules forbid self role changes), an admin caller
+// passes the isAdmin() rule so writing `role` directly is allowed.
+export async function adminSetUserRole(uid, role) {
+  if (!uid || !role) return;
+  await updateDoc(doc(db, 'users', uid), { role });
+}
+
+// Find a user doc by exact email (admin Team Access lookup).
+export async function findUserByEmail(email) {
+  const e = String(email || '').trim().toLowerCase();
+  if (!e) return null;
+  const snap = await getDocs(
+    query(collection(db, 'users'), where('email', '==', e)));
+  if (snap.empty) return null;
+  const d = snap.docs[0];
+  return { uid: d.id, ...d.data() };
+}
+
 export async function setOnline(uid) {
   await updateDoc(doc(db, 'users', uid), { isOnline: true });
 }

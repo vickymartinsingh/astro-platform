@@ -31,3 +31,15 @@ export function hasRole(profile, role) {
   if (profile.role === role) return true;
   return Array.isArray(profile.roles) && profile.roles.includes(role);
 }
+
+// Assignable team roles (besides client / astrologer).
+export const TEAM_ROLES = ['admin', 'developer', 'support'];
+
+// Developer / support staff. Admins implicitly have both (they can do
+// everything), so the admin portal switcher is available to them too.
+export function isDeveloperUser(profile, authEmail) {
+  return isAdminUser(profile, authEmail) || hasRole(profile, 'developer');
+}
+export function isSupportUser(profile, authEmail) {
+  return isAdminUser(profile, authEmail) || hasRole(profile, 'support');
+}
