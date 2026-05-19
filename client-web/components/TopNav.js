@@ -74,6 +74,23 @@ export default function TopNav() {
   const { openLogin } = useAuthModal();
   const { t } = useI18n();
   const { features } = useSettings();
+  // iOS has no hardware back button - show an on-screen one.
+  const [iosNative, setIosNative] = useState(false);
+  useEffect(() => {
+    try {
+      const C = typeof window !== 'undefined' ? window.Capacitor : null;
+      const ios = C && C.getPlatform && C.getPlatform() === 'ios';
+      setIosNative(!!(ios && C.isNativePlatform
+        && C.isNativePlatform()));
+    } catch (_) { /* ignore */ }
+  }, []);
+  const ROOTS = ['/', '/dashboard'];
+  const showBack = iosNative && !ROOTS.includes(router.pathname);
+  function goBack() {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      router.back();
+    } else { router.replace('/dashboard'); }
+  }
   // Admin choice for what shows beside the Profile dropdown when signed
   // in: 'logout' (default), 'name' (user's full name), 'hidden'.
   const sideMode = (features && features.desktop_profile_side)
@@ -99,9 +116,22 @@ export default function TopNav() {
   const profActive = profileMenu.some((m) => m.href === router.pathname);
 
   return (
-    <header className="sticky top-0 z-40 border-b border-gray-100 bg-white">
+    <header className="sticky top-0 z-40 border-b border-gray-100 bg-white"
+      style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
       <div className="mx-auto flex max-w-6xl items-center justify-between
                       px-4 py-3">
+        {showBack && (
+          <button onClick={goBack} aria-label="Back"
+            className="mr-1 rounded-xl border border-gray-200 px-2.5
+              py-2 text-dark-text">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="2"
+              strokeLinecap="round" strokeLinejoin="round"
+              aria-hidden="true">
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
+          </button>
+        )}
         <Link href="/dashboard" className="flex items-center gap-2">
           {brand.logo ? (
             <img src={brand.logo} alt={brand.name}

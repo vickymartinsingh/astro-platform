@@ -27,7 +27,10 @@ export default function Layout({ children, nav = true }) {
       <PullToRefresh />
       <div className="bg-gradient-to-r from-emerald-600 to-teal-600
                       py-1 text-center text-xs font-semibold uppercase
-                      tracking-widest text-white">
+                      tracking-widest text-white"
+        style={{
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 4px)',
+        }}>
         Astrologer Portal
       </div>
       <AnnouncementBanner />

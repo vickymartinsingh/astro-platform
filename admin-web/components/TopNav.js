@@ -130,6 +130,23 @@ export default function TopNav() {
   }
   const go = (href) => { setQ(''); setMenu(null); setOpen(false);
     router.push(href); };
+  const [iosNative, setIosNative] = useState(false);
+  useEffect(() => {
+    try {
+      const C = typeof window !== 'undefined' ? window.Capacitor : null;
+      const ios = C && C.getPlatform && C.getPlatform() === 'ios';
+      setIosNative(!!(ios && C.isNativePlatform
+        && C.isNativePlatform()));
+    } catch (_) {}
+  }, []);
+  const showBack = iosNative
+    && router.pathname !== '/admin-dashboard'
+    && router.pathname !== '/admin-builder';
+  function goBack() {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      router.back();
+    } else { router.replace('/admin-dashboard'); }
+  }
 
   const GR = dev ? DEV_GROUPS : GROUPS;
   const POOL = dev ? DEV_ALL : ALL;
@@ -141,9 +158,21 @@ export default function TopNav() {
 
   return (
     <header className={`sticky top-0 z-40 text-white ${dev
-      ? 'bg-[#1f1147]' : 'bg-dark-text'}`}>
+      ? 'bg-[#1f1147]' : 'bg-dark-text'}`}
+      style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
       <div className="mx-auto flex max-w-6xl items-center gap-3 px-4
                       py-2 md:py-3">
+        {showBack && (
+          <button onClick={goBack} aria-label="Back"
+            className="shrink-0 rounded-card bg-white/15 px-2.5 py-1.5">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="2"
+              strokeLinecap="round" strokeLinejoin="round"
+              aria-hidden="true">
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
+          </button>
+        )}
         <Link href={dev ? '/admin-builder' : '/admin-dashboard'}
           className="flex shrink-0 items-center gap-2 text-base
             font-bold md:text-lg">
