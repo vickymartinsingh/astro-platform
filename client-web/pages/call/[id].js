@@ -18,6 +18,7 @@ export default function CallScreen() {
 
   const { track } = usePendingSession();
   const [muted, setMuted] = useState(false);
+  const [speaker, setSpeakerOn] = useState(true);
   const [camOn, setCamOn] = useState(callType === 'video');
   const [elapsed, setElapsed] = useState(0);
   const [showRate, setShowRate] = useState(false);
@@ -119,6 +120,13 @@ export default function CallScreen() {
   function toggleCam() {
     const c = !camOn; setCamOn(c); callService.setCameraEnabled(c);
   }
+  function toggleSpeaker() {
+    const s = !speaker; setSpeakerOn(s);
+    try { callService.setSpeaker(s); } catch (_) {}
+  }
+  function flipCam() {
+    try { callService.switchCamera(); } catch (_) {}
+  }
 
   const mmss = `${String(Math.floor(elapsed / 60)).padStart(2, '0')}:` +
     `${String(elapsed % 60).padStart(2, '0')}`;
@@ -136,35 +144,53 @@ export default function CallScreen() {
 
   if (session && (session.status === 'requesting'
       || (acceptedStatus && !session.startTime))) {
+    const an = astro.name || 'Astrologer';
     return (
-      <Overlay>
-        <div className="w-full max-w-sm rounded-2xl bg-white p-6
-                        text-center shadow-xl">
-          <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full
-                          border-4 border-bg-light border-t-primary" />
-          <p className="text-lg font-semibold">
-            Please wait until {astro.name} accepts your call
-          </p>
-          <p className="mt-1 text-sm text-sub-text">
-            Hi {profile?.name || 'there'}, your details have been shared.
-            Time left {Math.floor(Math.max(0, countdown) / 60)}:
+      <div className="fixed inset-0 z-[60] flex flex-col items-center
+        justify-between bg-dark-text text-white"
+        style={{
+          paddingTop: 'calc(env(safe-area-inset-top, 0px) + 56px)',
+          paddingBottom:
+            'calc(env(safe-area-inset-bottom, 0px) + 48px)',
+        }}>
+        <div className="flex flex-1 flex-col items-center justify-center
+          gap-4 px-6 text-center">
+          <div className="text-sm uppercase tracking-widest opacity-70">
+            {callType === 'video' ? 'Video call' : 'Voice call'}
+          </div>
+          <div className="relative">
+            <span className="absolute inset-0 animate-ping rounded-full
+              bg-white/15" />
+            <img src={astro.profileImage || '/avatar.png'} alt={an}
+              className="relative h-28 w-28 rounded-full object-cover
+                ring-4 ring-white/25" />
+          </div>
+          <div className="text-3xl font-bold">{an}</div>
+          <div className="text-sm opacity-80">Ringing...</div>
+          <div className="mt-1 text-xs opacity-60">
+            Waiting {Math.floor(Math.max(0, countdown) / 60)}:
             {String(Math.max(0, countdown) % 60).padStart(2, '0')}
-          </p>
-          <div className="mt-4 flex gap-2">
-            <button onClick={cancelRequest}
-              className="btn-ghost flex-1">Cancel</button>
-            <button onClick={() => {
-              if (session?.id) {
-                track({ sessionId: session.id, astroId,
-                  astroName: astro?.name, type: callType });
-              }
-              router.push('/dashboard');
-            }} className="btn-grad flex-1 justify-center">
-              Continue browsing
-            </button>
           </div>
         </div>
-      </Overlay>
+        <div className="flex flex-col items-center gap-2">
+          <button onClick={cancelRequest} aria-label="Cancel"
+            className="flex h-16 w-16 items-center justify-center
+              rounded-full bg-danger shadow-lg">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none"
+              stroke="#fff" strokeWidth="2" strokeLinecap="round"
+              strokeLinejoin="round">
+              <g transform="rotate(135 12 12)">
+                <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3
+                  19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3-8.6A2 2 0 0 1
+                  4.1 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.6a2 2 0 0 1-.5
+                  2.1L8 9.6a16 16 0 0 0 6 6l1.2-1.2a2 2 0 0 1
+                  2.1-.5c.8.3 1.7.5 2.6.6a2 2 0 0 1 1.7 2z" />
+              </g>
+            </svg>
+          </button>
+          <span className="text-sm">Cancel</span>
+        </div>
+      </div>
     );
   }
   if (session && ['rejected', 'missed'].includes(session.status)) {
@@ -220,24 +246,66 @@ export default function CallScreen() {
         </div>
       )}
 
-      <div className="absolute bottom-10 left-0 right-0 flex
-                      items-center justify-center gap-6">
-        <button onClick={toggleMute}
-          className="h-12 w-12 rounded-full bg-white/20">
-          {muted ? '🔇' : '🎙️'}
-        </button>
-        <button onClick={hangUp}
-          className={`flex h-16 w-16 items-center justify-center rounded-full
-                      bg-danger text-2xl ${lowBalance
+      <div className="absolute inset-x-0 flex flex-col items-center
+        gap-4"
+        style={{
+          bottom: 'calc(env(safe-area-inset-bottom, 0px) + 32px)',
+        }}>
+        <div className="flex items-center justify-center gap-5">
+          <Ctl on={!muted} label={muted ? 'Unmute' : 'Mute'}
+            onClick={toggleMute}>
+            {muted ? (
+              <path d="M1 1l22 22M9 9v3a3 3 0 0 0 5.1 2.1M15 9.3V5a3
+                3 0 0 0-5.9-.7M12 19v3M8 22h8" />
+            ) : (
+              <path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0
+                0-3-3zM5 11a7 7 0 0 0 14 0M12 19v3M8 22h8" />
+            )}
+          </Ctl>
+          <Ctl on={speaker}
+            label={speaker ? 'Speaker' : 'Speaker off'}
+            onClick={toggleSpeaker}>
+            <path d="M3 9v6h4l5 4V5L7 9H3z" />
+            {speaker && <path d="M16 8a5 5 0 0 1 0 8M19 5a9 9 0 0 1
+              0 14" />}
+          </Ctl>
+          {callType === 'video' && (
+            <>
+              <Ctl on={camOn} label={camOn ? 'Camera' : 'Camera off'}
+                onClick={toggleCam}>
+                {camOn ? (
+                  <path d="M23 7l-7 5 7 5V7zM1 5h14a2 2 0 0 1 2
+                    2v10a2 2 0 0 1-2 2H1z" />
+                ) : (
+                  <path d="M1 1l22 22M16 16v1a2 2 0 0 1-2 2H3a2 2
+                    0 0 1-2-2V7a2 2 0 0 1 2-2h1m5 0h5a2 2 0 0 1 2
+                    2v3l4-3v9" />
+                )}
+              </Ctl>
+              <Ctl on label="Flip" onClick={flipCam}>
+                <path d="M23 4v6h-6M1 20v-6h6" />
+                <path d="M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6
+                  4.4A9 9 0 0 0 20.5 15" />
+              </Ctl>
+            </>
+          )}
+        </div>
+        <button onClick={hangUp} aria-label="End call"
+          className={`flex h-16 w-16 items-center justify-center
+            rounded-full bg-danger shadow-lg ${lowBalance
             ? 'ring-4 ring-warning animate-pulse' : ''}`}>
-          ✕
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none"
+            stroke="#fff" strokeWidth="2" strokeLinecap="round"
+            strokeLinejoin="round">
+            <g transform="rotate(135 12 12)">
+              <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3
+                19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3-8.6A2 2 0 0 1
+                4.1 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.6a2 2 0 0 1-.5
+                2.1L8 9.6a16 16 0 0 0 6 6l1.2-1.2a2 2 0 0 1
+                2.1-.5c.8.3 1.7.5 2.6.6a2 2 0 0 1 1.7 2z" />
+            </g>
+          </svg>
         </button>
-        {callType === 'video' && (
-          <button onClick={toggleCam}
-            className="h-12 w-12 rounded-full bg-white/20">
-            {camOn ? '📷' : '🚫'}
-          </button>
-        )}
       </div>
 
       {showRate && (
@@ -254,5 +322,21 @@ function Overlay({ children }) {
                     bg-call-bg text-center">
       {children}
     </div>
+  );
+}
+
+// One round in-call control (icon + label), WhatsApp/iPhone style.
+function Ctl({ on, label, onClick, children }) {
+  return (
+    <button onClick={onClick} aria-label={label}
+      className="flex flex-col items-center gap-1.5">
+      <span className={`flex h-12 w-12 items-center justify-center
+        rounded-full ${on ? 'bg-white/20' : 'bg-white text-dark-text'}`}>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+          strokeLinejoin="round">{children}</svg>
+      </span>
+      <span className="text-[11px] opacity-90">{label}</span>
+    </button>
   );
 }

@@ -102,6 +102,42 @@ export function setCameraEnabled(enabled) {
   if (localTracks.video) localTracks.video.setEnabled(enabled);
 }
 
+// Speaker on/off. Agora web has no earpiece switch in a WebView, so
+// this best-effort routes/levels the remote audio (loud = speaker).
+// Never throws.
+let speakerOn = true;
+export function setSpeaker(on) {
+  speakerOn = !!on;
+  try {
+    const users = (client && client.remoteUsers) || [];
+    users.forEach((u) => {
+      if (u.audioTrack && u.audioTrack.setVolume) {
+        u.audioTrack.setVolume(speakerOn ? 100 : 60);
+      }
+    });
+  } catch (_) { /* ignore */ }
+  return speakerOn;
+}
+export function isSpeakerOn() { return speakerOn; }
+
+// Flip between front / back camera. Cycles available cameras and
+// swaps the device on the live local video track. Never throws.
+export async function switchCamera() {
+  try {
+    if (!localTracks.video) return;
+    const rtc = await ensureSdk();
+    const cams = await rtc.getCameras();
+    if (!cams || cams.length < 2) return;
+    let curLabel = '';
+    try { curLabel = localTracks.video.getTrackLabel() || ''; }
+    catch (_) { curLabel = ''; }
+    let idx = cams.findIndex((c) => c.label === curLabel);
+    if (idx < 0) idx = 0;
+    const next = cams[(idx + 1) % cams.length];
+    await localTracks.video.setDevice(next.deviceId);
+  } catch (_) { /* ignore */ }
+}
+
 export async function leaveAgoraChannel() {
   try {
     localTracks.audio?.close();

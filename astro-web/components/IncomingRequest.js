@@ -1,63 +1,86 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import {
   sessionService, astrologerService, userService,
 } from '@astro/shared';
 
-// Blueprint 5.6, incoming request popup, 60s countdown, one at a time.
+const TYPE_LABEL = {
+  chat: 'Incoming chat', call: 'Incoming voice call',
+  video: 'Incoming video call',
+};
+
+// Full-screen, phone-style incoming call (Accept / Decline) with a
+// looping "dring dring" ringtone. 60s auto-miss, one at a time.
 export default function IncomingRequest({ uid, isOnCall }) {
   const router = useRouter();
   const [req, setReq] = useState(null);
   const [client, setClient] = useState(null);
+  const [dp, setDp] = useState('');
   const [left, setLeft] = useState(60);
+  const ringRef = useRef(null);
 
   useEffect(() => {
-    if (!uid) return;
+    if (!uid) return undefined;
     return sessionService.listenIncomingRequests(uid, (list) => {
       setReq(isOnCall ? null : (list[0] || null));
     });
   }, [uid, isOnCall]);
 
   useEffect(() => {
-    if (!req) return;
-    userService.getUser(req.userId).then(setClient);
+    if (!req) return undefined;
+    userService.getUser(req.userId).then((u) => {
+      setClient(u); setDp((u && u.profileImage) || '');
+    });
     const start = req.createdAt?.toDate
       ? req.createdAt.toDate().getTime() : Date.now();
     const t = setInterval(() => {
       const l = 60 - Math.floor((Date.now() - start) / 1000);
       setLeft(l);
       if (l <= 0) {
-        sessionService.updateSessionStatus(req.id, 'missed').catch(() => {});
+        sessionService.updateSessionStatus(req.id, 'missed')
+          .catch(() => {});
         clearInterval(t);
       }
     }, 1000);
     return () => clearInterval(t);
   }, [req]);
 
-  // Ring while a request is pending (WebAudio beep, no asset needed).
+  // Looping classic phone ring (two short tones, gap, repeat).
   useEffect(() => {
-    if (!req) return;
-    let ctx; let stopped = false; let timer;
+    if (!req) return undefined;
+    let ctx;
+    let stopped = false;
+    let timer;
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
       ctx = new AC();
-      const beep = () => {
-        if (stopped) return;
+      ringRef.current = ctx;
+      const tone = (at, dur) => {
         const o = ctx.createOscillator();
+        const o2 = ctx.createOscillator();
         const g = ctx.createGain();
-        o.frequency.value = 880; o.type = 'sine';
+        o.type = 'sine'; o.frequency.value = 1400;
+        o2.type = 'sine'; o2.frequency.value = 1100;
         g.gain.value = 0.0001;
-        o.connect(g); g.connect(ctx.destination);
-        const t = ctx.currentTime;
-        g.gain.exponentialRampToValueAtTime(0.25, t + 0.05);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
-        o.start(t); o.stop(t + 0.55);
-        timer = setTimeout(beep, 1400);
+        o.connect(g); o2.connect(g); g.connect(ctx.destination);
+        g.gain.exponentialRampToValueAtTime(0.32, at + 0.04);
+        g.gain.setValueAtTime(0.32, at + dur - 0.05);
+        g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+        o.start(at); o2.start(at);
+        o.stop(at + dur); o2.stop(at + dur);
       };
-      beep();
-    } catch (_) {}
+      const ring = () => {
+        if (stopped) return;
+        const n = ctx.currentTime;
+        tone(n, 0.4);
+        tone(n + 0.6, 0.4);
+        timer = setTimeout(ring, 2200); // "dring dring" ... pause ...
+      };
+      ring();
+    } catch (_) { /* audio not available */ }
     return () => {
-      stopped = true; clearTimeout(timer);
+      stopped = true;
+      clearTimeout(timer);
       try { ctx && ctx.close(); } catch (_) {}
     };
   }, [req]);
@@ -65,55 +88,97 @@ export default function IncomingRequest({ uid, isOnCall }) {
   if (!req) return null;
 
   async function accept() {
+    try { ringRef.current && ringRef.current.close(); } catch (_) {}
     await sessionService.updateSessionStatus(req.id, 'active',
       { startTime: new Date() });
     await astrologerService.updateAvailability(uid, { status: 'busy' });
     router.push(`/astro-session/${req.id}`);
   }
   async function reject() {
+    try { ringRef.current && ringRef.current.close(); } catch (_) {}
     await sessionService.updateSessionStatus(req.id, 'rejected');
     setReq(null);
   }
 
+  const name = client?.name || 'Customer';
+  const initial = name.trim().charAt(0).toUpperCase() || '?';
+
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center
-                    px-4" style={{ background: 'rgba(15,10,35,.85)' }}>
-      <div className="w-full max-w-sm overflow-hidden rounded-2xl bg-white
-                      text-center shadow-2xl">
-        <div className="hero-grad p-5 text-white">
-          <div className="text-xs uppercase tracking-wide opacity-80">
-            Incoming {req.type} request
-          </div>
-          <div className="mt-2 text-2xl font-bold">
-            {client?.name || 'Client'}
-          </div>
-          {req.purpose && (
-            <div className="mt-1 text-sm opacity-90">
-              Purpose: {req.purpose}
-            </div>
+    <div className="fixed inset-0 z-[2147483647] flex flex-col
+      items-center justify-between bg-dark-text text-white"
+      style={{
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 48px)',
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 48px)',
+      }}>
+      <div className="flex flex-1 flex-col items-center justify-center
+        gap-4 px-6 text-center">
+        <div className="text-sm uppercase tracking-widest opacity-70">
+          {TYPE_LABEL[req.type] || 'Incoming call'}
+        </div>
+        <div className="relative">
+          <span className="absolute inset-0 animate-ping rounded-full
+            bg-white/20" />
+          {dp ? (
+            <img src={dp} alt={name}
+              className="relative h-28 w-28 rounded-full object-cover
+                ring-4 ring-white/30" />
+          ) : (
+            <span className="relative flex h-28 w-28 items-center
+              justify-center rounded-full bg-primary text-5xl
+              font-bold ring-4 ring-white/30">{initial}</span>
           )}
         </div>
-        <div className="p-6">
-          <div className="mx-auto flex h-20 w-20 items-center justify-center
-                          rounded-full border-4 border-bg-light
-                          border-t-primary text-2xl font-bold text-primary">
-            {Math.max(0, left)}
+        <div className="text-3xl font-bold">{name}</div>
+        {req.purpose ? (
+          <div className="max-w-xs text-sm opacity-80">
+            {req.purpose}
           </div>
-          <p className="mt-2 text-xs text-sub-text">
-            Auto-misses if not answered
-          </p>
-          <div className="mt-5 flex gap-3">
-            <button onClick={reject}
-              className="flex-1 rounded-full border border-danger py-3
-                         font-semibold text-danger">
-              Reject
-            </button>
-            <button onClick={accept}
-              className="btn-grad flex-1 justify-center py-3">
-              Accept
-            </button>
+        ) : (
+          <div className="text-sm opacity-70">
+            is calling you on AstroConnect
           </div>
+        )}
+        <div className="mt-2 text-xs opacity-60">
+          Auto-declines in {Math.max(0, left)}s
         </div>
+      </div>
+
+      <div className="flex w-full max-w-xs items-center
+        justify-between px-4">
+        <button onClick={reject} aria-label="Decline"
+          className="flex flex-col items-center gap-2">
+          <span className="flex h-16 w-16 items-center justify-center
+            rounded-full bg-danger shadow-lg">
+            <svg width="28" height="28" viewBox="0 0 24 24"
+              fill="none" stroke="#fff" strokeWidth="2"
+              strokeLinecap="round" strokeLinejoin="round">
+              <g transform="rotate(135 12 12)">
+                <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3
+                  19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3-8.6A2 2 0 0 1
+                  4.1 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.6a2 2 0 0 1-.5
+                  2.1L8 9.6a16 16 0 0 0 6 6l1.2-1.2a2 2 0 0 1
+                  2.1-.5c.8.3 1.7.5 2.6.6a2 2 0 0 1 1.7 2z" />
+              </g>
+            </svg>
+          </span>
+          <span className="text-sm">Decline</span>
+        </button>
+        <button onClick={accept} aria-label="Accept"
+          className="flex flex-col items-center gap-2">
+          <span className="flex h-16 w-16 items-center justify-center
+            rounded-full bg-success shadow-lg">
+            <svg width="28" height="28" viewBox="0 0 24 24"
+              fill="none" stroke="#fff" strokeWidth="2"
+              strokeLinecap="round" strokeLinejoin="round">
+              <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3
+                19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3-8.6A2 2 0 0 1
+                4.1 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.6a2 2 0 0 1-.5
+                2.1L8 9.6a16 16 0 0 0 6 6l1.2-1.2a2 2 0 0 1
+                2.1-.5c.8.3 1.7.5 2.6.6a2 2 0 0 1 1.7 2z" />
+            </svg>
+          </span>
+          <span className="text-sm">Accept</span>
+        </button>
       </div>
     </div>
   );
