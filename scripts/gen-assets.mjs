@@ -1,101 +1,125 @@
-// Generate ALL app icons + splash screens + web favicons from ONE
-// source logo, for all 3 apps. The logo is the transparent mandala-eye.
+// Generate ALL app icons + splash + web favicons for all 3 apps from
+// the brand sources in brand/. Platform-correct by design:
 //
-//   Put the transparent square PNG (>=1024x1024) at:  brand/logo.png
-//   Then run:  node scripts/gen-assets.mjs
+//   brand/AstroSeer_Splash Logo_Transprent_IOS&APK.png  (transparent)
+//        -> splash (centred on theme bg) + in-app /logo.png + web icons
+//   brand/AstroSeer_Android_Cust App_ICON.png  (transparent circular)
+//        -> Android adaptive launcher (logo on #0F0A23)
+//   brand/AstroSeer_IOS_Cust App_ICON.png  (OPAQUE navy square)
+//        -> iOS app icon (Apple forbids alpha / rounded corners)
 //
-// Splash/icon background = the app's dark theme colour #0F0A23
-// (styles/globals.css --c-tarot), so the gold logo sits on-theme and
-// the splash matches the running app. capacitor-assets then fans the
-// composed icon/splash out into Android mipmaps + iOS AppIcon/splash.
+// Android icons are written straight into each app's (git-ignored)
+// android/ project locally so the APK build picks them up. The
+// committed <app>/assets/ set is left iOS-correct so the macOS CI
+// (`capacitor-assets generate --ios`) produces the right AppIcon.
 import {
-  existsSync, mkdirSync, readFileSync, writeFileSync,
+  existsSync, mkdirSync, writeFileSync, rmSync, readFileSync,
 } from 'fs';
 import { join } from 'path';
 import { execSync } from 'child_process';
 import sharp from 'sharp';
 
 const ROOT = process.cwd();
-const SRC = join(ROOT, 'brand', 'logo.png');
-const BG = '#0F0A23';                 // theme dark bg (--c-tarot)
+const B = join(ROOT, 'brand');
+const BG = '#0F0A23';
+const bgRGB = { r: 0x0f, g: 0x0a, b: 0x23, alpha: 1 };
 const APPS = ['client-web', 'astro-web', 'admin-web'];
-const CAP_ASSETS = join(ROOT, 'node_modules', '@capacitor', 'assets',
-  'bin', 'capacitor-assets');
+const CAP = join(ROOT, 'node_modules', '@capacitor', 'assets', 'bin',
+  'capacitor-assets');
 
-if (!existsSync(SRC)) {
-  console.error(`\n  MISSING: ${SRC}`);
-  console.error('  Save the TRANSPARENT logo PNG (>=1024x1024, square)');
-  console.error('  to brand/logo.png and re-run.\n');
+const pick = (...names) => {
+  for (const n of names) { const p = join(B, n); if (existsSync(p)) return p; }
+  return null;
+};
+const SPLASH_SRC = pick('AstroSeer_Splash Logo_Transprent_IOS&APK.png',
+  'AstroSeer_Main ICON.png', 'logo.png', 'source-logo.png');
+const AND_SRC = pick('AstroSeer_Android_Cust App_ICON.png',
+  'AstroSeer_Main ICON.png', 'logo.png', 'source-logo.png');
+const IOS_SRC = pick('AstroSeer_IOS_Cust App_ICON.png',
+  'AstroSeer_Main ICON.png', 'logo.png', 'source-logo.png');
+
+if (!SPLASH_SRC || !AND_SRC || !IOS_SRC) {
+  console.error('\n  Missing brand sources in brand/. Need at least one'
+    + ' splash/icon PNG.\n');
   process.exit(1);
 }
+console.log('splash :', SPLASH_SRC.replace(ROOT, '.'));
+console.log('android:', AND_SRC.replace(ROOT, '.'));
+console.log('ios    :', IOS_SRC.replace(ROOT, '.'));
 
-const bgRGB = { r: 0x0f, g: 0x0a, b: 0x23, alpha: 1 };
+const transparent = (src, size) => sharp(src)
+  .resize(size, size, { fit: 'contain',
+    background: { r: 0, g: 0, b: 0, alpha: 0 } }).png().toBuffer();
 
-// logo centred on a SIZE x SIZE canvas of BG, occupying `frac` of it.
-async function centred(size, frac) {
+// logo centred on a SIZE square of BG, occupying `frac` of it.
+async function onBg(src, size, frac) {
   const inner = Math.round(size * frac);
-  const fitted = await sharp(SRC)
-    .resize(inner, inner, { fit: 'contain',
-      background: { r: 0, g: 0, b: 0, alpha: 0 } })
-    .toBuffer();
-  return sharp({
-    create: { width: size, height: size, channels: 4, background: bgRGB },
-  }).composite([{ input: fitted, gravity: 'center' }]).png().toBuffer();
+  const fitted = await sharp(src).resize(inner, inner, { fit: 'contain',
+    background: { r: 0, g: 0, b: 0, alpha: 0 } }).toBuffer();
+  return sharp({ create: { width: size, height: size, channels: 4,
+    background: bgRGB } })
+    .composite([{ input: fitted, gravity: 'center' }]).png().toBuffer();
 }
+// opaque square (no alpha) - iOS app icon requirement.
+const opaqueSquare = (src, size) => sharp(src)
+  .resize(size, size, { fit: 'cover', position: 'centre' })
+  .flatten({ background: bgRGB }).png().toBuffer();
 
-// transparent, trimmed-ish logo fitted into size (keeps alpha).
-async function transparent(size) {
-  return sharp(SRC)
-    .resize(size, size, { fit: 'contain',
-      background: { r: 0, g: 0, b: 0, alpha: 0 } })
-    .png().toBuffer();
-}
+const flags = `--iconBackgroundColor ${BG} --iconBackgroundColorDark ${BG}`
+  + ` --splashBackgroundColor ${BG} --splashBackgroundColorDark ${BG}`;
 
 for (const app of APPS) {
   const aDir = join(ROOT, app);
-  if (!existsSync(aDir)) { console.log('skip (missing app):', app); continue; }
+  if (!existsSync(aDir)) { console.log('skip:', app); continue; }
   const assets = join(aDir, 'assets');
   const pub = join(aDir, 'public');
   mkdirSync(assets, { recursive: true });
   mkdirSync(pub, { recursive: true });
 
-  // capacitor-assets source set (logo transparent + composed splash).
-  writeFileSync(join(assets, 'logo.png'), await transparent(1024));
-  writeFileSync(join(assets, 'logo-dark.png'), await transparent(1024));
-  writeFileSync(join(assets, 'icon-only.png'), await transparent(1024));
-  writeFileSync(join(assets, 'icon-foreground.png'), await transparent(1024));
+  const splash = await onBg(SPLASH_SRC, 2732, 0.42);
+  const splashFile = join(assets, 'splash.png');
+  const splashDark = join(assets, 'splash-dark.png');
+
+  // ---- Android pass: adaptive (transparent fg on #0F0A23) ----
+  writeFileSync(join(assets, 'icon-foreground.png'),
+    await transparent(AND_SRC, 1024));
   writeFileSync(join(assets, 'icon-background.png'),
     await sharp({ create: { width: 1024, height: 1024, channels: 4,
       background: bgRGB } }).png().toBuffer());
-  writeFileSync(join(assets, 'splash.png'), await centred(2732, 0.42));
-  writeFileSync(join(assets, 'splash-dark.png'), await centred(2732, 0.42));
-
-  // Web: favicon / apple-touch / og / in-app splash logo.
-  writeFileSync(join(pub, 'logo.png'), await transparent(512));
-  writeFileSync(join(pub, 'favicon.png'), await centred(64, 0.82));
-  writeFileSync(join(pub, 'apple-touch-icon.png'), await centred(180, 0.78));
-  const og = await sharp({ create: { width: 1200, height: 630,
-    channels: 4, background: bgRGB } })
-    .composite([{ input: await sharp(SRC)
-      .resize(420, 420, { fit: 'contain',
-        background: { r: 0, g: 0, b: 0, alpha: 0 } }).toBuffer(),
-      gravity: 'center' }]).png().toBuffer();
-  writeFileSync(join(pub, 'og.png'), og);
-
-  // Fan out to native (Android always; iOS only where ios/ exists - in
-  // the macOS CI). --logoSplashScale keeps the mark from over-filling.
-  const flags = `--iconBackgroundColor ${BG} --iconBackgroundColorDark ${BG}`
-    + ` --splashBackgroundColor ${BG} --splashBackgroundColorDark ${BG}`;
+  writeFileSync(join(assets, 'icon-only.png'), await onBg(AND_SRC, 1024, 0.92));
+  writeFileSync(join(assets, 'logo.png'), await transparent(AND_SRC, 1024));
+  writeFileSync(splashFile, splash);
+  writeFileSync(splashDark, splash);
   try {
-    execSync(`node "${CAP_ASSETS}" generate ${flags}`,
+    execSync(`node "${CAP}" generate --android ${flags}`,
       { cwd: aDir, stdio: 'pipe' });
-    console.log(`assets: generated for ${app}`);
+    console.log(`android icons+splash: ${app}`);
   } catch (e) {
-    const out = (e.stdout || e.stderr || e.message || '').toString();
-    console.log(`assets: capacitor-assets note for ${app}: `
-      + out.split('\n').slice(-3).join(' ').trim());
+    console.log(`android note (${app}):`, String(
+      e.stdout || e.stderr || e.message).split('\n').slice(-2).join(' '));
   }
+
+  // ---- Commit set = iOS-correct (opaque icon + splash) ----
+  rmSync(join(assets, 'icon-foreground.png'), { force: true });
+  rmSync(join(assets, 'icon-background.png'), { force: true });
+  writeFileSync(join(assets, 'icon-only.png'),
+    await opaqueSquare(IOS_SRC, 1024));
+  writeFileSync(join(assets, 'logo.png'), await transparent(SPLASH_SRC, 1024));
+  writeFileSync(splashFile, splash);
+  writeFileSync(splashDark, splash);
+
+  // ---- Web: in-app splash logo + favicon / apple-touch / og ----
+  writeFileSync(join(pub, 'logo.png'), await transparent(SPLASH_SRC, 512));
+  writeFileSync(join(pub, 'favicon.png'), await onBg(SPLASH_SRC, 64, 0.84));
+  writeFileSync(join(pub, 'apple-touch-icon.png'),
+    await opaqueSquare(IOS_SRC, 180));
+  writeFileSync(join(pub, 'og.png'), await sharp({ create: {
+    width: 1200, height: 630, channels: 4, background: bgRGB } })
+    .composite([{ input: await sharp(SPLASH_SRC).resize(440, 440, {
+      fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .toBuffer(), gravity: 'center' }]).png().toBuffer());
+  console.log(`web assets: ${app}`);
 }
 
-console.log('\ngen-assets done. brand/logo.png ->',
-  'icons + splash + favicons for all 3 apps.');
+console.log('\ngen-assets done: Android (local android/) + iOS set'
+  + ' (committed assets/) + web favicons for all 3 apps.');
