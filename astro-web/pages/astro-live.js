@@ -60,6 +60,7 @@ export default function AstroLive() {
   const [info, setInfo] = useState(null);
   const [comments, setComments] = useState([]);
   const [fakes, setFakes] = useState([]);
+  const [dp, setDp] = useState('');
   const [, setVtick] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const [mode, setMode] = useState('choose');     // choose | sched
@@ -86,6 +87,8 @@ export default function AstroLive() {
     const el = cRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [comments, fakes]);
+
+  useEffect(() => liveService.watchComplianceDp(setDp), []);
 
   // Refresh simulated viewer count while live.
   useEffect(() => {
@@ -447,7 +450,13 @@ export default function AstroLive() {
           }}>
           {feed.map((c) => (
             <div key={c.id} className="flex items-start gap-2">
-              <Avatar name={c.name} />
+              {c.team && dp ? (
+                <img src={dp} alt="Compliance Team"
+                  className="h-8 w-8 shrink-0 rounded-full
+                    object-cover" />
+              ) : (
+                <Avatar name={c.name} />
+              )}
               <div className="min-w-0">
                 <div className="text-[13px] leading-tight">
                   <span className="font-semibold opacity-90">

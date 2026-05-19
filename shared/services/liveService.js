@@ -252,6 +252,14 @@ export function listenLive(astroUid, callback) {
     callback(s.exists() ? { id: s.id, ...s.data() } : null));
 }
 
+// Compliance Team display picture (settings/config.compliance_dp).
+export function watchComplianceDp(callback) {
+  try {
+    return onSnapshot(doc(db, 'settings', 'config'), (s) =>
+      callback((s.exists() && s.data().compliance_dp) || ''));
+  } catch (_) { if (callback) callback(''); return () => {}; }
+}
+
 export async function likeLive(astroUid) {
   try {
     await updateDoc(liveDoc(astroUid), { likes: increment(1) });

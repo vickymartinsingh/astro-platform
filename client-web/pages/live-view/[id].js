@@ -13,6 +13,7 @@ export default function LiveView() {
   const [info, setInfo] = useState(null);
   const [comments, setComments] = useState([]);
   const [fakes, setFakes] = useState([]);
+  const [dp, setDp] = useState('');
   const [, setTick] = useState(0);
   const [text, setText] = useState('');
   const remoteRef = useRef(null);
@@ -43,6 +44,8 @@ export default function LiveView() {
     const u2 = liveService.listenLiveComments(astroUid, setComments);
     return () => { u1 && u1(); u2 && u2(); };
   }, [astroUid]);
+
+  useEffect(() => liveService.watchComplianceDp(setDp), []);
 
   // Refresh the simulated viewer count over time.
   useEffect(() => {
@@ -158,9 +161,15 @@ export default function LiveView() {
             const bg = cols[(c.name || 'x').charCodeAt(0) % cols.length];
             return (
               <div key={c.id} className="flex items-start gap-2">
-                <span className="flex h-8 w-8 shrink-0 items-center
-                  justify-center rounded-full text-sm font-bold"
-                  style={{ background: bg }}>{ch}</span>
+                {c.team && dp ? (
+                  <img src={dp} alt="Compliance Team"
+                    className="h-8 w-8 shrink-0 rounded-full
+                      object-cover" />
+                ) : (
+                  <span className="flex h-8 w-8 shrink-0 items-center
+                    justify-center rounded-full text-sm font-bold"
+                    style={{ background: bg }}>{ch}</span>
+                )}
                 <div className="min-w-0">
                   <div className="text-[13px] leading-tight opacity-90">
                     <span className="font-semibold">{c.name}</span>

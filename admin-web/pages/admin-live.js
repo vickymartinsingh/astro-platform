@@ -17,11 +17,14 @@ export default function AdminLive() {
   const [text, setText] = useState('');
   const [eng, setEng] = useState(null);
   const [savingEng, setSavingEng] = useState(false);
+  const [dp, setDp] = useState('');
+  const [dpBusy, setDpBusy] = useState(false);
   const remoteRef = useRef(null);
   const cRef = useRef(null);
   const joinedRef = useRef(false);
 
   useEffect(() => liveService.listenLiveAstrologers(setLives), []);
+  useEffect(() => liveService.watchComplianceDp(setDp), []);
   useEffect(() => {
     getDoc(doc(db, 'settings', 'features')).then((s) => {
       const d = s.exists() ? s.data() : {};
@@ -54,6 +57,58 @@ export default function AdminLive() {
       flash('Live engagement settings saved');
     } catch (_) { flash('Could not save'); }
     finally { setSavingEng(false); }
+  }
+
+  function fileToDataUrl(file, maxW) {
+    return new Promise((res, rej) => {
+      const fr = new FileReader();
+      fr.onerror = () => rej(new Error('read failed'));
+      fr.onload = () => {
+        const img = new Image();
+        img.onerror = () => rej(new Error('bad image'));
+        img.onload = () => {
+          const sc = Math.min(1, maxW / (img.width || maxW));
+          const w = Math.max(1, Math.round((img.width || maxW) * sc));
+          const h = Math.max(1, Math.round((img.height || maxW) * sc));
+          const c = document.createElement('canvas');
+          c.width = w; c.height = h;
+          c.getContext('2d').drawImage(img, 0, 0, w, h);
+          res(c.toDataURL('image/jpeg', 0.85));
+        };
+        img.src = fr.result;
+      };
+      fr.readAsDataURL(file);
+    });
+  }
+  async function uploadDp(file) {
+    if (!file) return;
+    setDpBusy(true);
+    try {
+      const url = await fileToDataUrl(file, 256);
+      if (url.length > 700000) {
+        flash('Image too large - pick a smaller one'); return;
+      }
+      // eslint-disable-next-line no-alert, no-restricted-globals
+      if (!confirm('Set this as the Compliance Team display picture? '
+        + 'It will show on every Compliance Team message in live.')) {
+        return;
+      }
+      await adminService.updateSettings('config',
+        { compliance_dp: url });
+      setDp(url);
+      flash('Compliance Team DP updated');
+    } catch (_) { flash('Could not upload'); }
+    finally { setDpBusy(false); }
+  }
+  async function removeDp() {
+    // eslint-disable-next-line no-alert, no-restricted-globals
+    if (!confirm('Remove the Compliance Team display picture?')) return;
+    setDpBusy(true);
+    try {
+      await adminService.updateSettings('config', { compliance_dp: '' });
+      setDp('');
+      flash('Compliance Team DP removed');
+    } finally { setDpBusy(false); }
   }
 
   useEffect(() => {
@@ -153,6 +208,42 @@ export default function AdminLive() {
           </button>
         </div>
       )}
+
+      <div className="surface mb-4 p-4">
+        <div className="mb-1 font-semibold">
+          Compliance Team display picture
+        </div>
+        <p className="mb-3 text-xs text-sub-text">
+          Shown on every &quot;Compliance Team&quot; message / join in
+          live (client, astrologer &amp; admin views).
+        </p>
+        <div className="flex items-center gap-4">
+          {dp ? (
+            <img src={dp} alt="Compliance Team"
+              className="h-16 w-16 rounded-full object-cover
+                ring-2 ring-success" />
+          ) : (
+            <span className="flex h-16 w-16 items-center justify-center
+              rounded-full bg-bg-light text-2xl text-sub-text">★</span>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <label className="cursor-pointer rounded-card bg-primary
+              px-4 py-2 text-sm font-semibold text-white">
+              {dpBusy ? 'Working...' : (dp ? 'Choose / change'
+                : 'Choose & upload')}
+              <input type="file" accept="image/*" hidden
+                onChange={(e) => uploadDp(e.target.files?.[0])} />
+            </label>
+            {dp && (
+              <button onClick={removeDp} disabled={dpBusy}
+                className="rounded-card border border-danger px-4 py-2
+                  text-sm font-semibold text-danger">
+                Remove
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
 
       {!sel ? (
         lives == null ? (

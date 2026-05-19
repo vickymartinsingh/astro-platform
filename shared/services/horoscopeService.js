@@ -104,6 +104,17 @@ export function parseHoroscopeCSV(text) {
   return { entries, count, errors };
 }
 
+// Unique 6-digit reference for a CSV upload (not colliding with any
+// already-used ref).
+export function genHoroscopeRef(used) {
+  const u = new Set((used || []).map(String));
+  let r;
+  do {
+    r = String(Math.floor(100000 + Math.random() * 900000));
+  } while (u.has(r));
+  return r;
+}
+
 // Downloadable template: every sign for the next `days` days, blank
 // predictions for the admin to fill in.
 export function horoscopeCSVTemplate(days = 31) {
