@@ -152,6 +152,24 @@ function patchIos(app) {
   return `ios: patched (${app})`;
 }
 
+// Stamp the iOS version (CFBundleShortVersionString) + build
+// (CFBundleVersion) from the single source so IPAs carry the same
+// version as Android. Only runs in the iOS CI (ios/ exists there).
+function patchIosVersion(app) {
+  const f = join(ROOT, app, 'ios', 'App', 'App', 'Info.plist');
+  if (!existsSync(f)) return `ios-version: skipped (${app})`;
+  let x = readFileSync(f, 'utf8');
+  const set = (key, val) => {
+    const re = new RegExp(
+      `(<key>${key}</key>\\s*<string>)[^<]*(</string>)`);
+    if (re.test(x)) x = x.replace(re, `$1${val}$2`);
+  };
+  set('CFBundleShortVersionString', appVersionName(app));
+  set('CFBundleVersion', String(APP_BUILD));
+  writeFileSync(f, x);
+  return `ios-version: ${appVersionName(app)} (${APP_BUILD}) (${app})`;
+}
+
 // Copy the repo-root google-services.json into an app's android project
 // ONLY if it contains that app's package (otherwise the Google Services
 // gradle plugin fails the build / Firebase native crashes at runtime).
@@ -189,5 +207,6 @@ for (const app of NAME_APPS) {
   console.log(patchAppName(app));
   console.log(patchMainActivity(app));
   console.log(patchVersion(app));
+  console.log(patchIosVersion(app));
 }
 console.log('patch-native done');
