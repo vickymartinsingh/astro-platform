@@ -74,18 +74,18 @@ export default function TopNav() {
   const { openLogin } = useAuthModal();
   const { t } = useI18n();
   const { features } = useSettings();
-  // iOS has no hardware back button - show an on-screen one.
-  const [iosNative, setIosNative] = useState(false);
+  // On-screen back for the native apps (Android + iOS) - lives in the
+  // header so it never overlaps the brand. The global NativeBack
+  // floating button defers to this when a TopNav is present.
+  const [native, setNative] = useState(false);
   useEffect(() => {
     try {
       const C = typeof window !== 'undefined' ? window.Capacitor : null;
-      const ios = C && C.getPlatform && C.getPlatform() === 'ios';
-      setIosNative(!!(ios && C.isNativePlatform
-        && C.isNativePlatform()));
+      setNative(!!(C && C.isNativePlatform && C.isNativePlatform()));
     } catch (_) { /* ignore */ }
   }, []);
   const ROOTS = ['/', '/dashboard'];
-  const showBack = iosNative && !ROOTS.includes(router.pathname);
+  const showBack = native && !ROOTS.includes(router.pathname);
   function goBack() {
     if (typeof window !== 'undefined' && window.history.length > 1) {
       router.back();
@@ -116,7 +116,8 @@ export default function TopNav() {
   const profActive = profileMenu.some((m) => m.href === router.pathname);
 
   return (
-    <header className="sticky top-0 z-40 border-b border-gray-100 bg-white"
+    <header data-topnav
+      className="sticky top-0 z-40 border-b border-gray-100 bg-white"
       style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
       <div className="mx-auto flex max-w-6xl items-center justify-between
                       px-4 py-3">

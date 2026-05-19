@@ -22,7 +22,7 @@ function BackBar({ onBack }) {
 // Two presets, switched from the admin (features.tarot_mode):
 //  - 'classic' (default): the original pick-a-card flow (unchanged, so
 //    you can always switch back).
-//  - 'guided': aspect -> (question 5-10 words, saved for admin only)
+//  - 'guided': aspect -> (question 10-50 words, saved for admin only)
 //    -> single or 3 cards -> aspect-specific reading in a popup that
 //    stays on the page until you leave / refresh.
 const DECK_SIZE = 9;
@@ -213,8 +213,8 @@ function Guided({ features }) {
   }
   function submitQuestion() {
     const words = question.trim().split(/\s+/).filter(Boolean);
-    if (words.length < 5 || words.length > 10) {
-      setQErr('Your question must be 5 to 10 words.'); return;
+    if (words.length < 10 || words.length > 50) {
+      setQErr('Your question must be 10 to 50 words.'); return;
     }
     setQErr('');
     go('spread');
@@ -282,7 +282,7 @@ function Guided({ features }) {
             2. Ask your question ({aspect})
           </div>
           <textarea className="input" rows={3}
-            placeholder="Type your question (5 to 10 words)"
+            placeholder="Type your question (10 to 50 words)"
             value={question}
             onChange={(e) => setQuestion(e.target.value)} />
           <div className="mt-1 text-xs text-sub-text">

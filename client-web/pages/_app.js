@@ -10,6 +10,7 @@ import { PendingSessionProvider } from '../lib/pendingSession';
 import useNativeBack from '../lib/useNativeBack';
 import GuidedTour from '../components/GuidedTour';
 import SplashScreen from '../components/SplashScreen';
+import NativeBack from '../components/NativeBack';
 import ErrorBoundary from '../components/ErrorBoundary';
 
 function WithProviders({ children }) {
@@ -48,6 +49,7 @@ export default function App({ Component, pageProps }) {
         </WithProviders>
       </AuthProvider>
       <GuidedTour />
+      <NativeBack />
       <SplashScreen />
     </ErrorBoundary>
   );

@@ -40,16 +40,14 @@ export default function TopNav() {
   const [links, setLinks] = useState(menuService.DEFAULT_ASTRO_MENU);
   useEffect(() => menuService.watchMenus(
     (m) => setLinks(m.astro)), []);
-  const [iosNative, setIosNative] = useState(false);
+  const [native, setNative] = useState(false);
   useEffect(() => {
     try {
       const C = typeof window !== 'undefined' ? window.Capacitor : null;
-      const ios = C && C.getPlatform && C.getPlatform() === 'ios';
-      setIosNative(!!(ios && C.isNativePlatform
-        && C.isNativePlatform()));
+      setNative(!!(C && C.isNativePlatform && C.isNativePlatform()));
     } catch (_) { /* ignore */ }
   }, []);
-  const showBack = iosNative
+  const showBack = native
     && router.pathname !== '/astro-dashboard';
   function goBack() {
     if (typeof window !== 'undefined' && window.history.length > 1) {
@@ -66,8 +64,8 @@ export default function TopNav() {
   );
 
   return (
-    <header className="sticky top-0 z-40 border-b border-gray-100
-      bg-white"
+    <header data-topnav
+      className="sticky top-0 z-40 border-b border-gray-100 bg-white"
       style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
       <div className="mx-auto flex max-w-6xl items-center
         justify-between px-4 py-3">

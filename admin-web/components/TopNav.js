@@ -130,16 +130,14 @@ export default function TopNav() {
   }
   const go = (href) => { setQ(''); setMenu(null); setOpen(false);
     router.push(href); };
-  const [iosNative, setIosNative] = useState(false);
+  const [native, setNative] = useState(false);
   useEffect(() => {
     try {
       const C = typeof window !== 'undefined' ? window.Capacitor : null;
-      const ios = C && C.getPlatform && C.getPlatform() === 'ios';
-      setIosNative(!!(ios && C.isNativePlatform
-        && C.isNativePlatform()));
+      setNative(!!(C && C.isNativePlatform && C.isNativePlatform()));
     } catch (_) {}
   }, []);
-  const showBack = iosNative
+  const showBack = native
     && router.pathname !== '/admin-dashboard'
     && router.pathname !== '/admin-builder';
   function goBack() {
@@ -157,7 +155,8 @@ export default function TopNav() {
   }, [q, POOL]);
 
   return (
-    <header className={`sticky top-0 z-40 text-white ${dev
+    <header data-topnav
+      className={`sticky top-0 z-40 text-white ${dev
       ? 'bg-[#1f1147]' : 'bg-dark-text'}`}
       style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
       <div className="mx-auto flex max-w-6xl items-center gap-3 px-4
