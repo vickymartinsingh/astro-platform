@@ -3,7 +3,7 @@ import { useRouter } from 'next/router';
 import { remedyService } from '@astro/shared';
 import Layout from '../components/Layout';
 
-// "Remedies" tab. Remedies on AstroConnect are recommended by your
+// "Remedies" tab. Remedies on AstroSeer are recommended by your
 // astrologer during a consultation (personalised to your kundli). This
 // is the store-style landing; the per-astrologer remedy catalogue is
 // delivered inside chat / the dedicated remedies module.

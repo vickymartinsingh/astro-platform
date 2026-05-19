@@ -73,7 +73,7 @@ export default function AstroLogin() {
       <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white
                       shadow-xl">
         <div className="hero-grad p-6 text-white">
-          <div className="text-xl font-bold">AstroConnect</div>
+          <div className="text-xl font-bold">AstroSeer</div>
           <div className="mt-1 text-2xl font-bold">Astrologer Portal</div>
           <p className="mt-1 text-sm opacity-90">
             Sign in to go online and take consultations.

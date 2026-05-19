@@ -135,7 +135,7 @@ export default function IncomingRequest({ uid, isOnCall }) {
           </div>
         ) : (
           <div className="text-sm opacity-70">
-            is calling you on AstroConnect
+            is calling you on AstroSeer
           </div>
         )}
         <div className="mt-2 text-xs opacity-60">

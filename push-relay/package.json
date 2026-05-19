@@ -2,7 +2,7 @@
   "name": "astro-push-relay",
   "version": "1.0.0",
   "private": true,
-  "description": "Tiny serverless relay for the AstroConnect apps: sends FCM lock-screen pushes (Firebase service account) and mints Agora RTC tokens (App Certificate). Both secrets live ONLY here as env vars. Deploy free on Vercel.",
+  "description": "Tiny serverless relay for the AstroSeer apps: sends FCM lock-screen pushes (Firebase service account) and mints Agora RTC tokens (App Certificate). Both secrets live ONLY here as env vars. Deploy free on Vercel.",
   "dependencies": {
     "agora-token": "^2.0.5",
     "firebase-admin": "^12.7.0"

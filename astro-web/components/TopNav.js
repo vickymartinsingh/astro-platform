@@ -33,10 +33,10 @@ function Life() {
 export default function TopNav() {
   const [open, setOpen] = useState(false);
   const router = useRouter();
-  const [brand, setBrand] = useState({ logo: '', name: 'AstroConnect' });
+  const [brand, setBrand] = useState({ logo: '', name: 'AstroSeer' });
   useEffect(() => brandingService.watchBranding((b) =>
     setBrand({ logo: b.logo || '',
-      name: b.name || 'AstroConnect' })), []);
+      name: b.name || 'AstroSeer' })), []);
   const [links, setLinks] = useState(menuService.DEFAULT_ASTRO_MENU);
   useEffect(() => menuService.watchMenus(
     (m) => setLinks(m.astro)), []);

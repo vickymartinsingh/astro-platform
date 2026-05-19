@@ -1,6 +1,6 @@
 {
   "appId": "com.astroconnect.app",
-  "appName": "AstroConnect",
+  "appName": "AstroSeer",
   "webDir": "out",
   "bundledWebRuntime": false,
   "server": {

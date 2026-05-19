@@ -91,7 +91,7 @@ export default function Wallet() {
           key: order.keyId,
           amount: Math.round(amt * 100),
           currency: 'INR',
-          name: 'AstroConnect',
+          name: 'AstroSeer',
           description: 'Wallet recharge',
           order_id: order.orderId,
           prefill: { name: profile?.name, email: profile?.email },

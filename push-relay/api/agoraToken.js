@@ -1,4 +1,4 @@
-// Agora RTC token minting for the AstroConnect call/video feature.
+// Agora RTC token minting for the AstroSeer call/video feature.
 //
 // Why this exists: once an Agora App Certificate is enabled, every
 // channel join needs a SIGNED token. The certificate is a secret and

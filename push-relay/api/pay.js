@@ -166,7 +166,7 @@ module.exports = async (req, res) => {
               customer_id: uid,
               customer_phone: body.phone || '9999999999',
               customer_email: body.email || 'user@astroconnect.app',
-              customer_name: body.name || 'AstroConnect User',
+              customer_name: body.name || 'AstroSeer User',
             },
             order_meta: { return_url: `${body.returnUrl || ''}` },
           }),

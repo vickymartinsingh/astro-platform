@@ -58,7 +58,7 @@ export default function TopNav() {
   const [open, setOpen] = useState(false);
   const [prof, setProf] = useState(false);
   const [unread, setUnread] = useState(0);
-  const [brand, setBrand] = useState({ logo: '', name: 'AstroConnect' });
+  const [brand, setBrand] = useState({ logo: '', name: 'AstroSeer' });
   const [menu, setMenu] = useState(menuService.DEFAULT_CLIENT_MENU);
   const [menuMobile, setMenuMobile] = useState(
     menuService.DEFAULT_CLIENT_MENU);
@@ -104,7 +104,7 @@ export default function TopNav() {
 
   useEffect(() => brandingService.watchBranding((b) =>
     setBrand({ logo: b.logo || '',
-      name: b.name || 'AstroConnect' })), []);
+      name: b.name || 'AstroSeer' })), []);
 
   useEffect(() => { setOpen(false); setProf(false); }, [router.asPath]);
 

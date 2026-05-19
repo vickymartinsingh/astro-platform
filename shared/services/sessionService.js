@@ -211,7 +211,7 @@ export async function createSessionRequest(data) {
   sendPushToUser({
     toUid: data.astroId,
     title: `${clientName} is calling`,
-    body: `Incoming ${tLabel} on AstroConnect. Tap to answer.`,
+    body: `Incoming ${tLabel} on AstroSeer. Tap to answer.`,
     priority: 'high',
     data: {
       type: 'session',

@@ -1,6 +1,6 @@
 {
   "appId": "com.astroconnect.astrologer",
-  "appName": "Astrologer by AC",
+  "appName": "AstroSeer for Astrologers",
   "webDir": "out",
   "bundledWebRuntime": false,
   "server": {

@@ -43,7 +43,7 @@ export default function Invoice() {
       <div className="mb-6 flex items-start justify-between">
         <div>
           <h1 className="text-2xl font-bold text-primary">
-            {cfg.platformName || 'AstroConnect'}
+            {cfg.platformName || 'AstroSeer'}
           </h1>
           {cfg.gstin && (
             <div className="text-sm text-sub-text">GSTIN: {cfg.gstin}</div>

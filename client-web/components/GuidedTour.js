@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 // where it is - including the slide menu (we highlight the menu button).
 const KEY = 'appTourDone';
 const STEPS = [
-  { i: '🙏', t: 'Welcome to AstroConnect',
+  { i: '🙏', t: 'Welcome to AstroSeer',
     m: 'A quick 30-second tour. Each step points to the exact button '
       + 'on screen. You can skip anytime.' },
   { i: '🏠', t: 'Home', sel: '[data-tour="nav-home"]',

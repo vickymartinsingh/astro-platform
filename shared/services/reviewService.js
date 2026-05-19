@@ -99,7 +99,7 @@ export async function getMyPlatformReview(uid) {
 // instantly changes what the public sees.
 function pubSnap(r) {
   return {
-    name: r.userName || 'AstroConnect user',
+    name: r.userName || 'AstroSeer user',
     city: r.city || '',
     rating: r.rating || 5,
     text: r.text || '',
@@ -116,7 +116,7 @@ export async function submitPlatformReview(uid, data) {
   const content = {
     kind: 'platform',
     userId: uid,
-    userName: (data.name || '').trim() || 'AstroConnect user',
+    userName: (data.name || '').trim() || 'AstroSeer user',
     city: (data.city || '').trim(),
     rating: Math.max(1, Math.min(5, Number(data.rating) || 5)),
     text: (data.text || '').trim(),

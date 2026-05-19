@@ -1,6 +1,6 @@
 {
   "appId": "com.astroconnect.admin",
-  "appName": "Admin by AC",
+  "appName": "AstroSeer Admin",
   "webDir": "out",
   "bundledWebRuntime": false,
   "server": {

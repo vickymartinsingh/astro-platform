@@ -34,19 +34,19 @@ const T = {
       + `We have received your support request and created ticket `
       + `${v.ticketNo}.\n\nSubject: ${v.subject}\nCategory: `
       + `${v.category}\n\nOur team will reply here and by email. You `
-      + `can also track it in the app.\n\n- AstroConnect Support`,
+      + `can also track it in the app.\n\n- AstroSeer Support`,
   }),
   ticket_reply: (v) => ({
     subject: `[Ticket ${v.ticketNo}] Reply from support`,
     body: `Hi ${v.name || 'there'},\n\n${v.message}\n\n`
-      + `Ticket: ${v.ticketNo} (${v.subject})\n\n- AstroConnect Support`,
+      + `Ticket: ${v.ticketNo} (${v.subject})\n\n- AstroSeer Support`,
   }),
   ticket_closed: (v) => ({
     subject: `[Ticket ${v.ticketNo}] Closed`,
     body: `Hi ${v.name || 'there'},\n\nYour ticket ${v.ticketNo} `
       + `("${v.subject}") has been closed. If it is not resolved you `
       + `can reply within 24 hours to reopen it.\n\n`
-      + `- AstroConnect Support`,
+      + `- AstroSeer Support`,
   }),
   astro_status: (v) => ({
     subject: `Astrologer ${v.name} is now ${v.status}`,
@@ -54,7 +54,7 @@ const T = {
       + `${v.status} at ${new Date().toLocaleString()}.`,
   }),
   generic: (v) => ({
-    subject: v.subject || 'AstroConnect update',
+    subject: v.subject || 'AstroSeer update',
     body: v.body || '',
   }),
 };

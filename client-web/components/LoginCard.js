@@ -120,7 +120,7 @@ export default function LoginCard({ onDone, compact, initialMode }) {
     <div className={compact ? '' : 'w-full max-w-md'}>
       <div className="overflow-hidden rounded-2xl bg-white shadow-xl">
         <div className="hero-grad p-6 text-white">
-          <div className="text-xl font-bold">AstroConnect</div>
+          <div className="text-xl font-bold">AstroSeer</div>
           <div className="mt-1 text-2xl font-bold">
             {mode === 'signup' ? 'Create your account' : 'Welcome back'}
           </div>

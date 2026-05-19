@@ -58,13 +58,13 @@ export default function SplashScreen() {
         justify-center hero-grad transition-opacity duration-500 ${
         fade ? 'opacity-0' : 'opacity-100'}`}>
       {src ? (
-        <img src={src} alt="AstroConnect"
+        <img src={src} alt="AstroSeer"
           className="max-h-[55vh] max-w-[78%] object-contain
             drop-shadow-2xl" />
       ) : (
         <div className="text-center text-white">
           <div className="text-5xl font-extrabold tracking-wide">
-            AstroConnect
+            AstroSeer
           </div>
           <div className="mt-2 text-sm uppercase tracking-[0.3em]
             opacity-80">

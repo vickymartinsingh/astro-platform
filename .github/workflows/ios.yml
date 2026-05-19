@@ -70,9 +70,9 @@ jobs:
           echo "::endgroup::"
 
           case "$APP" in
-            client-web)  IPA=AstroConnect ;;
-            astro-web)   IPA=AstroConnect-Astrologer ;;
-            admin-web)   IPA=AstroConnect-Admin ;;
+            client-web)  IPA=AstroSeer ;;
+            astro-web)   IPA=AstroSeer-Astrologer ;;
+            admin-web)   IPA=AstroSeer-Admin ;;
             *)           IPA=App ;;
           esac
           echo "ipa=$IPA" >> "$GITHUB_OUTPUT"

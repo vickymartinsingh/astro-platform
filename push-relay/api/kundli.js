@@ -1,4 +1,4 @@
-// Multi-provider Kundli API for the AstroConnect apps.
+// Multi-provider Kundli API for the AstroSeer apps.
 //
 // The admin picks the provider + pastes its key in the admin portal
 // (settings/kundliApi). This relay reads that config from Firestore and

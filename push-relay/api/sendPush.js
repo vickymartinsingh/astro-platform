@@ -1,4 +1,4 @@
-// Serverless FCM relay for the AstroConnect apps.
+// Serverless FCM relay for the AstroSeer apps.
 //
 // Why this exists: a phone can only receive a lock-screen push from a
 // TRUSTED server (Firebase rule). The apps cannot send pushes themselves.

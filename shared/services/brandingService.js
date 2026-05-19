@@ -35,7 +35,7 @@ export function watchBranding(cb) {
       const b = {
         logo: d.logo || '',
         favicon: d.favicon || d.logo || '',
-        name: d.platformName || 'AstroConnect',
+        name: d.platformName || 'AstroSeer',
       };
       try {
         window.localStorage.setItem('appBranding', JSON.stringify(b));

@@ -59,7 +59,7 @@ async function ensureChannel() {
     if (!api || !api.createChannel) return;
     api.createChannel({
       id: CHANNEL_ID,
-      name: 'AstroConnect',
+      name: 'AstroSeer',
       description: 'Chats, calls, video and updates',
       importance: 5,        // IMPORTANCE_HIGH -> heads-up banner
       visibility: 1,        // VISIBILITY_PUBLIC -> show on lock screen
@@ -145,7 +145,7 @@ function wireMessageListeners(PN) {
         const LN = localPlugin();
         if (!LN) return;
         const d = (notif && notif.data) || {};
-        const title = (notif && notif.title) || d.title || 'AstroConnect';
+        const title = (notif && notif.title) || d.title || 'AstroSeer';
         const text = (notif && notif.body) || d.body || '';
         // Call pushes ring on the dedicated calls channel.
         const ch = (d.channelId === CALL_CHANNEL_ID

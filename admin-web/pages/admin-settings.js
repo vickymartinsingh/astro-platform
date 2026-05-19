@@ -18,7 +18,7 @@ export default function AdminSettings() {
   useEffect(() => {
     getDoc(doc(db, 'settings', 'config')).then((s) =>
       setCfg(s.exists() ? s.data() : {
-        platformName: 'AstroConnect', commission_percent: 30,
+        platformName: 'AstroSeer', commission_percent: 30,
         min_recharge: 100, signup_bonus: 0,
         free_chat_seconds: 0, free_call_seconds: 0, kundliToolUrl: '',
       }));
