@@ -1,0 +1,162 @@
+{
+  "project_info": {
+    "project_number": "402763204723",
+    "project_id": "astrology-2092d",
+    "storage_bucket": "astrology-2092d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:402763204723:android:c354acf59001114a498206",
+        "android_client_info": {
+          "package_name": "com.astroconnect.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "402763204723-qet7tn3v4qqbo240ns17v3266q1pdadc.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.astroconnect.app",
+            "certificate_hash": "c1ad147cfc0936129b69df459802c344681ccf3a"
+          }
+        },
+        {
+          "client_id": "402763204723-27qaos241451th9r25335bj7o5cpfuvr.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCrREi_TBgv6GBAKdN2LxnbmoC1MVepiMs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "402763204723-27qaos241451th9r25335bj7o5cpfuvr.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "402763204723-qc7n5f0ie01hmkfc1lie545pca9c7eph.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.astroconnect.app"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:402763204723:android:686205e2c653d1a8498206",
+        "android_client_info": {
+          "package_name": "com.astroconnect.astrologer"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "402763204723-27qaos241451th9r25335bj7o5cpfuvr.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCrREi_TBgv6GBAKdN2LxnbmoC1MVepiMs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "402763204723-27qaos241451th9r25335bj7o5cpfuvr.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "402763204723-qc7n5f0ie01hmkfc1lie545pca9c7eph.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.astroconnect.app"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:402763204723:android:04ef4724583bf4b0498206",
+        "android_client_info": {
+          "package_name": "com.astroseer.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "402763204723-27qaos241451th9r25335bj7o5cpfuvr.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCrREi_TBgv6GBAKdN2LxnbmoC1MVepiMs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "402763204723-27qaos241451th9r25335bj7o5cpfuvr.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "402763204723-qc7n5f0ie01hmkfc1lie545pca9c7eph.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.astroconnect.app"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:402763204723:android:859ddbce8a5d45f1498206",
+        "android_client_info": {
+          "package_name": "com.astroseer.astrologer"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "402763204723-27qaos241451th9r25335bj7o5cpfuvr.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCrREi_TBgv6GBAKdN2LxnbmoC1MVepiMs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "402763204723-27qaos241451th9r25335bj7o5cpfuvr.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "402763204723-qc7n5f0ie01hmkfc1lie545pca9c7eph.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.astroconnect.app"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

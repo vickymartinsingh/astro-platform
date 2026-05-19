@@ -70,12 +70,16 @@ jobs:
           echo "::endgroup::"
 
           case "$APP" in
-            client-web)  IPA=AstroSeer ;;
-            astro-web)   IPA=AstroSeer-Astrologer ;;
-            admin-web)   IPA=AstroSeer-Admin ;;
-            *)           IPA=App ;;
+            client-web)  IPA=AstroSeer ;        SFX=app ;;
+            astro-web)   IPA=AstroSeer-Astrologer ; SFX=astrologer ;;
+            admin-web)   IPA=AstroSeer-Admin ;  SFX=admin ;;
+            *)           IPA=App ;              SFX=app ;;
           esac
           echo "ipa=$IPA" >> "$GITHUB_OUTPUT"
+          # Per-app Firebase iOS config the user generated for the new
+          # com.astroseer.* bundle IDs (committed at repo root).
+          export PLIST="com.astroseer.$SFX.plist"
+          echo "using iOS plist: $PLIST"
 
           echo "::group::install deps"
           npm ci || npm install
@@ -95,7 +99,7 @@ jobs:
           # present, Firebase iOS initialises fine and native Google
           # sign-in works, so we keep the plugin.
           echo "::group::strip firebase native plugins"
-          node -e "const fs=require('fs');const app=process.env.APP;const f=app+'/package.json';const j=JSON.parse(fs.readFileSync(f));const keepGoogle=app==='client-web'&&fs.existsSync('GoogleService-Info.plist');const strip=['@capacitor/push-notifications'];if(!keepGoogle)strip.push('@capacitor-firebase/authentication');for(const k of strip){if(j.dependencies)delete j.dependencies[k];}fs.writeFileSync(f,JSON.stringify(j,null,2)+'\n');console.log('keepGoogle='+keepGoogle+' stripped='+strip.join(','));"
+          node -e "const fs=require('fs');const app=process.env.APP;const f=app+'/package.json';const j=JSON.parse(fs.readFileSync(f));const keepGoogle=fs.existsSync(process.env.PLIST||'');const strip=['@capacitor/push-notifications'];if(!keepGoogle)strip.push('@capacitor-firebase/authentication');for(const k of strip){if(j.dependencies)delete j.dependencies[k];}fs.writeFileSync(f,JSON.stringify(j,null,2)+'\n');console.log('keepGoogle='+keepGoogle+' (PLIST='+process.env.PLIST+') stripped='+strip.join(','));"
           echo "::endgroup::"
 
           # Capacitor 8 defaults to SPM; the capacitor-swift-pm mirror
@@ -109,12 +113,11 @@ jobs:
           echo "::endgroup::"
 
           echo "::group::ios firebase config"
-          if [ "$APP" = "client-web" ] && [ -f GoogleService-Info.plist ]; then
-            cp GoogleService-Info.plist \
-              "$APP/ios/App/App/GoogleService-Info.plist";
-            echo "GoogleService-Info.plist installed - native Google ON (client)";
+          if [ -f "$PLIST" ]; then
+            cp "$PLIST" "$APP/ios/App/App/GoogleService-Info.plist";
+            echo "$PLIST installed -> GoogleService-Info.plist (native Google ON: $APP)";
           else
-            echo "no plist for $APP - native Google OFF on iOS (web fallback)";
+            echo "no $PLIST - native Google OFF on iOS for $APP (web fallback)";
           fi
           echo "::endgroup::"
 

@@ -14,7 +14,7 @@ import {
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // Only the apps that make calls. Admin never needs mic/camera.
-const APPS = ['client-web', 'astro-web'];
+const APPS = ['client-web', 'astro-web', 'admin-web'];
 // All apps get the display-name fix (Capacitor only writes strings.xml on
 // `cap add`, never on sync, so the renamed app titles must be re-applied).
 const NAME_APPS = ['client-web', 'astro-web', 'admin-web'];
@@ -203,12 +203,20 @@ function patchIosVersion(app) {
   return `ios-version: ${appVersionName(app)} (${APP_BUILD}) (${app})`;
 }
 
-// Copy the repo-root google-services.json into an app's android project
-// ONLY if it contains that app's package (otherwise the Google Services
-// gradle plugin fails the build / Firebase native crashes at runtime).
+// Install the per-app google-services.json the user generated for the
+// new com.astroseer.* Firebase apps (committed at repo root). Each app
+// gets ONLY its own config and only if it actually contains that app's
+// package (otherwise the Google Services gradle plugin fails the build
+// / Firebase native crashes at runtime).
 const PKG = {
   'client-web': 'com.astroseer.app',
   'astro-web': 'com.astroseer.astrologer',
+  'admin-web': 'com.astroseer.admin',
+};
+const ANDROID_CFG = {
+  'client-web': 'com.astroseer.app.json',
+  'astro-web': 'com.astroseer.astrologer.json',
+  'admin-web': 'com.astroseer.admin.json',
 };
 function pkgsOf(file) {
   try {
@@ -220,7 +228,8 @@ function pkgsOf(file) {
 }
 
 function patchGoogleServices(app) {
-  const src = join(ROOT, 'google-services.json');
+  const cfg = ANDROID_CFG[app];
+  const src = cfg ? join(ROOT, cfg) : join(ROOT, 'google-services.json');
   const destDir = join(ROOT, app, 'android', 'app');
   if (!existsSync(destDir)) return `gservices: skipped (${app})`;
   const dest = join(destDir, 'google-services.json');
