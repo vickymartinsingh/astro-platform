@@ -1,6 +1,6 @@
 {
-  "appId": "com.astroseer.app",
-  "appName": "AstroSeer",
+  "appId": "com.astroseer.mobile",
+  "appName": "AstroSeer Connect",
   "webDir": "out",
   "bundledWebRuntime": false,
   "server": {

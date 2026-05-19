@@ -209,12 +209,12 @@ function patchIosVersion(app) {
 // package (otherwise the Google Services gradle plugin fails the build
 // / Firebase native crashes at runtime).
 const PKG = {
-  'client-web': 'com.astroseer.app',
+  'client-web': 'com.astroseer.mobile',
   'astro-web': 'com.astroseer.astrologer',
   'admin-web': 'com.astroseer.admin',
 };
 const ANDROID_CFG = {
-  'client-web': 'com.astroseer.app.json',
+  'client-web': 'com.astroseer.mobile.json',
   'astro-web': 'com.astroseer.astrologer.json',
   'admin-web': 'com.astroseer.admin.json',
 };
