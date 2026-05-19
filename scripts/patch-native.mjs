@@ -152,6 +152,39 @@ function patchIos(app) {
   return `ios: patched (${app})`;
 }
 
+// Native Google sign-in on iOS needs the Google URL scheme
+// (REVERSED_CLIENT_ID from GoogleService-Info.plist) in Info.plist.
+// No-op when there is no GoogleService-Info.plist (web fallback).
+function patchIosGoogle(app) {
+  const dir = join(ROOT, app, 'ios', 'App', 'App');
+  const gsi = join(dir, 'GoogleService-Info.plist');
+  const info = join(dir, 'Info.plist');
+  if (!existsSync(gsi) || !existsSync(info)) {
+    return `ios-google: skipped (${app})`;
+  }
+  const g = readFileSync(gsi, 'utf8');
+  const m = g.match(
+    /<key>REVERSED_CLIENT_ID<\/key>\s*<string>([^<]+)<\/string>/);
+  if (!m) return `ios-google: no REVERSED_CLIENT_ID (${app})`;
+  const scheme = m[1];
+  let x = readFileSync(info, 'utf8');
+  if (x.includes(scheme)) return `ios-google: already (${app})`;
+  if (x.includes('<key>CFBundleURLTypes</key>')) {
+    x = x.replace(/(<key>CFBundleURLSchemes<\/key>\s*<array>)/,
+      `$1\n\t\t\t\t<string>${scheme}</string>`);
+  } else {
+    const block = '\t<key>CFBundleURLTypes</key>\n\t<array>\n'
+      + '\t\t<dict>\n\t\t\t<key>CFBundleURLSchemes</key>\n'
+      + `\t\t\t<array>\n\t\t\t\t<string>${scheme}</string>\n`
+      + '\t\t\t</array>\n\t\t</dict>\n\t</array>\n';
+    const i = x.lastIndexOf('</dict>');
+    if (i === -1) return `ios-google: no </dict> (${app})`;
+    x = x.slice(0, i) + block + x.slice(i);
+  }
+  writeFileSync(info, x);
+  return `ios-google: URL scheme added (${app})`;
+}
+
 // Stamp the iOS version (CFBundleShortVersionString) + build
 // (CFBundleVersion) from the single source so IPAs carry the same
 // version as Android. Only runs in the iOS CI (ios/ exists there).
@@ -208,5 +241,6 @@ for (const app of NAME_APPS) {
   console.log(patchMainActivity(app));
   console.log(patchVersion(app));
   console.log(patchIosVersion(app));
+  console.log(patchIosGoogle(app));
 }
 console.log('patch-native done');
