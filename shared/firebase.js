@@ -8,8 +8,13 @@
 // genuinely can't run without config, which is expected. rtdb is
 // additionally gated on the database URL being set.
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import {
+  getAuth, initializeAuth, indexedDBLocalPersistence,
+  browserLocalPersistence, inMemoryPersistence,
+} from 'firebase/auth';
+import {
+  getFirestore, initializeFirestore,
+} from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { getFunctions } from 'firebase/functions';
 import { getDatabase } from 'firebase/database';
@@ -35,14 +40,52 @@ const firebaseConfig = {
 };
 
 const hasConfig = !!firebaseConfig.apiKey;
-const app = hasConfig
-  ? (getApps().length ? getApp() : initializeApp(firebaseConfig))
-  : null;
+let app = null;
+try {
+  if (hasConfig) {
+    app = getApps().length ? getApp() : initializeApp(firebaseConfig);
+  }
+} catch (_) { app = null; }
 
-export const auth = app ? getAuth(app) : undefined;
-export const db = app ? getFirestore(app) : undefined;
-export const storage = app ? getStorage(app) : undefined;
-export const functions = app ? getFunctions(app) : undefined;
-export const rtdb = (app && firebaseConfig.databaseURL)
-  ? getDatabase(app) : undefined;
+// iOS WKWebView under the capacitor:// custom scheme is the classic
+// "works on web/Android, breaks on iOS" environment for Firebase:
+//  - Firestore's default fetch-stream / WebChannel transport can hang
+//    -> use experimentalAutoDetectLongPolling so it falls back itself.
+//  - IndexedDB / localStorage can be unavailable -> Auth persistence
+//    falls back indexedDB -> localStorage -> in-memory instead of
+//    throwing auth/web-storage-unsupported at init.
+// Every init is wrapped so one failure can NEVER white-screen the app.
+function initAuth() {
+  if (!app) return undefined;
+  try {
+    return initializeAuth(app, {
+      persistence: [
+        indexedDBLocalPersistence,
+        browserLocalPersistence,
+        inMemoryPersistence,
+      ],
+    });
+  } catch (_) {
+    try { return getAuth(app); } catch (e) { return undefined; }
+  }
+}
+function initDb() {
+  if (!app) return undefined;
+  try {
+    return initializeFirestore(app, {
+      experimentalAutoDetectLongPolling: true,
+    });
+  } catch (_) {
+    try { return getFirestore(app); } catch (e) { return undefined; }
+  }
+}
+function safe(fn) { try { return fn(); } catch (_) { return undefined; } }
+
+export const auth = initAuth();
+export const db = initDb();
+export const storage = safe(() => (app ? getStorage(app) : undefined));
+export const functions = safe(
+  () => (app ? getFunctions(app) : undefined));
+export const rtdb = safe(() => ((app && firebaseConfig.databaseURL)
+  ? getDatabase(app) : undefined));
 export default app;
