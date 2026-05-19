@@ -34,6 +34,24 @@ function plugin() {
     && window.Capacitor.Plugins.PushNotifications) || null;
 }
 
+// Notification-tap deep link. In the native apps the web is a STATIC
+// export (trailingSlash -> every route is a folder/index.html). A bare
+// "/astro-dashboard" has no file there and hard-404s, so for native we
+// normalise an extensionless, query-less route to "/route/" which maps
+// to its index.html. Web is untouched.
+function navTo(route) {
+  if (!route || typeof window === 'undefined') return;
+  let r = String(route);
+  try {
+    if (isNativeApp() && r.charAt(0) === '/'
+      && r.indexOf('?') === -1 && r.indexOf('#') === -1
+      && !/\.[a-z0-9]+$/i.test(r) && r.charAt(r.length - 1) !== '/') {
+      r += '/';
+    }
+  } catch (_) { /* use route as-is */ }
+  try { window.location.assign(r); } catch (_) {}
+}
+
 // @capacitor/local-notifications - used ONLY to re-raise a push that
 // arrives while the app is in the foreground (Android/iOS suppress the
 // system banner in that state). Accessed via the runtime global so the
@@ -170,9 +188,7 @@ function wireMessageListeners(PN) {
       if (LN && LN.addListener) {
         LN.addListener('localNotificationActionPerformed', (a) => {
           const d = (a && a.notification && a.notification.extra) || {};
-          if (d.route && typeof window !== 'undefined') {
-            try { window.location.assign(d.route); } catch (_) {}
-          }
+          if (d.route) navTo(d.route);
         });
       }
     } catch (_) {}
@@ -181,9 +197,7 @@ function wireMessageListeners(PN) {
     PN.addListener('pushNotificationActionPerformed', (action) => {
       const data = (action && action.notification
         && action.notification.data) || {};
-      if (data.route && typeof window !== 'undefined') {
-        try { window.location.assign(data.route); } catch (_) {}
-      }
+      if (data.route) navTo(data.route);
     });
   } catch (_) { /* never block the app on push setup */ }
 }
