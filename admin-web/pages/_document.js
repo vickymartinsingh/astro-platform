@@ -61,6 +61,32 @@ export default function Document() {
         />
       </Head>
       <body>
+        {/* Pre-hydration brand cover - kills the reload flash of any
+            stale cached UI. Removed once React renders; 4s failsafe. */}
+        <div id="__boot" style={{
+          position: 'fixed', inset: 0, zIndex: 2147483646,
+          background: '#0F0A23', display: 'flex',
+          alignItems: 'center', justifyContent: 'center',
+          transition: 'opacity .25s ease',
+        }}>
+          <img src="/logo.png" alt="AstroSeer Admin"
+            style={{ maxWidth: '62%', maxHeight: '46vh',
+              objectFit: 'contain' }} />
+        </div>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: '(function(){var s=Date.now();function done(){'
+              + "var b=document.getElementById('__boot');if(!b)return;"
+              + "b.style.opacity='0';setTimeout(function(){if(b&&b."
+              + 'parentNode){b.parentNode.removeChild(b);}},300);}'
+              + 'function poll(){var n=document.getElementById('
+              + "'__next');var ready=n&&n.children&&n.children.length"
+              + '>0;if(ready&&Date.now()-s>300){done();return;}'
+              + 'if(Date.now()-s>4000){done();return;}'
+              + 'requestAnimationFrame(poll);}'
+              + 'requestAnimationFrame(poll);})();',
+          }}
+        />
         <Main />
         <NextScript />
       </body>

@@ -76,7 +76,7 @@ function setVars(vars) {
   const r = document.documentElement.style;
   Object.entries(vars).forEach(([k, v]) => r.setProperty(k, v));
   try {
-    window.localStorage.setItem('appThemeVars', JSON.stringify(vars));
+    window.localStorage.setItem('appThemeVars2', JSON.stringify(vars));
   } catch (_) {}
 }
 
@@ -88,7 +88,7 @@ export function applyTheme(theme) {
 
 export function bootTheme() {
   try {
-    const c = window.localStorage.getItem('appThemeVars');
+    const c = window.localStorage.getItem('appThemeVars2');
     if (c) {
       const vars = JSON.parse(c);
       const r = document.documentElement.style;

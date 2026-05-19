@@ -60,7 +60,7 @@ export default function Document() {
         <script
           dangerouslySetInnerHTML={{
             __html: 'try{var c=window.localStorage.getItem('
-              + "'appThemeVars');if(c){var v=JSON.parse(c);"
+              + "'appThemeVars2');if(c){var v=JSON.parse(c);"
               + 'var r=document.documentElement.style;'
               + 'for(var k in v){if(Object.prototype.hasOwnProperty'
               + '.call(v,k)){r.setProperty(k,v[k]);}}}}catch(e){}',
@@ -79,6 +79,36 @@ export default function Document() {
         />
       </Head>
       <body>
+        {/* Pre-hydration brand cover: opaque, on-theme (#0F0A23) with
+            the bundled logo, painted on the FIRST frame so the old
+            cached UI / colours can never flash during the reload
+            window. Removed once React has rendered (SplashScreen then
+            takes over seamlessly); hard 4s failsafe so it can never
+            get stuck even if the bundle fails. */}
+        <div id="__boot" style={{
+          position: 'fixed', inset: 0, zIndex: 2147483646,
+          background: '#0F0A23', display: 'flex',
+          alignItems: 'center', justifyContent: 'center',
+          transition: 'opacity .25s ease',
+        }}>
+          <img src="/logo.png" alt="AstroSeer"
+            style={{ maxWidth: '62%', maxHeight: '46vh',
+              objectFit: 'contain' }} />
+        </div>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: '(function(){var s=Date.now();function done(){'
+              + "var b=document.getElementById('__boot');if(!b)return;"
+              + "b.style.opacity='0';setTimeout(function(){if(b&&b."
+              + 'parentNode){b.parentNode.removeChild(b);}},300);}'
+              + 'function poll(){var n=document.getElementById('
+              + "'__next');var ready=n&&n.children&&n.children.length"
+              + '>0;if(ready&&Date.now()-s>300){done();return;}'
+              + 'if(Date.now()-s>4000){done();return;}'
+              + 'requestAnimationFrame(poll);}'
+              + 'requestAnimationFrame(poll);})();',
+          }}
+        />
         <Main />
         <NextScript />
       </body>

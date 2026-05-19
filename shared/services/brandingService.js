@@ -18,7 +18,7 @@ function applyFavicon(url) {
 
 export function cachedBranding() {
   try {
-    const c = window.localStorage.getItem('appBranding');
+    const c = window.localStorage.getItem('appBranding2');
     return c ? JSON.parse(c) : null;
   } catch (_) { return null; }
 }
@@ -38,7 +38,7 @@ export function watchBranding(cb) {
         name: d.platformName || 'AstroSeer',
       };
       try {
-        window.localStorage.setItem('appBranding', JSON.stringify(b));
+        window.localStorage.setItem('appBranding2', JSON.stringify(b));
       } catch (_) {}
       applyFavicon(b.favicon);
       if (cb) cb(b);
