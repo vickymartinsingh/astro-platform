@@ -46,12 +46,18 @@ export default function ActiveSession() {
   }, [id]);
 
   useEffect(() => {
-    if (!session) return;
-    userService.getUser(session.userId).then(setClient);
-    kundliService.getDefaultKundli(session.userId).then(setKundli);
-    const chatId = [session.userId, session.astroId].sort().join('_');
-    const unsub = chatService.listenMessages(chatId, setMessages);
-    return () => unsub && unsub();
+    if (!session) return undefined;
+    // NEVER let a rejected lookup bubble to window.unhandledrejection
+    // (the boot error overlay treats that as a crash). All best-effort.
+    userService.getUser(session.userId).then(setClient).catch(() => {});
+    kundliService.getDefaultKundli(session.userId)
+      .then(setKundli).catch(() => {});
+    let unsub;
+    try {
+      const chatId = [session.userId, session.astroId].sort().join('_');
+      unsub = chatService.listenMessages(chatId, setMessages);
+    } catch (_) { /* chat is non-fatal for a call/video session */ }
+    return () => { try { unsub && unsub(); } catch (_) {} };
   }, [session?.userId, session?.astroId]);
 
   useEffect(() => {

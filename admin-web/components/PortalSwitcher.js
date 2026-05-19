@@ -5,6 +5,7 @@ import { useAuth } from '../lib/useAuth';
 import {
   PORTALS, IFRAME_PORTALS, usePortal, getPortalUrls, setPortalUrls,
 } from '../lib/portal';
+import PortalEditRail from './PortalEditRail';
 
 // Always-on floating control that lets an admin VIEW the whole product
 // as any portal (developer / support / client / astrologer) without
@@ -18,6 +19,7 @@ export default function PortalSwitcher() {
   const [open, setOpen] = useState(false);
   const [editUrls, setEditUrls] = useState(false);
   const [urls, setUrls] = useState(getPortalUrls());
+  const [frameKey, setFrameKey] = useState(0);
 
   // Only the owner/admin gets the cross-portal switcher.
   if (!isAdminUser(profile, user && user.email)) return null;
@@ -46,7 +48,7 @@ export default function PortalSwitcher() {
         }}>
           {frameUrl ? (
             <iframe
-              key={portal + frameUrl}
+              key={`${portal}-${frameUrl}-${frameKey}`}
               src={frameUrl}
               title={cur.label}
               style={{ width: '100%', height: '100%', border: 0 }}
@@ -59,6 +61,10 @@ export default function PortalSwitcher() {
             </div>
           )}
         </div>
+      )}
+      {isFrame && (
+        <PortalEditRail portal={portal}
+          onPublished={() => setFrameKey((k) => k + 1)} />
       )}
 
       {/* The switcher itself - above everything, incl. the iframe. */}

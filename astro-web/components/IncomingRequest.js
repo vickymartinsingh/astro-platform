@@ -88,16 +88,32 @@ export default function IncomingRequest({ uid, isOnCall }) {
   if (!req) return null;
 
   async function accept() {
+    const sid = req.id;
     try { ringRef.current && ringRef.current.close(); } catch (_) {}
-    await sessionService.updateSessionStatus(req.id, 'active',
-      { startTime: new Date() });
-    await astrologerService.updateAvailability(uid, { status: 'busy' });
-    router.push(`/astro-session/${req.id}`);
+    // Mark active (critical) - but a failure here must NOT throw an
+    // unhandled rejection (that pops the boot error overlay = "crash").
+    try {
+      await sessionService.updateSessionStatus(sid, 'active',
+        { startTime: new Date() });
+    } catch (_) { /* status best-effort; still open the room */ }
+    // Availability is purely cosmetic for the call - never block on it.
+    try {
+      await astrologerService.updateAvailability(uid, { status: 'busy' });
+    } catch (_) { /* ignore */ }
+    setReq(null);
+    try { router.push(`/astro-session/${sid}`); }
+    catch (_) {
+      try { window.location.assign(`/astro-session/${sid}/`); }
+      catch (e) {}
+    }
   }
   async function reject() {
+    const sid = req.id;
     try { ringRef.current && ringRef.current.close(); } catch (_) {}
-    await sessionService.updateSessionStatus(req.id, 'rejected');
     setReq(null);
+    try {
+      await sessionService.updateSessionStatus(sid, 'rejected');
+    } catch (_) { /* ignore */ }
   }
 
   const name = client?.name || 'Customer';
