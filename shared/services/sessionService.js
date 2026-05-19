@@ -201,15 +201,27 @@ export async function createSessionRequest(data) {
     cost: 0,
     createdAt: serverTimestamp(),
   });
-  // Lock-screen push to the astrologer: an incoming consultation request.
+  // Lock-screen "incoming call" push to the astrologer. data.kind +
+  // channelId tell the relay/app to treat it as a high-priority call
+  // (calls channel, ring sound, heads-up) and the app to open the
+  // full-screen incoming-call screen.
   const clientName = await resolveName(data.userId) || 'A client';
+  const tLabel = data.type === 'video' ? 'video call'
+    : data.type === 'call' ? 'voice call' : 'chat';
   sendPushToUser({
     toUid: data.astroId,
-    title: `Incoming ${data.type} request`,
-    body: `${clientName} is requesting a ${data.type} consultation. `
-      + 'Tap to respond.',
-    data: { type: 'session', sessionId: ref.id, route: '/astro-dashboard',
-      from: clientName },
+    title: `${clientName} is calling`,
+    body: `Incoming ${tLabel} on AstroConnect. Tap to answer.`,
+    priority: 'high',
+    data: {
+      type: 'session',
+      kind: 'incoming_call',
+      sessionId: ref.id,
+      sessionType: data.type,
+      route: '/astro-dashboard',
+      from: clientName,
+      channelId: 'astro-calls',
+    },
   });
   return ref.id;
 }

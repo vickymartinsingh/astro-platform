@@ -46,36 +46,37 @@ function localPlugin() {
 // in the shade). The relay targets this same channelId for backgrounded
 // pushes; the foreground re-raise reuses it too.
 const CHANNEL_ID = 'astro-default';
+// Dedicated max-importance channel for incoming calls so they ring +
+// pop as a heads-up even over other apps / on the lock screen. The
+// relay must target this channelId (data.channelId) for call pushes.
+const CALL_CHANNEL_ID = 'astro-calls';
 
 async function ensureChannel() {
-  try {
-    const PN = plugin();
-    if (PN && PN.createChannel) {
-      await PN.createChannel({
-        id: CHANNEL_ID,
-        name: 'AstroConnect',
-        description: 'Chats, calls, video and updates',
-        importance: 5,        // IMPORTANCE_HIGH -> heads-up banner
-        visibility: 1,        // VISIBILITY_PUBLIC -> show on lock screen
-        sound: 'default',
-        vibration: true,
-        lights: true,
-      });
-    }
-    const LN = localPlugin();
-    if (LN && LN.createChannel) {
-      await LN.createChannel({
-        id: CHANNEL_ID,
-        name: 'AstroConnect',
-        description: 'Chats, calls, video and updates',
-        importance: 5,
-        visibility: 1,
-        sound: 'default',
-        vibration: true,
-        lights: true,
-      });
-    }
-  } catch (_) { /* channel is best-effort */ }
+  const make = (api) => {
+    if (!api || !api.createChannel) return;
+    api.createChannel({
+      id: CHANNEL_ID,
+      name: 'AstroConnect',
+      description: 'Chats, calls, video and updates',
+      importance: 5,        // IMPORTANCE_HIGH -> heads-up banner
+      visibility: 1,        // VISIBILITY_PUBLIC -> show on lock screen
+      sound: 'default',
+      vibration: true,
+      lights: true,
+    }).catch(() => {});
+    api.createChannel({
+      id: CALL_CHANNEL_ID,
+      name: 'Incoming calls',
+      description: 'Ringing for incoming chat / call / video',
+      importance: 5,        // max the plugin exposes (heads-up + sound)
+      visibility: 1,
+      sound: 'default',
+      vibration: true,
+      lights: true,
+    }).catch(() => {});
+  };
+  try { make(plugin()); make(localPlugin()); }
+  catch (_) { /* channel is best-effort */ }
 }
 
 let wired = false;
@@ -143,12 +144,16 @@ function wireMessageListeners(PN) {
         const d = (notif && notif.data) || {};
         const title = (notif && notif.title) || d.title || 'AstroConnect';
         const text = (notif && notif.body) || d.body || '';
+        // Call pushes ring on the dedicated calls channel.
+        const ch = (d.channelId === CALL_CHANNEL_ID
+          || d.kind === 'incoming_call')
+          ? CALL_CHANNEL_ID : CHANNEL_ID;
         LN.schedule({
           notifications: [{
             id: Math.floor(Date.now() % 2147483647),
             title: String(title),
             body: String(text),
-            channelId: CHANNEL_ID,
+            channelId: ch,
             schedule: { at: new Date(Date.now() + 150) },
             extra: d,
           }],

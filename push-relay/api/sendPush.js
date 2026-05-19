@@ -130,7 +130,8 @@ module.exports = async (req, res) => {
         priority: 'high',
         notification: {
           sound: 'default',
-          channelId: 'astro-default',     // high-importance -> heads-up
+          // Call pushes ring on the dedicated 'astro-calls' channel.
+          channelId: (data && data.channelId) || 'astro-default',
           defaultSound: true,
           defaultVibrateTimings: true,
           visibility: 'PUBLIC',           // show on lock screen
