@@ -336,6 +336,34 @@ export default function AdminDev2() {
               )}
               <div className="border-t border-gray-200 pt-3">
                 <div className="mb-2 font-semibold">
+                  Desktop header - beside the Profile dropdown
+                </div>
+                <p className="mb-2 text-xs text-sub-text">
+                  Logout already lives inside the Profile menu. Choose
+                  what shows in the top-right pill (review and switch
+                  any time).
+                </p>
+                <select className="input"
+                  value={features.desktop_profile_side || 'logout'}
+                  onChange={(e) => setFeatures({ ...features,
+                    desktop_profile_side: e.target.value })}>
+                  <option value="logout">Logout button (current)</option>
+                  <option value="name">User&apos;s full name</option>
+                  <option value="hidden">
+                    Nothing (Logout stays in Profile menu)
+                  </option>
+                </select>
+                <button className="btn-primary mt-2"
+                  onClick={() => publish('features', {
+                    desktop_profile_side:
+                      features.desktop_profile_side || 'logout',
+                  }, 'Header option')}>
+                  Save &amp; publish
+                </button>
+              </div>
+
+              <div className="border-t border-gray-200 pt-3">
+                <div className="mb-2 font-semibold">
                   Profile dropdown
                 </div>
                 <MenuEditor items={resolved.profile}

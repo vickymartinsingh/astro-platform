@@ -7,6 +7,7 @@ import {
 import { useAuth } from '../lib/useAuth';
 import { useAuthModal } from '../lib/authModal';
 import { useI18n } from '../lib/i18n';
+import { useSettings } from '../lib/useSettings';
 
 // Hard Rule 1: TOP NAV ONLY. White premium header; on mobile it collapses
 // to a hamburger that drops DOWN (never a side drawer). Account-related
@@ -69,9 +70,14 @@ export default function TopNav() {
     setMenuMobile(m.menuMobile || m.menu);
     setProfileMenu(m.profile);
   }), []);
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { openLogin } = useAuthModal();
   const { t } = useI18n();
+  const { features } = useSettings();
+  // Admin choice for what shows beside the Profile dropdown when signed
+  // in: 'logout' (default), 'name' (user's full name), 'hidden'.
+  const sideMode = (features && features.desktop_profile_side)
+    || 'logout';
 
   useEffect(() => {
     if (!user) return;
@@ -176,11 +182,22 @@ export default function TopNav() {
           </div>
 
           {user ? (
-            <button onClick={logout}
-              className="ml-2 rounded-full border border-gray-200 px-4
-                         py-2 text-sm font-semibold hover:bg-bg-light">
-              {t('nav.logout')}
-            </button>
+            sideMode === 'hidden' ? null
+              : sideMode === 'name' ? (
+                <Link href="/profile"
+                  className="ml-2 max-w-[160px] truncate rounded-full
+                    border border-gray-200 px-4 py-2 text-sm
+                    font-semibold hover:bg-bg-light"
+                  title={profile?.name || 'My account'}>
+                  {profile?.name || 'My account'}
+                </Link>
+              ) : (
+                <button onClick={logout}
+                  className="ml-2 rounded-full border border-gray-200
+                    px-4 py-2 text-sm font-semibold hover:bg-bg-light">
+                  {t('nav.logout')}
+                </button>
+              )
           ) : (
             <>
               <button onClick={() => openLogin()}
