@@ -49,6 +49,7 @@ const GROUPS = [
     ['/admin-remedies', 'Remedies'],
   ]],
   ['Config', [
+    ['/admin-dev2', 'Developer 2.0'],
     ['/admin-developer', 'Developer Mode'],
     ['/admin-builder', 'App Builder'],
     ['/admin-settings', 'Settings'],
@@ -90,6 +91,7 @@ const DEV_GROUPS = [
     ['/admin-settings', 'Core Settings'],
   ]],
   ['Advanced', [
+    ['/admin-dev2', 'Developer 2.0 (Builder)'],
     ['/admin-developer', 'Raw Config Editor'],
     ['/admin-email', 'Email & Alerts'],
     ['/admin-audit', 'Audit Log'],

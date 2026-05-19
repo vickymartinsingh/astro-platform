@@ -71,6 +71,10 @@ export default function Dashboard() {
   const [sec, setSec] = useState({}); // section show/hide from admin
   const [statsCfg, setStatsCfg] = useState(null); // [{n,l}] from admin
   const [catLabels, setCatLabels] = useState({}); // key -> label
+  const [txt, setTxt] = useState({}); // content.text overrides (Dev 2.0)
+  // Editable copy: admin override (settings/content.text[key]) or default.
+  const T = (k, d) => (txt && txt[k] != null && txt[k] !== ''
+    ? txt[k] : d);
   useEffect(() => {
     // LIVE so an admin change is reflected immediately and a screen
     // switch / refresh never shows the old content.
@@ -84,6 +88,7 @@ export default function Dashboard() {
       setStatsCfg(Array.isArray(d.home_stats) ? d.home_stats : null);
       setCatLabels(d.cat_labels && typeof d.cat_labels === 'object'
         ? d.cat_labels : {});
+      setTxt(d.text && typeof d.text === 'object' ? d.text : {});
       setSec({
         quickActions: d.sec_quickActions !== false,
         starsToday: d.sec_starsToday !== false,
@@ -182,11 +187,13 @@ export default function Dashboard() {
         <div className="mt-5 flex flex-wrap gap-2">
           <Link href="/astrologers"
             className="rounded-full bg-white px-5 py-2.5 font-semibold
-                       text-primary">Browse astrologers</Link>
+                       text-primary">
+            {T('home.browseCta', 'Browse astrologers')}
+          </Link>
           {!user && (
             <button onClick={() => openLogin(undefined, { mode: 'signup' })}
               className="rounded-full bg-white/20 px-5 py-2.5 font-semibold">
-              Get started
+              {T('home.getStarted', 'Get started')}
             </button>
           )}
         </div>
@@ -205,7 +212,9 @@ export default function Dashboard() {
             className="surface flex flex-col items-center gap-1 p-3
                        text-center hover:shadow-md">
             {iconNode(slot)}
-            <span className="text-xs font-semibold">{label}</span>
+            <span className="text-xs font-semibold">
+              {T(`home.qa.${slot}`, label)}
+            </span>
           </Link>
         ))}
       </div>
@@ -256,7 +265,7 @@ export default function Dashboard() {
             {showPersonal && (
               <>
                 <h2 className="mb-3 mt-8 text-lg font-bold">
-                  Your stars today
+                  {T('home.starsTitle', 'Your stars today')}
                 </h2>
                 {pSign ? (
                 <div className="surface p-5">
@@ -334,7 +343,7 @@ export default function Dashboard() {
             {!split && (
               <>
                 <h2 className="mb-3 mt-8 text-lg font-bold">
-                  Your stars today
+                  {T('home.starsTitle', 'Your stars today')}
                 </h2>
                 <div className="surface p-5">
                   <div className="mb-3">
@@ -374,7 +383,8 @@ export default function Dashboard() {
 
       {/* Categories */}
       {sec.categories !== false && (
-      <><h2 className="mb-3 mt-8 text-lg font-bold">Browse by category</h2>
+      <><h2 className="mb-3 mt-8 text-lg font-bold">
+        {T('home.catTitle', 'Browse by category')}</h2>
       <div className="grid grid-cols-3 gap-3 md:grid-cols-6">
         {CATEGORIES.map(([key, label]) => (
           <Link key={key}
@@ -396,9 +406,11 @@ export default function Dashboard() {
       {/* Top rated astrologers */}
       {sec.topRated !== false && (
       <><div className="mb-3 mt-8 flex items-center justify-between">
-        <h2 className="text-lg font-bold">Top rated astrologers</h2>
+        <h2 className="text-lg font-bold">
+          {T('home.topRatedTitle', 'Top rated astrologers')}</h2>
         <Link href="/astrologers"
-          className="text-sm font-semibold text-primary">See all</Link>
+          className="text-sm font-semibold text-primary">
+          {T('home.seeAll', 'See all')}</Link>
       </div>
       {list == null ? (
         <SkeletonList count={4} />
