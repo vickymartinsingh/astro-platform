@@ -8,6 +8,7 @@ import {
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
 import { flash } from '../lib/flash';
+import { getPortalUrls } from '../lib/portal';
 
 // Developer 2.0 - one no-code builder portal. Everything here writes to
 // the live settings docs (settings/content|features|config|announcement
@@ -135,6 +136,7 @@ export default function AdminDev2() {
   const [config, setConfig] = useState(null);
   const [ann, setAnn] = useState(null);
   const [theme, setTheme] = useState(null);
+  const [pvKey, setPvKey] = useState(0); // bump to reload the preview
 
   useEffect(() => {
     if (loading) return;
@@ -377,6 +379,28 @@ export default function AdminDev2() {
                   Save &amp; publish profile menu
                 </button>
               </div>
+
+              <div className="border-t border-gray-200 pt-3">
+                <div className="mb-1 font-semibold">
+                  🔮 Astrologer portal menu
+                </div>
+                <p className="mb-2 text-xs text-sub-text">
+                  The top menu astrologers see (Dashboard, Go Live,
+                  Earnings…). Drag ⠿ to reorder, rename, show/hide, or
+                  “+ Add menu item” for a brand-new entry. Publishes to{' '}
+                  <code>astro_links</code> — live in the Astrologer
+                  portal instantly.
+                </p>
+                <MenuEditor items={resolved.astro}
+                  onChange={(arr) => setFeatures({
+                    ...features, astro_links: arr })} />
+                <button className="btn-primary mt-2"
+                  onClick={() => publish('features',
+                    { astro_links: features.astro_links
+                      || resolved.astro }, 'Astrologer menu')}>
+                  Save &amp; publish astrologer menu
+                </button>
+              </div>
             </div>
           )}
 
@@ -570,6 +594,30 @@ export default function AdminDev2() {
           {pane === 'preview' && (
             <div className="space-y-2">
               <h2 className="font-bold">Live preview ({device})</h2>
+              <p className="text-xs text-sub-text">
+                Pick a portal, edit menus/text/theme in the tabs above,
+                hit Save &amp; publish, then ↻ Refresh — changes appear
+                here instantly (same site your users see).
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <button className="rounded-full bg-primary px-3 py-1.5
+                  text-sm font-semibold text-white"
+                  onClick={() => C('previewUrl',
+                    getPortalUrls().client)}>
+                  👤 Client portal
+                </button>
+                <button className="rounded-full bg-amber-500 px-3 py-1.5
+                  text-sm font-semibold text-white"
+                  onClick={() => C('previewUrl',
+                    getPortalUrls().astrologer)}>
+                  🔮 Astrologer portal
+                </button>
+                <button className="rounded-full border border-gray-300
+                  px-3 py-1.5 text-sm font-semibold"
+                  onClick={() => setPvKey((k) => k + 1)}>
+                  ↻ Refresh
+                </button>
+              </div>
               <Field label="Preview URL">
                 <input className="input"
                   value={content.previewUrl || ''}
@@ -581,7 +629,9 @@ export default function AdminDev2() {
               {content.previewUrl ? (
                 <div className="overflow-auto rounded-card border
                   border-gray-200 bg-bg-light p-3">
-                  <iframe title="preview" src={content.previewUrl}
+                  <iframe title="preview"
+                    key={`${content.previewUrl}-${pvKey}`}
+                    src={content.previewUrl}
                     style={{
                       width: device === 'desktop' ? '100%' : 390,
                       height: 640, border: 0, background: '#fff',

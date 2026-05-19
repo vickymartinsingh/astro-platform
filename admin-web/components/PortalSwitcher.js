@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useRouter } from 'next/router';
 import { isAdminUser } from '@astro/shared';
 import { useAuth } from '../lib/useAuth';
 import {
@@ -12,6 +13,7 @@ import {
 // always know you're viewing it "via Admin".
 export default function PortalSwitcher() {
   const { user, profile } = useAuth();
+  const router = useRouter();
   const [portal, setPortal] = usePortal();
   const [open, setOpen] = useState(false);
   const [editUrls, setEditUrls] = useState(false);
@@ -95,6 +97,23 @@ export default function PortalSwitcher() {
                 )}
               </button>
             ))}
+            <button
+              onClick={() => {
+                setPortal('admin');
+                setOpen(false);
+                router.push('/admin-dev2');
+              }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                width: '100%', padding: '11px 14px', border: 0,
+                borderTop: '1px solid #f1f1f4', cursor: 'pointer',
+                background: '#0F0A23', color: '#fff',
+                fontWeight: 700, fontSize: 14, textAlign: 'left',
+              }}>
+              <span style={{ fontSize: 16 }}>🧩</span>
+              <span style={{ flex: 1 }}>Edit / build (no-code)</span>
+              <span style={{ opacity: 0.7, fontSize: 12 }}>→</span>
+            </button>
             <div style={{
               padding: '8px 14px', borderTop: '1px solid #f1f1f4',
             }}>
