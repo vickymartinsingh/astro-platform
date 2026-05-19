@@ -7,6 +7,7 @@ import useNativeBack from '../lib/useNativeBack';
 import ErrorBoundary from '../components/ErrorBoundary';
 import SplashScreen from '../components/SplashScreen';
 import NativeBack from '../components/NativeBack';
+import AdminLiveEditor from '../components/AdminLiveEditor';
 
 export default function App({ Component, pageProps }) {
   useNativeBack();
@@ -19,6 +20,7 @@ export default function App({ Component, pageProps }) {
       </Head>
       <AuthProvider>
         <Component {...pageProps} />
+        <AdminLiveEditor />
       </AuthProvider>
       <NativeBack />
       <SplashScreen />
