@@ -4,12 +4,18 @@ export default function Document() {
   return (
     <Html lang="en">
       <Head>
-        {/* Surface ANY startup error on screen (iOS WKWebView has no
-            visible console). Must be the first script so it catches
-            parse / runtime / promise errors before React mounts. */}
+        {/* Surface only REAL, actionable startup errors. iOS WKWebView
+            sanitises every cross-origin / benign script error to the
+            opaque "Script error." - showing a full-screen overlay for
+            those (fonts, analytics, ResizeObserver, etc.) made a working
+            app look crashed. Genuine React crashes are still caught with
+            full detail by the ErrorBoundary. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: "(function(){function show(m){try{var b="
+            __html: "(function(){function bad(m){if(!m)return true;"
+              + 'var s=String(m).trim();return s===""||s==='
+              + '"Script error."||s==="Script error"||'
+              + '/^ResizeObserver/.test(s);}function show(m){try{var b='
               + 'document.body||document.documentElement;var d='
               + "document.getElementById('__bootErr');if(!d){d="
               + "document.createElement('pre');d.id='__bootErr';"
@@ -19,12 +25,13 @@ export default function Document() {
               + 'pre-wrap;word-break:break-word;overflow:auto;z-index:'
               + "2147483647';b.appendChild(d);}d.textContent='APP ERROR"
               + " (screenshot this):\\n\\n'+m;}catch(e){}}"
-              + "window.addEventListener('error',function(e){show((e&&"
+              + "window.addEventListener('error',function(e){var m=(e&&"
               + 'e.error&&(e.error.stack||e.error.message))||(e&&'
-              + "e.message)||'Script error');});window."
+              + "e.message)||'';if(bad(m))return;show(m);});window."
               + "addEventListener('unhandledrejection',function(e){"
-              + "var r=e&&e.reason;show('Unhandled promise:\\n'+((r&&"
-              + '(r.stack||r.message))||String(r)));});})();',
+              + 'var r=e&&e.reason;var m=(r&&(r.stack||r.message))||'
+              + "'';if(bad(m))return;show('Unhandled promise:\\n'+m);"
+              + '});})();',
           }}
         />
         {/* Apply the cached theme colours SYNCHRONOUSLY before the
