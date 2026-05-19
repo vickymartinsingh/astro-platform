@@ -47,13 +47,37 @@ export default function PortalSwitcher() {
           background: '#0F0A23',
         }}>
           {frameUrl ? (
-            <iframe
-              key={`${portal}-${frameUrl}-${frameKey}`}
-              src={frameUrl}
-              title={cur.label}
-              style={{ width: '100%', height: '100%', border: 0 }}
-              allow="camera; microphone; clipboard-read; clipboard-write;
-                geolocation; autoplay" />
+            <>
+              {/* Login / payments redirect to Google /
+                  astrology-2092d.firebaseapp.com, which a browser
+                  blocks inside a cross-origin embed (security) — so
+                  use the real site/app to test those. */}
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '6px 12px', background: '#1f1147',
+                color: '#fff', fontSize: 12,
+              }}>
+                <span style={{ flex: 1 }}>
+                  Preview only — Google login &amp; payments don’t run
+                  inside an embed. Use the real site to sign in.
+                </span>
+                <a href={frameUrl} target="_blank" rel="noreferrer"
+                  style={{
+                    background: 'linear-gradient(135deg,#B45309,#D4A12A)',
+                    color: '#fff', padding: '5px 12px', borderRadius: 999,
+                    fontWeight: 700, textDecoration: 'none',
+                    whiteSpace: 'nowrap',
+                  }}>⧉ Open real site</a>
+              </div>
+              <iframe
+                key={`${portal}-${frameUrl}-${frameKey}`}
+                src={frameUrl}
+                title={cur.label}
+                style={{ width: '100%', height: 'calc(100% - 33px)',
+                  border: 0 }}
+                allow="camera; microphone; clipboard-read;
+                  clipboard-write; geolocation; autoplay" />
+            </>
           ) : (
             <div style={{ color: '#fff', padding: 24, fontSize: 14 }}>
               No URL set for the {cur.label} portal. Open the switcher →
