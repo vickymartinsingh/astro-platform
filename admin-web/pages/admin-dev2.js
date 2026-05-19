@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { doc, getDoc } from 'firebase/firestore';
 import {
   db, adminService, menuService, themeService,
+  APP_BUILD, appVersionName,
 } from '@astro/shared';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
@@ -25,6 +26,7 @@ const SIDEBAR = [
   ['menus', 'Menus & navigation'],
   ['home', 'Home page'],
   ['text', 'Button & section text'],
+  ['versions', 'App versions & downloads'],
   ['announce', 'Announcement bar'],
   ['preview', 'Live preview'],
 ];
@@ -438,6 +440,98 @@ export default function AdminDev2() {
                   { text: content.text || {} }, 'Text')}>
                 Save &amp; publish text
               </button>
+            </div>
+          )}
+
+          {pane === 'versions' && (
+            <div className="space-y-3">
+              <h2 className="font-bold">App versions &amp; downloads</h2>
+              <p className="text-xs text-sub-text">
+                The version auto-increments on every build (single
+                source: shared/appVersion.js). This build is{' '}
+                <b>1.0.{APP_BUILD}</b> (build {APP_BUILD}).
+              </p>
+              <div className="space-y-1 rounded-card border
+                border-gray-200 p-3 text-sm">
+                <div>Customer app: <b>{appVersionName('client-web')}
+                </b> (code {APP_BUILD})</div>
+                <div>Astrologer app: <b>{appVersionName('astro-web')}
+                </b> (code {APP_BUILD})</div>
+                <div>Admin app: <b>{appVersionName('admin-web')}</b>
+                  {' '}(code {APP_BUILD})</div>
+                <div className="text-xs text-sub-text">
+                  iOS uses the same version (built via the iOS workflow).
+                </div>
+              </div>
+              <p className="text-xs text-sub-text">
+                Paste your download links (Google Drive share links work)
+                so users on an old version are prompted to update. The
+                customer app uses the APK URL + latest build below for
+                its in-app update.
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Latest version label (shown to users)">
+                  <input className="input"
+                    value={config.app_latest_version || ''}
+                    onChange={(e) => setConfig({ ...config,
+                      app_latest_version: e.target.value })} />
+                </Field>
+                <Field label="Latest build number (must be > installed)">
+                  <input className="input" type="number"
+                    value={config.app_latest_build || ''}
+                    onChange={(e) => setConfig({ ...config,
+                      app_latest_build: e.target.value })} />
+                </Field>
+              </div>
+              <Field label="Customer APK / Drive link (in-app update)">
+                <input className="input"
+                  value={config.app_apk_url || ''}
+                  onChange={(e) => setConfig({ ...config,
+                    app_apk_url: e.target.value })} />
+              </Field>
+              <Field label="Astrologer APK / Drive link">
+                <input className="input"
+                  value={config.app_apk_astro_url || ''}
+                  onChange={(e) => setConfig({ ...config,
+                    app_apk_astro_url: e.target.value })} />
+              </Field>
+              <Field label="Admin APK / Drive link">
+                <input className="input"
+                  value={config.app_apk_admin_url || ''}
+                  onChange={(e) => setConfig({ ...config,
+                    app_apk_admin_url: e.target.value })} />
+              </Field>
+              <Field label="iOS IPA / Drive link (all apps)">
+                <input className="input"
+                  value={config.app_ipa_url || ''}
+                  onChange={(e) => setConfig({ ...config,
+                    app_ipa_url: e.target.value })} />
+              </Field>
+              <Field label="Update notes (optional)">
+                <textarea className="input" rows={2}
+                  value={config.app_update_notes || ''}
+                  onChange={(e) => setConfig({ ...config,
+                    app_update_notes: e.target.value })} />
+              </Field>
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox"
+                  checked={config.app_update_popup !== false}
+                  onChange={(e) => setConfig({ ...config,
+                    app_update_popup: e.target.checked })} />
+                Show the update popup on launch for old versions
+              </label>
+              <button className="btn-primary"
+                onClick={() => publish('config', {
+                  app_latest_version: config.app_latest_version || '',
+                  app_latest_build:
+                    Number(config.app_latest_build) || 0,
+                  app_apk_url: config.app_apk_url || '',
+                  app_apk_astro_url: config.app_apk_astro_url || '',
+                  app_apk_admin_url: config.app_apk_admin_url || '',
+                  app_ipa_url: config.app_ipa_url || '',
+                  app_update_notes: config.app_update_notes || '',
+                  app_update_popup: config.app_update_popup !== false,
+                }, 'App versions')}>Save &amp; publish</button>
             </div>
           )}
 

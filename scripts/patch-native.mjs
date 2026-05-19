@@ -8,6 +8,9 @@ import {
 } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import {
+  APP_BUILD, appVersionName,
+} from '../shared/appVersion.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 // Only the apps that make calls. Admin never needs mic/camera.
@@ -37,21 +40,18 @@ function patchAppName(app) {
 // Distinct Android versionName per app so support can tell which app a
 // user is on (android/ is gitignored & regenerated, so re-apply every
 // build). Single source of truth - bump here per release.
-const VERSION = {
-  'client-web': '1.0.0-customer',
-  'astro-web': '1.0.0-astrologer',
-  'admin-web': '1.0.0-admin',
-};
+// Derived from the single source of truth (shared/appVersion.js).
+// versionName = 1.0.<build>-<app>, versionCode = build (so a higher
+// build always installs over the old one and the update check fires).
 function patchVersion(app) {
   const f = join(ROOT, app, 'android', 'app', 'build.gradle');
   if (!existsSync(f)) return `version: skipped (${app})`;
-  const v = VERSION[app];
-  if (!v) return `version: no map (${app})`;
-  const x = readFileSync(f, 'utf8');
-  const next = x.replace(/versionName\s+"[^"]*"/, `versionName "${v}"`);
-  if (next === x) return `version: unchanged (${app}, ${v})`;
-  writeFileSync(f, next);
-  return `version: ${v} (${app})`;
+  const v = appVersionName(app);
+  let x = readFileSync(f, 'utf8');
+  x = x.replace(/versionName\s+"[^"]*"/, `versionName "${v}"`);
+  x = x.replace(/versionCode\s+\d+/, `versionCode ${APP_BUILD}`);
+  writeFileSync(f, x);
+  return `version: ${v} (code ${APP_BUILD}) (${app})`;
 }
 
 const NEED_PERMS = [

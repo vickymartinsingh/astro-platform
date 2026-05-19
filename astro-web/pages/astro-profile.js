@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import {
   astrologerService, payoutService, authService, db, storage,
+  appVersionName,
 } from '@astro/shared';
 import { doc, setDoc } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -184,6 +185,9 @@ export default function AstroProfile() {
           font-semibold text-danger">
         Log out
       </button>
+      <div className="mt-3 text-center text-xs text-sub-text">
+        App version {appVersionName('astro-web')}
+      </div>
     </Layout>
   );
 }

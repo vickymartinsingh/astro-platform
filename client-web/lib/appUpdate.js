@@ -1,12 +1,11 @@
+import { APP_BUILD as BUILD, appVersionName } from '@astro/shared';
 import { useSettings } from './useSettings';
 
-// The build that is currently installed. BUMP APP_BUILD every release
-// and set the same number as "app_latest_build" in the admin App Update
-// page; the app then knows it is out of date.
-// Per-app version string so support can tell which app a user is on
-// (customer / astrologer / admin each carry a distinct suffix).
-export const APP_VERSION = '1.0.0-customer';
-export const APP_BUILD = 1;
+// Installed build/version - single source of truth: shared/appVersion.js
+// (auto-incremented by scripts/bump-version.mjs every package run). The
+// app is "out of date" when settings/config.app_latest_build > APP_BUILD.
+export const APP_BUILD = BUILD;
+export const APP_VERSION = appVersionName('client-web');
 
 // Reads the admin-managed update info from settings/config (cached by
 // useSettings, so it is instant + live, no glitch).
