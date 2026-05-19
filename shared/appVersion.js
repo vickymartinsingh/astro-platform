@@ -9,7 +9,7 @@
 //
 // Version string = 1.0.<build>. Per-app suffix lets support tell which
 // app a user is on (customer / astrologer / admin).
-export const APP_BUILD = 22;
+export const APP_BUILD = 23;
 export const APP_VERSION = `1.0.${APP_BUILD}`;
 
 export const APP_SUFFIX = {

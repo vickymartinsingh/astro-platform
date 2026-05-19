@@ -11,6 +11,7 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
   getAuth, initializeAuth, indexedDBLocalPersistence,
   browserLocalPersistence, inMemoryPersistence,
+  browserPopupRedirectResolver,
 } from 'firebase/auth';
 import {
   getFirestore, initializeFirestore,
@@ -64,6 +65,10 @@ function initAuth() {
         browserLocalPersistence,
         inMemoryPersistence,
       ],
+      // REQUIRED for signInWithPopup / signInWithRedirect. Unlike
+      // getAuth(), initializeAuth() does NOT bundle the resolver, so
+      // Google sign-in throws auth/argument-error without this.
+      popupRedirectResolver: browserPopupRedirectResolver,
     });
   } catch (_) {
     try { return getAuth(app); } catch (e) { return undefined; }
