@@ -93,23 +93,14 @@ jobs:
           node -e "const f=process.env.APP+'/package.json';const fs=require('fs');const j=JSON.parse(fs.readFileSync(f));for(const k of ['@capacitor-firebase/authentication','@capacitor/push-notifications']){if(j.dependencies)delete j.dependencies[k];}fs.writeFileSync(f,JSON.stringify(j,null,2)+'\n');console.log('stripped',f);"
           echo "::endgroup::"
 
-          # Force iOS to serve over https://localhost (NOT capacitor://).
-          # The Firebase web SDK throws under the capacitor:// origin,
-          # which is the launch crash. Done in CI so it always applies
-          # regardless of committed config.
-          echo "::group::force ios https scheme"
-          node -e "const f=process.env.APP+'/capacitor.config.json';const fs=require('fs');const j=JSON.parse(fs.readFileSync(f));j.server=j.server||{};j.server.androidScheme=j.server.androidScheme||'https';j.server.iosScheme='https';j.server.hostname=j.server.hostname||'localhost';fs.writeFileSync(f,JSON.stringify(j,null,2));console.log('server config =>',JSON.stringify(j.server));"
-          echo "::endgroup::"
-
           # Capacitor 8 defaults to SPM; the capacitor-swift-pm mirror
           # drifts and breaks plugin compile. Force CocoaPods so
           # Capacitor builds from the exact matching npm package.
+          # NOTE: iOS keeps the default capacitor:// scheme - errors
+          # stay readable (the https scheme made them opaque "Script
+          # error.") and the auth crash is already fixed in code.
           echo "::group::cap add ios (CocoaPods)"
           ( cd "$APP" && npx cap add ios --packagemanager Cocoapods )
-          echo "::endgroup::"
-
-          echo "::group::verify ios scheme applied"
-          cat "$APP/ios/App/App/capacitor.config.json" || true
           echo "::endgroup::"
 
           echo "::group::ios assets (best effort)"
@@ -118,10 +109,6 @@ jobs:
 
           echo "::group::cap sync ios"
           ( cd "$APP" && npx cap sync ios )
-          echo "::endgroup::"
-
-          echo "::group::verify ios scheme after sync"
-          cat "$APP/ios/App/App/capacitor.config.json" || true
           echo "::endgroup::"
 
           echo "::group::patch-native (best effort)"

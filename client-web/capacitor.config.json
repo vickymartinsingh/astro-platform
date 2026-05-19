@@ -4,8 +4,7 @@
   "webDir": "out",
   "bundledWebRuntime": false,
   "server": {
-    "androidScheme": "https",
-    "iosScheme": "https"
+    "androidScheme": "https"
   },
   "plugins": {
     "FirebaseAuthentication": {
