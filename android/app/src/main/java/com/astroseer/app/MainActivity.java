@@ -1,4 +1,4 @@
-package com.vickymartin.astroconnect;
+package com.astroseer.app;
 
 import com.getcapacitor.BridgeActivity;
 

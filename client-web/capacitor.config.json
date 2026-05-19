@@ -1,5 +1,5 @@
 {
-  "appId": "com.astroconnect.app",
+  "appId": "com.astroseer.app",
   "appName": "AstroSeer",
   "webDir": "out",
   "bundledWebRuntime": false,

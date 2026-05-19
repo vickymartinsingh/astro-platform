@@ -4,7 +4,7 @@
 // the iOS workflow - and is idempotent (safe to run repeatedly).
 // Run: node scripts/patch-native.mjs
 import {
-  readFileSync, writeFileSync, existsSync, readdirSync, statSync,
+  readFileSync, writeFileSync, existsSync, readdirSync, statSync, rmSync,
 } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -207,28 +207,52 @@ function patchIosVersion(app) {
 // ONLY if it contains that app's package (otherwise the Google Services
 // gradle plugin fails the build / Firebase native crashes at runtime).
 const PKG = {
-  'client-web': 'com.astroconnect.app',
-  'astro-web': 'com.astroconnect.astrologer',
+  'client-web': 'com.astroseer.app',
+  'astro-web': 'com.astroseer.astrologer',
 };
+function pkgsOf(file) {
+  try {
+    const j = JSON.parse(readFileSync(file, 'utf8'));
+    return (j.client || []).map((c) => c.client_info
+      && c.client_info.android_client_info
+      && c.client_info.android_client_info.package_name);
+  } catch (_) { return null; }
+}
+
 function patchGoogleServices(app) {
   const src = join(ROOT, 'google-services.json');
   const destDir = join(ROOT, app, 'android', 'app');
-  if (!existsSync(src) || !existsSync(destDir)) {
-    return `gservices: skipped (${app})`;
+  if (!existsSync(destDir)) return `gservices: skipped (${app})`;
+  const dest = join(destDir, 'google-services.json');
+  const want = PKG[app];
+  // A google-services.json whose package_name does NOT match this app's
+  // applicationId makes the Google Services Gradle plugin FAIL the build
+  // ("No matching client found"). The plugin only applies when the file
+  // exists, so a stale/mismatched one must be removed (push just stays
+  // off until a correct file is supplied) rather than break the build.
+  const dropStale = () => {
+    if (!existsSync(dest)) return false;
+    const dp = pkgsOf(dest);
+    if (!want || !dp || !dp.includes(want)) {
+      try { rmSync(dest); } catch (_) {}
+      return true;
+    }
+    return false;
+  };
+  if (!existsSync(src)) {
+    return dropStale()
+      ? `gservices: removed stale (${app}) - push off until new json`
+      : `gservices: skipped (${app})`;
   }
-  let pkgs = [];
-  try {
-    const j = JSON.parse(readFileSync(src, 'utf8'));
-    pkgs = (j.client || []).map((c) => c.client_info
-      && c.client_info.android_client_info
-      && c.client_info.android_client_info.package_name);
-  } catch (_) { return `gservices: bad json (${app})`; }
-  if (!pkgs.includes(PKG[app])) {
-    return `gservices: ${PKG[app]} NOT in json - ${app} push stays off`;
+  const pkgs = pkgsOf(src);
+  if (pkgs === null) return `gservices: bad json (${app})`;
+  if (!want || !pkgs.includes(want)) {
+    return dropStale()
+      ? `gservices: ${want} not in root json - removed stale, push off`
+      : `gservices: ${want} NOT in json - ${app} push stays off`;
   }
-  writeFileSync(join(destDir, 'google-services.json'),
-    readFileSync(src));
-  return `gservices: installed for ${app} (${PKG[app]})`;
+  writeFileSync(dest, readFileSync(src));
+  return `gservices: installed for ${app} (${want})`;
 }
 
 for (const app of APPS) {
