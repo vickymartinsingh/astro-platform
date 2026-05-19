@@ -63,10 +63,22 @@ export async function sendPasswordReset(email) {
 }
 
 export function watchAuth(callback) {
+  // Hard safety: if Firebase failed to initialise (no config in some
+  // build) NEVER throw - that white-screens the whole app. Report
+  // "signed out" and no-op instead.
+  if (!auth) {
+    try { callback(null); } catch (_) { /* ignore */ }
+    return () => {};
+  }
   // Complete any pending Google redirect before/while we start listening,
   // so a redirect sign-in lands the user automatically.
   try { getRedirectResult(auth).catch(() => {}); } catch (_) {}
-  return onAuthStateChanged(auth, callback);
+  try {
+    return onAuthStateChanged(auth, callback);
+  } catch (_) {
+    try { callback(null); } catch (e) { /* ignore */ }
+    return () => {};
+  }
 }
 
 // ---- Google sign-in (free, no SMS) ----
