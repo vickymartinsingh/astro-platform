@@ -290,8 +290,8 @@ export default function Profile() {
           View App Tour
         </button>
         <div className="flex justify-center gap-4 text-sm text-sub-text">
-          <a href="/page/terms">Terms</a>
-          <a href="/page/privacy">Privacy</a>
+          <a href="/terms">Terms</a>
+          <a href="/privacy">Privacy</a>
           <a href="/page/refund">Refund Policy</a>
         </div>
       </div>

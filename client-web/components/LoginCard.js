@@ -191,9 +191,9 @@ export default function LoginCard({ onDone, compact, initialMode }) {
           </button>
           <p className="mt-3 text-center text-xs text-sub-text">
             By continuing you agree to our{' '}
-            <Link href="/page/terms" className="text-primary">Terms</Link>
+            <Link href="/terms" className="text-primary">Terms</Link>
             {' '}and{' '}
-            <Link href="/page/privacy" className="text-primary">
+            <Link href="/privacy" className="text-primary">
               Privacy
             </Link>.
           </p>
