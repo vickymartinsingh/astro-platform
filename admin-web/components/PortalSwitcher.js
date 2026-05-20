@@ -38,6 +38,20 @@ export default function PortalSwitcher() {
     setEditUrls(false);
   };
 
+  // Append the admin-edit unlock flag so the destination portal reveals
+  // its in-page editor only when arriving via this switcher (never on
+  // a direct login by anyone, even an admin account).
+  const withAdminEdit = (u) => {
+    if (!u) return u;
+    try {
+      const x = new URL(u);
+      x.searchParams.set('adminedit', '1');
+      return x.toString();
+    } catch (_) {
+      return u + (u.indexOf('?') >= 0 ? '&' : '?') + 'adminedit=1';
+    }
+  };
+
   return (
     <>
       {/* Full-screen live portal embed (client / astrologer). */}
@@ -61,7 +75,7 @@ export default function PortalSwitcher() {
                   Preview only — Google login &amp; payments don’t run
                   inside an embed. Use the real site to sign in.
                 </span>
-                <a href={frameUrl} target="_blank" rel="noreferrer"
+                <a href={withAdminEdit(frameUrl)} target="_blank" rel="noreferrer"
                   style={{
                     background: 'linear-gradient(135deg,#B45309,#D4A12A)',
                     color: '#fff', padding: '5px 12px', borderRadius: 999,
@@ -167,7 +181,7 @@ export default function PortalSwitcher() {
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button onClick={saveUrls} style={btnP}>Save</button>
                     {isFrame && frameUrl && (
-                      <a href={frameUrl} target="_blank"
+                      <a href={withAdminEdit(frameUrl)} target="_blank"
                         rel="noreferrer" style={{
                           ...btnS, textDecoration: 'none',
                           textAlign: 'center',

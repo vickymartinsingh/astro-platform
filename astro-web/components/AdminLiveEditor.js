@@ -19,12 +19,36 @@ export default function AdminLiveEditor() {
   const [theme, setTheme] = useState(null);
   const [config, setConfig] = useState(null);
   const [msg, setMsg] = useState('');
+  const [editMode, setEditMode] = useState(false);
   const drag = useRef(null);
 
   const isAdmin = isAdminUser(profile, user && user.email);
 
+  // Editor only visible if the admin arrived via the admin switch
+  // (?adminedit=1). A direct login here - even as admin - shows nothing.
   useEffect(() => {
-    if (!isAdmin || !open) return;
+    if (typeof window === 'undefined') return;
+    try {
+      const url = new URL(window.location.href);
+      if (url.searchParams.get('adminedit') === '1') {
+        window.sessionStorage.setItem('adminEditMode', '1');
+        url.searchParams.delete('adminedit');
+        const clean = url.pathname + (url.search ? url.search : '')
+          + url.hash;
+        window.history.replaceState({}, '', clean);
+      }
+      setEditMode(window.sessionStorage.getItem('adminEditMode') === '1');
+    } catch (_) { /* ignore */ }
+  }, []);
+
+  const exitEdit = () => {
+    try { window.sessionStorage.removeItem('adminEditMode'); } catch (_) {}
+    setEditMode(false);
+    setOpen(false);
+  };
+
+  useEffect(() => {
+    if (!isAdmin || !editMode || !open) return;
     const load = async (n, set) => {
       try {
         const s = await getDoc(doc(db, 'settings', n));
@@ -34,9 +58,10 @@ export default function AdminLiveEditor() {
     if (!features) load('features', setFeatures);
     if (!theme) load('theme', setTheme);
     if (!config) load('config', setConfig);
-  }, [isAdmin, open]);
+  }, [isAdmin, editMode, open]);
 
-  if (!isAdmin) return null;
+  // BOTH gates required: admin account AND came via the admin switch.
+  if (!isAdmin || !editMode) return null;
 
   const toast = (t) => { setMsg(t); setTimeout(() => setMsg(''), 2500); };
   const save = async (n, patch, label) => {
@@ -85,13 +110,22 @@ export default function AdminLiveEditor() {
           fontFamily: 'Inter, system-ui, sans-serif',
         }}>
           <div style={{ background: '#1f1147', color: '#fff',
-            padding: '12px 14px' }}>
-            <div style={{ fontWeight: 800 }}>
-              Live editor — Astrologer portal
+            padding: '12px 14px', display: 'flex',
+            alignItems: 'flex-start', gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 800 }}>
+                Live editor — Astrologer portal
+              </div>
+              <div style={{ fontSize: 11, opacity: 0.8 }}>
+                Edits publish instantly to the live app.
+              </div>
             </div>
-            <div style={{ fontSize: 11, opacity: 0.8 }}>
-              Edits publish instantly to the live app.
-            </div>
+            <button onClick={exitEdit} title="End admin edit session"
+              style={{ border: 0, background: 'rgba(255,255,255,0.15)',
+                color: '#fff', fontSize: 11, padding: '4px 8px',
+                borderRadius: 6, cursor: 'pointer' }}>
+              Exit
+            </button>
           </div>
           <div style={{ display: 'flex', borderBottom: '1px solid #eee' }}>
             {['menu', 'theme', 'brand'].map((t) => (
