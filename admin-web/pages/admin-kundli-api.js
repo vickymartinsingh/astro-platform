@@ -44,6 +44,24 @@ export default function AdminKundliApi() {
   const { loading } = useRequireAdmin();
   const [cfg, setCfg] = useState(null);
   const [msg, setMsg] = useState('');
+  const [probe, setProbe] = useState(null);
+  const [probing, setProbing] = useState(false);
+
+  async function runProbe() {
+    setProbing(true); setProbe(null);
+    try {
+      const push = (typeof process !== 'undefined' && process.env
+        && process.env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
+      const base = push
+        || 'https://astro-platform-push-relay.vercel.app/api/sendPush';
+      const url = base.replace(/\/sendPush\/?$/, '/kundli') + '?probe=1';
+      const r = await fetch(url);
+      setProbe(await r.json());
+    } catch (e) {
+      setProbe({ error: String(e && e.message || e) });
+    }
+    setProbing(false);
+  }
 
   useEffect(() => {
     getDoc(doc(db, 'settings', 'kundliApi')).then((s) =>
@@ -93,13 +111,68 @@ export default function AdminKundliApi() {
       )}
 
       <div className="card mb-3 bg-primary/5">
-        <div className="text-xs uppercase tracking-wide text-sub-text">
-          Active provider
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="text-xs uppercase tracking-wide text-sub-text">
+              Active provider
+            </div>
+            <div className="text-lg font-bold text-primary">
+              {activeName}
+            </div>
+            <div className="text-xs text-sub-text">
+              The whole app (client + astrologer) uses this for every
+              Kundli.
+            </div>
+          </div>
+          <button onClick={runProbe} disabled={probing}
+            className="shrink-0 rounded-full bg-primary px-3 py-1.5
+              text-xs font-bold text-white disabled:opacity-60">
+            {probing ? 'Testing…' : 'Test active provider'}
+          </button>
         </div>
-        <div className="text-lg font-bold text-primary">{activeName}</div>
-        <div className="text-xs text-sub-text">
-          The whole app (client + astrologer) uses this for every Kundli.
-        </div>
+        {probe && (
+          <div className="mt-3 rounded-card border border-gray-200
+            bg-white p-2 text-xs">
+            {probe.error ? (
+              <div className="text-danger">
+                ❌ Relay unreachable: {probe.error}
+              </div>
+            ) : (
+              <>
+                <div>Relay says provider:{' '}
+                  <b className="text-primary">{probe.provider}</b></div>
+                <div>Firestore read by relay:{' '}
+                  {probe.adminInit
+                    ? <span className="text-success">✅ working</span>
+                    : <span className="text-danger">❌ FAILED</span>}
+                </div>
+                <div>Key present for this provider:{' '}
+                  {probe.hasKey
+                    ? <span className="text-success">✅ yes</span>
+                    : <span className="text-warning">⚠ no</span>}
+                </div>
+                {probe.providerNote && (
+                  <p className="mt-1 text-warning">{probe.providerNote}</p>
+                )}
+                {!probe.adminInit && (
+                  <p className="mt-1 text-danger">
+                    The push-relay's <code>FIREBASE_SERVICE_ACCOUNT</code>
+                    {' '}env var is not set on Vercel. Until it is, the
+                    relay can't read settings/kundliApi and silently
+                    falls back to Prokerala — that's why VedicAstroAPI
+                    is being skipped.
+                  </p>
+                )}
+                {probe.provider !== cfg.provider && (
+                  <p className="mt-1 text-warning">
+                    ⚠ Saved provider <b>{cfg.provider}</b> ≠ relay's{' '}
+                    <b>{probe.provider}</b>. Fix env / redeploy relay.
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {configured.length > 0 && (

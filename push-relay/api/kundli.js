@@ -22,14 +22,32 @@ function initAdmin() {
 }
 
 async function readProviderConfig() {
-  if (!initAdmin()) return { provider: 'prokerala', creds: {} };
+  const adminOk = initAdmin();
+  if (!adminOk) {
+    return { provider: 'prokerala', creds: {},
+      adminInit: false,
+      providerNote: 'FIREBASE_SERVICE_ACCOUNT env var not set on the '
+        + 'relay - cannot read settings/kundliApi from Firestore. '
+        + 'Falling back to Prokerala env credentials.' };
+  }
   try {
     const s = await admin.firestore()
       .collection('settings').doc('kundliApi').get();
     const d = s.exists ? (s.data() || {}) : {};
     const provider = d.provider || 'prokerala';
-    return { provider, creds: d[provider] || {} };
-  } catch (_) { return { provider: 'prokerala', creds: {} }; }
+    const creds = d[provider] || {};
+    const note = (!creds.key && !creds.secret
+      && provider !== 'prokerala')
+      ? `Provider ${provider} is selected but has no key saved in `
+        + 'settings/kundliApi.' + provider + '.key - cannot use it.'
+      : '';
+    return { provider, creds, adminInit: true, providerNote: note };
+  } catch (e) {
+    return { provider: 'prokerala', creds: {},
+      adminInit: true,
+      providerNote: 'Firestore read failed: '
+        + String((e && e.message) || e) };
+  }
 }
 
 async function geocode(place) {
@@ -285,6 +303,20 @@ module.exports = async (req, res) => {
             catch (_) { return {}; } })()
         : (req.body || {}))
     : (req.query || {});
+
+  // GET ?probe=1 -> just report which provider would be used and
+  // whether the relay can read Firestore. Lets admin verify the chain
+  // without computing a kundli (no API quota used).
+  if (src.probe === '1' || src.probe === 1) {
+    const pc = await readProviderConfig();
+    return res.status(200).json({
+      provider: pc.provider,
+      adminInit: pc.adminInit,
+      hasKey: !!(pc.creds && (pc.creds.key || pc.creds.secret)),
+      providerNote: pc.providerNote || '',
+    });
+  }
+
   const { dob, tob, ampm, place } = src;
   if (!dob) return res.status(400).json({ error: 'dob required' });
 
@@ -299,7 +331,8 @@ module.exports = async (req, res) => {
     }
     const p = parseDob(dob, tob, ampm);
     const datetime = toIso(p, src.tz);
-    const { provider, creds } = await readProviderConfig();
+    const cfg = await readProviderConfig();
+    const { provider, creds } = cfg;
 
     const run = {
       prokerala: () => runProkerala(creds, lat, lng, datetime),
@@ -327,6 +360,8 @@ module.exports = async (req, res) => {
 
     return res.status(200).json({
       provider,
+      adminInit: cfg.adminInit,
+      providerNote: cfg.providerNote || '',
       datetime,
       coordinates: { lat, lng },
       generatedAt: Date.now(),
