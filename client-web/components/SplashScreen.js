@@ -1,63 +1,26 @@
 import { useEffect, useState } from 'react';
-import { brandingService, db } from '@astro/shared';
-import { doc, getDoc } from 'firebase/firestore';
 
-// Full-screen launch screen: themed background (app gradient) + the
-// splash image / logo, shown briefly while the app boots, then it
-// fades away. Admin can upload a custom splash in App Update settings
-// (settings/config.splash_image); falls back to the brand logo.
-//
-// Robust dismissal: the hide timers are scheduled FIRST and are never
-// cancelled, so a Firebase error / slow network can never leave the
-// splash stuck. A module flag shows it only once per app launch.
+// Brand launch screen: gold mandala on the deep-navy brand (#0F0A23),
+// then fades. Always uses the bundled /logo.png so the splash is a
+// known on-brand asset - admin's custom branding logo (which may be a
+// wordmark not designed for a dark background) is used for in-app
+// headers only, never the splash. Self-contained: never gets stuck.
 let SPLASH_DONE = false;
-
-function cachedConfig() {
-  try {
-    if (typeof localStorage === 'undefined') return {};
-    return JSON.parse(localStorage.getItem('settings_config') || '{}');
-  } catch (_) { return {}; }
-}
 
 export default function SplashScreen() {
   const [gone, setGone] = useState(SPLASH_DONE);
   const [fade, setFade] = useState(false);
-  const c0 = cachedConfig();
-  const [img, setImg] = useState(c0.splash_image || '');
-  const [logo, setLogo] = useState('');
-  // Set true if the bundled /logo.png fallback fails to load (not yet
-  // added) so we cleanly show the text wordmark instead of a broken img.
   const [logoMissing, setLogoMissing] = useState(false);
 
   useEffect(() => {
     if (SPLASH_DONE) { setGone(true); return undefined; }
-    // Guarantee dismissal NO MATTER WHAT - schedule before any other
-    // (possibly throwing / slow) work.
-    const t1 = setTimeout(() => setFade(true), 1400);
-    const t2 = setTimeout(() => {
-      SPLASH_DONE = true;
-      setGone(true);
-    }, 1900);
-    let unsub;
-    try {
-      unsub = brandingService.watchBranding((b) =>
-        setLogo((b && b.logo) || ''));
-    } catch (_) { /* ignore */ }
-    try {
-      getDoc(doc(db, 'settings', 'config')).then((s) => {
-        const d = s.exists() ? s.data() : {};
-        if (d.splash_image) setImg(d.splash_image);
-      }).catch(() => {});
-    } catch (_) { /* ignore */ }
-    return () => { if (unsub) { try { unsub(); } catch (_) {} } };
+    const t1 = setTimeout(() => setFade(true), 1300);
+    const t2 = setTimeout(() => { SPLASH_DONE = true; setGone(true); },
+      1800);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
   }, []);
 
   if (gone) return null;
-  // Bundled brand logo is the always-available fallback so the splash
-  // shows the mark centred on the themed background even offline /
-  // before Firebase branding loads.
-  const fallback = logoMissing ? '' : '/logo.png';
-  const src = img || logo || fallback;
 
   return (
     <div
@@ -65,9 +28,9 @@ export default function SplashScreen() {
       className={`fixed inset-0 z-[2147483647] flex flex-col items-center
         justify-center transition-opacity duration-500 ${
         fade ? 'opacity-0' : 'opacity-100'}`}>
-      {src ? (
-        <img src={src} alt="AstroSeer"
-          onError={() => { if (src === '/logo.png') setLogoMissing(true); }}
+      {!logoMissing ? (
+        <img src="/logo.png" alt="AstroSeer"
+          onError={() => setLogoMissing(true)}
           className="max-h-[55vh] max-w-[78%] object-contain
             drop-shadow-2xl" />
       ) : (
