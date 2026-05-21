@@ -81,15 +81,29 @@ export default function IncomingRequest({ uid, isOnCall }) {
     return () => {
       stopped = true;
       clearTimeout(timer);
-      try { ctx && ctx.close(); } catch (_) {}
+      closeRing(ctx);
     };
   }, [req]);
 
   if (!req) return null;
 
+  // AudioContext.close() returns a Promise that REJECTS ("Cannot close
+  // a closed AudioContext") if called on an already-closed context -
+  // sync try/catch doesn't catch that, so it fires window.unhandledrejection
+  // and shows the boot error overlay. Guard with state + .catch.
+  function closeRing(ctx) {
+    try {
+      const c = ctx || ringRef.current;
+      if (c && c.state !== 'closed' && typeof c.close === 'function') {
+        c.close().catch(() => {});
+      }
+    } catch (_) { /* ignore */ }
+    if (!ctx) ringRef.current = null;
+  }
+
   async function accept() {
     const sid = req.id;
-    try { ringRef.current && ringRef.current.close(); } catch (_) {}
+    closeRing();
     // Mark active (critical) - but a failure here must NOT throw an
     // unhandled rejection (that pops the boot error overlay = "crash").
     try {
@@ -109,7 +123,7 @@ export default function IncomingRequest({ uid, isOnCall }) {
   }
   async function reject() {
     const sid = req.id;
-    try { ringRef.current && ringRef.current.close(); } catch (_) {}
+    closeRing();
     setReq(null);
     try {
       await sessionService.updateSessionStatus(sid, 'rejected');
