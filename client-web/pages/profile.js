@@ -352,23 +352,16 @@ export default function Profile() {
         Log out
       </button>
 
-      <div className="mt-6 rounded-card border border-gray-200 bg-white
-        p-4">
-        <div className="text-sm font-bold text-dark-text">
-          Danger zone
-        </div>
-        <p className="mt-1 text-xs text-sub-text">
-          Permanently delete your account and personal data. Wallet
-          balance and consultation history will be removed. Transaction
-          records required by law are kept for the legal period and
-          then purged.{' '}
-          <a href="/account-deletion" className="text-primary">
-            Read the policy
-          </a>.
-        </p>
+      {/* Account deletion: kept reachable (Play requires an in-app
+          path) but deliberately small and visually de-emphasised so
+          nobody mistakes it for the Logout button right above. */}
+      <div className="mt-6 text-center text-[11px] text-sub-text">
+        <a href="/account-deletion" className="underline">
+          Account deletion policy
+        </a>
+        {' · '}
         <button onClick={deleteAccount}
-          className="mt-3 w-full rounded-card bg-danger py-3
-            font-semibold text-white">
+          className="underline opacity-60 hover:opacity-100">
           Delete my account
         </button>
       </div>

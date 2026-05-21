@@ -9,7 +9,7 @@
 //
 // Version string = 1.0.<build>. Per-app suffix lets support tell which
 // app a user is on (customer / astrologer / admin).
-export const APP_BUILD = 47;
+export const APP_BUILD = 49;
 export const APP_VERSION = `1.0.${APP_BUILD}`;
 
 export const APP_SUFFIX = {
@@ -18,8 +18,10 @@ export const APP_SUFFIX = {
   'admin-web': 'admin',
 };
 
-// Full version name for a given app workspace key.
-export function appVersionName(appKey) {
-  const sfx = APP_SUFFIX[appKey] || appKey || 'app';
-  return `${APP_VERSION}-${sfx}`;
+// Plain "1.0.<build>" - no "-customer/-astrologer/-admin" suffix - so
+// the Play Store version label and in-app version line stay clean.
+// The APP_SUFFIX map is still exported above for internal tooling /
+// support logs if it's needed.
+export function appVersionName(_appKey) {
+  return APP_VERSION;
 }

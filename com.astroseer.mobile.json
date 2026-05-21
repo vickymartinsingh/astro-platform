@@ -66,6 +66,14 @@
           }
         },
         {
+          "client_id": "402763204723-laskuislj8df616q167ntj67oknt2och.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.astroseer.app",
+            "certificate_hash": "b679b412ad6eda649976eb71fa58f136f4324137"
+          }
+        },
+        {
           "client_id": "402763204723-27qaos241451th9r25335bj7o5cpfuvr.apps.googleusercontent.com",
           "client_type": 3
         }
@@ -145,6 +153,22 @@
         }
       },
       "oauth_client": [
+        {
+          "client_id": "402763204723-cqo9vccr8mf1uscpdq5cji7dlhnbejav.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.astroseer.mobile",
+            "certificate_hash": "c1ad147cfc0936129b69df459802c344681ccf3a"
+          }
+        },
+        {
+          "client_id": "402763204723-qec91e02fkbkslioi2ih4967p7s2649n.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.astroseer.mobile",
+            "certificate_hash": "b679b412ad6eda649976eb71fa58f136f4324137"
+          }
+        },
         {
           "client_id": "402763204723-27qaos241451th9r25335bj7o5cpfuvr.apps.googleusercontent.com",
           "client_type": 3
