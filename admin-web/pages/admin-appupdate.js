@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { db, adminService, storage } from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import {
+  ref, uploadBytesResumable, getDownloadURL,
+} from 'firebase/storage';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
 import { flash } from '../lib/flash';
@@ -15,6 +17,7 @@ export default function AdminAppUpdate() {
   const { loading } = useRequireAdmin();
   const [c, setC] = useState(null);
   const [busy, setBusy] = useState('');
+  const [pct, setPct] = useState(0); // APK upload %
 
   useEffect(() => {
     getDoc(doc(db, 'settings', 'config')).then((s) => {
@@ -30,16 +33,33 @@ export default function AdminAppUpdate() {
 
   async function uploadApk(file) {
     if (!file) return;
-    setBusy('apk');
-    try {
-      const r = ref(storage, `apk/app-${Date.now()}.apk`);
-      await uploadBytes(r, file);
+    setBusy('apk'); setPct(0);
+    // Path moved to /media/apk/... because storage.rules already permits
+    // signed-in writes to /media/** (the previous /apk/... path had no
+    // matching rule -> Firebase silently rejected the upload, so it
+    // looked stuck on "Uploading APK..." forever).
+    const safe = String(file.name || 'app.apk').replace(/[^\w.\-]+/g, '_');
+    const r = ref(storage, `media/apk/${Date.now()}_${safe}`);
+    await new Promise((resolve, reject) => {
+      const task = uploadBytesResumable(r, file, {
+        contentType: 'application/vnd.android.package-archive',
+      });
+      task.on('state_changed', (snap) => {
+        const p = Math.round((snap.bytesTransferred * 100)
+          / Math.max(1, snap.totalBytes));
+        setPct(p);
+      }, reject, resolve);
+    }).then(async () => {
       const url = await getDownloadURL(r);
       set('app_apk_url', url);
       flash('APK uploaded - press Save');
-    } catch (e) {
-      flash('Upload failed - paste a public APK URL instead', 'error');
-    } finally { setBusy(''); }
+    }).catch((e) => {
+      // eslint-disable-next-line no-console
+      console.error('APK upload failed', e);
+      flash(`Upload failed (${e && e.code || 'error'}) — paste a public `
+        + 'APK URL instead', 'error');
+    });
+    setBusy(''); setPct(0);
   }
 
   function splashFile(file) {
@@ -141,7 +161,9 @@ export default function AdminAppUpdate() {
         </label>
         <label className="cursor-pointer inline-block rounded-card border
           border-primary px-4 py-2 text-sm font-semibold text-primary">
-          {busy === 'apk' ? 'Uploading APK...' : 'Or upload .apk file'}
+          {busy === 'apk'
+            ? `Uploading APK… ${pct}%`
+            : 'Or upload .apk file'}
           <input type="file" accept=".apk" hidden
             onChange={(e) => uploadApk(e.target.files?.[0])} />
         </label>
