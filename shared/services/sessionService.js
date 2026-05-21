@@ -316,6 +316,112 @@ export function listenActiveForAstro(astroId, callback) {
 const byCreatedDesc = (a, b) =>
   (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0);
 
+// ---- Refunds (astrologer- or admin-initiated) -----------------------
+// Standard reasons surfaced as a dropdown in the apps.
+export const REFUND_REASONS = [
+  'Technical issue',
+  'Astrologer unavailable',
+  'Poor network / disconnection',
+  'Customer request',
+  'Duplicate / accidental session',
+  'Quality not as expected',
+  'Other',
+];
+
+// Short, human Ref no for a session (used in dropdowns and receipts).
+export function sessionRefNo(idOrSession) {
+  const id = typeof idOrSession === 'string'
+    ? idOrSession : (idOrSession && idOrSession.id) || '';
+  return id ? id.slice(-6).toUpperCase() : '';
+}
+
+// Astrologer or admin asks for a full refund of an ended consultation.
+// Writes the request onto the session (already writable by both via
+// rules) and drops a notification for admin review. The wallet credit
+// runs from processRefund (admin-only, matches Firestore rules).
+export async function requestRefund(sessionId, byUid, byRole, reason) {
+  if (!sessionId || !byUid) return;
+  const r = String(reason || 'Other').slice(0, 120);
+  await updateDoc(doc(db, 'sessions', sessionId), {
+    refundRequested: true,
+    refundRequest: {
+      by: byUid,
+      byRole: byRole || 'astrologer',
+      reason: r,
+      requestedAt: serverTimestamp(),
+      status: 'pending',
+    },
+  });
+  try {
+    await addDoc(collection(db, 'notifications'), {
+      type: 'refund_request',
+      title: 'Refund request',
+      body: `${byRole || 'Astrologer'} requested a refund for `
+        + `session #${sessionRefNo(sessionId)} - ${r}`,
+      sessionId,
+      requestedBy: byUid,
+      toRole: 'admin',
+      createdAt: serverTimestamp(),
+      read: false,
+    });
+  } catch (_) { /* notifications best-effort */ }
+}
+
+// Live admin queue: all sessions with a pending refund request.
+export function listenPendingRefunds(callback) {
+  return onSnapshot(
+    query(collection(db, 'sessions'),
+      where('refundRequested', '==', true)),
+    (snap) => {
+      const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const pending = all.filter((s) => (s.refundRequest
+        && s.refundRequest.status === 'pending'));
+      if (callback) callback(pending);
+    }, () => {});
+}
+
+// Admin-only: process a pending refund. Credits the customer wallet
+// (atomic), records the transaction, marks refundRequest.status as
+// processed. Idempotent on a processed refund.
+export async function processRefund(sessionId, adminUid) {
+  if (!sessionId) throw new Error('Missing session id');
+  const sRef = doc(db, 'sessions', sessionId);
+  const result = await runTransaction(db, async (t) => {
+    const s = await t.get(sRef);
+    if (!s.exists()) throw new Error('Session not found');
+    const d = s.data();
+    const status = d.refundRequest && d.refundRequest.status;
+    if (status === 'processed') return { refunded: 0, already: true };
+    const cost = Number(d.cost || 0);
+    if (cost > 0 && d.userId) {
+      const uRef = doc(db, 'users', d.userId);
+      const u = await t.get(uRef);
+      const w = Number((u.data() || {}).wallet || 0) + cost;
+      t.update(uRef, { wallet: w });
+      t.set(doc(collection(db, 'transactions')), {
+        userId: d.userId, amount: cost, type: 'credit',
+        reason: 'refund', referenceId: sessionId,
+        createdAt: serverTimestamp(),
+      });
+    }
+    t.update(sRef, {
+      'refundRequest.status': 'processed',
+      'refundRequest.processedBy': adminUid || 'admin',
+      'refundRequest.processedAt': serverTimestamp(),
+      refundedAmount: cost,
+    });
+    return { refunded: cost, already: false };
+  });
+  if (result.refunded > 0) {
+    try {
+      const fresh = await getDoc(sRef);
+      await notifyWallet((fresh.data() || {}).userId,
+        result.refunded, 'Refund for your consultation');
+    } catch (_) { /* notify best-effort */ }
+  }
+  return result;
+}
+
 export async function getUserSessions(userId, type) {
   const q = query(
     collection(db, 'sessions'),

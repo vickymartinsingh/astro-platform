@@ -1,9 +1,32 @@
 import { useEffect, useRef, useState } from 'react';
-import { ticketService } from '@astro/shared';
+import {
+  ticketService, sessionService, userService,
+} from '@astro/shared';
 import Layout from '../components/Layout';
 import { useRequireAstrologer } from '../lib/useAuth';
 
 const { ASTRO_TICKET_CATEGORIES } = ticketService;
+const TYPE_ICON = { chat: '💬', call: '📞', video: '📹' };
+function fmtDur(sec) {
+  const s = Number(sec || 0);
+  if (s <= 0) return '0m';
+  const m = Math.floor(s / 60); const r = s % 60;
+  if (m >= 60) return `${Math.floor(m / 60)}h ${m % 60}m`;
+  return m > 0 ? `${m}m${r ? ` ${r}s` : ''}` : `${r}s`;
+}
+function sessionLabel(o, clientMap) {
+  const ic = TYPE_ICON[o.type] || '✨';
+  const who = (clientMap && clientMap[o.userId]) || 'Customer';
+  const when = (o.startTime || o.createdAt) ? new Date(
+    (o.startTime || o.createdAt).toMillis
+      ? (o.startTime || o.createdAt).toMillis()
+      : (o.startTime || o.createdAt)
+  ).toLocaleString('en-GB', {
+    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+  }) : '';
+  return `${ic} ${who} · ${when} · ${fmtDur(o.duration)} · `
+    + `#${sessionService.sessionRefNo(o)}`;
+}
 
 const ASTRO_FAQS = [
   ['When do I get paid?',
@@ -43,7 +66,9 @@ export default function AstroSupport() {
   const [tickets, setTickets] = useState([]);
   const [openFaq, setOpenFaq] = useState(-1);
   const [f, setF] = useState({ category: 'customer', subject: '',
-    message: '' });
+    message: '', orderRef: '' });
+  const [orders, setOrders] = useState([]);
+  const [clientMap, setClientMap] = useState({}); // userId -> name
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   const [msgs, setMsgs] = useState([]);
@@ -53,6 +78,24 @@ export default function AstroSupport() {
   useEffect(() => {
     if (!user) return undefined;
     return ticketService.listenMyTickets(user.uid, setTickets);
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    sessionService.getAstrologerSessions(user.uid)
+      .then(async (l) => {
+        const list = (l || []).slice(0, 15);
+        setOrders(list);
+        const ids = [...new Set(list.map((s) => s.userId).filter(Boolean))];
+        const pairs = await Promise.all(ids.map(async (id) => {
+          try {
+            const u = await userService.getUser(id);
+            return [id, (u && (u.name || u.email)) || 'Customer'];
+          } catch (_) { return [id, 'Customer']; }
+        }));
+        setClientMap(Object.fromEntries(pairs));
+      })
+      .catch(() => {});
   }, [user]);
 
   useEffect(() => {
@@ -200,6 +243,22 @@ export default function AstroSupport() {
               ))}
             </select>
           </label>
+          {(f.category === 'customer' || f.category === 'session')
+            && orders.length > 0 && (
+            <label className="block text-sm">
+              Related consultation (optional)
+              <select className="input mt-1" value={f.orderRef}
+                onChange={(e) => setF({
+                  ...f, orderRef: e.target.value })}>
+                <option value="">— pick a consultation —</option>
+                {orders.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {sessionLabel(o, clientMap)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <input className="input" placeholder="Subject"
             value={f.subject}
             onChange={(e) => setF({ ...f, subject: e.target.value })} />

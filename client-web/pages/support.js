@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { ticketService, sessionService } from '@astro/shared';
+import {
+  ticketService, sessionService, astrologerService,
+} from '@astro/shared';
 import Layout from '../components/Layout';
 import { useRequireClient } from '../lib/useAuth';
 
@@ -12,6 +14,24 @@ function fmt(ts) {
   return new Date(ms).toLocaleString('en-GB', {
     day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
   });
+}
+function fmtDur(sec) {
+  const s = Number(sec || 0);
+  if (s <= 0) return '0m';
+  const m = Math.floor(s / 60); const r = s % 60;
+  if (m >= 60) return `${Math.floor(m / 60)}h ${m % 60}m`;
+  return m > 0 ? `${m}m${r ? ` ${r}s` : ''}` : `${r}s`;
+}
+const TYPE_ICON = { chat: '💬', call: '📞', video: '📹' };
+// Human-readable session label for the support dropdown:
+// "💬 Astro Name · 21 May 14:32 · 12m · #A1B2C3"
+function sessionLabel(o, astroMap) {
+  const ic = TYPE_ICON[o.type] || '✨';
+  const who = (astroMap && astroMap[o.astroId]) || 'Astrologer';
+  const when = fmt(o.startTime || o.createdAt);
+  const dur = fmtDur(o.duration);
+  const ref = sessionService.sessionRefNo(o);
+  return `${ic} ${who} · ${when} · ${dur} · #${ref}`;
 }
 function statusChip(t) {
   const f = ticketService.isFinalClosed(t);
@@ -34,6 +54,7 @@ export default function Support() {
   const [f, setF] = useState({ category: 'order', subject: '',
     message: '', orderRef: '' });
   const [orders, setOrders] = useState([]);
+  const [astroMap, setAstroMap] = useState({}); // astroId -> name
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
   // ticket thread
@@ -49,7 +70,20 @@ export default function Support() {
   useEffect(() => {
     if (!user) return;
     sessionService.getUserSessions(user.uid)
-      .then((l) => setOrders((l || []).slice(0, 15)))
+      .then(async (l) => {
+        const list = (l || []).slice(0, 15);
+        setOrders(list);
+        // Lookup astrologer names for the dropdown labels (de-duped).
+        const ids = [...new Set(list.map((s) => s.astroId)
+          .filter(Boolean))];
+        const pairs = await Promise.all(ids.map(async (id) => {
+          try {
+            const a = await astrologerService.getAstrologer(id);
+            return [id, (a && (a.name || a.displayName)) || 'Astrologer'];
+          } catch (_) { return [id, 'Astrologer']; }
+        }));
+        setAstroMap(Object.fromEntries(pairs));
+      })
       .catch(() => {});
   }, [user]);
 
@@ -211,8 +245,7 @@ export default function Support() {
                 <option value="">Choose one...</option>
                 {orders.map((o) => (
                   <option key={o.id} value={o.id}>
-                    {(o.type || 'session')} - {fmt(o.createdAt)}
-                    {o.cost ? ` - Rs ${o.cost}` : ''}
+                    {sessionLabel(o, astroMap)}
                   </option>
                 ))}
               </select>
