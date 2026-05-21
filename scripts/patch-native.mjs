@@ -67,9 +67,16 @@ const NEED_PERMS = [
   // Lets a high-priority FCM message wake the device out of Doze /
   // sleep so the ringer actually fires from a sleeping phone.
   'android.permission.WAKE_LOCK',
-  // Lets the in-app "Update" open the downloaded APK installer in one
-  // tap (Android still shows its own install confirmation - a normal
-  // app cannot fully silent-install, that needs system privileges).
+  // REQUEST_INSTALL_PACKAGES is intentionally NOT added. Play rejects
+  // it for non-installer apps; on Play the store updates the APK so
+  // we don't need it. For sideload (astro/admin) Android still asks
+  // the user to enable "Install unknown apps" once - same flow.
+];
+
+// Permissions previously added that we now want stripped from the
+// manifest (e.g. Play-rejected ones). Patch-native removes any line
+// that uses them so an old manifest gets cleaned on the next build.
+const DROP_PERMS = [
   'android.permission.REQUEST_INSTALL_PACKAGES',
 ];
 
@@ -78,10 +85,25 @@ function patchAndroid(app) {
     'AndroidManifest.xml');
   if (!existsSync(f)) return `android: skipped (${app}, no project)`;
   let x = readFileSync(f, 'utf8');
+  // Strip any permission that's been moved to DROP_PERMS.
+  const dropped = [];
+  for (const p of DROP_PERMS) {
+    const re = new RegExp(`[ \\t]*<uses-permission[^/<>]*android:name="${
+      p.replace(/\./g, '\\.')}"[^/<>]*/>\\s*\\n?`, 'g');
+    const before = x;
+    x = x.replace(re, '');
+    if (x !== before) dropped.push(p);
+  }
   // Idempotent per-permission: add only the ones not already present,
   // right after the INTERNET permission Capacitor ships with.
   const missing = NEED_PERMS.filter((p) => !x.includes(p));
-  if (!missing.length) return `android: already patched (${app})`;
+  if (!missing.length && !dropped.length) {
+    return `android: already patched (${app})`;
+  }
+  if (!missing.length && dropped.length) {
+    writeFileSync(f, x);
+    return `android: dropped ${dropped.join(', ')} (${app})`;
+  }
   let block = missing
     .map((p) => `\n    <uses-permission android:name="${p}" />`).join('');
   if (!x.includes('android.hardware.camera')) {
