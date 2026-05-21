@@ -1,0 +1,24 @@
+[
+  {
+    "origin": [
+      "https://astroseer.in",
+      "https://www.astroseer.in",
+      "https://*.vercel.app",
+      "http://localhost:3000",
+      "http://localhost:3001",
+      "http://localhost:3002",
+      "capacitor://localhost",
+      "https://localhost"
+    ],
+    "method": ["GET", "POST", "PUT", "DELETE", "HEAD"],
+    "responseHeader": [
+      "Content-Type",
+      "Authorization",
+      "Content-Length",
+      "User-Agent",
+      "x-goog-resumable",
+      "x-goog-meta-*"
+    ],
+    "maxAgeSeconds": 3600
+  }
+]

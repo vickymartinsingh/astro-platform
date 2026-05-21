@@ -34,21 +34,41 @@ export default function AdminAppUpdate() {
   async function uploadApk(file) {
     if (!file) return;
     setBusy('apk'); setPct(0);
-    // Path moved to /media/apk/... because storage.rules already permits
-    // signed-in writes to /media/** (the previous /apk/... path had no
-    // matching rule -> Firebase silently rejected the upload, so it
-    // looked stuck on "Uploading APK..." forever).
     const safe = String(file.name || 'app.apk').replace(/[^\w.\-]+/g, '_');
     const r = ref(storage, `media/apk/${Date.now()}_${safe}`);
+
+    // Watchdog: if no progress at all for 25s, the bucket's browser CORS
+    // is almost certainly the cause (new .firebasestorage.app buckets
+    // ship without permissive CORS). Abort + tell the user the workaround
+    // instead of letting the bar sit at 0% forever.
+    let lastTransferred = 0;
+    let stuckSince = Date.now();
+    let watchdog;
+
     await new Promise((resolve, reject) => {
       const task = uploadBytesResumable(r, file, {
         contentType: 'application/vnd.android.package-archive',
       });
+      watchdog = setInterval(() => {
+        if (Date.now() - stuckSince > 25000) {
+          clearInterval(watchdog);
+          try { task.cancel(); } catch (_) {}
+          reject(new Error('storage/cors-or-network — no progress in 25s'));
+        }
+      }, 1000);
       task.on('state_changed', (snap) => {
+        if (snap.bytesTransferred > lastTransferred) {
+          lastTransferred = snap.bytesTransferred;
+          stuckSince = Date.now();
+        }
         const p = Math.round((snap.bytesTransferred * 100)
           / Math.max(1, snap.totalBytes));
         setPct(p);
-      }, reject, resolve);
+      }, (err) => {
+        clearInterval(watchdog); reject(err);
+      }, () => {
+        clearInterval(watchdog); resolve();
+      });
     }).then(async () => {
       const url = await getDownloadURL(r);
       set('app_apk_url', url);
@@ -56,9 +76,17 @@ export default function AdminAppUpdate() {
     }).catch((e) => {
       // eslint-disable-next-line no-console
       console.error('APK upload failed', e);
-      flash(`Upload failed (${e && e.code || 'error'}) — paste a public `
-        + 'APK URL instead', 'error');
+      const code = (e && e.code) || (e && e.message) || 'error';
+      const isCors = /cors-or-network|preflight|network|0%/.test(code);
+      flash(isCors
+        ? 'Upload stuck (bucket CORS not configured for browser uploads).'
+          + ' Workaround: upload your .apk to Google Drive / Dropbox'
+          + ' (make it public), copy the direct download URL, and paste'
+          + ' it in the "APK download URL" field above. Press Save.'
+        : `Upload failed (${code}) — paste a public APK URL instead.`,
+        'error');
     });
+    clearInterval(watchdog);
     setBusy(''); setPct(0);
   }
 
