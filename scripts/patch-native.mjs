@@ -60,6 +60,13 @@ const NEED_PERMS = [
   'android.permission.MODIFY_AUDIO_SETTINGS',
   'android.permission.POST_NOTIFICATIONS',
   'android.permission.VIBRATE',
+  // Required so an incoming-call FCM can ring on a locked screen
+  // (WhatsApp/Skype style heads-up + lock-screen UI). Without this,
+  // Android suppresses the call notification's full-screen intent.
+  'android.permission.USE_FULL_SCREEN_INTENT',
+  // Lets a high-priority FCM message wake the device out of Doze /
+  // sleep so the ringer actually fires from a sleeping phone.
+  'android.permission.WAKE_LOCK',
   // Lets the in-app "Update" open the downloaded APK installer in one
   // tap (Android still shows its own install confirmation - a normal
   // app cannot fully silent-install, that needs system privileges).

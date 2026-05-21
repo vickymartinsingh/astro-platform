@@ -115,6 +115,37 @@ module.exports = async (req, res) => {
     tokens = [...new Set(tokens)];
     if (!tokens.length) return res.status(200).json({ sent: 0, reason: 'no tokens' });
 
+    // Is this an incoming call? Then we push it as a CALL notification:
+    // bypass Doze (priority high), max importance channel, lock-screen
+    // visible, long vibrate pattern, sticky tag so it isn't coalesced.
+    const isCall = !!(data && (data.kind === 'incoming_call'
+      || data.channelId === 'astro-calls'));
+    const channelId = (data && data.channelId)
+      || (isCall ? 'astro-calls' : 'astro-default');
+
+    const androidNotif = {
+      sound: 'default',
+      channelId,
+      defaultSound: true,
+      defaultVibrateTimings: true,
+      visibility: 'PUBLIC',
+      notificationPriority: 'PRIORITY_MAX',
+    };
+    if (isCall) {
+      // WhatsApp/Skype-style call ring: long-running vibrate pattern,
+      // sticky (won't auto-dismiss), and a per-session tag so a second
+      // call from the same astro just refreshes - never piles up.
+      androidNotif.tag = `call_${(data && data.sessionId) || Date.now()}`;
+      androidNotif.sticky = true;
+      androidNotif.defaultVibrateTimings = false;
+      androidNotif.vibrateTimings = [
+        '0s', '0.8s', '0.4s', '0.8s', '0.4s', '0.8s', '0.4s', '0.8s',
+        '0.4s', '0.8s', '0.4s', '0.8s',
+      ];
+      // Hint Android this is a phone-call-class event.
+      androidNotif.eventTimestamp = new Date().toISOString();
+    }
+
     const message = {
       notification: { title: String(title), body: String(msgBody || '') },
       // Mirror title/body into data so the app can re-raise the banner
@@ -128,19 +159,22 @@ module.exports = async (req, res) => {
       },
       android: {
         priority: 'high',
-        notification: {
-          sound: 'default',
-          // Call pushes ring on the dedicated 'astro-calls' channel.
-          channelId: (data && data.channelId) || 'astro-default',
-          defaultSound: true,
-          defaultVibrateTimings: true,
-          visibility: 'PUBLIC',           // show on lock screen
-          notificationPriority: 'PRIORITY_MAX',
-        },
+        ttl: isCall ? 60 * 1000 : 3600 * 1000,  // calls: 60s, else 1h
+        notification: androidNotif,
       },
       apns: {
-        headers: { 'apns-priority': '10' },
-        payload: { aps: { sound: 'default', 'interruption-level': 'time-sensitive' } },
+        headers: {
+          'apns-priority': '10',
+          'apns-push-type': isCall ? 'voip' : 'alert',
+        },
+        payload: {
+          aps: {
+            sound: 'default',
+            'interruption-level': isCall ? 'time-sensitive'
+              : 'time-sensitive',
+            category: isCall ? 'INCOMING_CALL' : undefined,
+          },
+        },
       },
     };
 
