@@ -164,6 +164,27 @@ export default function TopNav() {
             );
           })}
 
+          {/* Wallet + Notifications - same quick-access icons the mobile
+              header shows, now also on desktop. Only when signed in. */}
+          {user && (
+            <>
+              <Link href="/wallet" aria-label="Wallet"
+                className="ml-1 rounded-full p-2 text-dark-text
+                  hover:bg-bg-light" title="Wallet">
+                <Wallet />
+              </Link>
+              <Link href="/notifications" aria-label="Notifications"
+                className="relative rounded-full p-2 text-dark-text
+                  hover:bg-bg-light" title="Notifications">
+                <Bell />
+                {unread > 0 && (
+                  <span className="badge absolute -right-0.5 -top-0.5
+                    bg-rose-500 text-white">{unread}</span>
+                )}
+              </Link>
+            </>
+          )}
+
           {/* Profile sub menu */}
           <div className="relative">
             <button onClick={() => setProf((v) => !v)}
