@@ -47,13 +47,19 @@ export default function AstroSessions() {
     try {
       const reason = rfReason === 'Other' && rfNote.trim()
         ? `Other: ${rfNote.trim()}` : rfReason;
-      await sessionService.requestRefund(
-        rfSession.id, user.uid, 'astrologer', reason);
+      const r = await sessionService.instantRefund(rfSession.id, reason);
       setRfSession(null); setRfNote(''); setRfReason(REFUND_REASONS[0]);
       await load();
-    } catch (_) {
       // eslint-disable-next-line no-alert
-      alert('Could not submit the refund request. Please try again.');
+      alert(r.ok
+        ? (r.already
+          ? 'This session was already refunded.'
+          : `Refund processed instantly. ₹${r.refunded} credited to the `
+            + 'customer wallet. Admin has been notified for records.')
+        : 'Refund queued — admin will process within a few minutes.');
+    } catch (e) {
+      // eslint-disable-next-line no-alert
+      alert(`Could not submit the refund: ${e.message || 'error'}`);
     }
     setRfBusy(false);
   }

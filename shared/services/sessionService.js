@@ -367,6 +367,59 @@ export async function requestRefund(sessionId, byUid, byRole, reason) {
   } catch (_) { /* notifications best-effort */ }
 }
 
+// Astrologer-initiated INSTANT refund. The relay verifies the caller's
+// Firebase ID token, confirms they are the session's astroId (or an
+// admin), and runs the credit + ledger + session update atomically
+// with the Admin SDK - so the customer wallet is credited NOW. The
+// admin notification is dropped server-side too for the record.
+// Falls back to requestRefund (pending queue) if the relay endpoint
+// isn't reachable, so the call never fails silently.
+export async function instantRefund(sessionId, reason) {
+  if (!sessionId) throw new Error('Missing session id');
+  // Resolve endpoint from the push endpoint (same Vercel deployment).
+  const baseEnv = (typeof process !== 'undefined' && process.env
+    && process.env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
+  const base = baseEnv
+    || 'https://astro-platform-push-relay.vercel.app/api/sendPush';
+  const url = base.replace(/\/sendPush\/?$/, '/refund');
+
+  // Get a fresh Firebase ID token from the SDK in this app.
+  let idToken = '';
+  try {
+    const mod = await import('../firebase.js');
+    const u = mod.auth && mod.auth.currentUser;
+    if (u && u.getIdToken) idToken = await u.getIdToken();
+  } catch (_) { /* ignore */ }
+  if (!idToken) throw new Error('Not signed in');
+
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ sessionId, reason: reason || 'Other' }),
+    });
+  } catch (e) {
+    // Network/CORS/endpoint missing - record as pending so admin sees it.
+    await requestRefund(sessionId,
+      (await import('../firebase.js')).auth.currentUser.uid,
+      'astrologer', reason);
+    return { ok: false, queued: true, refunded: 0 };
+  }
+  if (!res.ok) {
+    await requestRefund(sessionId,
+      (await import('../firebase.js')).auth.currentUser.uid,
+      'astrologer', reason);
+    return { ok: false, queued: true, status: res.status, refunded: 0 };
+  }
+  const data = await res.json().catch(() => ({}));
+  return { ok: true, refunded: Number(data.refunded || 0),
+    already: !!data.already };
+}
+
 // Live admin queue: all sessions with a pending refund request.
 export function listenPendingRefunds(callback) {
   return onSnapshot(

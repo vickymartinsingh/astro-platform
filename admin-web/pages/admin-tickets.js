@@ -345,17 +345,19 @@ export default function AdminTickets() {
                           Open full session →
                         </a>
                         {order.astroId && (
-                          <a href={`/admin-astrologers?id=${order.astroId}`}
+                          <a href={
+                            `/admin-astro-profile/${order.astroId}`}
                             className="rounded-full border border-gray-300
                               bg-white px-3 py-1.5 text-xs font-semibold">
-                            View astrologer
+                            👁 Astrologer profile
                           </a>
                         )}
                         {order.userId && (
-                          <a href={`/admin-users?id=${order.userId}`}
+                          <a href={
+                            `/admin-user-profile/${order.userId}`}
                             className="rounded-full border border-gray-300
                               bg-white px-3 py-1.5 text-xs font-semibold">
-                            View customer
+                            👁 Customer profile
                           </a>
                         )}
                       </div>
