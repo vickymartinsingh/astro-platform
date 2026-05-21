@@ -134,7 +134,16 @@ async function resolveName(uid) {
 export async function sendAudioMessage(chatId, senderId, blob) {
   if (!chatId || !senderId || !blob) return false;
   try {
-    const path = `media/chat/${chatId}/${Date.now()}_voice.webm`;
+    // Use the right file extension for the actual mimeType so iOS Safari
+    // (which uses mp4) and Android Chrome (webm) both play back cleanly
+    // from the same Storage URL.
+    const type = (blob.type || 'audio/webm').toLowerCase();
+    const ext = type.includes('mp4') ? 'mp4'
+      : type.includes('aac') ? 'aac'
+        : type.includes('ogg') ? 'ogg'
+          : type.includes('wav') ? 'wav'
+            : 'webm';
+    const path = `media/chat/${chatId}/${Date.now()}_voice.${ext}`;
     const r = storageRef(storage, path);
     const withTimeout = (p, ms) => Promise.race([
       p, new Promise((_, rej) => setTimeout(

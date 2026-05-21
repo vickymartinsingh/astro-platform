@@ -81,9 +81,13 @@ export default function AstroSessions() {
           </thead>
           <tbody>
             {shown.map((s) => {
-              const ended = s.status === 'ended';
               const rr = s.refundRequest;
-              const canRefund = ended && Number(s.cost || 0) > 0
+              // Show on any past consultation (not actively in progress
+              // / not already refunded). The modal handles edge cases
+              // (zero cost, etc.) with clear messaging.
+              const inProgress = s.status === 'requesting'
+                || s.status === 'active';
+              const canRefund = !inProgress
                 && (!rr || rr.status !== 'processed');
               return (
                 <tr key={s.id} className="border-t">

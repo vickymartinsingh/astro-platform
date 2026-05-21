@@ -111,19 +111,50 @@ export default function AstroChat() {
       try { recRef.current && recRef.current.stop(); } catch (_) {}
       return;
     }
+    // Pick a mimeType the platform actually supports. iOS WebView only
+    // does audio/mp4; Android Chrome prefers webm/opus. Default ('') let
+    // the browser pick - works on every supported platform.
+    let mime = '';
     try {
-      const stream = await navigator.mediaDevices.getUserMedia(
-        { audio: true });
-      const mr = new MediaRecorder(stream);
+      if (typeof MediaRecorder !== 'undefined'
+        && MediaRecorder.isTypeSupported) {
+        const cands = [
+          'audio/webm;codecs=opus',
+          'audio/webm',
+          'audio/mp4;codecs=mp4a.40.2',
+          'audio/mp4',
+          'audio/aac',
+        ];
+        mime = cands.find((m) => MediaRecorder.isTypeSupported(m)) || '';
+      }
+    } catch (_) { mime = ''; }
+
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (e) {
+      window.alert(e && e.name === 'NotAllowedError'
+        ? 'Microphone permission is needed. Allow it in Settings.'
+        : 'Cannot access the microphone.');
+      return;
+    }
+    try {
+      const mr = mime ? new MediaRecorder(stream, { mimeType: mime })
+        : new MediaRecorder(stream);
       chunksRef.current = [];
       mr.ondataavailable = (e) => {
         if (e.data && e.data.size) chunksRef.current.push(e.data);
       };
-      mr.onstop = async () => {
-        stream.getTracks().forEach((t) => t.stop());
+      mr.onerror = () => {
+        try { stream.getTracks().forEach((t) => t.stop()); } catch (_) {}
         setRecording(false);
-        const blob = new Blob(chunksRef.current,
-          { type: 'audio/webm' });
+        window.alert('Recording failed. Please try again.');
+      };
+      mr.onstop = async () => {
+        try { stream.getTracks().forEach((t) => t.stop()); } catch (_) {}
+        setRecording(false);
+        const realType = mr.mimeType || mime || 'audio/webm';
+        const blob = new Blob(chunksRef.current, { type: realType });
         if (!blob.size || !chatId) return;
         setBusyAudio(true);
         const ok = await chatService.sendAudioMessage(
@@ -134,8 +165,9 @@ export default function AstroChat() {
       recRef.current = mr;
       mr.start();
       setRecording(true);
-    } catch (_) {
-      window.alert('Microphone permission is needed to record.');
+    } catch (e) {
+      try { stream.getTracks().forEach((t) => t.stop()); } catch (_) {}
+      window.alert('Voice recording is not supported on this device.');
     }
   }
 
