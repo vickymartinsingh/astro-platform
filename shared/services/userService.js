@@ -105,6 +105,19 @@ export async function setOnline(uid) {
   await updateDoc(doc(db, 'users', uid), { isOnline: true });
 }
 
+// User-initiated account deletion request (Google Play requires this).
+// Sets a flag on the user doc; an admin processes it within 30 days
+// (consultation/payment records kept for legal compliance, then purged).
+// Self-write (isSelf passes Firestore rules); role stays untouched.
+export async function requestAccountDeletion(uid, reason) {
+  if (!uid) return;
+  await updateDoc(doc(db, 'users', uid), {
+    pendingDeletion: true,
+    deletionRequestedAt: serverTimestamp(),
+    deletionReason: String(reason || '').slice(0, 500),
+  });
+}
+
 export async function setOffline(uid) {
   await updateDoc(doc(db, 'users', uid), { isOnline: false });
 }

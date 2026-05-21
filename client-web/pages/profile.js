@@ -116,6 +116,32 @@ export default function Profile() {
     router.replace('/login');
   }
 
+  async function deleteAccount() {
+    /* eslint-disable no-alert */
+    const sure = window.confirm(
+      'Delete your account?\n\n'
+      + 'Your account is deactivated immediately and all personal data '
+      + 'is purged within 30 days. Transaction records required by law '
+      + 'are kept for the legal period. This cannot be undone after 30 '
+      + 'days.\n\nContinue?');
+    if (!sure) return;
+    const reason = window.prompt(
+      'Optional - tell us why (helps us improve, leave blank to skip):'
+    ) || '';
+    try {
+      await userService.requestAccountDeletion(user.uid, reason);
+      try { await authService.logoutUser(); } catch (_) {}
+      window.alert('Your account has been deactivated. We have '
+        + 'received your deletion request and will purge your data '
+        + 'within 30 days. A confirmation email follows.');
+      router.replace('/account-deletion');
+    } catch (e) {
+      window.alert('Could not submit the request. Please email '
+        + 'support@astroseer.in to delete your account.');
+    }
+    /* eslint-enable no-alert */
+  }
+
   if (loading || !profile) return <Layout><SkeletonList /></Layout>;
 
   return (
@@ -325,6 +351,27 @@ export default function Profile() {
           py-3 font-semibold text-danger">
         Log out
       </button>
+
+      <div className="mt-6 rounded-card border border-gray-200 bg-white
+        p-4">
+        <div className="text-sm font-bold text-dark-text">
+          Danger zone
+        </div>
+        <p className="mt-1 text-xs text-sub-text">
+          Permanently delete your account and personal data. Wallet
+          balance and consultation history will be removed. Transaction
+          records required by law are kept for the legal period and
+          then purged.{' '}
+          <a href="/account-deletion" className="text-primary">
+            Read the policy
+          </a>.
+        </p>
+        <button onClick={deleteAccount}
+          className="mt-3 w-full rounded-card bg-danger py-3
+            font-semibold text-white">
+          Delete my account
+        </button>
+      </div>
     </Layout>
   );
 }
