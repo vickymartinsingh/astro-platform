@@ -61,8 +61,9 @@ export default function SplashScreen() {
 
   return (
     <div
+      style={{ backgroundColor: '#0F0A23' }}
       className={`fixed inset-0 z-[2147483647] flex flex-col items-center
-        justify-center hero-grad transition-opacity duration-500 ${
+        justify-center transition-opacity duration-500 ${
         fade ? 'opacity-0' : 'opacity-100'}`}>
       {src ? (
         <img src={src} alt="AstroSeer"
