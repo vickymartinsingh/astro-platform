@@ -41,7 +41,9 @@ export default function AstroChat() {
   }, [id]);
 
   useEffect(() => {
-    if (!session) return;
+    if (!session) return undefined;
+    setMessages([]); // drop the previous thread so a new chat isn't frozen
+    lastCount.current = 0;
     userService.getUser(session.userId).then(setClient);
     kundliService.getDefaultKundli(session.userId).then(setKundli)
       .catch(() => {});
@@ -59,7 +61,8 @@ export default function AstroChat() {
       }
       lastCount.current = messages.length;
     }
-    scrollRef.current?.scrollTo({ top: 1e9, behavior: 'smooth' });
+    const el = scrollRef.current;
+    if (el) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
   }, [messages, user]);
 
   // AI assistant availability: admin config (settings/config) gated to

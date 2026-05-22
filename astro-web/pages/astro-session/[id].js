@@ -47,6 +47,10 @@ export default function ActiveSession() {
 
   useEffect(() => {
     if (!session) return undefined;
+    // Clear the previous conversation immediately so a newly accepted
+    // chat never "freezes" showing the old client's thread.
+    setMessages([]);
+    lastCount.current = 0;
     // NEVER let a rejected lookup bubble to window.unhandledrejection
     // (the boot error overlay treats that as a crash). All best-effort.
     userService.getUser(session.userId).then(setClient).catch(() => {});
@@ -106,7 +110,15 @@ export default function ActiveSession() {
       }
       lastCount.current = messages.length;
     }
-    scrollRef.current?.scrollTo({ top: 1e9, behavior: 'smooth' });
+    // Always jump to the newest message (bottom). Run after paint so the
+    // newly rendered messages are measured; older messages are above and
+    // reachable by scrolling up.
+    const el = scrollRef.current;
+    if (el) {
+      requestAnimationFrame(() => {
+        el.scrollTop = el.scrollHeight;
+      });
+    }
   }, [messages, user]);
 
   useEffect(() => {
