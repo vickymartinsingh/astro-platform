@@ -57,7 +57,7 @@ export default function AiAutoResponder() {
         const asc = (r && ((r.ascendant && r.ascendant.sign) || r.zodiac))
           || '';
         kundliCtx.current[clientUid] = [
-          `Client birth details — DOB ${k.dob}, time ${k.tob || '?'} ${
+          `Client birth details: DOB ${k.dob}, time ${k.tob || '?'} ${
             k.ampm || ''}, place ${k.place || '?'}.`,
           asc ? `Ascendant (Lagna): ${asc}.` : '',
           r && r.chandra_rasi ? `Moon sign: ${r.chandra_rasi}.` : '',

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import {
-  sessionService, astrologerService, userService,
+  sessionService, astrologerService, userService, assistantService,
 } from '@astro/shared';
 
 const TYPE_LABEL = {
@@ -18,11 +18,48 @@ export default function IncomingRequest({ uid, isOnCall }) {
   const [dp, setDp] = useState('');
   const [left, setLeft] = useState(60);
   const ringRef = useRef(null);
+  // AI auto-pick state: when the astrologer's AI assistant is ON (and the
+  // admin enabled it), incoming CHAT requests are accepted automatically
+  // and silently (no ring, no UI) so the AI can answer them. Calls/videos
+  // are never auto-picked - they always ring as normal.
+  const aiChatAuto = useRef(false);
+  const aiCfgRef = useRef({});
+  const aiAstroRef = useRef({});
+  const handled = useRef(new Set());
+
+  useEffect(() => {
+    if (!uid) return undefined;
+    const recompute = () => {
+      aiChatAuto.current = !!(aiAstroRef.current
+        && aiAstroRef.current.aiAssistant
+        && assistantService.aiAvailableForAstro(aiCfgRef.current, uid));
+    };
+    const u1 = assistantService.watchAiConfig((cfg) => {
+      aiCfgRef.current = cfg || {}; recompute();
+    });
+    const u2 = astrologerService.listenAstrologer(uid, (a) => {
+      aiAstroRef.current = a || {}; recompute();
+    });
+    return () => { if (u1) u1(); if (u2) u2(); };
+  }, [uid]);
 
   useEffect(() => {
     if (!uid) return undefined;
     return sessionService.listenIncomingRequests(uid, (list) => {
-      setReq(isOnCall ? null : (list[0] || null));
+      // Auto-accept every incoming CHAT request when AI auto-pick is on.
+      if (aiChatAuto.current) {
+        list.filter((s) => s.type === 'chat'
+          && !handled.current.has(s.id)).forEach((s) => {
+          handled.current.add(s.id);
+          sessionService.updateSessionStatus(s.id, 'active',
+            { startTime: new Date() }).catch(() => {});
+        });
+      }
+      // Ring only for requests we are NOT auto-picking (calls/videos, or
+      // chats when AI is off).
+      const ringable = list.filter((s) =>
+        !(aiChatAuto.current && s.type === 'chat'));
+      setReq(isOnCall ? null : (ringable[0] || null));
     });
   }, [uid, isOnCall]);
 

@@ -198,7 +198,7 @@ function FullKundli({ r, kundli }) {
         onClick={() => kundliService.downloadKundliReport(kundli || {}, r)}
         className="mt-2 rounded-full bg-primary px-3 py-1.5 text-xs
           font-bold text-white">
-        ⬇ Download full report (PDF) — free
+        ⬇ Download full report (PDF), free
       </button>
 
       <div className="mt-2 flex flex-wrap gap-1">

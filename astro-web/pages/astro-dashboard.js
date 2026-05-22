@@ -240,21 +240,21 @@ export default function AstroDashboard() {
         </div>
 
         {/* AI Assistant: only shown once the admin enables it for this
-            astrologer. When ON, incoming CHAT consultations are answered
-            automatically by Claude AI in the astrologer's voice, using the
-            client's kundli (DOB/time/place) in a Vedic style. */}
+            astrologer. When ON, incoming chats are auto-picked and answered
+            for the astrologer (chat only, never calls). */}
         {aiAvailable && (
           <div className="mt-3 flex items-center justify-between rounded-card
             border border-primary/30 bg-primary/5 p-3">
             <span className="font-medium">
-              🤖 AI Assistant (auto-answer chats)
+              AI Assistant (auto-answer chats)
               <span className={`ml-2 text-xs font-semibold ${
                 astro.aiAssistant ? 'text-success' : 'text-sub-text'}`}>
                 {astro.aiAssistant ? 'On' : 'Off'}
               </span>
               <span className="mt-0.5 block text-[11px] text-sub-text">
-                When on, Claude AI replies to your chats for you, in your
-                voice, reading the client’s kundli — no need to answer.
+                Once you enable this option, AI will reply to client chats on
+                your behalf. It auto picks incoming chats and answers them
+                for you. Works for chat only, not calls.
               </span>
             </span>
             <button type="button" role="switch"

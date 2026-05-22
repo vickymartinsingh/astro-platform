@@ -365,13 +365,13 @@ function KundliSummary({ r }) {
     <div className="mt-2 rounded-card bg-bg-light p-3 text-sm">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <div><span className="text-sub-text">Ascendant</span><br />
-          <b>{(r.ascendant && r.ascendant.sign) || r.zodiac || '—'}</b></div>
+          <b>{(r.ascendant && r.ascendant.sign) || r.zodiac || '-'}</b></div>
         <div><span className="text-sub-text">Nakshatra</span><br />
-          <b>{r.nakshatra || '—'}</b></div>
+          <b>{r.nakshatra || '-'}</b></div>
         <div><span className="text-sub-text">Moon sign</span><br />
-          <b>{r.chandra_rasi || '—'}</b></div>
+          <b>{r.chandra_rasi || '-'}</b></div>
         <div><span className="text-sub-text">Sun sign</span><br />
-          <b>{r.soorya_rasi || '—'}</b></div>
+          <b>{r.soorya_rasi || '-'}</b></div>
       </div>
       {n.personality && (
         <p className="mt-2 text-dark-text">{n.personality}</p>

@@ -59,7 +59,7 @@ export default function AdminAi() {
         ai_delay_min: lo,
         ai_delay_max: hi,
       });
-      flash('AI settings saved — live for astrologers');
+      flash('AI settings saved, live for astrologers');
     } catch (_) { flash('Could not save', 'error'); }
   }
 
@@ -87,7 +87,7 @@ export default function AdminAi() {
             {probe.configured
               ? <span className="text-success">✓ Key configured
                   ({probe.model} · {probe.region})</span>
-              : <span className="text-danger">✗ Not configured — set
+              : <span className="text-danger">✗ Not configured. Set
                   BEDROCK_API_KEY on the push-relay (Vercel) and redeploy.
                   {probe.error ? ` (${probe.error})` : ''}</span>}
           </div>
@@ -95,7 +95,7 @@ export default function AdminAi() {
         <p className="mt-2 text-[11px] text-sub-text">
           The AWS Bedrock API key must be set as the
           <code> BEDROCK_API_KEY</code> environment variable on the
-          push-relay project in Vercel — not in the app. Optional:
+          push-relay project in Vercel, not in the app. Optional:
           <code> BEDROCK_REGION</code>, <code>BEDROCK_MODEL_ID</code>.
         </p>
       </div>

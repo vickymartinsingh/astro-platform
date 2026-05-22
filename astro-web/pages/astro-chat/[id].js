@@ -219,11 +219,11 @@ export default function AstroChat() {
             rounded-card border border-primary/30 bg-white p-2.5">
             <div className="min-w-0">
               <div className="text-sm font-semibold text-dark-text">
-                🤖 AI Assistant
+                AI Assistant
               </div>
               <div className="text-[11px] text-sub-text">
                 {aiOn ? (aiBusy ? 'Replying…' : 'Auto-replying to chats')
-                  : 'Off — you reply manually'}
+                  : 'Off, you reply manually'}
               </div>
             </div>
             <button onClick={toggleAi}

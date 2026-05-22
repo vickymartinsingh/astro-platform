@@ -296,7 +296,7 @@ export function buildKundliReportHtml(kundli, report) {
       esc(p.sign || 'its sign')}${p.house ? `, in the ${p.house}th house`
       : ''}${p.retrograde ? ', and is retrograde' : ''}. `
       : `${name} is a key influence in every chart. `;
-    html += page(sec(`${name} — Significance & Placement`,
+    html += page(sec(`${name}: Significance & Placement`,
       para(`${name} represents ${PLANET_TRAITS[name]}`)
       + para(`${where}This colours the related areas of life and should be `
         + 'strengthened through the recommended remedies and conscious '
@@ -315,7 +315,7 @@ export function buildKundliReportHtml(kundli, report) {
   });
 
   // Dasha timeline
-  html += page(sec('Vimshottari Dasha — Planetary Periods',
+  html += page(sec('Vimshottari Dasha: Planetary Periods',
     (r.currentDasha
       ? `<p class="cur">Current Maha Dasha: <b>${
         esc(r.currentDasha.planet)}</b> (${
@@ -340,7 +340,7 @@ export function buildKundliReportHtml(kundli, report) {
       + 'astrologer on AstroSeer.')));
 
   return `<!doctype html><html><head><meta charset="utf-8">`
-    + `<title>${esc(k.name || 'Kundli')} — Vedic Report</title><style>`
+    + `<title>${esc(k.name || 'Kundli')} Vedic Report</title><style>`
     + `*{box-sizing:border-box}body{font-family:Georgia,'Times New Roman',`
     + `serif;color:#1f2937;margin:0;line-height:1.55}`
     + `.page{padding:48px 56px;min-height:100vh;page-break-after:always;`

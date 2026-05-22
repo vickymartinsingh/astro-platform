@@ -28,7 +28,7 @@ function BulkCard({ role, label, phrase }) {
     setBusy(true);
     try {
       const r = await adminService.resetAllAccounts({ role, parts: chosen });
-      flash(`Done — reset ${r.done}/${r.total} ${label.toLowerCase()}`);
+      flash(`Done, reset ${r.done}/${r.total} ${label.toLowerCase()}`);
       setSel({}); setConfirm('');
     } catch (e) {
       flash(`Failed: ${e.message || e}`, 'error');
@@ -93,8 +93,8 @@ export default function AdminReset() {
       </h1>
       <p className="mb-4 text-sm text-sub-text">
         Wipe selected data for every client or astrologer at once. To reset
-        a single account, open that user’s profile and use its “Danger zone
-        — reset account” panel. All resets are permanent.
+        a single account, open that user’s profile and use its “Danger zone:
+        reset account” panel. All resets are permanent.
       </p>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <BulkCard role="client" label="Clients" phrase="ERASE ALL CLIENTS" />

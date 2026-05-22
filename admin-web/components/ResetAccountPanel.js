@@ -42,7 +42,7 @@ export default function ResetAccountPanel({ uid, role = 'client', name,
         role, parts: chosen });
       const n = Object.values(r.counts || {})
         .reduce((a, v) => a + (Number(v) || 0), 0);
-      flash(`Reset done — ${chosen.length} categor${
+      flash(`Reset done, ${chosen.length} categor${
         chosen.length === 1 ? 'y' : 'ies'}, ${n} record(s) cleared`);
       setOpen(false); setSel({}); setConfirm('');
       if (onDone) onDone();
@@ -55,7 +55,7 @@ export default function ResetAccountPanel({ uid, role = 'client', name,
     <div className="surface mt-4 border border-red-200 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-bold uppercase tracking-wide
-          text-red-700">⚠ Danger zone — reset account</h2>
+          text-red-700">⚠ Danger zone: reset account</h2>
         <button onClick={() => setOpen((v) => !v)}
           className="rounded-full border border-red-300 px-3 py-1.5
             text-xs font-bold text-red-700 hover:bg-red-50">
