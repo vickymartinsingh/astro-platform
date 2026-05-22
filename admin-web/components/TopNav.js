@@ -60,7 +60,9 @@ const GROUPS = [
     ['/admin-appupdate', 'App Update & Splash'],
     ['/admin-sounds', 'Notification & Ringtone'],
     ['/admin-theme', 'App Theme'],
+    ['/admin-ai', 'AI Assistant'],
     ['/admin-email', 'Email & Alerts'],
+    ['/admin-reset', 'Bulk Account Reset'],
   ]],
 ];
 // Developer Portal: a parallel nav (same look, different contents) that
@@ -90,6 +92,7 @@ const DEV_GROUPS = [
   ['Integrations', [
     ['/admin-kundli-api', 'Kundli API'],
     ['/admin-payments', 'Payment Gateways'],
+    ['/admin-ai', 'AI Assistant'],
     ['/admin-settings', 'Core Settings'],
   ]],
   ['Advanced', [
@@ -98,6 +101,7 @@ const DEV_GROUPS = [
     ['/admin-email', 'Email & Alerts'],
     ['/admin-audit', 'Audit Log'],
     ['/admin-health', 'System Health'],
+    ['/admin-reset', 'Bulk Account Reset'],
   ]],
 ];
 // Support portal: a focused support-desk subset (no settings / payouts

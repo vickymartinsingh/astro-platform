@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import {
-  userService, sessionService, astrologerService, db,
+  userService, sessionService, astrologerService, kundliService, db,
 } from '@astro/shared';
 import {
   collection, query, where, getDocs, orderBy, limit,
 } from 'firebase/firestore';
 import Layout from '../../components/Layout';
+import ResetAccountPanel from '../../components/ResetAccountPanel';
 import { useRequireAdmin } from '../../lib/useAuth';
 
 const { sessionRefNo } = sessionService;
@@ -45,6 +46,8 @@ export default function AdminUserProfile() {
   const [sessions, setSessions] = useState([]);
   const [txns, setTxns] = useState([]);
   const [astroNames, setAstroNames] = useState({});
+  const [kundlis, setKundlis] = useState([]);
+  const [reports, setReports] = useState({}); // { [kundliId]: data|'loading'|'err' }
 
   useEffect(() => {
     if (loading || !id) return;
@@ -71,8 +74,27 @@ export default function AdminUserProfile() {
           limit(30)));
         setTxns(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
       } catch (_) { /* ignore (index may be missing - non-fatal) */ }
+      try {
+        setKundlis(await kundliService.getKundliProfiles(id) || []);
+      } catch (_) { /* ignore */ }
     })();
   }, [loading, id]);
+
+  async function viewReport(k) {
+    setReports((c) => ({ ...c, [k.id]: 'loading' }));
+    try {
+      const data = await kundliService.getFullKundli(k);
+      setReports((c) => ({ ...c, [k.id]: data || 'err' }));
+    } catch (_) { setReports((c) => ({ ...c, [k.id]: 'err' })); }
+  }
+  async function downloadReport(k) {
+    let data = reports[k.id];
+    if (!data || typeof data !== 'object') {
+      data = await kundliService.getFullKundli(k).catch(() => null);
+      if (data) setReports((c) => ({ ...c, [k.id]: data }));
+    }
+    kundliService.downloadKundliReport(k, data || {});
+  }
 
   if (loading || !u) {
     return <Layout><div className="surface p-4">Loading…</div></Layout>;
@@ -154,6 +176,70 @@ export default function AdminUserProfile() {
         <Row k="Language" v={u.language || '—'} />
         <Row k="Referral" v={u.referralCode || u.referredBy || '—'} />
         <Row k="Last seen" v={fmt(u.lastSeen || u.updatedAt)} />
+      </div>
+
+      {/* KUNDLI PROFILES */}
+      <div className="surface mt-4 p-3">
+        <h2 className="mb-2 text-sm font-bold uppercase tracking-wide
+          text-sub-text">
+          Kundli profiles ({kundlis.length})
+        </h2>
+        {kundlis.length === 0 ? (
+          <div className="text-sm text-sub-text">
+            No saved kundli for this customer.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {kundlis.map((k) => (
+              <div key={k.id} className="rounded-card border
+                border-gray-200 p-2">
+                <div className="flex flex-wrap items-center
+                  justify-between gap-2">
+                  <div>
+                    <div className="text-sm font-semibold">
+                      {k.name || 'Native'}
+                      {k.isDefault && (
+                        <span className="ml-1 rounded-full bg-bg-light
+                          px-1.5 py-0.5 text-[10px] font-bold
+                          text-primary">Default</span>
+                      )}
+                    </div>
+                    <div className="text-xs text-sub-text">
+                      {k.dob} · {k.tob} {k.ampm} · {k.place}
+                      {k.zodiac ? ` · ${k.zodiac}` : ''}
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => viewReport(k)}
+                      className="rounded-full bg-bg-light px-3 py-1.5
+                        text-xs font-bold text-primary">
+                      View
+                    </button>
+                    <button onClick={() => downloadReport(k)}
+                      className="rounded-full bg-primary px-3 py-1.5
+                        text-xs font-bold text-white">
+                      ⬇ PDF
+                    </button>
+                  </div>
+                </div>
+                {reports[k.id] === 'loading' && (
+                  <div className="mt-2 text-xs text-sub-text">
+                    Generating kundli…
+                  </div>
+                )}
+                {reports[k.id] === 'err' && (
+                  <div className="mt-2 text-xs text-danger">
+                    Kundli service unavailable (set Prokerala keys on the
+                    relay).
+                  </div>
+                )}
+                {reports[k.id] && typeof reports[k.id] === 'object' && (
+                  <KundliSummary r={reports[k.id]} />
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* SESSIONS */}
@@ -248,6 +334,12 @@ export default function AdminUserProfile() {
           </table>
         </div>
       </div>
+
+      {/* DANGER ZONE: reset account */}
+      <ResetAccountPanel uid={id}
+        role={(u.role === 'astrologer') ? 'astrologer' : 'client'}
+        name={u.name || u.email}
+        onDone={() => router.reload()} />
     </Layout>
   );
 }
@@ -264,3 +356,29 @@ const Row = ({ k, v }) => (
     <span className="flex-1 font-semibold">{v}</span>
   </div>
 );
+
+// Compact in-page summary of a generated kundli (full detail is in the
+// downloadable PDF). Shows the key Vedic markers + personality snippet.
+function KundliSummary({ r }) {
+  const n = (r && r.narrative) || {};
+  return (
+    <div className="mt-2 rounded-card bg-bg-light p-3 text-sm">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div><span className="text-sub-text">Ascendant</span><br />
+          <b>{(r.ascendant && r.ascendant.sign) || r.zodiac || '—'}</b></div>
+        <div><span className="text-sub-text">Nakshatra</span><br />
+          <b>{r.nakshatra || '—'}</b></div>
+        <div><span className="text-sub-text">Moon sign</span><br />
+          <b>{r.chandra_rasi || '—'}</b></div>
+        <div><span className="text-sub-text">Sun sign</span><br />
+          <b>{r.soorya_rasi || '—'}</b></div>
+      </div>
+      {n.personality && (
+        <p className="mt-2 text-dark-text">{n.personality}</p>
+      )}
+      <p className="mt-1 text-[11px] text-sub-text">
+        Download the PDF for the complete multi-page report.
+      </p>
+    </div>
+  );
+}

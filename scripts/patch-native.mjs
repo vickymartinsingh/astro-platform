@@ -37,6 +37,31 @@ function patchAppName(app) {
   return `name: "${name}" (${app})`;
 }
 
+// The Google Play Services native sign-in (@codetrix-studio/capacitor-
+// google-auth) reads R.string.server_client_id at startup, so the string
+// MUST exist in every app's strings.xml or the Android build fails to
+// compile. It is the Firebase project's WEB OAuth client id (type 3),
+// shared by all apps. Injected here so it survives native regeneration.
+const GOOGLE_WEB_CLIENT_ID =
+  '402763204723-1f0mff93i07o9i481eg2u24mk43si5t6.apps.googleusercontent.com';
+
+function patchServerClientId(app) {
+  const strF = join(ROOT, app, 'android', 'app', 'src', 'main', 'res',
+    'values', 'strings.xml');
+  if (!existsSync(strF)) return `server_client_id: skipped (${app})`;
+  let x = readFileSync(strF, 'utf8');
+  const line = `    <string name="server_client_id">`
+    + `${GOOGLE_WEB_CLIENT_ID}</string>`;
+  if (x.includes('name="server_client_id"')) {
+    x = x.replace(/<string name="server_client_id">[^<]*<\/string>/,
+      line.trim());
+  } else {
+    x = x.replace(/<\/resources>/, `${line}\n</resources>`);
+  }
+  writeFileSync(strF, x);
+  return `server_client_id: set (${app})`;
+}
+
 // Distinct Android versionName per app so support can tell which app a
 // user is on (android/ is gitignored & regenerated, so re-apply every
 // build). Single source of truth - bump here per release.
@@ -300,6 +325,7 @@ for (const app of APPS) {
 }
 for (const app of NAME_APPS) {
   console.log(patchAppName(app));
+  console.log(patchServerClientId(app));
   console.log(patchMainActivity(app));
   console.log(patchVersion(app));
   console.log(patchIosVersion(app));

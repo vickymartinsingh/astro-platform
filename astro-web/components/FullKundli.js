@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { kundliService } from '@astro/shared';
 
 function Sec({ title, children }) {
   return (
@@ -11,7 +12,7 @@ function Sec({ title, children }) {
 
 // Full ascendant-based Kundli report with tabbed sections. Same view
 // the client sees, so the astrologer reads the identical chart.
-export default function FullKundli({ r }) {
+export default function FullKundli({ r, kundli }) {
   const [tab, setTab] = useState('overview');
   const n = r.narrative || {};
   const lucky = n.lucky || {};
@@ -36,6 +37,12 @@ export default function FullKundli({ r }) {
           {r.cached ? 'Saved report' : 'Newly generated'}
         </span>
       </div>
+      <button
+        onClick={() => kundliService.downloadKundliReport(kundli || {}, r)}
+        className="mt-2 rounded-full bg-primary px-3 py-1.5 text-xs
+          font-bold text-white">
+        ⬇ Download full report (PDF)
+      </button>
 
       <div className="mt-2 flex flex-wrap gap-1">
         {TABS.map(([k, label]) => (

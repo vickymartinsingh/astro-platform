@@ -5,7 +5,7 @@
 // so the admin panel is fully functional without Cloud Functions.
 import {
   collection, query, where, orderBy, getDocs, limit, doc, getDoc, setDoc,
-  updateDoc, addDoc, runTransaction, serverTimestamp, deleteDoc,
+  updateDoc, addDoc, runTransaction, serverTimestamp, deleteDoc, writeBatch,
 } from 'firebase/firestore';
 import { initializeApp, getApps } from 'firebase/app';
 import {
@@ -108,6 +108,199 @@ export function deleteUser(uid) {
     try { await deleteDoc(doc(db, 'astrologers', uid)); } catch (_) {}
     return { success: true };
   });
+}
+
+// ---------------------------------------------------------------------
+// ACCOUNT RESET (admin). Selectively wipe a user's / astrologer's data,
+// or "reset as default" (everything + profile). Each part maps to the
+// collections it owns. Direct, admin-gated Firestore writes (no Cloud
+// Function needed). Returns a per-part count of deleted/updated docs.
+// ---------------------------------------------------------------------
+// The selectable categories shown in the admin UI.
+export const RESET_PARTS = [
+  ['chats', 'Chats & messages'],
+  ['calls', 'Calls & video logs'],
+  ['history', 'Consultation history (all sessions)'],
+  ['kundli', 'Kundli profiles'],
+  ['remedy', 'Remedies (astrologer)'],
+  ['reviews', 'Reviews & ratings'],
+  ['complaint', 'Complaints / disputes'],
+  ['notification', 'Notifications'],
+  ['transaction', 'All transactions'],
+  ['recharge', 'Recharges'],
+  ['refund', 'Refunds'],
+  ['wallet', 'Wallet balance'],
+  ['profile', 'Profile (reset to default)'],
+];
+
+// Delete every doc returned by a query, in batches (Firestore limit 500).
+async function deleteAllDocs(qy) {
+  const snap = await getDocs(qy);
+  let n = 0;
+  for (let i = 0; i < snap.docs.length; i += 400) {
+    const batch = writeBatch(db);
+    snap.docs.slice(i, i + 400).forEach((d) => { batch.delete(d.ref); n += 1; });
+    await batch.commit();
+  }
+  return n;
+}
+
+// Sessions involving this uid as the client (userId) OR the astrologer
+// (astroId). Optionally filtered to certain session types.
+async function deleteSessionsFor(uid, types) {
+  let n = 0;
+  for (const field of ['userId', 'astroId']) {
+    const snap = await getDocs(query(
+      collection(db, 'sessions'), where(field, '==', uid)));
+    for (let i = 0; i < snap.docs.length; i += 400) {
+      const batch = writeBatch(db);
+      snap.docs.slice(i, i + 400).forEach((d) => {
+        const t = (d.data() || {}).type;
+        if (!types || types.includes(t)) { batch.delete(d.ref); n += 1; }
+      });
+      await batch.commit();
+    }
+  }
+  return n;
+}
+
+// Chats where the uid is a participant + their messages subcollection.
+async function deleteChatsFor(uid) {
+  const snap = await getDocs(query(collection(db, 'chats'),
+    where('participants', 'array-contains', uid)));
+  let n = 0;
+  for (const d of snap.docs) {
+    try {
+      const msgs = await getDocs(collection(db, 'chats', d.id, 'messages'));
+      for (let i = 0; i < msgs.docs.length; i += 400) {
+        const b = writeBatch(db);
+        msgs.docs.slice(i, i + 400).forEach((m) => b.delete(m.ref));
+        await b.commit();
+      }
+    } catch (_) { /* ignore message wipe errors, still drop the chat */ }
+    try { await deleteDoc(d.ref); n += 1; } catch (_) { /* ignore */ }
+  }
+  return n;
+}
+
+async function deleteTxnsFor(uid, match) {
+  const snap = await getDocs(query(collection(db, 'transactions'),
+    where('userId', '==', uid)));
+  let n = 0;
+  for (let i = 0; i < snap.docs.length; i += 400) {
+    const batch = writeBatch(db);
+    snap.docs.slice(i, i + 400).forEach((d) => {
+      if (!match || match(d.data() || {})) { batch.delete(d.ref); n += 1; }
+    });
+    await batch.commit();
+  }
+  return n;
+}
+
+// Reset one account. `parts` is an array of RESET_PARTS keys.
+// `role` ('client' | 'astrologer') decides which profile doc to reset.
+export async function resetAccountData(uid, { role = 'client',
+  parts = [] } = {}) {
+  if (!uid) throw new Error('uid required');
+  const want = new Set(parts);
+  const out = {};
+
+  if (want.has('chats')) out.chats = await deleteChatsFor(uid);
+  if (want.has('history')) out.history = await deleteSessionsFor(uid);
+  else if (want.has('calls')) {
+    out.calls = await deleteSessionsFor(uid, ['call', 'video']);
+  }
+  if (want.has('kundli')) {
+    out.kundli = await deleteAllDocs(query(collection(db, 'kundliProfiles'),
+      where('userId', '==', uid)));
+  }
+  if (want.has('notification')) {
+    out.notification = await deleteAllDocs(query(
+      collection(db, 'notifications'), where('userId', '==', uid)));
+  }
+  if (want.has('complaint')) {
+    let n = 0;
+    for (const field of ['userId', 'astroId']) {
+      n += await deleteAllDocs(query(collection(db, 'disputes'),
+        where(field, '==', uid)));
+    }
+    out.complaint = n;
+  }
+  if (want.has('reviews')) {
+    let n = 0;
+    for (const field of ['userId', 'astroId']) {
+      try {
+        n += await deleteAllDocs(query(collection(db, 'reviews'),
+          where(field, '==', uid)));
+      } catch (_) { /* field may not exist on every review */ }
+    }
+    out.reviews = n;
+  }
+  if (want.has('transaction')) out.transaction = await deleteTxnsFor(uid);
+  else {
+    if (want.has('recharge')) {
+      out.recharge = await deleteTxnsFor(uid, (t) =>
+        /recharge|topup|top-up|add/i.test(`${t.type} ${t.reason}`));
+    }
+    if (want.has('refund')) {
+      out.refund = await deleteTxnsFor(uid, (t) =>
+        /refund/i.test(`${t.type} ${t.reason}`));
+    }
+  }
+  if (want.has('remedy') && role === 'astrologer') {
+    try {
+      await updateDoc(doc(db, 'astrologers', uid), { remedies: [] });
+      out.remedy = 1;
+    } catch (_) { out.remedy = 0; }
+  }
+  if (want.has('wallet')) {
+    try {
+      await updateDoc(doc(db, 'users', uid), { wallet: 0 });
+      if (role === 'astrologer') {
+        try {
+          await updateDoc(doc(db, 'astrologers', uid),
+            { wallet: 0, earnings: 0 });
+        } catch (_) { /* astrologer doc may not track wallet */ }
+      }
+      out.wallet = 0;
+    } catch (_) { /* ignore */ }
+  }
+  if (want.has('profile')) {
+    // Reset to a clean default profile but KEEP the login identity
+    // (uid, email, role, createdAt) so the person can still sign in.
+    const reset = {
+      name: '', gender: '', dob: '', tob: '', timeOfBirth: '',
+      place: '', placeOfBirth: '', language: '', bio: '',
+      profileImage: '', avatar: '', wallet: 0, status: 'active',
+      isBlocked: false, updatedAt: serverTimestamp(),
+    };
+    try { await updateDoc(doc(db, 'users', uid), reset); } catch (_) {}
+    if (role === 'astrologer') {
+      try {
+        await updateDoc(doc(db, 'astrologers', uid), {
+          remedies: [], bio: '', updatedAt: serverTimestamp(),
+        });
+      } catch (_) {}
+    }
+    out.profile = 1;
+  }
+  return { success: true, uid, parts: [...want], counts: out };
+}
+
+// Reset MANY accounts at once (every client or every astrologer). Heavy
+// and irreversible - the UI must require a typed confirmation.
+export async function resetAllAccounts({ role = 'client', parts = [] } = {}) {
+  const users = await getAllUsers(
+    role === 'astrologer' ? { role: 'astrologer' } : {});
+  const targets = role === 'astrologer'
+    ? users
+    : users.filter((u) => (u.role || 'client') === 'client');
+  let done = 0;
+  for (const u of targets) {
+    try { await resetAccountData(u.uid, { role, parts }); done += 1; }
+    catch (_) { /* continue with the rest */ }
+  }
+  return { success: true, total: targets.length, done };
 }
 
 export function approveAstrologer(astroId, approved = true) {

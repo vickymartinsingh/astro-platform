@@ -119,7 +119,7 @@ export default function AstroKundli() {
                 </div>
               )}
               {full[k.id] && typeof full[k.id] === 'object' && (
-                <FullKundli r={full[k.id]} />
+                <FullKundli r={full[k.id]} kundli={k} />
               )}
             </div>
           ))}

@@ -153,6 +153,240 @@ export function generateNarrative(r) {
   };
 }
 
+// ---------------------------------------------------------------------
+// FULL PRINTABLE REPORT (free, multi-page "Save as PDF").
+// Builds a long, richly-sectioned HTML document from the kundli data +
+// narrative. Each major section starts on a new page (CSS page-break) so
+// the browser / Android print dialog produces a complete multi-page PDF
+// the customer, astrologer and admin can all download for free.
+// ---------------------------------------------------------------------
+const PLANET_TRAITS = {
+  Sun: 'the soul, ego, vitality, father, authority and government. A '
+    + 'strong Sun gives confidence, leadership and good health; a weak '
+    + 'Sun can bring self-doubt or friction with authority.',
+  Moon: 'the mind, emotions, mother and inner peace. The Moon governs '
+    + 'how you feel and nurture; a well-placed Moon brings calm, '
+    + 'popularity and emotional strength.',
+  Mars: 'energy, courage, siblings, land and drive. Mars fuels ambition '
+    + 'and action; when afflicted it can show impatience or conflict.',
+  Mercury: 'intellect, speech, business, learning and communication. '
+    + 'A strong Mercury sharpens analysis, trade and expression.',
+  Jupiter: 'wisdom, fortune, children, teachers and dharma. Jupiter is '
+    + 'the great benefic, expanding whatever it touches with knowledge '
+    + 'and grace.',
+  Venus: 'love, marriage, luxury, art and comforts. Venus governs '
+    + 'relationships and refinement, vehicles and material pleasures.',
+  Saturn: 'discipline, karma, longevity, labour and patience. Saturn '
+    + 'rewards honest, sustained effort and teaches through delay.',
+  Rahu: 'ambition, foreign matters, technology and sudden gains. Rahu '
+    + 'amplifies worldly desire and unconventional paths.',
+  Ketu: 'detachment, spirituality, past-life karma and liberation. '
+    + 'Ketu turns the mind inward toward moksha.',
+};
+const HOUSE_MEANINGS = [
+  ['First House (Lagna)', 'self, body, personality, vitality and the '
+    + 'overall direction of life.'],
+  ['Second House', 'wealth, family, speech, food and accumulated assets.'],
+  ['Third House', 'courage, siblings, communication, short journeys and '
+    + 'self-effort.'],
+  ['Fourth House', 'mother, home, property, vehicles and inner happiness.'],
+  ['Fifth House', 'intelligence, children, romance, creativity and past '
+    + 'merit (purva punya).'],
+  ['Sixth House', 'health, enemies, debts, service and daily work.'],
+  ['Seventh House', 'marriage, partnerships, spouse and business '
+    + 'relationships.'],
+  ['Eighth House', 'longevity, transformation, inheritance and hidden '
+    + 'matters.'],
+  ['Ninth House', 'fortune, dharma, father, higher learning and long '
+    + 'journeys.'],
+  ['Tenth House', 'career, status, authority and karma in the world.'],
+  ['Eleventh House', 'gains, income, friends, ambitions and fulfilment '
+    + 'of desires.'],
+  ['Twelfth House', 'expenses, losses, foreign lands, isolation and '
+    + 'spiritual liberation.'],
+];
+
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Build the complete printable report as a standalone HTML document.
+export function buildKundliReportHtml(kundli, report) {
+  const k = kundli || {};
+  const r = report || {};
+  const n = r.narrative || {};
+  const lucky = n.lucky || {};
+  const asc = (r.ascendant && r.ascendant.sign) || r.zodiac || k.zodiac || '-';
+  const planets = Array.isArray(r.planets) ? r.planets : [];
+  const dasha = Array.isArray(r.dasha) ? r.dasha : [];
+  const byHouse = {};
+  planets.forEach((p) => {
+    const h = Number(p.house) || 0;
+    if (!byHouse[h]) byHouse[h] = [];
+    byHouse[h].push(p.name);
+  });
+  const today = new Date().toISOString().slice(0, 10);
+
+  const page = (inner) => `<section class="page">${inner}</section>`;
+  const sec = (title, body) => `<h2>${esc(title)}</h2>${body}`;
+  const para = (t) => `<p>${esc(t)}</p>`;
+
+  // Cover
+  let html = page(`
+    <div class="cover">
+      <div class="brand">AstroSeer</div>
+      <h1>Vedic Birth Chart Report</h1>
+      <div class="kundli-name">${esc(k.name || 'Native')}</div>
+      <table class="birth">
+        <tr><td>Date of birth</td><td>${esc(k.dob || '-')}</td></tr>
+        <tr><td>Time of birth</td><td>${esc(k.tob || '-')} ${
+  esc(k.ampm || '')}</td></tr>
+        <tr><td>Place of birth</td><td>${esc(k.place || '-')}</td></tr>
+        <tr><td>Ascendant (Lagna)</td><td>${esc(asc)}</td></tr>
+        <tr><td>Moon sign (Rasi)</td><td>${esc(r.chandra_rasi || '-')}</td></tr>
+        <tr><td>Sun sign</td><td>${esc(r.soorya_rasi || '-')}</td></tr>
+        <tr><td>Nakshatra</td><td>${esc(r.nakshatra || '-')}${
+  r.nakshatra_pada ? ` (pada ${esc(r.nakshatra_pada)})` : ''}</td></tr>
+      </table>
+      <div class="generated">Generated ${esc(today)} · Free full report</div>
+    </div>`);
+
+  // Personality & life overview
+  html += page(sec('Personality & Nature',
+    para(n.personality || `As a ${asc} ascendant native, your chart `
+      + 'reflects a unique blend of strengths and lessons.'))
+    + sec('Life Path', para(n.life || '')));
+
+  // Career, health, love
+  html += page(sec('Career & Profession', para(n.career || ''))
+    + sec('Health & Wellbeing', para(n.health || ''))
+    + sec('Love & Relationships', para(n.love || '')));
+
+  // Lucky factors
+  html += page(sec('Auspicious & Lucky Factors', `
+    <table class="kv">
+      <tr><td>Ruling deity</td><td>${esc(lucky.deity || '-')}</td></tr>
+      <tr><td>Lucky colour</td><td>${esc(lucky.color || '-')}</td></tr>
+      <tr><td>Birth stone</td><td>${esc(lucky.stone || '-')}</td></tr>
+      <tr><td>Favourable direction</td><td>${
+  esc(lucky.direction || '-')}</td></tr>
+      <tr><td>Lucky syllables</td><td>${esc(lucky.syllables || '-')}</td></tr>
+    </table>`));
+
+  // Planet positions table
+  html += page(sec('Planetary Positions', `
+    <table class="grid">
+      <tr><th>Planet</th><th>Sign</th><th>House</th><th>Degree</th>
+        <th>Motion</th></tr>
+      ${planets.length ? planets.map((p) => `<tr><td>${esc(p.name)}</td>`
+    + `<td>${esc(p.sign || '-')}</td><td>${esc(p.house ?? '-')}</td>`
+    + `<td>${esc(p.degree ?? '-')}</td>`
+    + `<td>${p.retrograde ? 'Retrograde' : 'Direct'}</td></tr>`).join('')
+    : '<tr><td colspan="5">Planetary detail unavailable on the '
+      + 'current data plan.</td></tr>'}
+    </table>`));
+
+  // Per-planet detailed analysis (one page each)
+  const planetByName = {};
+  planets.forEach((p) => { planetByName[p.name] = p; });
+  Object.keys(PLANET_TRAITS).forEach((name) => {
+    const p = planetByName[name];
+    const where = p ? `In your chart ${name} is placed in ${
+      esc(p.sign || 'its sign')}${p.house ? `, in the ${p.house}th house`
+      : ''}${p.retrograde ? ', and is retrograde' : ''}. `
+      : `${name} is a key influence in every chart. `;
+    html += page(sec(`${name} — Significance & Placement`,
+      para(`${name} represents ${PLANET_TRAITS[name]}`)
+      + para(`${where}This colours the related areas of life and should be `
+        + 'strengthened through the recommended remedies and conscious '
+        + 'effort.')));
+  });
+
+  // Per-house analysis (one page each)
+  HOUSE_MEANINGS.forEach(([title, meaning], i) => {
+    const occ = byHouse[i + 1] || [];
+    html += page(sec(`${title}`, para(`The ${title} governs ${meaning}`)
+      + para(occ.length
+        ? `Planets occupying this house: ${esc(occ.join(', '))}. Their `
+          + 'energies directly shape these matters in your life.'
+        : 'No planet occupies this house, so its results flow mainly '
+          + 'through its lord and the planets aspecting it.')));
+  });
+
+  // Dasha timeline
+  html += page(sec('Vimshottari Dasha — Planetary Periods',
+    (r.currentDasha
+      ? `<p class="cur">Current Maha Dasha: <b>${
+        esc(r.currentDasha.planet)}</b> (${
+        esc(String(r.currentDasha.start || '').slice(0, 10))} to ${
+        esc(String(r.currentDasha.end || '').slice(0, 10))})</p>`
+      : '')
+    + (dasha.length ? `<table class="grid"><tr><th>Mahadasha</th>`
+      + `<th>From</th><th>To</th></tr>${dasha.map((d) => `<tr><td>${
+        esc(d.planet)}${d.current ? ' (current)' : ''}</td><td>${
+        esc(String(d.start || '').slice(0, 10))}</td><td>${
+        esc(String(d.end || '').slice(0, 10))}</td></tr>`).join('')}</table>`
+      : '<p>Dasha detail unavailable on the current data plan.</p>')));
+
+  // Remedies / disclaimer
+  html += page(sec('General Remedies & Guidance',
+    para('Strengthen benefic planets through their gemstones, mantras, '
+      + 'charity (daan) on the planet’s day, and a disciplined, '
+      + 'dharmic routine. Favour your lucky colour and direction for '
+      + 'important beginnings, and offer prayers to your ruling deity.')
+    + para('This report is generated from your birth details for guidance '
+      + 'and self-reflection. For personalised predictions, consult an '
+      + 'astrologer on AstroSeer.')));
+
+  return `<!doctype html><html><head><meta charset="utf-8">`
+    + `<title>${esc(k.name || 'Kundli')} — Vedic Report</title><style>`
+    + `*{box-sizing:border-box}body{font-family:Georgia,'Times New Roman',`
+    + `serif;color:#1f2937;margin:0;line-height:1.55}`
+    + `.page{padding:48px 56px;min-height:100vh;page-break-after:always;`
+    + `border-bottom:1px solid #eee}`
+    + `h1{font-size:30px;color:#5b21b6;margin:8px 0}`
+    + `h2{font-size:20px;color:#5b21b6;border-bottom:2px solid #ede9fe;`
+    + `padding-bottom:6px;margin:0 0 12px}`
+    + `p{font-size:14px;margin:0 0 12px;text-align:justify}`
+    + `.cover{text-align:center;padding-top:80px}`
+    + `.brand{letter-spacing:3px;color:#a78bfa;font-weight:bold}`
+    + `.kundli-name{font-size:22px;font-weight:bold;margin:6px 0 24px}`
+    + `table{width:100%;border-collapse:collapse;margin:0 auto 12px}`
+    + `.birth{max-width:420px}.birth td,.kv td{padding:7px 10px;`
+    + `border:1px solid #e5e7eb;text-align:left;font-size:14px}`
+    + `.birth td:first-child,.kv td:first-child{color:#6b7280;width:45%}`
+    + `.grid th,.grid td{border:1px solid #e5e7eb;padding:6px 8px;`
+    + `font-size:13px;text-align:left}.grid th{background:#f5f3ff}`
+    + `.generated{margin-top:36px;color:#9ca3af;font-size:12px}`
+    + `.cur{background:#5b21b6;color:#fff;padding:10px 12px;border-radius:8px}`
+    + `@media print{.page{border:none}}`
+    + `</style></head><body>${html}</body></html>`;
+}
+
+// Open the printable report in a new window and trigger the print /
+// "Save as PDF" dialog. Free, no page limit, works on web + Android.
+// Window-guarded so importing this module never breaks SSR / the bundle.
+export function downloadKundliReport(kundli, report) {
+  if (typeof window === 'undefined') return false;
+  const html = buildKundliReportHtml(kundli, report);
+  const w = window.open('', '_blank');
+  if (!w) {
+    // Popup blocked (e.g. inside the app WebView): fall back to a data
+    // URL navigation in the same tab so the user still gets the report.
+    const blob = new Blob([html], { type: 'text/html' });
+    window.open(URL.createObjectURL(blob), '_blank');
+    return true;
+  }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+  // Give the layout a moment, then open the print dialog.
+  w.onload = () => { try { w.focus(); w.print(); } catch (_) {} };
+  setTimeout(() => { try { w.focus(); w.print(); } catch (_) {} }, 600);
+  return true;
+}
+
 // Full kundli with CACHING. The report is stored on the profile doc and
 // returned as-is unless dob / time / place changed (signature differs),
 // which avoids re-hitting the Prokerala API every time.

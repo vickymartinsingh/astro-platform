@@ -33,3 +33,11 @@ google-services.json
 coverage/
 _blueprint_unpacked/
 PROKERALA_SECRET.txt
+
+# Secrets & build artifacts (never commit)
+firebase-key.json.txt
+firebase-key*.json
+firebase-key*.txt
+dist-apk/
+*.apk
+*.aab

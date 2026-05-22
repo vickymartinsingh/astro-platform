@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import {
   sessionService, chatService, userService, kundliService,
-  remedyService,
+  remedyService, astrologerService, assistantService,
 } from '@astro/shared';
 import { useRequireAstrologer } from '../../lib/useAuth';
 import { playPing } from '../../lib/ping';
@@ -23,6 +23,13 @@ export default function AstroChat() {
   const [busyAudio, setBusyAudio] = useState(false);
   const [remedyOpen, setRemedyOpen] = useState(false);
   const [myRemedies, setMyRemedies] = useState([]);
+  const [aiAvailable, setAiAvailable] = useState(false); // admin-enabled
+  const [aiOn, setAiOn] = useState(false);                // this astro's
+  const [aiBusy, setAiBusy] = useState(false);
+  const aiRepliedRef = useRef('');
+  const aiCfgRef = useRef({}); // latest admin AI config (delay range etc.)
+  const aiKundliRef = useRef(''); // short kundli context for AI replies
+  const aiKundliDone = useRef(''); // birthSig already generated+saved
   const scrollRef = useRef(null);
   const lastCount = useRef(0);
   const typingTsRef = useRef(0);
@@ -58,6 +65,109 @@ export default function AstroChat() {
     }
     scrollRef.current?.scrollTo({ top: 1e9, behavior: 'smooth' });
   }, [messages, user]);
+
+  // AI assistant availability: admin config (settings/config) gated to
+  // this astrologer + the astrologer's own saved preference.
+  useEffect(() => {
+    if (!user) return undefined;
+    const unsub = assistantService.watchAiConfig((cfg) => {
+      aiCfgRef.current = cfg || {};
+      setAiAvailable(assistantService.aiAvailableForAstro(cfg, user.uid));
+    });
+    astrologerService.getAstrologer(user.uid)
+      .then((a) => setAiOn(assistantService.astroAssistantOn(a)))
+      .catch(() => {});
+    return () => { if (unsub) unsub(); };
+  }, [user && user.uid]);
+
+  // When the assistant is active and the client has saved birth details,
+  // auto-generate the FULL kundli from their DOB / time / place and save
+  // it on the platform (kundliProfiles.report). This makes the chart
+  // available to the customer, astrologer and admin, downloadable as a
+  // free PDF - and gives the AI real chart context so it answers like a
+  // human astrologer who has "read" the kundli. Runs once per birth-data
+  // change (cached afterwards).
+  useEffect(() => {
+    if (!aiOn || !aiAvailable || !kundli || !kundli.dob) return;
+    if (session && session.type !== 'chat') return;
+    const sig = kundliService.birthSig(kundli);
+    if (aiKundliDone.current === sig) return;
+    aiKundliDone.current = sig;
+    (async () => {
+      try {
+        const r = await kundliService.getFullKundli(kundli);
+        if (!r) return;
+        const n = r.narrative || {};
+        const asc = (r.ascendant && r.ascendant.sign) || r.zodiac || '';
+        aiKundliRef.current = [
+          `Client birth details — DOB ${kundli.dob}, time ${
+            kundli.tob || '?'} ${kundli.ampm || ''}, place ${
+            kundli.place || '?'}.`,
+          asc ? `Ascendant (Lagna): ${asc}.` : '',
+          r.chandra_rasi ? `Moon sign: ${r.chandra_rasi}.` : '',
+          r.nakshatra ? `Nakshatra: ${r.nakshatra}.` : '',
+          n.personality ? `Personality: ${n.personality}` : '',
+          n.career ? n.career : '',
+        ].filter(Boolean).join(' ').slice(0, 1200);
+      } catch (_) { /* keep AI working even if kundli gen fails */ }
+    })();
+  }, [aiOn, aiAvailable, kundli, session]);
+
+  function toggleAi() {
+    const next = !aiOn;
+    setAiOn(next);
+    try {
+      astrologerService.updateAstrologer(user.uid, { aiAssistant: next });
+    } catch (_) {}
+  }
+
+  // AUTO-REPLY: when the assistant is ON, this is a CHAT session, and the
+  // newest message is a fresh text message from the client, generate a
+  // reply via the relay (Bedrock/Claude) and post it AS the astrologer,
+  // showing the typing indicator while it "writes". Voice/photo messages
+  // and the astro's own messages are ignored. One reply per client msg.
+  useEffect(() => {
+    if (!aiOn || !aiAvailable || !chatId || !session) return;
+    if (session.type !== 'chat' || aiBusy) return;
+    const last = messages[messages.length - 1];
+    if (!last || last.senderId !== session.userId) return;
+    if (!last.text || !String(last.text).trim()) return;
+    if (last.id === aiRepliedRef.current) return;
+    aiRepliedRef.current = last.id;
+    (async () => {
+      setAiBusy(true);
+      chatService.setTyping(chatId, user.uid, true);
+      const hist = messages.slice(-12)
+        .map((m) => ({ text: m.text,
+          fromClient: m.senderId === session.userId }))
+        .filter((m) => m.text && String(m.text).trim());
+      let reply = '';
+      try {
+        reply = await assistantService.generateReply({
+          messages: hist,
+          astrologerName: (user && user.displayName) || 'your astrologer',
+          clientName: (client && client.name) || 'the client',
+          context: aiKundliRef.current || '',
+        });
+      } catch (_) { reply = ''; }
+      // Human-like delay: random seconds between the admin-set min/max
+      // (defaults 3-9s) so the customer sees a natural typing pause and
+      // never realises it is automated.
+      const c = aiCfgRef.current || {};
+      const lo = Number.isFinite(+c.ai_delay_min) ? +c.ai_delay_min : 3;
+      const hi = Number.isFinite(+c.ai_delay_max) ? +c.ai_delay_max : 9;
+      const min = Math.max(0, lo);
+      const max = Math.max(min, hi);
+      const wait = Math.round((min + Math.random() * (max - min)) * 1000);
+      await new Promise((r) => setTimeout(r, wait));
+      chatService.setTyping(chatId, user.uid, false);
+      setAiBusy(false);
+      if (reply) {
+        try { await chatService.sendMessage(chatId, user.uid, reply); }
+        catch (_) {}
+      }
+    })();
+  }, [messages, aiOn, aiAvailable, chatId, session, client, user]);
 
   // typing indicator (other participant is the client = session.userId)
   useEffect(() => {
@@ -185,6 +295,27 @@ export default function AstroChat() {
         </button>
         <div className="font-bold">{client?.name || 'Client'}</div>
         <div className="text-xs text-sub-text">Code {client?.userCode}</div>
+        {aiAvailable && session.type === 'chat' && (
+          <div className="mt-3 flex items-center justify-between
+            rounded-card border border-primary/30 bg-white p-2.5">
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-dark-text">
+                🤖 AI Assistant
+              </div>
+              <div className="text-[11px] text-sub-text">
+                {aiOn ? (aiBusy ? 'Replying…' : 'Auto-replying to chats')
+                  : 'Off — you reply manually'}
+              </div>
+            </div>
+            <button onClick={toggleAi}
+              className={`relative h-6 w-11 shrink-0 rounded-full
+                transition ${aiOn ? 'bg-emerald-500' : 'bg-gray-300'}`}
+              aria-label="Toggle AI assistant">
+              <span className={`absolute top-0.5 h-5 w-5 rounded-full
+                bg-white transition-all ${aiOn ? 'left-5' : 'left-0.5'}`} />
+            </button>
+          </div>
+        )}
         {session.purpose && (
           <p className="mt-2 text-sm">Purpose: {session.purpose}</p>
         )}

@@ -149,7 +149,7 @@ export default function Kundli() {
                 </div>
               )}
               {chart[k.id] && typeof chart[k.id] === 'object' && (
-                <FullKundli r={chart[k.id]} />
+                <FullKundli r={chart[k.id]} kundli={k} />
               )}
             </div>
           ))}
@@ -168,7 +168,7 @@ function Sec({ title, children }) {
   );
 }
 
-function FullKundli({ r }) {
+function FullKundli({ r, kundli }) {
   const [tab, setTab] = useState('overview');
   const n = r.narrative || {};
   const lucky = n.lucky || {};
@@ -194,6 +194,12 @@ function FullKundli({ r }) {
           {r.cached ? 'Saved report' : 'Newly generated'}
         </span>
       </div>
+      <button
+        onClick={() => kundliService.downloadKundliReport(kundli || {}, r)}
+        className="mt-2 rounded-full bg-primary px-3 py-1.5 text-xs
+          font-bold text-white">
+        ⬇ Download full report (PDF) — free
+      </button>
 
       <div className="mt-2 flex flex-wrap gap-1">
         {TABS.map(([k, label]) => (

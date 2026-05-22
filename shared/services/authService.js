@@ -86,48 +86,76 @@ export function watchAuth(callback) {
 // WebViews, so we use the native @capacitor-firebase/authentication
 // plugin to get a Google ID token, then sign that token into the same
 // Firebase JS SDK so the rest of the app sees the user identically.
+// Server (web) OAuth client id - used as serverClientId for the native
+// Google account picker so the returned ID token is accepted by Firebase.
+const GOOGLE_WEB_CLIENT_ID =
+  '402763204723-1f0mff93i07o9i481eg2u24mk43si5t6.apps.googleusercontent.com';
+
+// Sign a Google ID token into the Firebase JS SDK so the rest of the app
+// sees the user identically to the web popup flow.
+async function finishGoogle(idToken) {
+  if (!idToken) {
+    const e = new Error('cancelled'); e.code = 'auth/cancelled'; throw e;
+  }
+  const cred = await signInWithCredential(
+    auth, GoogleAuthProvider.credential(idToken));
+  return cred.user;
+}
+
+function isCancel(msg) {
+  return /cancel|12501|canceled|popup_closed/i.test(String(msg || ''));
+}
+
 export async function loginWithGoogle() {
   if (isNativeApp()) {
-    // Capacitor auto-registers the native plugin as a runtime global, so
-    // we reach it via window.Capacitor.Plugins WITHOUT a bundler import.
-    const plugin = window.Capacitor
-      && window.Capacitor.Plugins
-      && window.Capacitor.Plugins.FirebaseAuthentication;
-    if (plugin) {
+    const P = (window.Capacitor && window.Capacitor.Plugins) || {};
+    // 1) @capacitor-firebase/authentication -> native picker via Android
+    //    Credential Manager. Works on modern devices; throws on many
+    //    budget / older ROMs ("device doesn't support credential manager").
+    const fb = P.FirebaseAuthentication;
+    if (fb) {
       try {
-        const result = await plugin.signInWithGoogle();
-        const idToken = result && result.credential
-          && result.credential.idToken;
-        if (idToken) {
-          const gCred = GoogleAuthProvider.credential(idToken);
-          const cred = await signInWithCredential(auth, gCred);
-          return cred.user;
-        }
-        // No token + no throw -> treat as cancel.
-        const e = new Error('cancelled');
-        e.code = 'auth/cancelled'; throw e;
+        const r = await fb.signInWithGoogle();
+        const idToken = r && r.credential && r.credential.idToken;
+        if (idToken) return await finishGoogle(idToken);
       } catch (e) {
-        const msg = String((e && (e.message || e.code)) || '');
-        // User actually cancelled the picker -> don't fall back.
-        if (/cancel|12501|canceled/i.test(msg)) {
-          throw e;
-        }
-        // The plugin uses Android Credential Manager (v8). MANY devices
-        // - budget phones, several Chinese ROMs, anything without an
-        // up-to-date Credential Manager backend - throw "device doesn't
-        // support credential manager" (or other ApiException). In that
-        // case fall through to the browser redirect flow below, which
-        // works on every device. (allowNavigation in capacitor.config
-        // keeps the redirect inside the WebView so it returns cleanly.)
+        const msg = (e && (e.message || e.code)) || '';
+        if (isCancel(msg)) throw e; // real user cancel -> stop
         // eslint-disable-next-line no-console
-        console.warn('Native Google sign-in failed, using redirect:', msg);
+        console.warn('Credential Manager sign-in failed, trying GoogleAuth:',
+          msg);
       }
     }
-    // ---- Native fallback: browser redirect inside the WebView ----
-    const np = new GoogleAuthProvider();
-    np.setCustomParameters({ prompt: 'select_account' });
-    await signInWithRedirect(auth, np);
-    return null; // resolved by watchAuth/getRedirectResult on return
+    // 2) @codetrix-studio/capacitor-google-auth -> classic Google Play
+    //    Services account picker. No Credential Manager, no WebView, so
+    //    it is NOT blocked by Google's "secure browsers" policy (the
+    //    disallowed_useragent / 403 we saw with the redirect flow). This
+    //    is the reliable path for devices without Credential Manager.
+    const ga = P.GoogleAuth;
+    if (ga) {
+      try {
+        if (ga.initialize) {
+          await ga.initialize({
+            clientId: GOOGLE_WEB_CLIENT_ID,
+            scopes: ['profile', 'email'],
+            grantOfflineAccess: true,
+          });
+        }
+        const g = await ga.signIn();
+        const idToken = (g && ((g.authentication && g.authentication.idToken)
+          || g.idToken)) || '';
+        return await finishGoogle(idToken);
+      } catch (e) {
+        const msg = (e && (e.message || e.code)) || '';
+        if (isCancel(msg)) throw e;
+        // eslint-disable-next-line no-console
+        console.warn('GoogleAuth sign-in failed:', msg);
+        throw e; // no safe WebView fallback (Google blocks it)
+      }
+    }
+    const e = new Error('Google sign-in is unavailable on this device');
+    e.code = 'auth/operation-not-supported-in-this-environment';
+    throw e;
   }
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
