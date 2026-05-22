@@ -4,6 +4,9 @@ export default function Document() {
   return (
     <Html lang="en">
       <Head>
+        {/* Google Search Console domain ownership (OAuth branding). */}
+        <meta name="google-site-verification"
+          content="9-tzi_FQP7YVVr9GeXiErEp1dnW0ENNg_m4sdlq2bI8" />
         {/* Surface only REAL, actionable startup errors. iOS WKWebView
             sanitises every cross-origin / benign script error to the
             opaque "Script error." - showing a full-screen overlay for
