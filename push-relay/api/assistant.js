@@ -6,12 +6,31 @@
 //
 // Env vars (set in Vercel -> push-relay project):
 //   BEDROCK_API_KEY   - the AWS Bedrock long-term API key (ABSK...)
-//   BEDROCK_REGION    - optional, default us-east-1
-//   BEDROCK_MODEL_ID  - optional, default anthropic.claude-3-5-sonnet
+//   BEDROCK_REGION    - optional, default us-west-2
+//   BEDROCK_MODEL_ID  - optional. If unset, the relay AUTO-PICKS a model:
+//                       it tries the candidates below in order and uses
+//                       the first your account/region has access to,
+//                       caching it for later requests. So you normally
+//                       don't need to set this at all.
 //   ASSISTANT_RELAY_KEY - optional shared secret (x-assistant-key header)
-const REGION = process.env.BEDROCK_REGION || 'us-east-1';
-const MODEL = process.env.BEDROCK_MODEL_ID
-  || 'anthropic.claude-3-5-sonnet-20240620-v1:0';
+const REGION = process.env.BEDROCK_REGION || 'us-west-2';
+
+// Auto model selection. An explicit BEDROCK_MODEL_ID always wins; after
+// that we try Claude models from strongest to cheapest and use whichever
+// is enabled in this account/region. Cross-region inference-profile IDs
+// (the `us.` ones) are required by the newer Opus/Sonnet 4 models.
+const MODEL_CANDIDATES = [
+  process.env.BEDROCK_MODEL_ID,
+  'us.anthropic.claude-opus-4-1-20250805-v1:0',
+  'us.anthropic.claude-sonnet-4-20250514-v1:0',
+  'us.anthropic.claude-3-7-sonnet-20250219-v1:0',
+  'us.anthropic.claude-3-5-sonnet-20241022-v2:0',
+  'anthropic.claude-3-5-sonnet-20240620-v1:0',
+  'anthropic.claude-3-haiku-20240307-v1:0',
+].filter(Boolean);
+// Remembered across warm invocations so we don't re-probe every request.
+let resolvedModel = null;
+const MODEL = process.env.BEDROCK_MODEL_ID || MODEL_CANDIDATES[0];
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -24,7 +43,10 @@ module.exports = async (req, res) => {
   // Probe mode: GET ?probe=1 -> report whether the key is configured.
   if (req.method === 'GET') {
     return res.status(200).json({
-      configured: !!apiKey, region: REGION, model: MODEL,
+      configured: !!apiKey,
+      region: REGION,
+      model: resolvedModel || (process.env.BEDROCK_MODEL_ID
+        ? MODEL : 'auto (Opus → Sonnet → Haiku)'),
     });
   }
   if (req.method !== 'POST') {
@@ -80,33 +102,62 @@ module.exports = async (req, res) => {
     return res.status(400).json({ error: 'no client message' });
   }
 
-  const url = `https://bedrock-runtime.${REGION}.amazonaws.com`
-    + `/model/${encodeURIComponent(MODEL)}/converse`;
-  try {
+  const payload = JSON.stringify({
+    system,
+    messages,
+    inferenceConfig: { maxTokens: 300, temperature: 0.7 },
+  });
+  const callModel = async (model) => {
+    const url = `https://bedrock-runtime.${REGION}.amazonaws.com`
+      + `/model/${encodeURIComponent(model)}/converse`;
     const r = await fetch(url, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        system,
-        messages,
-        inferenceConfig: { maxTokens: 300, temperature: 0.7 },
-      }),
+      body: payload,
     });
     const j = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      return res.status(502).json({
-        error: 'bedrock error',
-        status: r.status,
-        detail: (j && (j.message || j.Message)) || '',
-      });
+    return { ok: r.ok, status: r.status, json: j };
+  };
+
+  // Try the already-resolved model first, then the candidate chain.
+  const order = resolvedModel
+    ? [resolvedModel, ...MODEL_CANDIDATES.filter((m) => m !== resolvedModel)]
+    : MODEL_CANDIDATES;
+  let last = null;
+  try {
+    for (const model of order) {
+      // eslint-disable-next-line no-await-in-loop
+      const r = await callModel(model);
+      const detail = (r.json && (r.json.message || r.json.Message)) || '';
+      // Auth/key problems affect every model - stop and report immediately.
+      if (r.status === 401
+        || /security token|unrecognizedclient|invalid.*key|expired/i
+          .test(detail)) {
+        return res.status(502).json({
+          error: 'bedrock auth error', status: r.status, detail });
+      }
+      if (r.ok) {
+        const reply = (((r.json.output || {}).message || {}).content || [])
+          .map((c) => c && c.text).filter(Boolean).join(' ').trim();
+        if (reply) {
+          resolvedModel = model; // remember the winner
+          return res.status(200).json({ reply, model });
+        }
+        last = { status: 502, detail: 'empty reply', model };
+        continue;
+      }
+      // Model not enabled / invalid for this account+region -> try next.
+      last = { status: r.status, detail, model };
     }
-    const reply = (((j.output || {}).message || {}).content || [])
-      .map((c) => c && c.text).filter(Boolean).join(' ').trim();
-    if (!reply) return res.status(502).json({ error: 'empty reply' });
-    return res.status(200).json({ reply });
+    return res.status(502).json({
+      error: 'no usable bedrock model',
+      detail: last ? `${last.model}: ${last.detail}` : 'all candidates failed',
+      hint: 'Enable a Claude model in Bedrock Model access for this region, '
+        + 'or set BEDROCK_MODEL_ID to an inference-profile ID you have.',
+    });
   } catch (e) {
     return res.status(500).json({
       error: String((e && e.message) || e) });
