@@ -90,18 +90,44 @@ export async function loginWithGoogle() {
   if (isNativeApp()) {
     // Capacitor auto-registers the native plugin as a runtime global, so
     // we reach it via window.Capacitor.Plugins WITHOUT a bundler import.
-    // (Importing '@capacitor-firebase/authentication' would drag its web
-    // build into webpack and break the static export.)
     const plugin = window.Capacitor
       && window.Capacitor.Plugins
       && window.Capacitor.Plugins.FirebaseAuthentication;
-    if (!plugin) throw new Error('Google sign-in is unavailable');
-    const result = await plugin.signInWithGoogle();
-    const idToken = result && result.credential && result.credential.idToken;
-    if (!idToken) throw new Error('Google sign-in was cancelled');
-    const gCred = GoogleAuthProvider.credential(idToken);
-    const cred = await signInWithCredential(auth, gCred);
-    return cred.user;
+    if (plugin) {
+      try {
+        const result = await plugin.signInWithGoogle();
+        const idToken = result && result.credential
+          && result.credential.idToken;
+        if (idToken) {
+          const gCred = GoogleAuthProvider.credential(idToken);
+          const cred = await signInWithCredential(auth, gCred);
+          return cred.user;
+        }
+        // No token + no throw -> treat as cancel.
+        const e = new Error('cancelled');
+        e.code = 'auth/cancelled'; throw e;
+      } catch (e) {
+        const msg = String((e && (e.message || e.code)) || '');
+        // User actually cancelled the picker -> don't fall back.
+        if (/cancel|12501|canceled/i.test(msg)) {
+          throw e;
+        }
+        // The plugin uses Android Credential Manager (v8). MANY devices
+        // - budget phones, several Chinese ROMs, anything without an
+        // up-to-date Credential Manager backend - throw "device doesn't
+        // support credential manager" (or other ApiException). In that
+        // case fall through to the browser redirect flow below, which
+        // works on every device. (allowNavigation in capacitor.config
+        // keeps the redirect inside the WebView so it returns cleanly.)
+        // eslint-disable-next-line no-console
+        console.warn('Native Google sign-in failed, using redirect:', msg);
+      }
+    }
+    // ---- Native fallback: browser redirect inside the WebView ----
+    const np = new GoogleAuthProvider();
+    np.setCustomParameters({ prompt: 'select_account' });
+    await signInWithRedirect(auth, np);
+    return null; // resolved by watchAuth/getRedirectResult on return
   }
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });

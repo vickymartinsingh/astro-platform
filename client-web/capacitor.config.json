@@ -4,7 +4,15 @@
   "webDir": "out",
   "bundledWebRuntime": false,
   "server": {
-    "androidScheme": "https"
+    "androidScheme": "https",
+    "allowNavigation": [
+      "*.firebaseapp.com",
+      "astrology-2092d.firebaseapp.com",
+      "accounts.google.com",
+      "*.google.com",
+      "apis.google.com",
+      "*.googleapis.com"
+    ]
   },
   "plugins": {
     "FirebaseAuthentication": {
