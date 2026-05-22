@@ -15,16 +15,23 @@
 //   ASSISTANT_RELAY_KEY - optional shared secret (x-assistant-key header)
 const REGION = process.env.BEDROCK_REGION || 'us-west-2';
 
+// Cross-region inference profiles are prefixed by region group: `us.` for
+// US regions, `eu.` for Europe, `apac.` for Asia-Pacific (e.g. Sydney
+// ap-southeast-2 / Mumbai ap-south-1). Pick the right prefix from REGION
+// so the auto-selected model IDs are valid in this account's region.
+const PFX = REGION.startsWith('ap-') ? 'apac.'
+  : REGION.startsWith('eu-') ? 'eu.' : 'us.';
+
 // Auto model selection. An explicit BEDROCK_MODEL_ID always wins; after
 // that we try Claude models from strongest to cheapest and use whichever
-// is enabled in this account/region. Cross-region inference-profile IDs
-// (the `us.` ones) are required by the newer Opus/Sonnet 4 models.
+// is enabled in this account/region (newer Opus/Sonnet 4 need the
+// region-prefixed inference profile; older ones also work on-demand).
 const MODEL_CANDIDATES = [
   process.env.BEDROCK_MODEL_ID,
-  'us.anthropic.claude-opus-4-1-20250805-v1:0',
-  'us.anthropic.claude-sonnet-4-20250514-v1:0',
-  'us.anthropic.claude-3-7-sonnet-20250219-v1:0',
-  'us.anthropic.claude-3-5-sonnet-20241022-v2:0',
+  `${PFX}anthropic.claude-opus-4-1-20250805-v1:0`,
+  `${PFX}anthropic.claude-sonnet-4-20250514-v1:0`,
+  `${PFX}anthropic.claude-3-7-sonnet-20250219-v1:0`,
+  `${PFX}anthropic.claude-3-5-sonnet-20241022-v2:0`,
   'anthropic.claude-3-5-sonnet-20240620-v1:0',
   'anthropic.claude-3-haiku-20240307-v1:0',
 ].filter(Boolean);
