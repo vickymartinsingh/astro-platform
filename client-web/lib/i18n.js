@@ -77,9 +77,14 @@ async function fetchTr(text, lang) {
     + `&dt=t&q=${encodeURIComponent(text)}`;
   const r = await fetch(url);
   if (!r.ok) throw new Error(`tr ${r.status}`);
-  const j = await r.json();
-  const out = (j && j[0]) ? j[0].map((s) => (s && s[0]) || '').join('') : '';
-  return out || text;
+  let j;
+  try { j = await r.json(); } catch (_) { throw new Error('tr parse'); }
+  // Strict shape check - a blocked / challenge response is not [[...]],
+  // so we throw and KEEP English instead of painting junk on the UI.
+  if (!Array.isArray(j) || !Array.isArray(j[0])) throw new Error('tr shape');
+  const out = j[0].map((s) => (s && s[0]) || '').join('');
+  if (!out || !out.trim()) return text; // empty -> keep source
+  return out;
 }
 
 function skip(node) {
@@ -160,6 +165,15 @@ async function runPass(lang) {
         }
       };
       await Promise.all([worker(), worker(), worker(), worker()]);
+      // Degenerate-response guard: if many DIFFERENT source strings all
+      // came back as the SAME word, the endpoint is broken/blocked.
+      // Drop those entries so we render English, not "local local local".
+      const vals = need.map((k) => cache[k])
+        .filter((v) => typeof v === 'string' && v.trim());
+      const uniq = new Set(vals.map((v) => v.trim().toLowerCase()));
+      if (vals.length >= 4 && uniq.size <= 1) {
+        need.forEach((k) => { delete cache[k]; });
+      }
       saveCache(lang);
     }
 

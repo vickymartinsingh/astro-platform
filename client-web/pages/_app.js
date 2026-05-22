@@ -12,6 +12,7 @@ import GuidedTour from '../components/GuidedTour';
 import SplashScreen from '../components/SplashScreen';
 import NativeBack from '../components/NativeBack';
 import AdminLiveEditor from '../components/AdminLiveEditor';
+import ActiveSessionBar from '../components/ActiveSessionBar';
 import ErrorBoundary from '../components/ErrorBoundary';
 
 function WithProviders({ children }) {
@@ -48,6 +49,7 @@ export default function App({ Component, pageProps }) {
         <WithProviders>
           <Component key={refreshKey} {...pageProps} />
         </WithProviders>
+        <ActiveSessionBar />
         <AdminLiveEditor />
       </AuthProvider>
       <GuidedTour />

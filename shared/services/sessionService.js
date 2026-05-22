@@ -313,6 +313,23 @@ export function listenActiveForAstro(astroId, callback) {
         - (a.createdAt?.toMillis?.() || 0))));
 }
 
+// Live: a CUSTOMER's in-flight sessions (requesting / accepted / active)
+// so the app can show a "rejoin your session" bar if they navigate away
+// from a live chat/call by accident.
+export function listenActiveForUser(userId, callback) {
+  if (!userId) { if (callback) callback([]); return () => {}; }
+  const q = query(
+    collection(db, 'sessions'),
+    where('userId', '==', userId),
+  );
+  return onSnapshot(q, (snap) =>
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+      .filter((s) => ['requesting', 'accepted', 'active']
+        .includes(s.status))
+      .sort((a, b) => (b.createdAt?.toMillis?.() || 0)
+        - (a.createdAt?.toMillis?.() || 0))), () => {});
+}
+
 const byCreatedDesc = (a, b) =>
   (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0);
 
