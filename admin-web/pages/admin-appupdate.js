@@ -18,6 +18,23 @@ export default function AdminAppUpdate() {
   const [c, setC] = useState(null);
   const [busy, setBusy] = useState('');
   const [pct, setPct] = useState(0); // APK upload %
+  const [urlTest, setUrlTest] = useState(''); // '', 'ok', 'fail', 'checking'
+
+  async function testApkUrl() {
+    const u = (c.app_apk_url || '').trim();
+    if (!u) { setUrlTest('fail'); return; }
+    setUrlTest('checking');
+    try {
+      // HEAD first; some hosts block HEAD so fall back to a ranged GET.
+      let r = await fetch(u, { method: 'HEAD', mode: 'cors' })
+        .catch(() => null);
+      if (!r || !r.ok) {
+        r = await fetch(u, { headers: { Range: 'bytes=0-1' } })
+          .catch(() => null);
+      }
+      setUrlTest(r && (r.ok || r.status === 206) ? 'ok' : 'fail');
+    } catch (_) { setUrlTest('fail'); }
+  }
 
   useEffect(() => {
     getDoc(doc(db, 'settings', 'config')).then((s) => {
@@ -181,20 +198,56 @@ export default function AdminAppUpdate() {
             value={c.app_store_url || ''}
             onChange={(e) => set('app_store_url', e.target.value)} />
         </label>
-        <label className="block text-sm">
-          APK download URL
-          <input className="input mt-1" placeholder="https://.../app.apk"
-            value={c.app_apk_url || ''}
-            onChange={(e) => set('app_apk_url', e.target.value)} />
-        </label>
-        <label className="cursor-pointer inline-block rounded-card border
-          border-primary px-4 py-2 text-sm font-semibold text-primary">
-          {busy === 'apk'
-            ? `Uploading APK… ${pct}%`
-            : 'Or upload .apk file'}
-          <input type="file" accept=".apk" hidden
-            onChange={(e) => uploadApk(e.target.files?.[0])} />
-        </label>
+        <div className="rounded-card border border-emerald-200
+          bg-emerald-50/50 p-3">
+          <label className="block text-sm font-semibold">
+            APK download URL (recommended)
+            <input className="input mt-1"
+              placeholder="https://.../AstroSeerConnect.apk"
+              value={c.app_apk_url || ''}
+              onChange={(e) => { set('app_apk_url', e.target.value);
+                setUrlTest(''); }} />
+          </label>
+          <div className="mt-2 flex items-center gap-2">
+            <button type="button" onClick={testApkUrl}
+              disabled={urlTest === 'checking'}
+              className="rounded-full bg-primary px-3 py-1.5 text-xs
+                font-bold text-white disabled:opacity-60">
+              {urlTest === 'checking' ? 'Testing…' : 'Test link'}
+            </button>
+            {urlTest === 'ok' && (
+              <span className="text-xs font-semibold text-success">
+                ✓ Link works — users can download
+              </span>
+            )}
+            {urlTest === 'fail' && (
+              <span className="text-xs font-semibold text-danger">
+                ✗ Not reachable — check the link is public + direct
+              </span>
+            )}
+          </div>
+          <p className="mt-2 text-[11px] leading-relaxed text-sub-text">
+            Host the .apk anywhere public and paste the <b>direct
+            download</b> link. Easiest options:
+            <br />• <b>GitHub Releases</b> (free): create a release,
+            attach the .apk, copy its asset URL — it ends in
+            <code> .apk</code>.
+            <br />• <b>Google Drive</b>: upload, share “Anyone with the
+            link”, then use
+            <code> https://drive.google.com/uc?export=download&amp;id=FILE_ID</code>
+            (FILE_ID is from the share link).
+            <br />Then tap <b>Test link</b> → it should say ✓, then Save.
+          </p>
+          <label className="mt-2 inline-block cursor-pointer text-xs
+            text-sub-text underline">
+            {busy === 'apk'
+              ? `Uploading to Firebase… ${pct}%`
+              : 'Or try direct upload to Firebase (needs bucket CORS — '
+                + 'use the URL above if this stalls)'}
+            <input type="file" accept=".apk" hidden
+              onChange={(e) => uploadApk(e.target.files?.[0])} />
+          </label>
+        </div>
         <label className="block text-sm">
           Update notes (shown in the popup)
           <textarea className="input mt-1" rows={3}
