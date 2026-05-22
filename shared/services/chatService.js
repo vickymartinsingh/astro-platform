@@ -205,6 +205,18 @@ export function listenMessages(chatId, callback) {
     callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
 }
 
+// Live list of every chat this user participates in (no composite index;
+// single array-contains filter). Used by the astrologer AI auto-responder
+// so it can watch ALL conversations, not just an open chat screen.
+export function listenUserChats(userId, callback) {
+  const q = query(
+    collection(db, 'chats'),
+    where('participants', 'array-contains', userId),
+  );
+  return onSnapshot(q, (snap) =>
+    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }))), () => {});
+}
+
 export async function getUserChats(userId) {
   // Single array-contains filter (auto-indexed); sort client-side so no
   // composite index is required.

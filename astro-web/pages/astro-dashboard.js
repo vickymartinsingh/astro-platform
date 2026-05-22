@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import {
   astrologerService, sessionService, userService, pushService,
-  hoursService, liveService,
+  hoursService, liveService, assistantService,
 } from '@astro/shared';
 import Layout from '../components/Layout';
 import { useRequireAstrologer } from '../lib/useAuth';
@@ -29,6 +29,24 @@ export default function AstroDashboard() {
   const [hrange, setHrange] = useState('day');
   const [cfrom, setCfrom] = useState('');
   const [cto, setCto] = useState('');
+  const [aiAvailable, setAiAvailable] = useState(false); // admin-enabled
+
+  // Is the AI assistant feature switched on for THIS astrologer by admin?
+  useEffect(() => {
+    if (!user) return undefined;
+    return assistantService.watchAiConfig((cfg) =>
+      setAiAvailable(assistantService.aiAvailableForAstro(cfg, user.uid)));
+  }, [user && user.uid]);
+
+  async function toggleAi() {
+    if (!astro) return;
+    const next = !astro.aiAssistant;
+    setBusy(true);
+    try {
+      await astrologerService.updateAstrologer(user.uid,
+        { aiAssistant: next });
+    } finally { setBusy(false); }
+  }
 
   useEffect(() => {
     if (!user) return;
@@ -220,6 +238,39 @@ export default function AstroDashboard() {
             );
           })}
         </div>
+
+        {/* AI Assistant: only shown once the admin enables it for this
+            astrologer. When ON, incoming CHAT consultations are answered
+            automatically by Claude AI in the astrologer's voice, using the
+            client's kundli (DOB/time/place) in a Vedic style. */}
+        {aiAvailable && (
+          <div className="mt-3 flex items-center justify-between rounded-card
+            border border-primary/30 bg-primary/5 p-3">
+            <span className="font-medium">
+              🤖 AI Assistant (auto-answer chats)
+              <span className={`ml-2 text-xs font-semibold ${
+                astro.aiAssistant ? 'text-success' : 'text-sub-text'}`}>
+                {astro.aiAssistant ? 'On' : 'Off'}
+              </span>
+              <span className="mt-0.5 block text-[11px] text-sub-text">
+                When on, Claude AI replies to your chats for you, in your
+                voice, reading the client’s kundli — no need to answer.
+              </span>
+            </span>
+            <button type="button" role="switch"
+              aria-checked={!!astro.aiAssistant}
+              aria-label="AI assistant"
+              onClick={() => !busy && toggleAi()}
+              disabled={busy}
+              className={`relative h-7 w-12 shrink-0 rounded-full
+                transition-colors ${astro.aiAssistant ? 'bg-primary'
+                  : 'bg-gray-300'} ${busy ? 'opacity-50' : ''}`}>
+              <span className={`absolute top-0.5 h-6 w-6 rounded-full
+                bg-white shadow transition-all ${astro.aiAssistant
+                  ? 'left-[22px]' : 'left-0.5'}`} />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Online-hours dashboard. Cards open the Activity report. */}

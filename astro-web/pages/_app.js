@@ -8,6 +8,7 @@ import ErrorBoundary from '../components/ErrorBoundary';
 import SplashScreen from '../components/SplashScreen';
 import NativeBack from '../components/NativeBack';
 import AdminLiveEditor from '../components/AdminLiveEditor';
+import AiAutoResponder from '../components/AiAutoResponder';
 
 export default function App({ Component, pageProps }) {
   useNativeBack();
@@ -21,6 +22,7 @@ export default function App({ Component, pageProps }) {
       <AuthProvider>
         <Component {...pageProps} />
         <AdminLiveEditor />
+        <AiAutoResponder />
       </AuthProvider>
       <NativeBack />
       <SplashScreen />
