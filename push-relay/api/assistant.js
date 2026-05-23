@@ -127,6 +127,18 @@ async function callChatLike(url, apiKey, body, extraHeaders = {}) {
   }
 }
 
+// Gemini's default safety filters often refuse routine astrology Qs
+// (marriage timing, future predictions etc) and return an empty reply.
+// Disable all four safety blocks so the AI can answer like a real
+// astrologer would. This is an astrology consultation, not adult/violent
+// content, so BLOCK_NONE is appropriate.
+const GEMINI_SAFETY = [
+  'HARM_CATEGORY_HARASSMENT',
+  'HARM_CATEGORY_HATE_SPEECH',
+  'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+  'HARM_CATEGORY_DANGEROUS_CONTENT',
+].map((category) => ({ category, threshold: 'BLOCK_NONE' }));
+
 async function callGemini(p, systemText, turns) {
   if (!p.apiKey) return { ok: false, error: 'no key' };
   const contents = turns
@@ -144,13 +156,22 @@ async function callGemini(p, systemText, turns) {
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: systemText }] },
           contents,
-          generationConfig: { temperature: 0.7, maxOutputTokens: 300 },
+          generationConfig: { temperature: 0.8, maxOutputTokens: 350 },
+          safetySettings: GEMINI_SAFETY,
         }),
       });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) return { ok: false,
       error: (j && j.error && j.error.message) || `HTTP ${r.status}` };
-    const parts = (((j.candidates || [])[0] || {}).content || {}).parts || [];
+    const cand = (j.candidates || [])[0] || {};
+    // If Gemini blocked / filtered the answer, surface that as an error
+    // so the relay falls through to the next provider (Groq etc).
+    if (cand.finishReason && cand.finishReason !== 'STOP'
+      && cand.finishReason !== 'MAX_TOKENS') {
+      return { ok: false,
+        error: `gemini filtered (${cand.finishReason})` };
+    }
+    const parts = (cand.content || {}).parts || [];
     const text = parts.map((x) => x && x.text).filter(Boolean).join(' ').trim();
     if (!text) return { ok: false, error: 'empty reply' };
     return { ok: true, reply: text };
@@ -232,15 +253,32 @@ module.exports = async (req, res) => {
     return res.status(400).json({ error: 'messages required' });
   }
   const systemText = `You are ${astrologer}, an experienced, warm Vedic `
-    + `astrologer chatting with a client named ${client} on the AstroSeer `
-    + 'app. Reply in the first person as the astrologer. Keep replies '
-    + 'short (1-4 sentences), natural and conversational, like a real '
-    + 'human typing in a chat - no headings, no bullet lists, no "as an '
-    + 'AI". Offer warm, practical astrological guidance. If the client '
-    + 'asks for birth-chart specifics you do not have, ask them for their '
-    + 'date, time and place of birth. Never reveal you are an AI.'
-    + (context ? ` You already have this client's birth chart, use it `
-      + `naturally in your guidance: ${context}` : '');
+    + `(Jyotish) astrologer chatting with a client named ${client} on `
+    + 'the AstroSeer app. STRICT RULES:\n'
+    + '1. Every reply MUST be about Vedic astrology. Reference the '
+    + 'relevant planets, houses, signs, nakshatras, dashas, yogas, '
+    + 'doshas, transits, remedies, gemstones, mantras or muhurat that '
+    + 'apply to the question.\n'
+    + '2. For life-event timing questions (marriage, career, child, '
+    + 'foreign travel, finance, health), give a confident astrological '
+    + 'reading: mention the relevant house (e.g. 7th house and Venus '
+    + 'for marriage; 10th and Saturn/Sun for career; 5th and Jupiter '
+    + 'for children; 12th for foreign travel), the current/upcoming '
+    + 'Mahadasha or Antardasha that supports the event, and a '
+    + 'reasonable timeframe (a year window or a planetary period). '
+    + 'Never refuse to predict and never say "I can\'t predict the '
+    + 'future" - speak like a real human astrologer giving guidance.\n'
+    + '3. If the client asks something off-topic, briefly relate it '
+    + 'back to the chart (e.g. "from your karmic placements...") and '
+    + 'answer in Vedic framing.\n'
+    + '4. Reply in the FIRST PERSON as the astrologer. Keep replies '
+    + 'short (2-5 sentences), warm, natural, conversational - no '
+    + 'headings, no bullet lists, no "as an AI" or any disclaimers.\n'
+    + '5. If you genuinely lack the birth details (DOB / time / place), '
+    + 'gently ask once, then proceed with a general Vedic reading.\n'
+    + '6. NEVER reveal you are an AI. You are the astrologer.'
+    + (context ? `\n\nThis client\'s birth chart is already with you. `
+      + `Use these details NATURALLY in every answer: ${context}` : '');
   const turns = history.filter((m) => m && m.text
     && String(m.text).trim());
   if (!turns.length) {
