@@ -64,7 +64,7 @@ export default function PortalSwitcher() {
             <>
               {/* Login / payments redirect to Google /
                   astrology-2092d.firebaseapp.com, which a browser
-                  blocks inside a cross-origin embed (security) — so
+                  blocks inside a cross-origin embed (security) - so
                   use the real site/app to test those. */}
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 10,
@@ -72,7 +72,7 @@ export default function PortalSwitcher() {
                 color: '#fff', fontSize: 12,
               }}>
                 <span style={{ flex: 1 }}>
-                  Preview only — Google login &amp; payments don’t run
+                  Preview only - Google login &amp; payments don’t run
                   inside an embed. Use the real site to sign in.
                 </span>
                 <a href={withAdminEdit(frameUrl)} target="_blank" rel="noreferrer"
@@ -122,7 +122,7 @@ export default function PortalSwitcher() {
               padding: '10px 14px', fontSize: 12, fontWeight: 700,
               background: '#1f1147', color: '#fff',
             }}>
-              Viewing via Admin — pick a portal
+              Viewing via Admin - pick a portal
             </div>
             {PORTALS.map((p) => (
               <button key={p.id} onClick={() => choose(p.id)}

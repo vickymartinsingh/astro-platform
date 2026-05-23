@@ -80,7 +80,7 @@ export default function ActiveSessionBar() {
           </div>
           <div className="truncate text-xs text-sub-text">
             {astroName || 'Astrologer'}
-            {isRequesting ? ' — waiting to accept…' : ' — tap Join'}
+            {isRequesting ? ' - waiting to accept…' : ' - tap Join'}
           </div>
         </div>
         {!isRequesting && (

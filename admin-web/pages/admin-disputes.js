@@ -155,7 +155,7 @@ export default function AdminDisputes() {
                   </div>
                 </div>
                 <p className="mt-2 text-sm">
-                  <b>Reason:</b> {rr.reason || '—'}
+                  <b>Reason:</b> {rr.reason || '-'}
                 </p>
                 <button onClick={() => processOne(s)}
                   className="btn-primary mt-2">

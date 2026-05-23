@@ -13,7 +13,7 @@ const TYPE_ICON = { chat: '💬', call: '📞', video: '📹' };
 function fmt(ts) {
   const ms = ts && ts.toMillis ? ts.toMillis()
     : (typeof ts === 'number' ? ts : 0);
-  if (!ms) return '—';
+  if (!ms) return '-';
   return new Date(ms).toLocaleString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
@@ -22,7 +22,7 @@ function fmt(ts) {
 function fmtDate(ts) {
   const ms = ts && ts.toMillis ? ts.toMillis()
     : (typeof ts === 'number' ? ts : 0);
-  if (!ms) return '—';
+  if (!ms) return '-';
   return new Date(ms).toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric',
   });
@@ -98,7 +98,7 @@ export default function AdminAstroProfile() {
         )}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-2xl font-bold">{astro.name || '—'}</h1>
+            <h1 className="text-2xl font-bold">{astro.name || '-'}</h1>
             <span className={`rounded-full px-2 py-0.5 text-[10px]
               font-bold capitalize ${
               astro.status === 'online' ? 'bg-emerald-100 text-emerald-700'
@@ -112,7 +112,7 @@ export default function AdminAstroProfile() {
             )}
           </div>
           <div className="mt-1 text-sm text-sub-text">
-            {astro.email || '—'}{astro.phone ? ` · ${astro.phone}` : ''}
+            {astro.email || '-'}{astro.phone ? ` · ${astro.phone}` : ''}
           </div>
           <div className="mt-1 text-xs text-sub-text">
             Joined: <b>{fmtDate(astro.createdAt)}</b>
@@ -136,13 +136,13 @@ export default function AdminAstroProfile() {
       <div className="surface mt-4 p-4">
         <h2 className="mb-2 text-sm font-bold uppercase tracking-wide
           text-sub-text">Professional</h2>
-        <Row k="Category" v={astro.category || '—'} />
+        <Row k="Category" v={astro.category || '-'} />
         <Row k="Skills"
-          v={(astro.skills || []).join(', ') || '—'} />
+          v={(astro.skills || []).join(', ') || '-'} />
         <Row k="Languages"
-          v={(astro.languages || []).join(', ') || '—'} />
+          v={(astro.languages || []).join(', ') || '-'} />
         <Row k="Experience"
-          v={astro.experience ? `${astro.experience} yrs` : '—'} />
+          v={astro.experience ? `${astro.experience} yrs` : '-'} />
         <Row k="Rate"
           v={`Chat ₹${astro.chatRate || 0}/min · Call ₹${
             astro.callRate || 0}/min · Video ₹${
@@ -184,7 +184,7 @@ export default function AdminAstroProfile() {
                     {TYPE_ICON[s.type] || '✨'} {s.type}
                   </td>
                   <td className="p-2">
-                    {clientNames[s.userId] || '—'}
+                    {clientNames[s.userId] || '-'}
                   </td>
                   <td className="p-2">{fmtDur(s.duration)}</td>
                   <td className="p-2">₹{s.cost || 0}</td>

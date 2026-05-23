@@ -16,7 +16,7 @@ const TYPE_ICON = { chat: '💬', call: '📞', video: '📹' };
 function fmt(ts) {
   const ms = ts && ts.toMillis ? ts.toMillis()
     : (typeof ts === 'number' ? ts : 0);
-  if (!ms) return '—';
+  if (!ms) return '-';
   return new Date(ms).toLocaleString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric',
     hour: '2-digit', minute: '2-digit',
@@ -25,7 +25,7 @@ function fmt(ts) {
 function fmtDate(ts) {
   const ms = ts && ts.toMillis ? ts.toMillis()
     : (typeof ts === 'number' ? ts : 0);
-  if (!ms) return '—';
+  if (!ms) return '-';
   return new Date(ms).toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric',
   });
@@ -142,7 +142,7 @@ export default function AdminUserProfile() {
             </span>
           </div>
           <div className="mt-1 text-sm text-sub-text">
-            {u.email || '—'}{u.phone ? ` · ${u.phone}` : ''}
+            {u.email || '-'}{u.phone ? ` · ${u.phone}` : ''}
           </div>
           <div className="mt-1 text-xs text-sub-text">
             Joined: <b>{fmtDate(u.createdAt)}</b>
@@ -169,12 +169,12 @@ export default function AdminUserProfile() {
       <div className="surface mt-4 p-4">
         <h2 className="mb-2 text-sm font-bold uppercase tracking-wide
           text-sub-text">Profile</h2>
-        <Row k="Gender" v={u.gender || '—'} />
-        <Row k="DOB" v={u.dob || '—'} />
-        <Row k="Birth time" v={u.tob || u.timeOfBirth || '—'} />
-        <Row k="Birth place" v={u.placeOfBirth || u.place || '—'} />
-        <Row k="Language" v={u.language || '—'} />
-        <Row k="Referral" v={u.referralCode || u.referredBy || '—'} />
+        <Row k="Gender" v={u.gender || '-'} />
+        <Row k="DOB" v={u.dob || '-'} />
+        <Row k="Birth time" v={u.tob || u.timeOfBirth || '-'} />
+        <Row k="Birth place" v={u.placeOfBirth || u.place || '-'} />
+        <Row k="Language" v={u.language || '-'} />
+        <Row k="Referral" v={u.referralCode || u.referredBy || '-'} />
         <Row k="Last seen" v={fmt(u.lastSeen || u.updatedAt)} />
       </div>
 
@@ -271,7 +271,7 @@ export default function AdminUserProfile() {
                     {TYPE_ICON[s.type] || '✨'} {s.type}
                   </td>
                   <td className="p-2">
-                    {astroNames[s.astroId] || '—'}
+                    {astroNames[s.astroId] || '-'}
                   </td>
                   <td className="p-2">{fmtDur(s.duration)}</td>
                   <td className="p-2">₹{s.cost || 0}</td>

@@ -22,7 +22,7 @@ export default function AccountDeletion() {
   return (
     <>
       <Head>
-        <title>Delete your account — AstroSeer Connect</title>
+        <title>Delete your account - AstroSeer Connect</title>
         <meta name="robots" content="index,follow" />
         <meta name="viewport"
           content="width=device-width, initial-scale=1" />
@@ -76,10 +76,10 @@ export default function AccountDeletion() {
           Records required by law or for legitimate business reasons
           are kept for the period required, then permanently deleted:
           <ul style={{ paddingLeft: 18, marginTop: 6 }}>
-            <li><b>Transaction / payment records</b> — up to 7 years
+            <li><b>Transaction / payment records</b> - up to 7 years
               (tax & financial regulation).</li>
             <li><b>Call & video recordings</b> linked to disputes or
-              safety reports — up to the resolution period.</li>
+              safety reports - up to the resolution period.</li>
             <li><b>Anonymised analytics</b> with no link back to you
               may be kept indefinitely.</li>
           </ul>
@@ -109,7 +109,7 @@ export default function AccountDeletion() {
         <S title="6. Questions">
           <a href={`mailto:${CONTACT}`} style={{ color: '#6C2BD9' }}>
             {CONTACT}
-          </a> — we respond within 48 hours on business days.
+          </a> - we respond within 48 hours on business days.
         </S>
 
         <p style={{ marginTop: 36, fontSize: 13 }}>

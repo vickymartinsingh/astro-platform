@@ -21,7 +21,7 @@ export default function Privacy() {
   return (
     <>
       <Head>
-        <title>Privacy Policy — AstroSeer Connect</title>
+        <title>Privacy Policy - AstroSeer Connect</title>
         <meta name="robots" content="index,follow" />
         <meta name="viewport"
           content="width=device-width, initial-scale=1" />
@@ -50,11 +50,11 @@ export default function Privacy() {
             <li><b>Account data:</b> name, email, phone number, profile
               photo, and password (stored hashed by our auth provider).</li>
             <li><b>Astrology data you provide:</b> date, time and place
-              of birth, gender and questions you submit — used only to
+              of birth, gender and questions you submit - used only to
               generate kundli/horoscope and for your consultation.</li>
             <li><b>Consultation content:</b> chat messages, and call /
               video sessions (which may be recorded for safety, quality
-              and dispute resolution — you are notified in-app).</li>
+              and dispute resolution - you are notified in-app).</li>
             <li><b>Transaction data:</b> wallet balance, purchases and
               payment status. Card/UPI details are handled by our
               payment processor; we do not store full card numbers.</li>

@@ -56,7 +56,7 @@ export default function AstroSessions() {
           ? 'This session was already refunded.'
           : `Refund processed instantly. ₹${r.refunded} credited to the `
             + 'customer wallet. Admin has been notified for records.')
-        : 'Refund queued — admin will process within a few minutes.');
+        : 'Refund queued - admin will process within a few minutes.');
     } catch (e) {
       // eslint-disable-next-line no-alert
       alert(`Could not submit the refund: ${e.message || 'error'}`);

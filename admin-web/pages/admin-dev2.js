@@ -388,7 +388,7 @@ export default function AdminDev2() {
                   The top menu astrologers see (Dashboard, Go Live,
                   Earnings…). Drag ⠿ to reorder, rename, show/hide, or
                   “+ Add menu item” for a brand-new entry. Publishes to{' '}
-                  <code>astro_links</code> — live in the Astrologer
+                  <code>astro_links</code> - live in the Astrologer
                   portal instantly.
                 </p>
                 <MenuEditor items={resolved.astro}
@@ -596,7 +596,7 @@ export default function AdminDev2() {
               <h2 className="font-bold">Live preview ({device})</h2>
               <p className="text-xs text-sub-text">
                 Pick a portal, edit menus/text/theme in the tabs above,
-                hit Save &amp; publish, then ↻ Refresh — changes appear
+                hit Save &amp; publish, then ↻ Refresh - changes appear
                 here instantly (same site your users see).
               </p>
               <div className="flex flex-wrap items-center gap-2">

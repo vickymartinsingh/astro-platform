@@ -53,7 +53,7 @@ export default function PortalEditRail({ portal, onPublished }) {
     try {
       await adminService.updateSettings('features',
         { [KEY[portal]]: items });
-      setMsg('Published — live now');
+      setMsg('Published - live now');
       if (onPublished) onPublished();
     } catch (_) { setMsg('Could not publish'); }
     setBusy(false);
@@ -88,7 +88,7 @@ export default function PortalEditRail({ portal, onPublished }) {
             padding: '12px 14px', background: '#1f1147', color: '#fff',
           }}>
             <div style={{ fontWeight: 800, fontSize: 14 }}>
-              Live editor — {portal === 'astrologer'
+              Live editor - {portal === 'astrologer'
                 ? 'Astrologer' : 'Client'} menu
             </div>
             <div style={{ fontSize: 11, opacity: 0.8 }}>
@@ -158,7 +158,7 @@ export default function PortalEditRail({ portal, onPublished }) {
                 cursor: 'pointer', opacity: busy ? 0.6 : 1,
                 background: 'linear-gradient(135deg,#6C2BD9,#8B5CF6)',
               }}>
-              {busy ? 'Publishing…' : 'Publish — go live'}
+              {busy ? 'Publishing…' : 'Publish - go live'}
             </button>
           </div>
         </div>

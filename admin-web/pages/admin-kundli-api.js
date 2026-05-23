@@ -159,7 +159,7 @@ export default function AdminKundliApi() {
                     The push-relay's <code>FIREBASE_SERVICE_ACCOUNT</code>
                     {' '}env var is not set on Vercel. Until it is, the
                     relay can't read settings/kundliApi and silently
-                    falls back to Prokerala — that's why VedicAstroAPI
+                    falls back to Prokerala - that's why VedicAstroAPI
                     is being skipped.
                   </p>
                 )}

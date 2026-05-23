@@ -19,7 +19,7 @@ export default function Terms() {
   return (
     <>
       <Head>
-        <title>Terms of Service — AstroSeer Connect</title>
+        <title>Terms of Service - AstroSeer Connect</title>
         <meta name="robots" content="index,follow" />
         <meta name="viewport"
           content="width=device-width, initial-scale=1" />

@@ -70,7 +70,7 @@ export default function AdminAppUpdate() {
         if (Date.now() - stuckSince > 25000) {
           clearInterval(watchdog);
           try { task.cancel(); } catch (_) {}
-          reject(new Error('storage/cors-or-network — no progress in 25s'));
+          reject(new Error('storage/cors-or-network - no progress in 25s'));
         }
       }, 1000);
       task.on('state_changed', (snap) => {
@@ -100,7 +100,7 @@ export default function AdminAppUpdate() {
           + ' Workaround: upload your .apk to Google Drive / Dropbox'
           + ' (make it public), copy the direct download URL, and paste'
           + ' it in the "APK download URL" field above. Press Save.'
-        : `Upload failed (${code}) — paste a public APK URL instead.`,
+        : `Upload failed (${code}) - paste a public APK URL instead.`,
         'error');
     });
     clearInterval(watchdog);
@@ -217,12 +217,12 @@ export default function AdminAppUpdate() {
             </button>
             {urlTest === 'ok' && (
               <span className="text-xs font-semibold text-success">
-                ✓ Link works — users can download
+                ✓ Link works - users can download
               </span>
             )}
             {urlTest === 'fail' && (
               <span className="text-xs font-semibold text-danger">
-                ✗ Not reachable — check the link is public + direct
+                ✗ Not reachable - check the link is public + direct
               </span>
             )}
           </div>
@@ -230,7 +230,7 @@ export default function AdminAppUpdate() {
             Host the .apk anywhere public and paste the <b>direct
             download</b> link. Easiest options:
             <br />• <b>GitHub Releases</b> (free): create a release,
-            attach the .apk, copy its asset URL — it ends in
+            attach the .apk, copy its asset URL - it ends in
             <code> .apk</code>.
             <br />• <b>Google Drive</b>: upload, share “Anyone with the
             link”, then use
@@ -242,7 +242,7 @@ export default function AdminAppUpdate() {
             text-sub-text underline">
             {busy === 'apk'
               ? `Uploading to Firebase… ${pct}%`
-              : 'Or try direct upload to Firebase (needs bucket CORS — '
+              : 'Or try direct upload to Firebase (needs bucket CORS - '
                 + 'use the URL above if this stalls)'}
             <input type="file" accept=".apk" hidden
               onChange={(e) => uploadApk(e.target.files?.[0])} />

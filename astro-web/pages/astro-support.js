@@ -250,7 +250,7 @@ export default function AstroSupport() {
               <select className="input mt-1" value={f.orderRef}
                 onChange={(e) => setF({
                   ...f, orderRef: e.target.value })}>
-                <option value="">— pick a consultation —</option>
+                <option value="">- pick a consultation -</option>
                 {orders.map((o) => (
                   <option key={o.id} value={o.id}>
                     {sessionLabel(o, clientMap)}

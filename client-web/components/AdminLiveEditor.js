@@ -54,6 +54,21 @@ export default function AdminLiveEditor() {
     setOpen(false);
   };
 
+  // While the side rail is open, push the body's right edge inwards so
+  // the page content shifts left and never overlaps with the rail.
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined;
+    const body = document.body;
+    if (open) {
+      const w = Math.min(360, Math.round(window.innerWidth * 0.92));
+      body.style.transition = 'padding-right .15s ease';
+      body.style.paddingRight = `${w}px`;
+    } else {
+      body.style.paddingRight = '';
+    }
+    return () => { body.style.paddingRight = ''; };
+  }, [open]);
+
   useEffect(() => {
     if (!isAdmin || !editMode || !open) return;
     const load = async (n, set) => {
@@ -75,7 +90,7 @@ export default function AdminLiveEditor() {
   const save = async (n, patch, label) => {
     try {
       await adminService.updateSettings(n, patch);
-      toast(`${label} published — live`);
+      toast(`${label} published - live`);
     } catch (_) { toast('Could not publish (admin only)'); }
   };
 
@@ -126,7 +141,7 @@ export default function AdminLiveEditor() {
             alignItems: 'flex-start', gap: 8 }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 800 }}>
-                Live editor — Client portal
+                Live editor - Client portal
               </div>
               <div style={{ fontSize: 11, opacity: 0.8 }}>
                 Edits publish instantly to the live app.
@@ -193,7 +208,7 @@ export default function AdminLiveEditor() {
                       style={addBtn}>+ Add menu item</button>
                     <button onClick={() => save('features',
                       { [MENU_KEY]: items }, 'Menu')}
-                      style={pub}>Publish menu — go live</button>
+                      style={pub}>Publish menu - go live</button>
                   </>
                 )}
 
@@ -213,7 +228,7 @@ export default function AdminLiveEditor() {
                       </div>
                     ))}
                     <button onClick={() => save('content', content,
-                      'Text')} style={pub}>Publish text — go live</button>
+                      'Text')} style={pub}>Publish text - go live</button>
                   </>
                 )}
 
@@ -228,7 +243,7 @@ export default function AdminLiveEditor() {
                     </select>
                     <button onClick={() => save('theme',
                       { active: theme.active || 'classic' }, 'Theme')}
-                      style={pub}>Publish theme — go live</button>
+                      style={pub}>Publish theme - go live</button>
                   </>
                 )}
 
@@ -245,7 +260,7 @@ export default function AdminLiveEditor() {
                     <button onClick={() => save('config',
                       { platformName: config.platformName || '',
                         logo: config.logo || '' }, 'Branding')}
-                      style={pub}>Publish branding — go live</button>
+                      style={pub}>Publish branding - go live</button>
                   </>
                 )}
               </>

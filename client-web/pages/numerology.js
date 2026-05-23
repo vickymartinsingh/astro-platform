@@ -29,7 +29,7 @@ export default function Numerology() {
     <Layout>
       <h1 className="mb-1 text-xl font-bold">Numerology</h1>
       <p className="mb-4 text-sm text-sub-text">
-        Chaldean numerology — the system most commonly used in India.
+        Chaldean numerology - the system most commonly used in India.
         Enter your name and date of birth to see your life path, destiny,
         soul urge, lucky numbers and traits.
       </p>
