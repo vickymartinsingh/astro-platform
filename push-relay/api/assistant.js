@@ -156,7 +156,14 @@ async function callGemini(p, systemText, turns) {
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: systemText }] },
           contents,
-          generationConfig: { temperature: 0.8, maxOutputTokens: 350 },
+          // Disable Gemini 2.5's hidden "thinking" budget - chat replies
+          // do not need internal reasoning and it was eating the whole
+          // output budget, truncating answers to one word.
+          generationConfig: {
+            temperature: 0.8,
+            maxOutputTokens: 600,
+            thinkingConfig: { thinkingBudget: 0 },
+          },
           safetySettings: GEMINI_SAFETY,
         }),
       });
