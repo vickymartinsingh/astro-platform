@@ -5,6 +5,7 @@ import {
 } from '@astro/shared';
 import Layout from '../../components/Layout';
 import ResetAccountPanel from '../../components/ResetAccountPanel';
+import ComplianceActivity from '../../components/ComplianceActivity';
 import { useRequireAdmin } from '../../lib/useAuth';
 
 const { sessionRefNo } = sessionService;
@@ -249,6 +250,9 @@ export default function AdminAstroProfile() {
           )}
         </div>
       </div>
+
+      {/* COMPLIANCE: admin-only device + IP + activity log */}
+      <ComplianceActivity uid={id} profile={astro} />
 
       {/* DANGER ZONE: reset astrologer account */}
       <ResetAccountPanel uid={id} role="astrologer"

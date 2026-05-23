@@ -93,8 +93,15 @@ module.exports = async (req, res) => {
         return {
           code: x.code || d.id,
           amount: x.amount || 0,
+          status: x.status || (x.redeemed ? 'used' : 'unused'),
           redeemed: !!x.redeemed,
           redeemedBy: x.redeemedBy || null,
+          redeemedByName: x.redeemedByName || null,
+          redeemedByEmail: x.redeemedByEmail || null,
+          redeemedAt: x.redeemedAt || null,
+          redeemedIp: x.redeemedIp || null,
+          redeemedUa: x.redeemedUa || null,
+          createdAt: x.createdAt || null,
         };
       });
       return res.status(200).json({ cards });
@@ -103,6 +110,12 @@ module.exports = async (req, res) => {
     if (action === 'redeem') {
       const code = String(body.code || '').trim().toUpperCase();
       if (!code) return res.status(400).json({ error: 'code required' });
+      // Capture caller's compliance context (IP + UA) for audit.
+      const ip = (req.headers['x-forwarded-for']
+        ? String(req.headers['x-forwarded-for']).split(',')[0].trim()
+        : req.headers['x-real-ip']
+          || (req.connection && req.connection.remoteAddress) || '');
+      const ua = String(req.headers['user-agent'] || '').slice(0, 400);
       const ref = db.collection('giftCards').doc(code);
       const out = await db.runTransaction(async (t) => {
         const g = await t.get(ref);
@@ -116,9 +129,14 @@ module.exports = async (req, res) => {
         const wallet = Number((u.data() || {}).wallet || 0) + amount;
         t.update(uRef, { wallet });
         t.update(ref, {
+          status: 'used',
           redeemed: true,
           redeemedBy: callerUid,
+          redeemedByName: (u.data() || {}).name || null,
+          redeemedByEmail: (u.data() || {}).email || decoded.email || null,
           redeemedAt: admin.firestore.FieldValue.serverTimestamp(),
+          redeemedIp: ip || '',
+          redeemedUa: ua,
         });
         t.set(db.collection('transactions').doc(), {
           userId: callerUid,

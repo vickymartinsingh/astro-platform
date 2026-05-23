@@ -8,6 +8,7 @@ import {
 } from 'firebase/firestore';
 import Layout from '../../components/Layout';
 import ResetAccountPanel from '../../components/ResetAccountPanel';
+import ComplianceActivity from '../../components/ComplianceActivity';
 import { useRequireAdmin } from '../../lib/useAuth';
 
 const { sessionRefNo } = sessionService;
@@ -334,6 +335,9 @@ export default function AdminUserProfile() {
           </table>
         </div>
       </div>
+
+      {/* COMPLIANCE: admin-only device + IP + activity log */}
+      <ComplianceActivity uid={id} profile={u} />
 
       {/* DANGER ZONE: reset account */}
       <ResetAccountPanel uid={id}

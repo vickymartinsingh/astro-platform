@@ -17,6 +17,7 @@ import {
 } from 'firebase/auth';
 import { auth } from '../firebase.js';
 import { ensureUserDoc, updateUser } from './userService.js';
+import { logEvent as logAudit } from './auditService.js';
 
 // True only inside the packaged Android/iOS app (Capacitor injects this
 // global). On the web it stays false, so the browser keeps using the
@@ -46,15 +47,20 @@ export async function signupUser(name, email, password, extra = {}) {
   if (Object.keys(patch).length) {
     try { await updateUser(cred.user.uid, patch); } catch (_) {}
   }
+  // Compliance: log the signup with IP + device (admin-only).
+  try { logAudit('signup', { method: 'email', email }); } catch (_) {}
   return cred.user;
 }
 
 export async function loginUser(email, password) {
   const cred = await signInWithEmailAndPassword(auth, email, password);
+  try { logAudit('login', { method: 'email', email }); } catch (_) {}
   return cred.user;
 }
 
 export async function logoutUser() {
+  // Log BEFORE signing out so the audit POST still has a fresh ID token.
+  try { await logAudit('logout', {}); } catch (_) {}
   await signOut(auth);
 }
 
@@ -99,6 +105,8 @@ async function finishGoogle(idToken) {
   }
   const cred = await signInWithCredential(
     auth, GoogleAuthProvider.credential(idToken));
+  try { logAudit('login', { method: 'google',
+    email: cred.user && cred.user.email }); } catch (_) {}
   return cred.user;
 }
 
@@ -172,6 +180,8 @@ export async function loginWithGoogle() {
   }
   try {
     const cred = await signInWithPopup(auth, provider);
+    try { logAudit('login', { method: 'google-popup',
+      email: cred.user && cred.user.email }); } catch (_) {}
     return cred.user;
   } catch (e) {
     const code = e && e.code;
@@ -190,7 +200,13 @@ export async function loginWithGoogle() {
 // Finalise a Google redirect sign-in (no-op for popup/native flows).
 // Safe to call on every app load.
 export async function resolveGoogleRedirect() {
-  try { await getRedirectResult(auth); } catch (_) { /* ignore */ }
+  try {
+    const r = await getRedirectResult(auth);
+    if (r && r.user) {
+      try { logAudit('login', { method: 'google-redirect',
+        email: r.user.email }); } catch (_) {}
+    }
+  } catch (_) { /* ignore */ }
 }
 
 // ---- Change password (email/password accounts) ----
