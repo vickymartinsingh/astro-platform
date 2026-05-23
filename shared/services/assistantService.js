@@ -130,6 +130,18 @@ export async function triggerAiAssist({ chatId, sessionId, astroUid,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ chatId, sessionId, astroUid, clientUid }),
     });
+    // Surface the relay's decision in the browser console so admins can
+    // diagnose "AI not replying" without server access. Look for
+    // [aiAssist] entries in DevTools -> Console.
+    let body = null;
+    try { body = await r.json(); } catch (_) {}
+    // eslint-disable-next-line no-console
+    if (typeof console !== 'undefined') console.log('[aiAssist]', r.status,
+      body || '(no body)');
     return r.ok;
-  } catch (_) { return false; }
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    if (typeof console !== 'undefined') console.log('[aiAssist] error', e);
+    return false;
+  }
 }
