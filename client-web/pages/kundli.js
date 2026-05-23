@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
-import { kundliService, db } from '@astro/shared';
+import { kundliService, userService, db } from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { SkeletonList } from '../components/Skeleton';
 import { useRequireClient } from '../lib/useAuth';
 import { DateField, TimeField, CityField } from '../components/BirthInputs';
 
-const EMPTY = { name: '', dob: '', tob: '', ampm: 'AM', place: '', isDefault: false };
+const EMPTY = { name: '', gender: '', dob: '', tob: '', ampm: 'AM',
+  place: '', isDefault: false };
 
 export default function Kundli() {
   const { user, profile, loading } = useRequireClient();
@@ -37,7 +38,8 @@ export default function Kundli() {
 
   useEffect(() => {
     if (!user) return;
-    setForm((f) => ({ ...f, name: profile?.name || '' }));
+    setForm((f) => ({ ...f, name: profile?.name || '',
+      gender: profile?.gender || f.gender || '' }));
     refresh();
     getDoc(doc(db, 'settings', 'config')).then((s) =>
       setToolUrl(s.exists() ? (s.data().kundliToolUrl || '') : ''));
@@ -49,7 +51,15 @@ export default function Kundli() {
     setBusy(true);
     try {
       await kundliService.saveKundli(user.uid, form);
-      setForm({ ...EMPTY, name: profile?.name || '' });
+      // If the customer picked their gender here (and it isn't already
+      // on their account), also save it onto the user doc so it powers
+      // the customer's avatar everywhere in the app.
+      if (form.gender && form.gender !== (profile && profile.gender)) {
+        try { await userService.updateUser(user.uid,
+          { gender: form.gender }); } catch (_) {}
+      }
+      setForm({ ...EMPTY, name: profile?.name || '',
+        gender: profile?.gender || form.gender || '' });
       await refresh();
     } finally { setBusy(false); }
   }
@@ -70,8 +80,18 @@ export default function Kundli() {
       <h1 className="mb-3 text-xl font-bold">Kundli Profiles</h1>
 
       <form onSubmit={save} className="card mb-4 space-y-3">
-        <input className="input" placeholder="Name" value={form.name}
-          onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr,150px]">
+          <input className="input" placeholder="Name" value={form.name}
+            onChange={(e) => setForm({ ...form, name: e.target.value })}
+            required />
+          <select className="input" value={form.gender || ''} required
+            onChange={(e) => setForm({ ...form, gender: e.target.value })}>
+            <option value="">Gender…</option>
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <DateField value={form.dob}
             onChange={(dob) => setForm({ ...form, dob })} />

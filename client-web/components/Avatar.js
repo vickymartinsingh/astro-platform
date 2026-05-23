@@ -21,6 +21,17 @@ export function resolveAvatar(p) {
     return s ? { kind: 'sign', sign: s } : { kind: 'none' };
   }
   if (p && p.profileImage) return { kind: 'img', src: p.profileImage };
+  // Gender-aware illustrated default (unique per uid) when the user has
+  // a gender on their profile. Free DiceBear, deterministic seed.
+  if (p && p.gender) {
+    const style = String(p.gender).toLowerCase() === 'female' ? 'lorelei'
+      : String(p.gender).toLowerCase() === 'male' ? 'notionists'
+      : 'personas';
+    const seed = encodeURIComponent(p.uid || p.id || p.email || p.name
+      || 'guest');
+    return { kind: 'img',
+      src: `https://api.dicebear.com/9.x/${style}/svg?seed=${seed}` };
+  }
   const s = p && p.dob ? signFromDOB(p.dob) : null;
   return s ? { kind: 'sign', sign: s } : { kind: 'none' };
 }

@@ -47,6 +47,18 @@ export default function AstrologerCard({
           {a.profileImage ? (
             <img src={a.profileImage} alt={a.name}
               className="h-20 w-20 rounded-full object-cover" />
+          ) : a.gender ? (
+            // Gender-aware illustrated avatar (free DiceBear). Each
+            // astrologer's uid produces a different face within the
+            // gendered style, so every card looks distinct.
+            <img src={`https://api.dicebear.com/9.x/${
+              String(a.gender).toLowerCase() === 'female' ? 'lorelei'
+              : String(a.gender).toLowerCase() === 'male' ? 'notionists'
+              : 'personas'
+            }/svg?seed=${encodeURIComponent(a.id || a.name || 'a')}`}
+              alt={a.name}
+              className="h-20 w-20 rounded-full object-cover
+                bg-bg-light" />
           ) : (
             <div className={`flex h-20 w-20 items-center justify-center
               rounded-full bg-gradient-to-br ${avatarGradient(a.name)}

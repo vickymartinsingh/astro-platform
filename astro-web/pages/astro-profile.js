@@ -10,7 +10,8 @@ import Layout from '../components/Layout';
 import { useRequireAstrologer } from '../lib/useAuth';
 
 const BLANK = {
-  name: '', bio: '', skills: '', languages: '', experience: 0,
+  name: '', gender: 'male', bio: '', skills: '', languages: '',
+  experience: 0,
   priceChat: 20, priceCall: 30, priceVideo: 40, discountPercent: 0,
 };
 
@@ -34,6 +35,7 @@ export default function AstroProfile() {
         setExists(true);
         setF({
           name: a.name || profile?.name || '',
+          gender: a.gender || 'male',
           bio: a.bio || '',
           skills: (a.skills || []).join(', '),
           languages: (a.languages || []).join(', '),
@@ -55,6 +57,7 @@ export default function AstroProfile() {
     const data = {
       userId: user.uid,
       name: f.name,
+      gender: f.gender || 'other',
       bio: f.bio,
       skills: f.skills.split(',').map((s) => s.trim()).filter(Boolean),
       languages: f.languages.split(',').map((s) => s.trim()).filter(Boolean),
@@ -107,10 +110,20 @@ export default function AstroProfile() {
         <div className="card mb-3 bg-success/10 text-success">{msg}</div>
       )}
       <div className="card space-y-3">
-        <Field label="Name">
-          <input className="input" value={f.name}
-            onChange={(e) => setF({ ...f, name: e.target.value })} />
-        </Field>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr,160px]">
+          <Field label="Name">
+            <input className="input" value={f.name}
+              onChange={(e) => setF({ ...f, name: e.target.value })} />
+          </Field>
+          <Field label="Gender">
+            <select className="input" value={f.gender || 'male'}
+              onChange={(e) => setF({ ...f, gender: e.target.value })}>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="other">Other</option>
+            </select>
+          </Field>
+        </div>
         <Field label="Bio">
           <textarea className="input" rows={3} value={f.bio}
             onChange={(e) => setF({ ...f, bio: e.target.value })} />

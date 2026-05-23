@@ -17,7 +17,7 @@ function Field({ label, children }) {
 }
 
 const NEW = {
-  name: '', email: '', password: 'admin123', experience: 5,
+  name: '', email: '', password: 'admin123', gender: 'male', experience: 5,
   skills: '', languages: 'Hindi, English',
   priceChat: 20, priceCall: 30, priceVideo: 40, bio: '',
 };
@@ -34,6 +34,7 @@ export default function AdminAstrologers() {
   async function saveEdit() {
     await adminService.updateAstrologerProfile(edit.id, {
       name: edit.name || '',
+      gender: edit.gender || 'other',
       bio: edit.bio || '',
       skills: String(edit.skillsCsv || '').split(',')
         .map((s) => s.trim()).filter(Boolean),
@@ -113,6 +114,7 @@ export default function AdminAstrologers() {
           .filter(Boolean),
         priceChat: form.priceChat, priceCall: form.priceCall,
         priceVideo: form.priceVideo, bio: form.bio,
+        gender: form.gender || 'other',
       });
       setMsg(`Created ${form.name}. Login: ${form.email} / `
         + `${form.password || 'admin123'}`);
@@ -151,6 +153,13 @@ export default function AdminAstrologers() {
           <input className="input" placeholder="Password"
             value={form.password}
             onChange={(e) => setForm({ ...form, password: e.target.value })} />
+          <select className="input" value={form.gender}
+            onChange={(e) => setForm({ ...form, gender: e.target.value })}
+            aria-label="Gender">
+            <option value="male">Male</option>
+            <option value="female">Female</option>
+            <option value="other">Other</option>
+          </select>
           <input className="input" placeholder="Experience (years)"
             type="number" value={form.experience}
             onChange={(e) =>

@@ -576,8 +576,15 @@ export async function createAstrologer(data) {
     await updateDoc(doc(db, 'users', uid), { isAstrologer: true });
   }
 
+  // Gender-aware default illustrated avatar (free DiceBear). Female ->
+  // lorelei, male -> notionists, other/unspecified -> personas. Seed
+  // is the uid, so every astrologer's image is unique.
+  const g = String(data.gender || 'other').toLowerCase();
+  const style = g === 'female' ? 'lorelei'
+    : g === 'male' ? 'notionists' : 'personas';
   await setDoc(doc(db, 'astrologers', uid), {
     name: data.name, userId: uid, bio: data.bio || '',
+    gender: g,
     skills: data.skills || [], languages: data.languages || [],
     experience: Number(data.experience || 0),
     priceChat: Number(data.priceChat || 20),
@@ -588,8 +595,8 @@ export async function createAstrologer(data) {
     approved: true, status: 'offline',
     chat_enabled: false, call_enabled: false, video_enabled: false,
     earnings: 0,
-    profileImage: 'https://api.dicebear.com/7.x/notionists/svg?seed='
-      + encodeURIComponent(data.name) + '&backgroundColor=ede9fe',
+    profileImage: `https://api.dicebear.com/9.x/${style}/svg?seed=`
+      + `${encodeURIComponent(uid)}&backgroundType=gradientLinear`,
     createdAt: serverTimestamp(),
   });
   await signOut(secAuth).catch(() => {});
