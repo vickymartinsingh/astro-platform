@@ -29,6 +29,7 @@ export * as assistantService from './services/assistantService.js';
 export * as numerologyService from './services/numerologyService.js';
 export * as avatarService from './services/avatarService.js';
 export * as auditService from './services/auditService.js';
+export * as applicationService from './services/applicationService.js';
 export * as kundliService from './services/kundliService.js';
 export * as reviewService from './services/reviewService.js';
 export * as payoutService from './services/payoutService.js';

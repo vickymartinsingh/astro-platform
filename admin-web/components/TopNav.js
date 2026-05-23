@@ -18,6 +18,7 @@ const GROUPS = [
   ['People', [
     ['/admin-users', 'Users'],
     ['/admin-astrologers', 'Astrologers'],
+    ['/admin-astro-applications', 'Astrologer Applications'],
     ['/admin-reviews', 'Customer Reviews'],
     ['/admin-tickets', 'Support Tickets'],
     ['/admin-tarot', 'Tarot Questions'],
@@ -118,6 +119,7 @@ const SUPPORT_GROUPS = [
   ['Lookup', [
     ['/admin-users', 'Users'],
     ['/admin-astrologers', 'Astrologers'],
+    ['/admin-astro-applications', 'Astrologer Applications'],
     ['/admin-sessions', 'Sessions'],
     ['/admin-recordings', 'Recordings & Live'],
   ]],

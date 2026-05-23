@@ -2,10 +2,12 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { authService, userService } from '@astro/shared';
 import { DateField } from './BirthInputs';
+import { useSettings } from '../lib/useSettings';
 
 // Email + Google sign-in card. Reused by the /login page and the login
 // popup. Calls onDone(user) after a successful, allowed sign-in.
 export default function LoginCard({ onDone, compact, initialMode }) {
+  const { features } = useSettings();
   const [mode, setMode] = useState(
     initialMode === 'signup' ? 'signup' : 'login'); // login | signup
   const [name, setName] = useState('');
@@ -167,19 +169,37 @@ export default function LoginCard({ onDone, compact, initialMode }) {
             )}
           </form>
 
-          <div className="my-4 flex items-center gap-3 text-sm
-                          text-sub-text">
-            <span className="h-px flex-1 bg-gray-200" /> OR
-            <span className="h-px flex-1 bg-gray-200" />
-          </div>
-          <button onClick={google} disabled={busy}
-            className="flex w-full items-center justify-center gap-2
-                       rounded-full border border-gray-200 py-3
-                       font-semibold hover:bg-bg-light">
-            <span className="text-lg font-bold text-[#4285F4]">G</span>
-            {mode === 'signup' ? 'Sign up with Google'
-              : 'Sign in with Google'}
-          </button>
+          {(() => {
+            // Admin-toggled per platform (admin -> Feature Toggles):
+            //   google_signin_mobile, google_signin_desktop
+            // Default: ON when the toggle key is missing (back-compat).
+            const isNative = typeof window !== 'undefined'
+              && window.Capacitor && window.Capacitor.isNativePlatform
+              && window.Capacitor.isNativePlatform();
+            const key = isNative ? 'google_signin_mobile'
+              : 'google_signin_desktop';
+            const showGoogle = !features || features[key] !== false;
+            if (!showGoogle) return null;
+            return (
+              <>
+                <div className="my-4 flex items-center gap-3 text-sm
+                                text-sub-text">
+                  <span className="h-px flex-1 bg-gray-200" /> OR
+                  <span className="h-px flex-1 bg-gray-200" />
+                </div>
+                <button onClick={google} disabled={busy}
+                  className="flex w-full items-center justify-center gap-2
+                             rounded-full border border-gray-200 py-3
+                             font-semibold hover:bg-bg-light">
+                  <span className="text-lg font-bold text-[#4285F4]">
+                    G
+                  </span>
+                  {mode === 'signup' ? 'Sign up with Google'
+                    : 'Sign in with Google'}
+                </button>
+              </>
+            );
+          })()}
 
           <button
             onClick={() => { setErr(''); setMode(
@@ -197,6 +217,18 @@ export default function LoginCard({ onDone, compact, initialMode }) {
               Privacy
             </Link>.
           </p>
+          {/* Admin-toggled in /admin-features: features
+              .register_as_astro_show (default ON). */}
+          {(!features || features.register_as_astro_show !== false) && (
+            <div className="mt-3 rounded-card bg-bg-light p-3
+              text-center text-xs">
+              Are you a Vedic astrologer?
+              <Link href="/register-as-astrologer"
+                className="ml-1 font-semibold text-primary underline">
+                Join us as an astrologer
+              </Link>
+            </div>
+          )}
         </div>
       </div>
     </div>

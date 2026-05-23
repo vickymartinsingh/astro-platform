@@ -17,6 +17,12 @@ const TOGGLES = [
   ['enable_tour', 'Guided Tour'],
   ['free_chat_enabled', 'Free Chat'],
   ['free_call_enabled', 'Free Call'],
+  // Sign-in / signup controls - persist in Firestore; auto live across
+  // every app the moment you Save. No code deploy needed.
+  ['google_signin_mobile', 'Google sign-in on mobile app'],
+  ['google_signin_desktop', 'Google sign-in on desktop / web'],
+  ['email_verification', 'Require email verification on signup'],
+  ['register_as_astro_show', 'Show "Register as astrologer" on client'],
 ];
 const NAV_LABELS = [
   ['nav_home', 'Home'],
