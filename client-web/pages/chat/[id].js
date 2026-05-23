@@ -7,6 +7,7 @@ import VerifiedBadge from '../../components/VerifiedBadge';
 import { useRequireClient } from '../../lib/useAuth';
 import { useSession } from '../../lib/useSession';
 import { usePendingSession } from '../../lib/pendingSession';
+import { confirmModal } from '../../components/ConfirmModal';
 
 function fmtTime(ts) {
   try {
@@ -189,7 +190,15 @@ export default function ChatScreen() {
   }
 
   async function confirmEnd() {
-    if (window.confirm('End this consultation now?')) end();
+    const ok = await confirmModal({
+      title: 'End this consultation?',
+      message: 'You will be disconnected from the astrologer. Charges '
+        + 'for time spent so far still apply.',
+      yes: 'End now',
+      no: 'Keep going',
+      danger: true,
+    });
+    if (ok) end();
   }
 
   if (loading || !astro) {

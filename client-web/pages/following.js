@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/router';
 import { astrologerService, followService } from '@astro/shared';
 import Layout from '../components/Layout';
 import AstrologerCard from '../components/AstrologerCard';
@@ -10,6 +11,7 @@ import { useSettings } from '../lib/useSettings';
 // Astrologers the user follows. Shows their Live / Online status so the
 // user can jump straight in; following also push-notifies them.
 export default function Following() {
+  const router = useRouter();
   const { user, profile, loading } = useRequireClient();
   const { go } = useAstroActions();
   const { freeChatMin } = useSettings();
@@ -54,9 +56,8 @@ export default function Following() {
                 </span>
               )}
               <AstrologerCard a={a}
-                onOpen={() => { window.location.href =
-                  a.isLive ? `/live-view/${a.id}`
-                    : `/astrologer/${a.id}`; }}
+                onOpen={() => router.push(a.isLive
+                  ? `/live-view/${a.id}` : `/astrologer/${a.id}`)}
                 onAction={go} freeMin={freeMin} />
               <button onClick={() => unfollow(a.id)}
                 className="mt-1 w-full text-xs font-semibold

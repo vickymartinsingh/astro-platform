@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/router';
+import { confirmModal } from '../components/ConfirmModal';
 
 // Android hardware BACK. Never closes the app on a single press:
 //  - not on a root screen  -> go to the previous screen
@@ -34,13 +35,18 @@ export default function useNativeBack() {
       const now = Date.now();
       if (now - lastBack < 1000) {
         lastBack = 0;
-        // eslint-disable-next-line no-alert
-        const ok = window.confirm('Are you sure you want to close the app?');
-        if (ok) {
+        confirmModal({
+          title: 'Close AstroSeer?',
+          message: 'You can come back any time.',
+          yes: 'Close',
+          no: 'Stay',
+          danger: true,
+        }).then((ok) => {
+          if (!ok) return;
           try { App.exitApp && App.exitApp(); }
           catch (_) { try { App.minimizeApp && App.minimizeApp(); }
             catch (e) {} }
-        }
+        });
       } else {
         lastBack = now;
       }

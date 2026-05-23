@@ -294,70 +294,114 @@ export default function TopNav() {
           <div className="absolute inset-0 bg-black/40"
             onClick={() => setOpen(false)} />
           <nav className="absolute right-0 top-0 flex h-full w-[78%]
-                          max-w-xs flex-col bg-white shadow-2xl
+                          max-w-[320px] flex-col bg-white shadow-2xl
                           animate-[slideIn_.2s_ease-out]">
-          {/* Fixed top: close + auth always visible (never scrolls away) */}
-          <div className="border-b border-gray-100 px-4 pb-3 pt-4">
-            <div className="mb-3 flex items-center justify-between">
-              <span className="font-bold">Menu</span>
+            {/* Compact header: profile chip (if signed in) + close */}
+            <div className="flex items-center gap-2 border-b border-gray-100
+                            px-3 py-3">
+              {user ? (
+                <Link href="/profile"
+                  className="flex flex-1 items-center gap-2.5 rounded-xl
+                    p-1 hover:bg-bg-light">
+                  {profile?.profileImage ? (
+                    <img src={profile.profileImage} alt=""
+                      className="h-9 w-9 rounded-full object-cover" />
+                  ) : (
+                    <span className="flex h-9 w-9 items-center
+                      justify-center rounded-full bg-primary/15
+                      text-sm font-bold text-primary">
+                      {(profile?.name || user?.email || '?')
+                        .charAt(0).toUpperCase()}
+                    </span>
+                  )}
+                  <span className="min-w-0 leading-tight">
+                    <span className="block truncate text-sm font-bold
+                      text-dark-text">
+                      {profile?.name || user?.email || 'My account'}
+                    </span>
+                    <span className="block text-[10px] text-sub-text">
+                      View profile
+                    </span>
+                  </span>
+                </Link>
+              ) : (
+                <span className="flex-1 text-sm font-bold">Menu</span>
+              )}
               <button aria-label="Close" onClick={() => setOpen(false)}
-                className="rounded-lg border border-gray-200 px-2.5 py-1
-                           text-sm">✕</button>
+                className="rounded-lg border border-gray-200 px-2 py-1
+                           text-sm text-sub-text">✕</button>
             </div>
-            {/* Logout lives in Profile now, so it is not repeated here.
-                Guests still get login / signup. */}
+
             {!user && (
-              <div className="flex gap-2">
+              <div className="flex gap-2 border-b border-gray-100 px-3 py-3">
                 <button onClick={() => openLogin()}
-                  className="flex-1 rounded-xl border border-gray-200 px-3
-                             py-3 text-center text-base font-semibold">
+                  className="flex-1 rounded-xl border border-gray-200 py-2
+                             text-sm font-semibold">
                   {t('auth.login')}
                 </button>
                 <button
                   onClick={() => openLogin(undefined, { mode: 'signup' })}
-                  className="btn-grad flex-1 justify-center py-3 text-base">
+                  className="btn-grad flex-1 justify-center py-2 text-sm">
                   {t('auth.signup')}
                 </button>
               </div>
             )}
-          </div>
-          {/* Scrollable links - clean segments. Extra bottom padding
-              so the last items (Help) are never hidden behind the
-              bottom tab bar. */}
-          <div className="flex-1 overflow-y-auto px-4 pt-3 pb-safe-nav">
-            <div className="px-3 pb-1 text-xs font-semibold uppercase
-              tracking-wide text-sub-text">Explore</div>
-            {menuMobile.map((l) => (
-              <Link key={l.href} href={l.href}
-                className={`block rounded-xl px-3 py-3 text-base ${
-                  router.pathname === l.href
-                    ? 'bg-bg-light font-semibold text-primary' : ''}`}>
-                {l.label}
-              </Link>
-            ))}
-            {grouped(profileMenu).map(([seg, items]) => (
-              <div key={seg} className="mt-2 border-t border-gray-100
-                pt-2">
-                <div className="px-3 pb-1 text-xs font-semibold uppercase
-                                tracking-wide text-sub-text">
-                  {seg}
-                </div>
-                {items.map((m) => (
-                  <Link key={m.href} href={m.href}
-                    className={`flex items-center justify-between rounded-xl
-                      px-3 py-3 text-base ${router.pathname === m.href
-                        ? 'bg-bg-light font-semibold text-primary' : ''}`}>
-                    {m.label}
-                    {m.notif && unread > 0 && (
-                      <span className="badge bg-rose-500 text-white">
-                        {unread}
-                      </span>
-                    )}
+
+            {/* Compact, organised link list. Smaller items + tight
+                section headers + thin dividers - far less cluttered. */}
+            <div className="flex-1 overflow-y-auto px-2 pb-safe-nav pt-2">
+              <div className="px-2 pb-1 text-[10px] font-bold uppercase
+                tracking-wider text-sub-text">Explore</div>
+              {menuMobile.map((l) => {
+                const active = router.pathname === l.href;
+                return (
+                  <Link key={l.href} href={l.href}
+                    className={`block rounded-lg px-2.5 py-2 text-[13px]
+                      leading-tight ${active
+                        ? 'bg-bg-light font-semibold text-primary'
+                        : 'text-dark-text hover:bg-bg-light'}`}>
+                    {l.label}
                   </Link>
-                ))}
+                );
+              })}
+              {grouped(profileMenu).map(([seg, items]) => (
+                <div key={seg} className="mt-2 border-t border-gray-100
+                  pt-2">
+                  <div className="px-2 pb-1 text-[10px] font-bold uppercase
+                    tracking-wider text-sub-text">{seg}</div>
+                  {items.map((m) => {
+                    const active = router.pathname === m.href;
+                    return (
+                      <Link key={m.href} href={m.href}
+                        className={`flex items-center justify-between
+                          rounded-lg px-2.5 py-2 text-[13px] leading-tight
+                          ${active ? 'bg-bg-light font-semibold text-primary'
+                            : 'text-dark-text hover:bg-bg-light'}`}>
+                        <span>{m.label}</span>
+                        {m.notif && unread > 0 && (
+                          <span className="badge bg-rose-500 text-white">
+                            {unread}
+                          </span>
+                        )}
+                      </Link>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+
+            {/* Sticky bottom: Logout (when signed in). */}
+            {user && (
+              <div className="border-t border-gray-100 px-3 py-2
+                pb-safe-nav">
+                <button onClick={logout}
+                  className="w-full rounded-lg border border-danger/40
+                    py-2 text-sm font-semibold text-danger
+                    hover:bg-danger/5">
+                  Logout
+                </button>
               </div>
-            ))}
-          </div>
+            )}
           </nav>
         </div>
       )}

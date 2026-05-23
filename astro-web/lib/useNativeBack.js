@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/router';
+import { confirmModal } from '../components/ConfirmModal';
 
 // Android hardware BACK (astrologer app). Single press never closes the
 // app: go to the previous screen, or on a root screen require a quick
@@ -27,13 +28,18 @@ export default function useNativeBack() {
       const now = Date.now();
       if (now - lastBack < 1000) {
         lastBack = 0;
-        // eslint-disable-next-line no-alert
-        const ok = window.confirm('Are you sure you want to close the app?');
-        if (ok) {
+        confirmModal({
+          title: 'Close AstroSeer for Astrologers?',
+          message: 'You can reopen any time. Active sessions stay live.',
+          yes: 'Close',
+          no: 'Stay',
+          danger: true,
+        }).then((ok) => {
+          if (!ok) return;
           try { App.exitApp && App.exitApp(); }
           catch (_) { try { App.minimizeApp && App.minimizeApp(); }
             catch (e) {} }
-        }
+        });
       } else { lastBack = now; }
     });
     Promise.resolve(sub).then((h) => { handle = h; }).catch(() => {});

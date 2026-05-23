@@ -14,6 +14,7 @@ import NativeBack from '../components/NativeBack';
 import AdminLiveEditor from '../components/AdminLiveEditor';
 import ActiveSessionBar from '../components/ActiveSessionBar';
 import ErrorBoundary from '../components/ErrorBoundary';
+import ConfirmModalHost from '../components/ConfirmModal';
 
 function WithProviders({ children }) {
   const { user, profile } = useAuth();
@@ -55,6 +56,7 @@ export default function App({ Component, pageProps }) {
       <GuidedTour />
       <NativeBack />
       <SplashScreen />
+      <ConfirmModalHost />
     </ErrorBoundary>
   );
 }

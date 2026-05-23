@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import TopNav from './TopNav';
 import BottomNav from './BottomNav';
 import AnnouncementBanner from './AnnouncementBanner';
@@ -21,9 +22,9 @@ export default function Layout({ children, nav = true }) {
       <footer className="mx-auto max-w-6xl px-4 pb-24 pt-2 text-center
         text-xs text-sub-text md:pb-6">
         <nav className="flex flex-wrap justify-center gap-x-4 gap-y-1">
-          <a href="/privacy">Privacy Policy</a>
-          <a href="/terms">Terms of Service</a>
-          <a href="/account-deletion">Account Deletion</a>
+          <Link href="/privacy">Privacy Policy</Link>
+          <Link href="/terms">Terms of Service</Link>
+          <Link href="/account-deletion">Account Deletion</Link>
           <a href="mailto:support@astroseer.in">Contact</a>
         </nav>
         <div className="mt-1">© {new Date().getFullYear()} AstroSeer</div>

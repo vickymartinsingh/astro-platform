@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
+import Link from 'next/link';
 import { userService, authService, ZODIAC } from '@astro/shared';
 import Layout from '../components/Layout';
 import Avatar from '../components/Avatar';
@@ -316,9 +317,9 @@ export default function Profile() {
           View App Tour
         </button>
         <div className="flex justify-center gap-4 text-sm text-sub-text">
-          <a href="/terms">Terms</a>
-          <a href="/privacy">Privacy</a>
-          <a href="/page/refund">Refund Policy</a>
+          <Link href="/terms">Terms</Link>
+          <Link href="/privacy">Privacy</Link>
+          <Link href="/page/refund">Refund Policy</Link>
         </div>
       </div>
 
@@ -356,9 +357,9 @@ export default function Profile() {
           path) but deliberately small and visually de-emphasised so
           nobody mistakes it for the Logout button right above. */}
       <div className="mt-6 text-center text-[11px] text-sub-text">
-        <a href="/account-deletion" className="underline">
+        <Link href="/account-deletion" className="underline">
           Account deletion policy
-        </a>
+        </Link>
         {' · '}
         <button onClick={deleteAccount}
           className="underline opacity-60 hover:opacity-100">

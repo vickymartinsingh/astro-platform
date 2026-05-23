@@ -9,6 +9,7 @@ import SplashScreen from '../components/SplashScreen';
 import NativeBack from '../components/NativeBack';
 import AdminLiveEditor from '../components/AdminLiveEditor';
 import AiAutoResponder from '../components/AiAutoResponder';
+import ConfirmModalHost from '../components/ConfirmModal';
 
 export default function App({ Component, pageProps }) {
   useNativeBack();
@@ -26,6 +27,7 @@ export default function App({ Component, pageProps }) {
       </AuthProvider>
       <NativeBack />
       <SplashScreen />
+      <ConfirmModalHost />
     </ErrorBoundary>
   );
 }

@@ -4,6 +4,7 @@ import {
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/router';
 import { sessionService } from '@astro/shared';
+import { confirmModal } from '../components/ConfirmModal';
 
 // Tracks the user's current/active session. A floating bar stays pinned
 // across every page (body portal so no layout hides it) ALWAYS while a
@@ -89,7 +90,15 @@ export function PendingSessionProvider({ children }) {
     const i = info;
     if (!i) return;
     if (connected) {
-      if (!window.confirm('End this consultation now?')) return;
+      const ok = await confirmModal({
+        title: 'End this consultation?',
+        message: 'You will be disconnected from the astrologer. Charges '
+          + 'for time spent so far still apply.',
+        yes: 'End now',
+        no: 'Keep going',
+        danger: true,
+      });
+      if (!ok) return;
       try { await sessionService.endAndSettleClient(i.sessionId); }
       catch (_) {
         try {

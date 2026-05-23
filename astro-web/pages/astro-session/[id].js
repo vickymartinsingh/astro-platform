@@ -6,6 +6,7 @@ import {
 } from '@astro/shared';
 import { useRequireAstrologer } from '../../lib/useAuth';
 import { playPing } from '../../lib/ping';
+import { confirmModal } from '../../components/ConfirmModal';
 
 export default function ActiveSession() {
   const router = useRouter();
@@ -137,7 +138,18 @@ export default function ActiveSession() {
   }
 
   async function endSession() {
-    if (!confirm('End this session?')) return;
+    const t = session && session.type;
+    const label = t === 'chat' ? 'chat'
+      : t === 'video' ? 'video call' : 'call';
+    const ok = await confirmModal({
+      title: `End this ${label}?`,
+      message: 'The client will be disconnected and billed for the time '
+        + 'spent. This cannot be undone.',
+      yes: 'End now',
+      no: 'Keep going',
+      danger: true,
+    });
+    if (!ok) return;
     try { await recordService.stopRecording(); } catch (_) {}
     await callService.leaveAgoraChannel();
     // Charge the client, then collect this astrologer's post-commission
