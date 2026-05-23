@@ -12,6 +12,7 @@ export const DEFAULT_CLIENT_MENU = [
   { href: '/horoscope', label: 'Horoscope' },
   { href: '/tarot', label: 'Tarot' },
   { href: '/kundli', label: 'Kundli' },
+  { href: '/numerology', label: 'Numerology' },
   { href: '/matching', label: 'Matching' },
   { href: '/remedies', label: 'Remedies' },
 ];
