@@ -22,10 +22,6 @@ export const AI_PROVIDERS = [
   { id: 'openai', label: 'OpenAI', tag: 'Paid',
     keyHelp: 'platform.openai.com/api-keys',
     defaultModel: 'gpt-4o-mini', fields: ['model'] },
-  { id: 'bedrock', label: 'Amazon Bedrock (Claude)', tag: 'Paid',
-    keyHelp: 'AWS console -> IAM -> Bedrock API key',
-    defaultModel: '', defaultRegion: 'us-west-2',
-    fields: ['region', 'modelId'] },
 ];
 
 export async function getAiProviders() {

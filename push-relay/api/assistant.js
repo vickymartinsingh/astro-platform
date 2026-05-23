@@ -5,32 +5,20 @@
 // server-side and the admin can swap providers / keys without touching
 // code. Falls back to env vars when Firestore is empty or unreachable.
 //
-// Supported providers (try in user-defined order until one succeeds):
+// Supported providers (try in admin-defined order until one succeeds):
 //   gemini     - Google Gemini (free tier, no card needed)
-//   groq       - Groq Cloud (free tier, Llama-3.x family, very fast)
+//   groq       - Groq Cloud (free tier, Llama-3.x, very fast)
 //   openrouter - OpenRouter (many models, free tier ones available)
 //   openai     - OpenAI (paid)
-//   bedrock    - Amazon Bedrock Claude (paid; needs region)
 //
-// Firestore doc:  settings/aiProviders
-//   { providers: [ { id, enabled, apiKey, model, region? } ],
-//     order:     [ 'gemini', 'groq', ... ],   // preference
-//     deployHookUrl: 'https://api.vercel.com/v1/integrations/deploy/...' }
-//
-// Env-var fallback (used when the doc is missing / a provider has no key):
-//   GEMINI_API_KEY, GEMINI_MODEL
-//   GROQ_API_KEY, GROQ_MODEL
-//   OPENROUTER_API_KEY, OPENROUTER_MODEL
-//   OPENAI_API_KEY, OPENAI_MODEL
-//   BEDROCK_API_KEY, BEDROCK_REGION, BEDROCK_MODEL_ID
-//   FIREBASE_SERVICE_ACCOUNT (required to read Firestore config)
-//   ASSISTANT_RELAY_KEY (optional shared secret on x-assistant-key)
+// Bedrock was removed: AWS billing + Marketplace agreements were a poor
+// fit for this use case. Gemini + Groq are free and reliable.
 
 const admin = require('firebase-admin');
 function ensureAdmin() {
   if (admin.apps.length) return;
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
-  if (!raw) return; // graceful: relay falls back to env-only mode
+  if (!raw) return;
   try {
     admin.initializeApp({
       credential: admin.credential.cert(JSON.parse(raw)),
@@ -43,11 +31,9 @@ const PROVIDER_DEFAULTS = {
   groq: { model: 'llama-3.3-70b-versatile' },
   openrouter: { model: 'meta-llama/llama-3.3-70b-instruct:free' },
   openai: { model: 'gpt-4o-mini' },
-  bedrock: { region: 'us-west-2', modelId: '' },
 };
-const DEFAULT_ORDER = ['gemini', 'groq', 'openrouter', 'openai', 'bedrock'];
+const DEFAULT_ORDER = ['gemini', 'groq', 'openrouter', 'openai'];
 
-// In-memory cache to avoid hitting Firestore on every request.
 let cfgCache = null;
 let cfgCacheAt = 0;
 const CFG_TTL_MS = 30 * 1000;
@@ -63,7 +49,6 @@ async function loadProviderCfg() {
       if (snap.exists) fromDoc = snap.data() || null;
     } catch (_) { /* fall back to env */ }
   }
-  // Merge Firestore doc over env-var fallback for every provider.
   const envFor = (id) => {
     if (id === 'gemini') {
       return { apiKey: process.env.GEMINI_API_KEY || '',
@@ -82,12 +67,6 @@ async function loadProviderCfg() {
       return { apiKey: process.env.OPENAI_API_KEY || '',
         model: process.env.OPENAI_MODEL || PROVIDER_DEFAULTS.openai.model };
     }
-    if (id === 'bedrock') {
-      return { apiKey: process.env.BEDROCK_API_KEY || '',
-        region: process.env.BEDROCK_REGION
-          || PROVIDER_DEFAULTS.bedrock.region,
-        modelId: process.env.BEDROCK_MODEL_ID || '' };
-    }
     return {};
   };
   const docProviders = (fromDoc && Array.isArray(fromDoc.providers))
@@ -101,14 +80,11 @@ async function loadProviderCfg() {
       enabled: typeof d.enabled === 'boolean' ? d.enabled : !!env.apiKey,
       apiKey: d.apiKey || env.apiKey || '',
       model: d.model || env.model || (PROVIDER_DEFAULTS[id] || {}).model,
-      region: d.region || env.region
-        || (PROVIDER_DEFAULTS[id] || {}).region,
-      modelId: d.modelId || env.modelId
-        || (PROVIDER_DEFAULTS[id] || {}).modelId,
     };
   });
-  const order = (fromDoc && Array.isArray(fromDoc.order) && fromDoc.order.length)
-    ? fromDoc.order : DEFAULT_ORDER;
+  const order = (fromDoc && Array.isArray(fromDoc.order) && fromDoc.order.length
+    ? fromDoc.order : DEFAULT_ORDER)
+    .filter((id) => DEFAULT_ORDER.includes(id)); // drop legacy 'bedrock'
   const cfg = { providers, order,
     deployHookUrl: (fromDoc && fromDoc.deployHookUrl) || '' };
   cfgCache = cfg; cfgCacheAt = Date.now();
@@ -201,66 +177,10 @@ function callOpenAI(p, systemText, turns) {
     p.apiKey, chatLikeBody(systemText, turns, p.model));
 }
 
-let resolvedBedrock = null;
-async function callBedrock(p, systemText, turns) {
-  if (!p.apiKey) return { ok: false, error: 'no key' };
-  const region = p.region || 'us-west-2';
-  const pfx = region.startsWith('ap-') ? 'apac.'
-    : region.startsWith('eu-') ? 'eu.' : 'us.';
-  const candidates = [p.modelId,
-    `${pfx}anthropic.claude-opus-4-1-20250805-v1:0`,
-    `${pfx}anthropic.claude-sonnet-4-20250514-v1:0`,
-    `${pfx}anthropic.claude-3-7-sonnet-20250219-v1:0`,
-    `${pfx}anthropic.claude-3-5-sonnet-20241022-v2:0`,
-    'anthropic.claude-3-5-sonnet-20240620-v1:0',
-    'anthropic.claude-3-haiku-20240307-v1:0',
-  ].filter(Boolean);
-  const messages = turns.map((m) => ({
-    role: m.fromClient ? 'user' : 'assistant',
-    content: [{ text: String(m.text).slice(0, 4000) }],
-  }));
-  while (messages.length && messages[0].role !== 'user') messages.shift();
-  if (!messages.length) return { ok: false, error: 'no user turn' };
-  const payload = JSON.stringify({ system: [{ text: systemText }], messages,
-    inferenceConfig: { maxTokens: 300, temperature: 0.7 } });
-  const order = resolvedBedrock
-    ? [resolvedBedrock, ...candidates.filter((m) => m !== resolvedBedrock)]
-    : candidates;
-  let last = null;
-  for (const model of order) {
-    try {
-      // eslint-disable-next-line no-await-in-loop
-      const r = await fetch(
-        `https://bedrock-runtime.${region}.amazonaws.com`
-        + `/model/${encodeURIComponent(model)}/converse`,
-        { method: 'POST', headers: {
-          Authorization: `Bearer ${p.apiKey}`,
-          'Content-Type': 'application/json' }, body: payload });
-      const j = await r.json().catch(() => ({}));
-      if (r.status === 401) {
-        return { ok: false, error: 'bedrock auth' };
-      }
-      if (r.ok) {
-        const reply = (((j.output || {}).message || {}).content || [])
-          .map((c) => c && c.text).filter(Boolean).join(' ').trim();
-        if (reply) { resolvedBedrock = model; return { ok: true, reply }; }
-        last = `${model}: empty reply`;
-        continue;
-      }
-      last = `${model}: ${(j && (j.message || j.Message)) || `HTTP ${r.status}`}`;
-    } catch (e) {
-      last = `${model}: ${String((e && e.message) || e)}`;
-    }
-  }
-  return { ok: false, error: last || 'no usable bedrock model' };
-}
-
 const PROVIDER_FNS = {
   gemini: callGemini, groq: callGroq, openrouter: callOpenRouter,
-  openai: callOpenAI, bedrock: callBedrock,
+  openai: callOpenAI,
 };
-
-// ---- HTTP handler --------------------------------------------------------
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -279,8 +199,7 @@ module.exports = async (req, res) => {
     return res.status(200).json({
       configured: orderedActive.length > 0,
       providers: cfg.providers.map((p) => ({
-        id: p.id, enabled: p.enabled, hasKey: !!p.apiKey,
-        model: p.model, region: p.region,
+        id: p.id, enabled: p.enabled, hasKey: !!p.apiKey, model: p.model,
       })),
       order: cfg.order,
       active: orderedActive.map((p) => p.id),
@@ -337,9 +256,7 @@ module.exports = async (req, res) => {
     tried.push({ provider: p.id, ok: r.ok, error: r.ok ? null : r.error });
     if (r.ok) {
       return res.status(200).json({
-        reply: r.reply,
-        provider: p.id,
-        model: p.model || p.modelId || resolvedBedrock || null,
+        reply: r.reply, provider: p.id, model: p.model,
       });
     }
   }
