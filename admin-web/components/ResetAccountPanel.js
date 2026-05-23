@@ -66,11 +66,13 @@ export default function ResetAccountPanel({ uid, role = 'client', name,
       {open && (
         <div className="mt-3">
           <p className="text-xs text-sub-text">
-            Choose what to permanently delete for
-            {' '}<b>{name || uid}</b>. This cannot be undone.
+            Choose what to wipe for <b>{name || uid}</b>. Deleted records
+            are archived first - you can review or Restore them from
+            <a href="/admin-archive" className="ml-1 font-semibold
+              text-primary underline">Archive &amp; Restore</a>.
             Selecting everything performs a full “reset as default”
-            (account data wiped, profile restored to a clean default,
-            login kept).
+            (account data wiped, profile restored to clean default, login
+            kept).
           </p>
 
           <div className="mt-2 flex gap-2 text-xs">

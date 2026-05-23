@@ -133,96 +133,161 @@ export const RESET_PARTS = [
   ['profile', 'Profile (reset to default)'],
 ];
 
-// Delete every doc returned by a query, in batches (Firestore limit 500).
-async function deleteAllDocs(qy) {
-  const snap = await getDocs(qy);
+// ---- Archive helpers --------------------------------------------------
+// Every reset now writes the deleted docs into `archives/{archiveId}/items`
+// FIRST, then deletes from the live collection. Restore reads the items
+// back and rewrites them to their original paths.
+async function archiveAndDeleteSnap(archiveId, coll, snap, filter) {
+  const docs = snap.docs.filter((d) => !filter || filter(d.data() || {}));
   let n = 0;
-  for (let i = 0; i < snap.docs.length; i += 400) {
-    const batch = writeBatch(db);
-    snap.docs.slice(i, i + 400).forEach((d) => { batch.delete(d.ref); n += 1; });
-    await batch.commit();
+  for (let i = 0; i < docs.length; i += 200) {
+    const slice = docs.slice(i, i + 200);
+    // 1) archive
+    const aBatch = writeBatch(db);
+    slice.forEach((d) => {
+      const aRef = doc(collection(db, `archives/${archiveId}/items`));
+      aBatch.set(aRef, { coll, docId: d.id, data: d.data() || {},
+        archivedAt: serverTimestamp() });
+    });
+    await aBatch.commit();
+    // 2) delete the originals
+    const dBatch = writeBatch(db);
+    slice.forEach((d) => { dBatch.delete(d.ref); n += 1; });
+    await dBatch.commit();
   }
   return n;
 }
 
-// Sessions involving this uid as the client (userId) OR the astrologer
-// (astroId). Optionally filtered to certain session types.
-async function deleteSessionsFor(uid, types) {
+async function archiveAndDeleteAll(archiveId, coll, qy) {
+  const snap = await getDocs(qy);
+  return archiveAndDeleteSnap(archiveId, coll, snap);
+}
+
+async function archiveAndDeleteSessions(archiveId, uid, types) {
   let n = 0;
   for (const field of ['userId', 'astroId']) {
-    const snap = await getDocs(query(
-      collection(db, 'sessions'), where(field, '==', uid)));
-    for (let i = 0; i < snap.docs.length; i += 400) {
-      const batch = writeBatch(db);
-      snap.docs.slice(i, i + 400).forEach((d) => {
-        const t = (d.data() || {}).type;
-        if (!types || types.includes(t)) { batch.delete(d.ref); n += 1; }
-      });
-      await batch.commit();
-    }
+    const snap = await getDocs(query(collection(db, 'sessions'),
+      where(field, '==', uid)));
+    n += await archiveAndDeleteSnap(archiveId, 'sessions', snap,
+      (data) => !types || types.includes(data.type));
   }
   return n;
 }
 
-// Chats where the uid is a participant + their messages subcollection.
-async function deleteChatsFor(uid) {
+// Chats: archive each chat doc AND every message in its subcollection
+// (we record coll = `chats/{chatId}/messages` so restore can put them
+// back into the right subcollection).
+async function archiveAndDeleteChats(archiveId, uid) {
   const snap = await getDocs(query(collection(db, 'chats'),
     where('participants', 'array-contains', uid)));
   let n = 0;
-  for (const d of snap.docs) {
+  for (const c of snap.docs) {
     try {
-      const msgs = await getDocs(collection(db, 'chats', d.id, 'messages'));
-      for (let i = 0; i < msgs.docs.length; i += 400) {
-        const b = writeBatch(db);
-        msgs.docs.slice(i, i + 400).forEach((m) => b.delete(m.ref));
-        await b.commit();
+      const msgs = await getDocs(collection(db, 'chats', c.id, 'messages'));
+      const subColl = `chats/${c.id}/messages`;
+      for (let i = 0; i < msgs.docs.length; i += 200) {
+        const slice = msgs.docs.slice(i, i + 200);
+        const aBatch = writeBatch(db);
+        slice.forEach((m) => {
+          const aRef = doc(collection(db, `archives/${archiveId}/items`));
+          aBatch.set(aRef, { coll: subColl, docId: m.id,
+            data: m.data() || {},
+            archivedAt: serverTimestamp() });
+        });
+        await aBatch.commit();
+        const dBatch = writeBatch(db);
+        slice.forEach((m) => dBatch.delete(m.ref));
+        await dBatch.commit();
       }
-    } catch (_) { /* ignore message wipe errors, still drop the chat */ }
-    try { await deleteDoc(d.ref); n += 1; } catch (_) { /* ignore */ }
+    } catch (_) { /* ignore message wipe errors */ }
+    try {
+      const aRef = doc(collection(db, `archives/${archiveId}/items`));
+      await setDoc(aRef, { coll: 'chats', docId: c.id,
+        data: c.data() || {},
+        archivedAt: serverTimestamp() });
+      await deleteDoc(c.ref); n += 1;
+    } catch (_) { /* ignore */ }
   }
   return n;
 }
 
-async function deleteTxnsFor(uid, match) {
+async function archiveAndDeleteTxns(archiveId, uid, match) {
   const snap = await getDocs(query(collection(db, 'transactions'),
     where('userId', '==', uid)));
-  let n = 0;
-  for (let i = 0; i < snap.docs.length; i += 400) {
-    const batch = writeBatch(db);
-    snap.docs.slice(i, i + 400).forEach((d) => {
-      if (!match || match(d.data() || {})) { batch.delete(d.ref); n += 1; }
-    });
-    await batch.commit();
-  }
-  return n;
+  return archiveAndDeleteSnap(archiveId, 'transactions', snap, match);
 }
 
-// Reset one account. `parts` is an array of RESET_PARTS keys.
-// `role` ('client' | 'astrologer') decides which profile doc to reset.
-export async function resetAccountData(uid, { role = 'client',
-  parts = [] } = {}) {
+// Reset one account. `parts` is an array of RESET_PARTS keys. `role`
+// ('client'|'astrologer') decides which profile doc to reset. Every
+// deleted doc is FIRST archived into archives/{archiveId}/items so admin
+// can review and restore later via the archive browser.
+export async function resetAccountData(uid, { role = 'client', parts = [],
+  archiveId: providedArchive = null } = {}) {
   if (!uid) throw new Error('uid required');
   const want = new Set(parts);
   const out = {};
 
-  if (want.has('chats')) out.chats = await deleteChatsFor(uid);
-  if (want.has('history')) out.history = await deleteSessionsFor(uid);
-  else if (want.has('calls')) {
-    out.calls = await deleteSessionsFor(uid, ['call', 'video']);
+  // Create / reuse the archive doc up front so all this reset's deletions
+  // are grouped together under one archiveId for clean restore.
+  let archiveId = providedArchive;
+  let archiveRef = null;
+  if (!archiveId) {
+    archiveRef = doc(collection(db, 'archives'));
+    archiveId = archiveRef.id;
+    await setDoc(archiveRef, {
+      uid, role, parts: [...want], counts: {},
+      createdAt: serverTimestamp(), restored: false,
+    });
+  }
+
+  // Also snapshot the BEFORE state of any profile docs that "profile" or
+  // "wallet" will mutate, so restore can put back the original profile +
+  // wallet too.
+  if (want.has('profile') || want.has('wallet') || want.has('remedy')) {
+    try {
+      const u = await getDoc(doc(db, 'users', uid));
+      if (u.exists()) {
+        const aRef = doc(collection(db, `archives/${archiveId}/items`));
+        await setDoc(aRef, { coll: 'users', docId: uid,
+          data: u.data(), archivedAt: serverTimestamp() });
+      }
+    } catch (_) { /* ignore */ }
+    if (role === 'astrologer') {
+      try {
+        const a = await getDoc(doc(db, 'astrologers', uid));
+        if (a.exists()) {
+          const aRef = doc(collection(db, `archives/${archiveId}/items`));
+          await setDoc(aRef, { coll: 'astrologers', docId: uid,
+            data: a.data(), archivedAt: serverTimestamp() });
+        }
+      } catch (_) { /* ignore */ }
+    }
+  }
+
+  if (want.has('chats')) {
+    out.chats = await archiveAndDeleteChats(archiveId, uid);
+  }
+  if (want.has('history')) {
+    out.history = await archiveAndDeleteSessions(archiveId, uid);
+  } else if (want.has('calls')) {
+    out.calls = await archiveAndDeleteSessions(archiveId, uid,
+      ['call', 'video']);
   }
   if (want.has('kundli')) {
-    out.kundli = await deleteAllDocs(query(collection(db, 'kundliProfiles'),
-      where('userId', '==', uid)));
+    out.kundli = await archiveAndDeleteAll(archiveId, 'kundliProfiles',
+      query(collection(db, 'kundliProfiles'),
+        where('userId', '==', uid)));
   }
   if (want.has('notification')) {
-    out.notification = await deleteAllDocs(query(
-      collection(db, 'notifications'), where('userId', '==', uid)));
+    out.notification = await archiveAndDeleteAll(archiveId,
+      'notifications', query(collection(db, 'notifications'),
+        where('userId', '==', uid)));
   }
   if (want.has('complaint')) {
     let n = 0;
     for (const field of ['userId', 'astroId']) {
-      n += await deleteAllDocs(query(collection(db, 'disputes'),
-        where(field, '==', uid)));
+      n += await archiveAndDeleteAll(archiveId, 'disputes',
+        query(collection(db, 'disputes'), where(field, '==', uid)));
     }
     out.complaint = n;
   }
@@ -230,20 +295,21 @@ export async function resetAccountData(uid, { role = 'client',
     let n = 0;
     for (const field of ['userId', 'astroId']) {
       try {
-        n += await deleteAllDocs(query(collection(db, 'reviews'),
-          where(field, '==', uid)));
-      } catch (_) { /* field may not exist on every review */ }
+        n += await archiveAndDeleteAll(archiveId, 'reviews',
+          query(collection(db, 'reviews'), where(field, '==', uid)));
+      } catch (_) { /* ignore */ }
     }
     out.reviews = n;
   }
-  if (want.has('transaction')) out.transaction = await deleteTxnsFor(uid);
-  else {
+  if (want.has('transaction')) {
+    out.transaction = await archiveAndDeleteTxns(archiveId, uid);
+  } else {
     if (want.has('recharge')) {
-      out.recharge = await deleteTxnsFor(uid, (t) =>
+      out.recharge = await archiveAndDeleteTxns(archiveId, uid, (t) =>
         /recharge|topup|top-up|add/i.test(`${t.type} ${t.reason}`));
     }
     if (want.has('refund')) {
-      out.refund = await deleteTxnsFor(uid, (t) =>
+      out.refund = await archiveAndDeleteTxns(archiveId, uid, (t) =>
         /refund/i.test(`${t.type} ${t.reason}`));
     }
   }
@@ -260,14 +326,12 @@ export async function resetAccountData(uid, { role = 'client',
         try {
           await updateDoc(doc(db, 'astrologers', uid),
             { wallet: 0, earnings: 0 });
-        } catch (_) { /* astrologer doc may not track wallet */ }
+        } catch (_) {}
       }
       out.wallet = 0;
-    } catch (_) { /* ignore */ }
+    } catch (_) {}
   }
   if (want.has('profile')) {
-    // Reset to a clean default profile but KEEP the login identity
-    // (uid, email, role, createdAt) so the person can still sign in.
     const reset = {
       name: '', gender: '', dob: '', tob: '', timeOfBirth: '',
       place: '', placeOfBirth: '', language: '', bio: '',
@@ -284,23 +348,102 @@ export async function resetAccountData(uid, { role = 'client',
     }
     out.profile = 1;
   }
-  return { success: true, uid, parts: [...want], counts: out };
+
+  // Stamp summary on the archive (or merge into provided one).
+  try {
+    await setDoc(doc(db, 'archives', archiveId), {
+      counts: out,
+      lastUpdatedAt: serverTimestamp(),
+    }, { merge: true });
+  } catch (_) {}
+
+  return { success: true, uid, archiveId, parts: [...want], counts: out };
 }
 
-// Reset MANY accounts at once (every client or every astrologer). Heavy
-// and irreversible - the UI must require a typed confirmation.
-export async function resetAllAccounts({ role = 'client', parts = [] } = {}) {
-  const users = await getAllUsers(
-    role === 'astrologer' ? { role: 'astrologer' } : {});
-  const targets = role === 'astrologer'
-    ? users
-    : users.filter((u) => (u.role || 'client') === 'client');
-  let done = 0;
-  for (const u of targets) {
-    try { await resetAccountData(u.uid, { role, parts }); done += 1; }
-    catch (_) { /* continue with the rest */ }
+// Reset MANY accounts at once. `uids` (optional) limits it to a subset
+// of clients/astrologers; if omitted, applies to every account of that
+// role. Each uid gets its own archive doc so restore is per-account.
+export async function resetAllAccounts({ role = 'client', parts = [],
+  uids = null } = {}) {
+  let targets;
+  if (Array.isArray(uids) && uids.length) {
+    targets = uids.map((u) => ({ uid: u }));
+  } else {
+    const users = await getAllUsers(
+      role === 'astrologer' ? { role: 'astrologer' } : {});
+    targets = role === 'astrologer' ? users
+      : users.filter((u) => (u.role || 'client') === 'client');
   }
-  return { success: true, total: targets.length, done };
+  let done = 0;
+  const archiveIds = [];
+  for (const u of targets) {
+    try {
+      const r = await resetAccountData(u.uid, { role, parts });
+      if (r && r.archiveId) archiveIds.push(r.archiveId);
+      done += 1;
+    } catch (_) { /* continue */ }
+  }
+  return { success: true, total: targets.length, done, archiveIds };
+}
+
+// ---- Archive browser + restore ---------------------------------------
+// List most-recent archives (admin "View resets / Restore" page).
+export async function listArchives({ limit: lim = 50 } = {}) {
+  const snap = await getDocs(query(collection(db, 'archives'),
+    orderBy('createdAt', 'desc'), limit(lim)));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+// Get a single archive doc + its items (the deleted records).
+export async function getArchive(archiveId) {
+  const meta = await getDoc(doc(db, 'archives', archiveId));
+  if (!meta.exists()) return null;
+  const items = await getDocs(
+    collection(db, `archives/${archiveId}/items`));
+  return {
+    id: archiveId,
+    ...meta.data(),
+    items: items.docs.map((d) => ({ id: d.id, ...d.data() })),
+  };
+}
+
+// Restore everything in an archive back to its original collections.
+// Idempotent: re-restoring sets the same docs again. Marks archive
+// `restored: true` so the UI can show its state.
+export async function restoreArchive(archiveId) {
+  const arch = await getArchive(archiveId);
+  if (!arch) throw new Error('Archive not found.');
+  let restored = 0;
+  for (const item of arch.items || []) {
+    if (!item.coll || !item.docId || !item.data) continue;
+    try {
+      // coll may be a subcollection path like "chats/abc/messages" or a
+      // simple collection like "transactions". doc() handles both as long
+      // as the path resolves to a document (even segments => collection).
+      await setDoc(doc(db, item.coll, item.docId), item.data);
+      restored += 1;
+    } catch (_) { /* skip bad items */ }
+  }
+  try {
+    await setDoc(doc(db, 'archives', archiveId), {
+      restored: true, restoredAt: serverTimestamp(),
+      restoredCount: restored,
+    }, { merge: true });
+  } catch (_) {}
+  return { success: true, archiveId, restored };
+}
+
+// Hard-delete an archive (purges the safety net). Use with care.
+export async function deleteArchive(archiveId) {
+  const items = await getDocs(
+    collection(db, `archives/${archiveId}/items`));
+  for (let i = 0; i < items.docs.length; i += 400) {
+    const b = writeBatch(db);
+    items.docs.slice(i, i + 400).forEach((d) => b.delete(d.ref));
+    await b.commit();
+  }
+  await deleteDoc(doc(db, 'archives', archiveId));
+  return { success: true };
 }
 
 export function approveAstrologer(astroId, approved = true) {

@@ -62,7 +62,8 @@ const GROUPS = [
     ['/admin-theme', 'App Theme'],
     ['/admin-ai', 'AI Assistant'],
     ['/admin-email', 'Email & Alerts'],
-    ['/admin-reset', 'Bulk Account Reset'],
+    ['/admin-reset', 'Account Reset'],
+    ['/admin-archive', 'Archive & Restore'],
   ]],
 ];
 // Developer Portal: a parallel nav (same look, different contents) that
@@ -101,7 +102,8 @@ const DEV_GROUPS = [
     ['/admin-email', 'Email & Alerts'],
     ['/admin-audit', 'Audit Log'],
     ['/admin-health', 'System Health'],
-    ['/admin-reset', 'Bulk Account Reset'],
+    ['/admin-reset', 'Account Reset'],
+    ['/admin-archive', 'Archive & Restore'],
   ]],
 ];
 // Support portal: a focused support-desk subset (no settings / payouts
