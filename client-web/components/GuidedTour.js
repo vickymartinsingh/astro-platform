@@ -5,10 +5,14 @@ import { useEffect, useState } from 'react';
 // talking about (cut-out highlight + ring) so the customer sees exactly
 // where it is - including the slide menu (we highlight the menu button).
 const KEY = 'appTourDone';
+// Each step optionally has `menu: 'open'` (force the side menu open
+// before measuring) or `menu: 'close'` (close it). This lets the tour
+// walk the user through items hidden behind the ☰ button - which most
+// new customers miss completely.
 const STEPS = [
   { i: '🙏', t: 'Welcome to AstroSeer',
-    m: 'A quick 30-second tour. Each step points to the exact button '
-      + 'on screen. You can skip anytime.' },
+    m: 'A quick tour. Each step points to the exact button on screen. '
+      + 'You can skip anytime.' },
   { i: '🏠', t: 'Home', sel: '[data-tour="nav-home"]',
     m: 'Your daily stars, horoscope and top astrologers.' },
   { i: '💬', t: 'Chat with an astrologer', sel: '[data-tour="nav-chat"]',
@@ -23,13 +27,49 @@ const STEPS = [
     m: 'Add money, redeem gift cards and see invoices - one tap here.' },
   { i: '🔔', t: 'Notifications', sel: '[data-tour="top-bell"]',
     m: 'Session, ticket and offer alerts appear here.' },
-  { i: '☰', t: 'The menu', sel: '[data-tour="top-menu"]',
-    m: 'Tap here for Kundli, Horoscope, Matching, Remedies, Write a '
-      + 'Review and Help & Support.' },
-  { i: '🎉', t: 'You are all set!',
+  { i: '☰', t: 'Open the side menu', sel: '[data-tour="top-menu"]',
+    m: 'Tap here any time to reach Kundli, Horoscope, Numerology, '
+      + 'Matching, Remedies, Following, Wallet, History, Help and more. '
+      + 'We will walk through these next.' },
+  { i: '🌟', t: 'Horoscope', sel: '[data-tour="menu-horoscope"]',
+    menu: 'open',
+    m: 'Daily, weekly and monthly horoscope for your sign.' },
+  { i: '📜', t: 'Kundli', sel: '[data-tour="menu-kundli"]', menu: 'open',
+    m: 'Generate your full Vedic birth chart and download a free PDF.' },
+  { i: '🔢', t: 'Numerology', sel: '[data-tour="menu-numerology"]',
+    menu: 'open',
+    m: 'Free Chaldean numerology: life path, lucky numbers, traits.' },
+  { i: '💞', t: 'Matching', sel: '[data-tour="menu-matching"]',
+    menu: 'open',
+    m: 'Guna Milan compatibility for marriage.' },
+  { i: '🪷', t: 'Remedies', sel: '[data-tour="menu-remedies"]',
+    menu: 'open',
+    m: 'Browse astrologer-recommended remedies and gemstones.' },
+  { i: '⭐', t: 'Following', sel: '[data-tour="menu-following"]',
+    menu: 'open',
+    m: 'Astrologers you follow appear here for quick access.' },
+  { i: '🕘', t: 'Consultation history',
+    sel: '[data-tour="menu-history"]', menu: 'open',
+    m: 'Every past chat, call and video, in one place.' },
+  { i: '🛟', t: 'Help & Support', sel: '[data-tour="menu-support"]',
+    menu: 'open',
+    m: 'Raise a ticket, chat with our team or read FAQs.' },
+  { i: '🎉', t: 'You are all set!', menu: 'close',
     m: 'Tap an astrologer to begin. Replay this tour anytime from '
       + 'Profile.' },
 ];
+
+// Open / close the mobile side menu by clicking the ☰ button. Used by the
+// tour to walk through menu items that live behind it. No-op on desktop
+// where the menu items are already visible in the top nav.
+function setMenuOpen(open) {
+  if (typeof document === 'undefined') return;
+  const btn = document.querySelector('[data-tour="top-menu"]');
+  if (!btn) return;
+  const isOpen = !!document.querySelector('[data-tour="menu-horoscope"]');
+  if (open === isOpen) return;
+  try { btn.click(); } catch (_) {}
+}
 
 export default function GuidedTour() {
   const [show, setShow] = useState(false);
@@ -47,6 +87,9 @@ export default function GuidedTour() {
   useEffect(() => {
     if (!show) return undefined;
     const s = STEPS[i];
+    // Force the side menu open / closed if this step needs it.
+    if (s && s.menu === 'open') setMenuOpen(true);
+    if (s && s.menu === 'close') setMenuOpen(false);
     function place() {
       if (!s || !s.sel) { setRect(null); return; }
       const el = document.querySelector(s.sel);
@@ -57,10 +100,12 @@ export default function GuidedTour() {
       setRect({ top: r.top, left: r.left, width: r.width,
         height: r.height });
     }
+    // Give the menu a beat to render its items before measuring.
     place();
-    const t = setTimeout(place, 250);
+    const t1 = setTimeout(place, 200);
+    const t2 = setTimeout(place, 500);
     window.addEventListener('resize', place);
-    return () => { clearTimeout(t);
+    return () => { clearTimeout(t1); clearTimeout(t2);
       window.removeEventListener('resize', place); };
   }, [show, i]);
 

@@ -14,6 +14,25 @@ import { useSettings } from '../lib/useSettings';
 // links live under a "Profile" sub menu (dropdown).
 // Menus are admin-editable; defaults + live overrides via menuService.
 
+// Map an href like /chat-history or /support to the tour selector
+// (`menu-history`, `menu-support`) so the app tour can spotlight the
+// menu item by data-tour="menu-...".
+const TOUR_HREF_MAP = {
+  '/dashboard': 'menu-home', '/astrologers': 'menu-astrologers',
+  '/horoscope': 'menu-horoscope', '/tarot': 'menu-tarot',
+  '/kundli': 'menu-kundli', '/numerology': 'menu-numerology',
+  '/matching': 'menu-matching', '/remedies': 'menu-remedies',
+  '/following': 'menu-following',
+  '/chat-history': 'menu-history', '/call-history': 'menu-calls',
+  '/transactions': 'menu-orders', '/review': 'menu-review',
+  '/notifications': 'menu-notifications', '/support': 'menu-support',
+};
+function tourKey(href) {
+  if (TOUR_HREF_MAP[href]) return TOUR_HREF_MAP[href];
+  const tail = String(href || '').split('?')[0].split('/').pop();
+  return tail ? `menu-${tail.toLowerCase()}` : '';
+}
+
 // Group a menu list into ordered segments for a clean breakup.
 const SEG_ORDER = ['Activity', 'Account', 'Help'];
 function grouped(items) {
@@ -356,6 +375,7 @@ export default function TopNav() {
                 const active = router.pathname === l.href;
                 return (
                   <Link key={l.href} href={l.href}
+                    data-tour={tourKey(l.href)}
                     className={`block rounded-lg px-2.5 py-2 text-[13px]
                       leading-tight ${active
                         ? 'bg-bg-light font-semibold text-primary'
@@ -373,6 +393,7 @@ export default function TopNav() {
                     const active = router.pathname === m.href;
                     return (
                       <Link key={m.href} href={m.href}
+                        data-tour={tourKey(m.href)}
                         className={`flex items-center justify-between
                           rounded-lg px-2.5 py-2 text-[13px] leading-tight
                           ${active ? 'bg-bg-light font-semibold text-primary'

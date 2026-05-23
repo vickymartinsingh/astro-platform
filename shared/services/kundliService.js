@@ -217,7 +217,13 @@ export function buildKundliReportHtml(kundli, report) {
   const r = report || {};
   const n = r.narrative || {};
   const lucky = n.lucky || {};
-  const asc = (r.ascendant && r.ascendant.sign) || r.zodiac || k.zodiac || '-';
+  // Ascendant (Lagna) is the rising sign at birth and ONLY comes from
+  // real chart data (Prokerala). Do NOT fall back to the sun sign /
+  // zodiac sign here - they are different things and using one as the
+  // other would mislead the customer. Show the sun (zodiac) sign as its
+  // own row below.
+  const asc = (r.ascendant && r.ascendant.sign) || '-';
+  const zodiacSign = r.zodiac || k.zodiac || '-';
   const planets = Array.isArray(r.planets) ? r.planets : [];
   const dasha = Array.isArray(r.dasha) ? r.dasha : [];
   const byHouse = {};
@@ -243,6 +249,7 @@ export function buildKundliReportHtml(kundli, report) {
         <tr><td>Time of birth</td><td>${esc(k.tob || '-')} ${
   esc(k.ampm || '')}</td></tr>
         <tr><td>Place of birth</td><td>${esc(k.place || '-')}</td></tr>
+        <tr><td>Zodiac sign (from DOB)</td><td>${esc(zodiacSign)}</td></tr>
         <tr><td>Ascendant (Lagna)</td><td>${esc(asc)}</td></tr>
         <tr><td>Moon sign (Rasi)</td><td>${esc(r.chandra_rasi || '-')}</td></tr>
         <tr><td>Sun sign</td><td>${esc(r.soorya_rasi || '-')}</td></tr>
@@ -459,6 +466,8 @@ export async function autoSendKundliToChat(chatId, systemSenderId, kundli) {
     `Time of birth: ${kundli.tob || '--'} ${kundli.ampm || ''}`.trim(),
     `Place of birth: ${kundli.place || '--'}`,
   ];
-  if (kundli.zodiac) lines.push(`Sign: ${kundli.zodiac}`);
+  // Label as "Zodiac sign" (sun sign computed from DOB) - never as
+  // "Ascendant" since that requires real chart data and is different.
+  if (kundli.zodiac) lines.push(`Zodiac sign: ${kundli.zodiac}`);
   await sendMessage(chatId, systemSenderId, lines.join('\n'));
 }
