@@ -99,9 +99,27 @@ export default function AiAutoResponder() {
       const [ctx, cName] = await Promise.all([
         ctxFor(clientUid), nameFor(clientUid),
       ]);
-      const hist = msgs.slice(-12)
-        .map((m) => ({ text: m.text, fromClient: m.senderId === clientUid }))
-        .filter((m) => m.text && String(m.text).trim());
+      // Build the conversation for the AI:
+      //  - Skip system messages (kundli auto-share card etc).
+      //  - Attribute purely by sender uid: anything NOT from the
+      //    astrologer is treated as the client (more robust than
+      //    relying on clientUid lookup).
+      //  - Keep only messages from the last 30 min so each new
+      //    consultation feels like a fresh conversation, not a
+      //    continuation of weeks-old history.
+      //  - Cap at 8 turns so the AI stays focused.
+      const cutoff = Date.now() - 30 * 60 * 1000;
+      const hist = msgs
+        .filter((m) => m && m.senderId && m.senderId !== 'system'
+          && m.text && String(m.text).trim())
+        .filter((m) => {
+          const ts = (m.createdAt && m.createdAt.toMillis
+            && m.createdAt.toMillis()) || Date.now();
+          return ts >= cutoff;
+        })
+        .slice(-8)
+        .map((m) => ({ text: m.text,
+          fromClient: m.senderId !== user.uid }));
       chatService.setTyping(chatId, user.uid, true);
       let reply = '';
       try {
