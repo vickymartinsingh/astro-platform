@@ -1,8 +1,58 @@
 // AI assistant client helper. Calls the relay (key stays server-side)
 // and reads the admin's AI config so the astrologer toggle only shows /
 // works when the admin has enabled it.
-import { doc, onSnapshot } from 'firebase/firestore';
+import {
+  doc, onSnapshot, getDoc, setDoc, serverTimestamp,
+} from 'firebase/firestore';
 import { db } from '../firebase.js';
+
+// Supported AI providers shown in the admin panel. Each row's id matches
+// what the relay expects in settings/aiProviders.providers[].id.
+export const AI_PROVIDERS = [
+  { id: 'gemini', label: 'Google Gemini', tag: 'Free',
+    keyHelp: 'aistudio.google.com/app/apikey (no credit card)',
+    defaultModel: 'gemini-2.5-flash', fields: ['model'] },
+  { id: 'groq', label: 'Groq Cloud', tag: 'Free',
+    keyHelp: 'console.groq.com/keys (free tier, Llama 3.x, very fast)',
+    defaultModel: 'llama-3.3-70b-versatile', fields: ['model'] },
+  { id: 'openrouter', label: 'OpenRouter', tag: 'Mixed',
+    keyHelp: 'openrouter.ai/keys (some models free, others paid)',
+    defaultModel: 'meta-llama/llama-3.3-70b-instruct:free',
+    fields: ['model'] },
+  { id: 'openai', label: 'OpenAI', tag: 'Paid',
+    keyHelp: 'platform.openai.com/api-keys',
+    defaultModel: 'gpt-4o-mini', fields: ['model'] },
+  { id: 'bedrock', label: 'Amazon Bedrock (Claude)', tag: 'Paid',
+    keyHelp: 'AWS console -> IAM -> Bedrock API key',
+    defaultModel: '', defaultRegion: 'us-west-2',
+    fields: ['region', 'modelId'] },
+];
+
+export async function getAiProviders() {
+  try {
+    const s = await getDoc(doc(db, 'settings', 'aiProviders'));
+    return s.exists() ? (s.data() || {}) : {};
+  } catch (_) { return {}; }
+}
+
+export async function saveAiProviders(cfg) {
+  await setDoc(doc(db, 'settings', 'aiProviders'),
+    { ...cfg, updatedAt: serverTimestamp() }, { merge: true });
+  return { success: true };
+}
+
+// Trigger a Vercel Deploy Hook (a URL the admin creates in Vercel project
+// settings). Hitting it queues a fresh deployment of the push-relay.
+export async function triggerDeploy(url) {
+  if (!url) throw new Error('No deploy hook URL configured.');
+  const r = await fetch(url, { method: 'POST' });
+  let j = null; try { j = await r.json(); } catch (_) {}
+  if (!r.ok) {
+    throw new Error((j && (j.error || j.message))
+      || `Deploy hook returned HTTP ${r.status}`);
+  }
+  return j || { ok: true };
+}
 
 function endpoint() {
   const explicit = (typeof process !== 'undefined' && process.env

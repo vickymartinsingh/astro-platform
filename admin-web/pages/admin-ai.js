@@ -7,27 +7,54 @@ import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
 import { flash } from '../lib/flash';
 
-// AI Assistant control. Master on/off, scope (all / selected
-// astrologers), and a live check of whether the relay's Bedrock key is
-// configured. The actual API key is NEVER entered here - it lives only
-// as BEDROCK_API_KEY on the push-relay (Vercel). This page just decides
-// who gets the feature.
+const { AI_PROVIDERS } = assistantService;
+
+// AI Assistant control panel. Admin can manage:
+//   1. AI providers + API keys (Gemini free, Groq free, OpenRouter,
+//      OpenAI, Bedrock) and the preferred order. Keys are saved in
+//      Firestore (admin-only) and read live by the push-relay.
+//   2. The Vercel Deploy Hook URL + a Deploy button to push a fresh
+//      relay deployment in one click.
+//   3. Master enable + scope (which astrologers can use the assistant).
+//   4. Random human-like reply delay.
 export default function AdminAi() {
   const { loading } = useRequireAdmin();
-  const [cfg, setCfg] = useState(null);
+  const [cfg, setCfg] = useState(null);          // settings/config
+  const [providers, setProviders] = useState(null); // settings/aiProviders
   const [astros, setAstros] = useState([]);
   const [probe, setProbe] = useState(null);
   const [probing, setProbing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [deploying, setDeploying] = useState(false);
 
   useEffect(() => {
     if (loading) return;
     getDoc(doc(db, 'settings', 'config')).then((s) =>
       setCfg(s.exists() ? s.data() : {})).catch(() => setCfg({}));
+    assistantService.getAiProviders().then((p) => {
+      // Seed with defaults if empty.
+      const list = Array.isArray(p.providers) ? p.providers : [];
+      const map = Object.fromEntries(list.map((r) => [r.id, r]));
+      const merged = AI_PROVIDERS.map((d) => ({
+        id: d.id,
+        enabled: !!(map[d.id] && map[d.id].enabled),
+        apiKey: (map[d.id] && map[d.id].apiKey) || '',
+        model: (map[d.id] && map[d.id].model) || d.defaultModel || '',
+        region: (map[d.id] && map[d.id].region) || d.defaultRegion || '',
+        modelId: (map[d.id] && map[d.id].modelId) || '',
+      }));
+      const order = Array.isArray(p.order) && p.order.length
+        ? p.order : AI_PROVIDERS.map((d) => d.id);
+      setProviders({
+        providers: merged, order,
+        deployHookUrl: p.deployHookUrl || '',
+      });
+    });
     astrologerService.getAstrologers().then((l) => setAstros(l || []))
       .catch(() => {});
   }, [loading]);
 
-  if (loading || !cfg) {
+  if (loading || !cfg || !providers) {
     return <Layout><div className="card">Loading…</div></Layout>;
   }
 
@@ -40,15 +67,34 @@ export default function AdminAi() {
     set('ai_astrologers', next);
   };
 
+  function updProvider(id, patch) {
+    setProviders((p) => ({ ...p,
+      providers: p.providers.map((r) => (r.id === id
+        ? { ...r, ...patch } : r)) }));
+  }
+  function moveProvider(id, dir) {
+    setProviders((p) => {
+      const order = [...p.order];
+      const i = order.indexOf(id);
+      if (i < 0) return p;
+      const j = i + dir;
+      if (j < 0 || j >= order.length) return p;
+      [order[i], order[j]] = [order[j], order[i]];
+      return { ...p, order };
+    });
+  }
+
   async function runProbe() {
     setProbing(true);
     setProbe(await assistantService.probeAi());
     setProbing(false);
   }
-  // Random reply delay (seconds) so AI replies feel typed by a human.
+
   const dMin = Number.isFinite(+cfg.ai_delay_min) ? +cfg.ai_delay_min : 3;
   const dMax = Number.isFinite(+cfg.ai_delay_max) ? +cfg.ai_delay_max : 9;
-  async function save() {
+
+  async function saveAll() {
+    setBusy(true);
     try {
       const lo = Math.max(0, Math.round(dMin));
       const hi = Math.max(lo, Math.round(dMax));
@@ -59,51 +105,196 @@ export default function AdminAi() {
         ai_delay_min: lo,
         ai_delay_max: hi,
       });
-      flash('AI settings saved, live for astrologers');
-    } catch (_) { flash('Could not save', 'error'); }
+      await assistantService.saveAiProviders({
+        providers: providers.providers,
+        order: providers.order,
+        deployHookUrl: providers.deployHookUrl || '',
+      });
+      flash('Saved. Keys are live on the relay within ~30 seconds.');
+    } catch (e) {
+      flash(`Could not save: ${e.message || e}`, 'error');
+    } finally { setBusy(false); }
   }
+
+  async function deployNow() {
+    if (!providers.deployHookUrl) {
+      flash('Add a Vercel Deploy Hook URL first, then save.', 'error');
+      return;
+    }
+    setDeploying(true);
+    try {
+      await assistantService.triggerDeploy(providers.deployHookUrl);
+      flash('Deploy queued. Vercel is rebuilding the relay now.');
+    } catch (e) {
+      flash(`Deploy failed: ${e.message || e}`, 'error');
+    } finally { setDeploying(false); }
+  }
+
+  function metaFor(id) { return AI_PROVIDERS.find((m) => m.id === id) || {}; }
 
   return (
     <Layout>
       <h1 className="mb-1 text-xl font-bold">AI Assistant</h1>
       <p className="mb-4 text-sm text-sub-text">
         Let astrologers turn on an AI that auto-replies to chat
-        consultations on their behalf. You control who gets the feature.
-        The API key is configured on the server, never here.
+        consultations on their behalf. Add a provider API key below, save,
+        and the relay starts using it within ~30 seconds. The “Deploy
+        now” button pushes a fresh relay deployment to Vercel in one
+        click.
       </p>
 
-      {/* Key status */}
+      {/* Live key status */}
       <div className="card mb-3">
         <div className="flex items-center justify-between gap-2">
-          <div className="font-semibold">Server key (Amazon Bedrock)</div>
+          <div className="font-semibold">Live relay status</div>
           <button onClick={runProbe} disabled={probing}
             className="rounded-full bg-primary px-3 py-1.5 text-xs
               font-bold text-white disabled:opacity-60">
-            {probing ? 'Checking…' : 'Check key'}
+            {probing ? 'Checking…' : 'Check'}
           </button>
         </div>
         {probe && (
           <div className="mt-2 text-sm">
-            {probe.configured
-              ? <span className="text-success">✓ Key configured
-                  ({probe.model} · {probe.region})</span>
-              : <span className="text-danger">✗ Not configured. Set
-                  BEDROCK_API_KEY on the push-relay (Vercel) and redeploy.
-                  {probe.error ? ` (${probe.error})` : ''}</span>}
+            {probe.configured ? (
+              <>
+                <span className="text-success">✓ Relay ready.</span>{' '}
+                {Array.isArray(probe.active) && probe.active.length > 0 && (
+                  <span>Active: <b>{probe.active.join(', ')}</b></span>
+                )}
+                {probe.hasDeployHook
+                  ? <span className="ml-2 text-success">· deploy hook ✓</span>
+                  : <span className="ml-2 text-sub-text">· no deploy hook</span>}
+              </>
+            ) : (
+              <span className="text-danger">✗ No active provider on the
+                relay. Add a key + enable a provider below, then Save.
+                {probe.error ? ` (${probe.error})` : ''}</span>
+            )}
           </div>
         )}
-        <p className="mt-2 text-[11px] text-sub-text">
-          The AWS Bedrock API key must be set as the
-          <code> BEDROCK_API_KEY</code> environment variable on the
-          push-relay project in Vercel, not in the app. Optional:
-          <code> BEDROCK_REGION</code>, <code>BEDROCK_MODEL_ID</code>.
-        </p>
       </div>
 
-      {/* Master + scope */}
+      {/* PROVIDERS LIST */}
+      <div className="card mb-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <div className="font-semibold">AI providers &amp; API keys</div>
+          <span className="text-[11px] text-sub-text">
+            Tried in order. First success wins.
+          </span>
+        </div>
+        {providers.order.map((id, idx) => {
+          const p = providers.providers.find((r) => r.id === id);
+          if (!p) return null;
+          const m = metaFor(id);
+          return (
+            <div key={id}
+              className="rounded-card border border-gray-200 p-3">
+              <div className="flex flex-wrap items-center justify-between
+                gap-2">
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" checked={!!p.enabled}
+                    onChange={(e) => updProvider(id,
+                      { enabled: e.target.checked })} />
+                  <span className="font-semibold">{m.label}</span>
+                  <span className={`rounded-full px-2 py-0.5 text-[10px]
+                    font-bold ${m.tag === 'Free'
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : m.tag === 'Mixed'
+                        ? 'bg-amber-100 text-amber-700'
+                        : 'bg-gray-100 text-gray-700'}`}>{m.tag}</span>
+                </label>
+                <div className="flex gap-1 text-xs">
+                  <button type="button" disabled={idx === 0}
+                    onClick={() => moveProvider(id, -1)}
+                    className="rounded bg-bg-light px-2 py-1 font-bold
+                      disabled:opacity-30">↑</button>
+                  <button type="button"
+                    disabled={idx === providers.order.length - 1}
+                    onClick={() => moveProvider(id, 1)}
+                    className="rounded bg-bg-light px-2 py-1 font-bold
+                      disabled:opacity-30">↓</button>
+                </div>
+              </div>
+              <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <label className="block text-sm sm:col-span-2">
+                  API key
+                  <input type="password" autoComplete="new-password"
+                    placeholder={p.apiKey ? '(saved)' : 'paste key here'}
+                    value={p.apiKey}
+                    onChange={(e) => updProvider(id,
+                      { apiKey: e.target.value })}
+                    className="input mt-1 font-mono text-xs" />
+                </label>
+                {m.fields && m.fields.includes('model') && (
+                  <label className="block text-sm">
+                    Model
+                    <input className="input mt-1" value={p.model || ''}
+                      placeholder={m.defaultModel}
+                      onChange={(e) => updProvider(id,
+                        { model: e.target.value })} />
+                  </label>
+                )}
+                {m.fields && m.fields.includes('region') && (
+                  <label className="block text-sm">
+                    Region
+                    <input className="input mt-1" value={p.region || ''}
+                      placeholder={m.defaultRegion}
+                      onChange={(e) => updProvider(id,
+                        { region: e.target.value })} />
+                  </label>
+                )}
+                {m.fields && m.fields.includes('modelId') && (
+                  <label className="block text-sm">
+                    Model ID (optional)
+                    <input className="input mt-1" value={p.modelId || ''}
+                      placeholder="auto-pick"
+                      onChange={(e) => updProvider(id,
+                        { modelId: e.target.value })} />
+                  </label>
+                )}
+              </div>
+              {m.keyHelp && (
+                <p className="mt-1 text-[11px] text-sub-text">
+                  Get a key: {m.keyHelp}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* DEPLOY HOOK */}
+      <div className="card mb-3">
+        <div className="mb-1 font-semibold">Vercel Deploy Hook</div>
+        <p className="text-[11px] text-sub-text">
+          Vercel → push-relay project → Settings → Git → Deploy Hooks →
+          Create Hook → paste the URL here. Save, then click “Deploy now”
+          any time to push a fresh relay deployment.
+        </p>
+        <input className="input mt-2 font-mono text-xs"
+          placeholder="https://api.vercel.com/v1/integrations/deploy/..."
+          value={providers.deployHookUrl || ''}
+          onChange={(e) => setProviders((p) => ({ ...p,
+            deployHookUrl: e.target.value }))} />
+        <div className="mt-2 flex gap-2">
+          <button onClick={saveAll} disabled={busy}
+            className="btn-primary">
+            {busy ? 'Saving…' : 'Save'}
+          </button>
+          <button onClick={deployNow} disabled={deploying
+            || !providers.deployHookUrl}
+            className="rounded-card bg-emerald-600 px-4 py-2 text-sm
+              font-bold text-white disabled:opacity-60">
+            {deploying ? 'Deploying…' : 'Deploy now'}
+          </button>
+        </div>
+      </div>
+
+      {/* MASTER + SCOPE */}
       <div className="card space-y-3">
         <label className="flex items-center justify-between">
-          <span className="font-semibold">Enable AI Assistant</span>
+          <span className="font-semibold">Enable AI Assistant for
+            astrologers</span>
           <input type="checkbox" checked={!!cfg.ai_enabled}
             onChange={(e) => set('ai_enabled', e.target.checked)} />
         </label>
@@ -169,19 +360,19 @@ export default function AdminAi() {
               <p className="mt-1 text-[11px] text-sub-text">
                 Each AI reply waits a random time between Min and Max
                 (plus the “typing…” indicator) so the customer sees a
-                natural, human-like pause. Recommended 3–9 seconds.
+                natural, human-like pause. Recommended 3-9 seconds.
               </p>
             </div>
           </>
         )}
 
-        <button onClick={save} className="btn-primary">
-          Save &amp; publish
+        <button onClick={saveAll} disabled={busy} className="btn-primary">
+          {busy ? 'Saving…' : 'Save'}
         </button>
         <p className="text-[11px] text-sub-text">
           When enabled, eligible astrologers see an “AI Assistant” toggle
-          inside each chat. With it on, incoming chat messages are
-          answered automatically in their voice.
+          on their dashboard. With it on, incoming chats are auto-accepted
+          and answered by AI in their voice.
         </p>
       </div>
     </Layout>

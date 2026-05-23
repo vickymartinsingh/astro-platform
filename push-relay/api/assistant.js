@@ -1,141 +1,266 @@
 // AI assistant for AstroSeer astrologers (server-side only).
 //
-// The astrologer app calls this when "AI Assistant" is ON and a chat
-// message arrives. The relay calls an LLM with the persona / kundli /
-// history and returns the astrologer's reply. The provider keys NEVER
-// leave this relay - they are never bundled into the app or web build.
+// Multi-provider relay. Reads provider config + API keys live from
+// Firestore (admin-managed via the admin AI page) so secrets stay
+// server-side and the admin can swap providers / keys without touching
+// code. Falls back to env vars when Firestore is empty or unreachable.
 //
-// Providers (in preference order):
-//   1) Google Gemini (free tier, no card needed) - if GEMINI_API_KEY is set.
-//   2) Amazon Bedrock Claude - if BEDROCK_API_KEY is set.
-// You only need ONE. The relay tries Gemini first (it is free) and falls
-// back to Bedrock if Gemini fails or has no key.
+// Supported providers (try in user-defined order until one succeeds):
+//   gemini     - Google Gemini (free tier, no card needed)
+//   groq       - Groq Cloud (free tier, Llama-3.x family, very fast)
+//   openrouter - OpenRouter (many models, free tier ones available)
+//   openai     - OpenAI (paid)
+//   bedrock    - Amazon Bedrock Claude (paid; needs region)
 //
-// Env vars (set in Vercel -> push-relay project):
-//   GEMINI_API_KEY    - free Google AI Studio key (aistudio.google.com)
-//   GEMINI_MODEL      - optional, default `gemini-2.5-flash`
-//   BEDROCK_API_KEY   - optional, AWS Bedrock long-term API key (ABSK...)
-//   BEDROCK_REGION    - optional, default us-west-2
-//   BEDROCK_MODEL_ID  - optional. If unset the relay auto-picks from a
-//                       Claude candidate list (Opus -> Sonnet -> Haiku),
-//                       prefixed for the region group (us./eu./apac.).
-//   ASSISTANT_RELAY_KEY - optional shared secret (x-assistant-key header)
+// Firestore doc:  settings/aiProviders
+//   { providers: [ { id, enabled, apiKey, model, region? } ],
+//     order:     [ 'gemini', 'groq', ... ],   // preference
+//     deployHookUrl: 'https://api.vercel.com/v1/integrations/deploy/...' }
+//
+// Env-var fallback (used when the doc is missing / a provider has no key):
+//   GEMINI_API_KEY, GEMINI_MODEL
+//   GROQ_API_KEY, GROQ_MODEL
+//   OPENROUTER_API_KEY, OPENROUTER_MODEL
+//   OPENAI_API_KEY, OPENAI_MODEL
+//   BEDROCK_API_KEY, BEDROCK_REGION, BEDROCK_MODEL_ID
+//   FIREBASE_SERVICE_ACCOUNT (required to read Firestore config)
+//   ASSISTANT_RELAY_KEY (optional shared secret on x-assistant-key)
 
-const GEMINI_KEY = process.env.GEMINI_API_KEY || '';
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const admin = require('firebase-admin');
+function ensureAdmin() {
+  if (admin.apps.length) return;
+  const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
+  if (!raw) return; // graceful: relay falls back to env-only mode
+  try {
+    admin.initializeApp({
+      credential: admin.credential.cert(JSON.parse(raw)),
+    });
+  } catch (_) { /* leave env-only mode */ }
+}
 
-const REGION = process.env.BEDROCK_REGION || 'us-west-2';
-const PFX = REGION.startsWith('ap-') ? 'apac.'
-  : REGION.startsWith('eu-') ? 'eu.' : 'us.';
-const MODEL_CANDIDATES = [
-  process.env.BEDROCK_MODEL_ID,
-  `${PFX}anthropic.claude-opus-4-1-20250805-v1:0`,
-  `${PFX}anthropic.claude-sonnet-4-20250514-v1:0`,
-  `${PFX}anthropic.claude-3-7-sonnet-20250219-v1:0`,
-  `${PFX}anthropic.claude-3-5-sonnet-20241022-v2:0`,
-  'anthropic.claude-3-5-sonnet-20240620-v1:0',
-  'anthropic.claude-3-haiku-20240307-v1:0',
-].filter(Boolean);
-let resolvedModel = null;
+const PROVIDER_DEFAULTS = {
+  gemini: { model: 'gemini-2.5-flash' },
+  groq: { model: 'llama-3.3-70b-versatile' },
+  openrouter: { model: 'meta-llama/llama-3.3-70b-instruct:free' },
+  openai: { model: 'gpt-4o-mini' },
+  bedrock: { region: 'us-west-2', modelId: '' },
+};
+const DEFAULT_ORDER = ['gemini', 'groq', 'openrouter', 'openai', 'bedrock'];
 
-// --- Gemini (free tier) ---------------------------------------------------
-async function callGemini(systemText, turns) {
-  if (!GEMINI_KEY) return { ok: false, status: 0, error: 'no GEMINI_API_KEY' };
-  // Gemini expects user / model roles + a systemInstruction.
-  const contents = turns.map((m) => ({
-    role: m.fromClient ? 'user' : 'model',
-    parts: [{ text: String(m.text).slice(0, 4000) }],
+// In-memory cache to avoid hitting Firestore on every request.
+let cfgCache = null;
+let cfgCacheAt = 0;
+const CFG_TTL_MS = 30 * 1000;
+
+async function loadProviderCfg() {
+  if (cfgCache && (Date.now() - cfgCacheAt) < CFG_TTL_MS) return cfgCache;
+  let fromDoc = null;
+  ensureAdmin();
+  if (admin.apps.length) {
+    try {
+      const snap = await admin.firestore()
+        .doc('settings/aiProviders').get();
+      if (snap.exists) fromDoc = snap.data() || null;
+    } catch (_) { /* fall back to env */ }
+  }
+  // Merge Firestore doc over env-var fallback for every provider.
+  const envFor = (id) => {
+    if (id === 'gemini') {
+      return { apiKey: process.env.GEMINI_API_KEY || '',
+        model: process.env.GEMINI_MODEL || PROVIDER_DEFAULTS.gemini.model };
+    }
+    if (id === 'groq') {
+      return { apiKey: process.env.GROQ_API_KEY || '',
+        model: process.env.GROQ_MODEL || PROVIDER_DEFAULTS.groq.model };
+    }
+    if (id === 'openrouter') {
+      return { apiKey: process.env.OPENROUTER_API_KEY || '',
+        model: process.env.OPENROUTER_MODEL
+          || PROVIDER_DEFAULTS.openrouter.model };
+    }
+    if (id === 'openai') {
+      return { apiKey: process.env.OPENAI_API_KEY || '',
+        model: process.env.OPENAI_MODEL || PROVIDER_DEFAULTS.openai.model };
+    }
+    if (id === 'bedrock') {
+      return { apiKey: process.env.BEDROCK_API_KEY || '',
+        region: process.env.BEDROCK_REGION
+          || PROVIDER_DEFAULTS.bedrock.region,
+        modelId: process.env.BEDROCK_MODEL_ID || '' };
+    }
+    return {};
+  };
+  const docProviders = (fromDoc && Array.isArray(fromDoc.providers))
+    ? fromDoc.providers : [];
+  const docMap = Object.fromEntries(docProviders.map((p) => [p.id, p]));
+  const providers = DEFAULT_ORDER.map((id) => {
+    const env = envFor(id);
+    const d = docMap[id] || {};
+    return {
+      id,
+      enabled: typeof d.enabled === 'boolean' ? d.enabled : !!env.apiKey,
+      apiKey: d.apiKey || env.apiKey || '',
+      model: d.model || env.model || (PROVIDER_DEFAULTS[id] || {}).model,
+      region: d.region || env.region
+        || (PROVIDER_DEFAULTS[id] || {}).region,
+      modelId: d.modelId || env.modelId
+        || (PROVIDER_DEFAULTS[id] || {}).modelId,
+    };
+  });
+  const order = (fromDoc && Array.isArray(fromDoc.order) && fromDoc.order.length)
+    ? fromDoc.order : DEFAULT_ORDER;
+  const cfg = { providers, order,
+    deployHookUrl: (fromDoc && fromDoc.deployHookUrl) || '' };
+  cfgCache = cfg; cfgCacheAt = Date.now();
+  return cfg;
+}
+
+// ---- Provider call helpers (each returns {ok, reply?, error?}) ----------
+
+function chatLikeBody(systemText, turns, model) {
+  const messages = [{ role: 'system', content: systemText }];
+  turns.forEach((m) => messages.push({
+    role: m.fromClient ? 'user' : 'assistant',
+    content: String(m.text).slice(0, 4000),
   }));
-  while (contents.length && contents[0].role !== 'user') contents.shift();
-  if (!contents.length) return { ok: false, status: 400, error: 'no user turn' };
-  const url = 'https://generativelanguage.googleapis.com/v1beta/models/'
-    + `${encodeURIComponent(GEMINI_MODEL)}:generateContent?key=${GEMINI_KEY}`;
+  return { model, messages, temperature: 0.7, max_tokens: 300 };
+}
+async function callChatLike(url, apiKey, body, extraHeaders = {}) {
   try {
     const r = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemText }] },
-        contents,
-        generationConfig: { temperature: 0.7, maxOutputTokens: 300 },
-      }),
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+        ...extraHeaders,
+      },
+      body: JSON.stringify(body),
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) {
-      return { ok: false, status: r.status,
-        error: (j && j.error && j.error.message) || 'gemini error' };
+      return { ok: false,
+        error: (j && (j.error?.message || j.message)) || `HTTP ${r.status}` };
     }
-    const reply = (((j.candidates || [])[0] || {}).content || {}).parts;
-    const text = (Array.isArray(reply) ? reply : [])
-      .map((p) => p && p.text).filter(Boolean).join(' ').trim();
-    if (!text) return { ok: false, status: 502, error: 'empty reply' };
-    return { ok: true, reply: text, model: `gemini:${GEMINI_MODEL}` };
+    const reply = (((j.choices || [])[0] || {}).message || {}).content || '';
+    if (!reply || !String(reply).trim()) {
+      return { ok: false, error: 'empty reply' };
+    }
+    return { ok: true, reply: String(reply).trim() };
   } catch (e) {
-    return { ok: false, status: 500, error: String((e && e.message) || e) };
+    return { ok: false, error: String((e && e.message) || e) };
   }
 }
 
-// --- Bedrock Claude (paid) ----------------------------------------------
-async function callBedrock(systemText, turns) {
-  const apiKey = process.env.BEDROCK_API_KEY;
-  if (!apiKey) return { ok: false, status: 0, error: 'no BEDROCK_API_KEY' };
+async function callGemini(p, systemText, turns) {
+  if (!p.apiKey) return { ok: false, error: 'no key' };
+  const contents = turns
+    .map((m) => ({ role: m.fromClient ? 'user' : 'model',
+      parts: [{ text: String(m.text).slice(0, 4000) }] }));
+  while (contents.length && contents[0].role !== 'user') contents.shift();
+  if (!contents.length) return { ok: false, error: 'no user turn' };
+  try {
+    const r = await fetch(
+      'https://generativelanguage.googleapis.com/v1beta/models/'
+      + `${encodeURIComponent(p.model)}:generateContent?key=${p.apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: systemText }] },
+          contents,
+          generationConfig: { temperature: 0.7, maxOutputTokens: 300 },
+        }),
+      });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) return { ok: false,
+      error: (j && j.error && j.error.message) || `HTTP ${r.status}` };
+    const parts = (((j.candidates || [])[0] || {}).content || {}).parts || [];
+    const text = parts.map((x) => x && x.text).filter(Boolean).join(' ').trim();
+    if (!text) return { ok: false, error: 'empty reply' };
+    return { ok: true, reply: text };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+}
+
+function callGroq(p, systemText, turns) {
+  if (!p.apiKey) return Promise.resolve({ ok: false, error: 'no key' });
+  return callChatLike('https://api.groq.com/openai/v1/chat/completions',
+    p.apiKey, chatLikeBody(systemText, turns, p.model));
+}
+function callOpenRouter(p, systemText, turns) {
+  if (!p.apiKey) return Promise.resolve({ ok: false, error: 'no key' });
+  return callChatLike('https://openrouter.ai/api/v1/chat/completions',
+    p.apiKey, chatLikeBody(systemText, turns, p.model),
+    { 'HTTP-Referer': 'https://astroseer.in',
+      'X-Title': 'AstroSeer AI Assistant' });
+}
+function callOpenAI(p, systemText, turns) {
+  if (!p.apiKey) return Promise.resolve({ ok: false, error: 'no key' });
+  return callChatLike('https://api.openai.com/v1/chat/completions',
+    p.apiKey, chatLikeBody(systemText, turns, p.model));
+}
+
+let resolvedBedrock = null;
+async function callBedrock(p, systemText, turns) {
+  if (!p.apiKey) return { ok: false, error: 'no key' };
+  const region = p.region || 'us-west-2';
+  const pfx = region.startsWith('ap-') ? 'apac.'
+    : region.startsWith('eu-') ? 'eu.' : 'us.';
+  const candidates = [p.modelId,
+    `${pfx}anthropic.claude-opus-4-1-20250805-v1:0`,
+    `${pfx}anthropic.claude-sonnet-4-20250514-v1:0`,
+    `${pfx}anthropic.claude-3-7-sonnet-20250219-v1:0`,
+    `${pfx}anthropic.claude-3-5-sonnet-20241022-v2:0`,
+    'anthropic.claude-3-5-sonnet-20240620-v1:0',
+    'anthropic.claude-3-haiku-20240307-v1:0',
+  ].filter(Boolean);
   const messages = turns.map((m) => ({
     role: m.fromClient ? 'user' : 'assistant',
     content: [{ text: String(m.text).slice(0, 4000) }],
   }));
   while (messages.length && messages[0].role !== 'user') messages.shift();
-  if (!messages.length) return { ok: false, status: 400, error: 'no user turn' };
-  const payload = JSON.stringify({
-    system: [{ text: systemText }],
-    messages,
-    inferenceConfig: { maxTokens: 300, temperature: 0.7 },
-  });
-  const order = resolvedModel
-    ? [resolvedModel, ...MODEL_CANDIDATES.filter((m) => m !== resolvedModel)]
-    : MODEL_CANDIDATES;
+  if (!messages.length) return { ok: false, error: 'no user turn' };
+  const payload = JSON.stringify({ system: [{ text: systemText }], messages,
+    inferenceConfig: { maxTokens: 300, temperature: 0.7 } });
+  const order = resolvedBedrock
+    ? [resolvedBedrock, ...candidates.filter((m) => m !== resolvedBedrock)]
+    : candidates;
   let last = null;
   for (const model of order) {
-    let r;
     try {
       // eslint-disable-next-line no-await-in-loop
-      const resp = await fetch(
-        `https://bedrock-runtime.${REGION}.amazonaws.com`
+      const r = await fetch(
+        `https://bedrock-runtime.${region}.amazonaws.com`
         + `/model/${encodeURIComponent(model)}/converse`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: payload,
-        });
-      const j = await resp.json().catch(() => ({}));
-      r = { ok: resp.ok, status: resp.status, json: j };
-    } catch (e) {
-      r = { ok: false, status: 500,
-        json: { message: String((e && e.message) || e) } };
-    }
-    const detail = (r.json && (r.json.message || r.json.Message)) || '';
-    if (r.status === 401
-      || /security token|unrecognizedclient|invalid.*key|expired/i
-        .test(detail)) {
-      return { ok: false, status: r.status, error: detail || 'bedrock auth' };
-    }
-    if (r.ok) {
-      const reply = (((r.json.output || {}).message || {}).content || [])
-        .map((c) => c && c.text).filter(Boolean).join(' ').trim();
-      if (reply) {
-        resolvedModel = model;
-        return { ok: true, reply, model: `bedrock:${model}` };
+        { method: 'POST', headers: {
+          Authorization: `Bearer ${p.apiKey}`,
+          'Content-Type': 'application/json' }, body: payload });
+      const j = await r.json().catch(() => ({}));
+      if (r.status === 401) {
+        return { ok: false, error: 'bedrock auth' };
       }
-      last = { status: 502, error: 'empty reply', model };
-      continue;
+      if (r.ok) {
+        const reply = (((j.output || {}).message || {}).content || [])
+          .map((c) => c && c.text).filter(Boolean).join(' ').trim();
+        if (reply) { resolvedBedrock = model; return { ok: true, reply }; }
+        last = `${model}: empty reply`;
+        continue;
+      }
+      last = `${model}: ${(j && (j.message || j.Message)) || `HTTP ${r.status}`}`;
+    } catch (e) {
+      last = `${model}: ${String((e && e.message) || e)}`;
     }
-    last = { status: r.status, error: detail || 'bedrock error', model };
   }
-  return { ok: false, status: (last && last.status) || 502,
-    error: last ? `${last.model}: ${last.error}` : 'no usable bedrock model' };
+  return { ok: false, error: last || 'no usable bedrock model' };
 }
+
+const PROVIDER_FNS = {
+  gemini: callGemini, groq: callGroq, openrouter: callOpenRouter,
+  openai: callOpenAI, bedrock: callBedrock,
+};
+
+// ---- HTTP handler --------------------------------------------------------
 
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -144,18 +269,22 @@ module.exports = async (req, res) => {
     'Content-Type, x-assistant-key');
   if (req.method === 'OPTIONS') return res.status(204).end();
 
-  const hasGemini = !!GEMINI_KEY;
-  const hasBedrock = !!process.env.BEDROCK_API_KEY;
+  const cfg = await loadProviderCfg();
+  const byId = Object.fromEntries(cfg.providers.map((p) => [p.id, p]));
+  const orderedActive = cfg.order
+    .map((id) => byId[id])
+    .filter((p) => p && p.enabled && p.apiKey);
 
   if (req.method === 'GET') {
     return res.status(200).json({
-      configured: hasGemini || hasBedrock,
-      providers: [
-        hasGemini ? `gemini (${GEMINI_MODEL}) - free` : null,
-        hasBedrock ? `bedrock (${REGION}) - paid` : null,
-      ].filter(Boolean),
-      preferred: hasGemini ? 'gemini' : hasBedrock ? 'bedrock' : 'none',
-      resolvedModel: resolvedModel || null,
+      configured: orderedActive.length > 0,
+      providers: cfg.providers.map((p) => ({
+        id: p.id, enabled: p.enabled, hasKey: !!p.apiKey,
+        model: p.model, region: p.region,
+      })),
+      order: cfg.order,
+      active: orderedActive.map((p) => p.id),
+      hasDeployHook: !!cfg.deployHookUrl,
     });
   }
   if (req.method !== 'POST') {
@@ -165,10 +294,10 @@ module.exports = async (req, res) => {
   if (guard && req.headers['x-assistant-key'] !== guard) {
     return res.status(401).json({ error: 'bad key' });
   }
-  if (!hasGemini && !hasBedrock) {
+  if (!orderedActive.length) {
     return res.status(503).json({
-      error: 'No AI provider configured. Set GEMINI_API_KEY (free) or '
-        + 'BEDROCK_API_KEY on the relay.' });
+      error: 'No AI provider configured. Add a key in admin -> AI Assistant.',
+    });
   }
 
   let body = req.body;
@@ -199,22 +328,20 @@ module.exports = async (req, res) => {
     return res.status(400).json({ error: 'no client message' });
   }
 
-  // Try the free provider first (Gemini), then Bedrock as backup.
   const tried = [];
-  try {
-    if (hasGemini) {
-      const g = await callGemini(systemText, turns);
-      tried.push({ provider: 'gemini', ok: g.ok, error: g.error });
-      if (g.ok) return res.status(200).json({ reply: g.reply, model: g.model });
+  for (const p of orderedActive) {
+    const fn = PROVIDER_FNS[p.id];
+    if (!fn) continue;
+    // eslint-disable-next-line no-await-in-loop
+    const r = await fn(p, systemText, turns);
+    tried.push({ provider: p.id, ok: r.ok, error: r.ok ? null : r.error });
+    if (r.ok) {
+      return res.status(200).json({
+        reply: r.reply,
+        provider: p.id,
+        model: p.model || p.modelId || resolvedBedrock || null,
+      });
     }
-    if (hasBedrock) {
-      const b = await callBedrock(systemText, turns);
-      tried.push({ provider: 'bedrock', ok: b.ok, error: b.error });
-      if (b.ok) return res.status(200).json({ reply: b.reply, model: b.model });
-    }
-    return res.status(502).json({ error: 'all providers failed', tried });
-  } catch (e) {
-    return res.status(500).json({
-      error: String((e && e.message) || e), tried });
   }
+  return res.status(502).json({ error: 'all providers failed', tried });
 };
