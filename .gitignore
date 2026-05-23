@@ -48,3 +48,6 @@ Groq.txt
 *long-term-api-key*
 bedrock-long-term*
 *.csv.txt
+
+# Play Store release artifacts
+playstore/
