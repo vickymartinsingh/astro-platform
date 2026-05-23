@@ -72,13 +72,21 @@ export function useSession({ astroId, type, uid, clientName, view = false }) {
               } catch (e) {}
             }
           }
+          // Apply the astrologer's discountPercent to the per-minute
+          // rate before locking it onto the session. The discounted price
+          // is what every UI surface shows the customer (astrologer card,
+          // profile, request modal), so billing MUST charge the same.
+          const dp = Math.max(0, Math.min(100,
+            Number(a.discountPercent) || 0));
+          const eff = (b) => Math.round((Number(b) || 0) * (1 - dp / 100));
           sid = await sessionService.createSessionRequest({
             userId: uid,
             astroId,
             type,
             pricePerMinute:
-              type === 'chat' ? a.priceChat
-              : type === 'video' ? a.priceVideo : a.priceCall,
+              type === 'chat' ? eff(a.priceChat)
+              : type === 'video' ? eff(a.priceVideo)
+              : eff(a.priceCall),
           });
         }
       }
