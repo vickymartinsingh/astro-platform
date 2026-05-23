@@ -41,3 +41,10 @@ firebase-key*.txt
 dist-apk/
 *.apk
 *.aab
+
+# More secret/key files (never commit)
+Grog.txt
+Groq.txt
+*long-term-api-key*
+bedrock-long-term*
+*.csv.txt
