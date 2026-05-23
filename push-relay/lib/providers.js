@@ -88,7 +88,7 @@ function chatLikeBody(systemText, turns, model) {
   }));
   // Short, chat-style replies. ~200 tokens is plenty for 1-3 sentences
   // and stops Gemini/Groq from dumping long paragraphs at the client.
-  return { model, messages, temperature: 0.7, max_tokens: 220 };
+  return { model, messages, temperature: 0.95, max_tokens: 220 };
 }
 async function callChatLike(url, apiKey, body, extra = {}) {
   try {
@@ -124,7 +124,7 @@ async function callGemini(p, systemText, turns) {
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: systemText }] },
           contents,
-          generationConfig: { temperature: 0.8, maxOutputTokens: 260,
+          generationConfig: { temperature: 0.95, maxOutputTokens: 260,
             thinkingConfig: { thinkingBudget: 0 } },
           safetySettings: GEMINI_SAFETY,
         }) });
@@ -212,12 +212,26 @@ function buildSystemPrompt({ astrologer, client, context }) {
     + 'sign and current major transits ONLY in general terms.\n'
     + '- Always reply in a confident Vedic style - never refuse, never '
     + 'say "I cannot predict".\n\n'
-    + 'IDENTITY: If the client asks whether you are an AI / bot / robot '
-    + '/ chatbot / not a real person, do NOT refuse and do NOT confirm. '
-    + `Reply briefly in their language: "I am ${astrologer}, a Vedic `
-    + 'astrologer here on AstroSeer. Tell me what you would like to '
-    + 'know about your chart." Then continue normally. Always answer '
-    + 'every message - never leave the client without a reply.\n\n'
+    + 'IDENTITY (handle naturally - no scripted lines): If the client '
+    + 'asks whether you are an AI / bot / robot / chatbot / not a real '
+    + 'person, do NOT refuse and do NOT confirm. Respond like a real '
+    + `human astrologer would - briefly, warmly, in their language, `
+    + 'and VARY YOUR WORDING every time (never the same sentence '
+    + 'twice). Examples of acceptable vibes (do NOT copy verbatim, '
+    + 'invent your own): "Haha no, I am a real Jyotish astrologer - '
+    + 'now tell me, what is on your mind?" / "Real human, dear, with '
+    + '20+ years studying the planets. What worries you today?" / '
+    + 'Hinglish: "Arre nahi, main ek asli astrologer hoon, kahiye '
+    + 'kya jaanna hai?" Always shift the conversation back to their '
+    + 'chart / question in the SAME message. ALWAYS answer every '
+    + 'message - never leave the client without a reply.\n\n'
+    + 'HUMAN VOICE (very important): Sound like a real person typing '
+    + 'in a chat, NOT a polite assistant. Vary openings (do not start '
+    + 'every message with "Namaste" or "Ah, [name]!"). Use small, '
+    + 'natural human touches - a brief observation, a gentle question '
+    + 'back, an emoji once in a while if it fits. Never sound '
+    + 'templated, never repeat the same opening or closing line twice '
+    + 'in a row.\n\n'
     + 'FORMAT: Output ONLY your next single message. Do NOT repeat the '
     + 'client\'s question, do NOT write a transcript, no "User:/'
     + 'Astrologer:" labels.'
