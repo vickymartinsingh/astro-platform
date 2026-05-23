@@ -107,10 +107,29 @@ export async function generateReply({ messages, astrologerName,
   } catch (_) { return ''; }
 }
 
-// Probe: is the relay's Bedrock key configured? (admin AI page)
+// Probe: which providers are configured on the relay? (admin AI page)
 export async function probeAi() {
   try {
     const r = await fetch(endpoint(), { method: 'GET' });
     return await r.json();
   } catch (e) { return { configured: false, error: String(e.message || e) }; }
+}
+
+// Server-side AI trigger: fire-and-forget POST so the customer app
+// kicks the relay to auto-accept the chat session AND post an AI reply
+// AS the astrologer, even if the astrologer's app is closed. Safe to
+// call repeatedly (relay is idempotent on the last client message id).
+export async function triggerAiAssist({ chatId, sessionId, astroUid,
+  clientUid } = {}) {
+  if (!chatId) return false;
+  const base = endpoint().replace(/\/assistant\/?$/, '');
+  const url = `${base}/aiAssist`;
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chatId, sessionId, astroUid, clientUid }),
+    });
+    return r.ok;
+  } catch (_) { return false; }
 }

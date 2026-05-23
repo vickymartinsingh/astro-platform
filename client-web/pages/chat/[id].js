@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
-import { chatService, sessionService, soundService } from '@astro/shared';
+import {
+  chatService, sessionService, soundService, assistantService,
+} from '@astro/shared';
 import Layout from '../../components/Layout';
 import RateModal from '../../components/RateModal';
 import VerifiedBadge from '../../components/VerifiedBadge';
@@ -136,6 +138,20 @@ export default function ChatScreen() {
     }
   }, [isView, session?.id, session?.status, astroId, astro?.name, track]);
 
+  // The moment a chat session enters "requesting", ping the relay to
+  // auto-accept it if the astrologer has the AI assistant enabled. The
+  // relay checks the flag server-side and silently no-ops if AI is off,
+  // so this is safe to call for every chat session.
+  useEffect(() => {
+    if (isView || !session?.id || !chatId) return;
+    if (session.status !== 'requesting') return;
+    if (!astroId || !user?.uid) return;
+    assistantService.triggerAiAssist({
+      chatId, sessionId: session.id,
+      astroUid: astroId, clientUid: user.uid,
+    });
+  }, [session?.id, session?.status, chatId, astroId, user?.uid, isView]);
+
   // The consultation is only "connected" (timer + billing) once the
   // astrologer has accepted, which stamps startTime. Before that it is
   // strictly a waiting state - no countdown, no charge.
@@ -173,6 +189,14 @@ export default function ChatScreen() {
     setText('');
     setAtBottom(true);
     await chatService.sendMessage(chatId, user.uid, v);
+    // Kick the relay to auto-reply on behalf of the astrologer when
+    // they have the AI assistant on. Fire-and-forget (no UI block).
+    if (session?.id && astroId && user?.uid) {
+      assistantService.triggerAiAssist({
+        chatId, sessionId: session.id,
+        astroUid: astroId, clientUid: user.uid,
+      });
+    }
   }
 
   async function pickImage(e) {
