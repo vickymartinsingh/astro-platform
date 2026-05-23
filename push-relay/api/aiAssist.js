@@ -94,6 +94,10 @@ module.exports = async (req, res) => {
   ]);
   const astroDoc = astroSnap.exists ? astroSnap.data() : {};
   const cfg = cfgSnap.exists ? cfgSnap.data() : {};
+  // Human-like delay window the admin set in /admin-ai (defaults 3-9s).
+  const lo = Math.max(0, Number(cfg.ai_delay_min) || 3);
+  const hi = Math.max(lo, Number(cfg.ai_delay_max) || 9);
+  const delayMs = Math.round((lo + Math.random() * (hi - lo)) * 1000);
   const inScope = !cfg.ai_enabled ? false
     : (cfg.ai_scope === 'selected'
       ? (Array.isArray(cfg.ai_astrologers)
@@ -175,12 +179,25 @@ module.exports = async (req, res) => {
   const systemText = buildSystemPrompt({ astrologer: astroName,
     client: clientName, context });
 
+  // Show "typing..." while we generate + wait the admin's delay window.
+  try {
+    await db.doc(`chats/${chatId}`).set({
+      typing: { [astroUid]: Date.now() },
+    }, { merge: true });
+  } catch (_) { /* non-fatal */ }
+
   const r = await generateReply(systemText, turns, providerCfg);
   if (!r.ok) {
+    try { await db.doc(`chats/${chatId}`)
+      .set({ typing: { [astroUid]: 0 } }, { merge: true }); }
+    catch (_) {}
     return res.status(502).json({ error: r.error, tried: r.tried });
   }
 
-  // Write the reply as the astrologer + update chat metadata.
+  // Wait the admin-configured human-like delay (1-3s, 3-9s, etc).
+  await new Promise((resolve) => setTimeout(resolve, delayMs));
+
+  // Write the reply as the astrologer + update chat metadata + clear typing.
   try {
     await db.collection(`chats/${chatId}/messages`).add({
       senderId: astroUid,
@@ -192,6 +209,7 @@ module.exports = async (req, res) => {
       lastMessage: r.reply,
       lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
       aiRepliedTo: last.id,
+      typing: { [astroUid]: 0 },
     }, { merge: true });
   } catch (e) {
     return res.status(500).json({
