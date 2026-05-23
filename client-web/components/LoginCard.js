@@ -217,18 +217,10 @@ export default function LoginCard({ onDone, compact, initialMode }) {
               Privacy
             </Link>.
           </p>
-          {/* Admin-toggled in /admin-features: features
-              .register_as_astro_show (default ON). */}
-          {(!features || features.register_as_astro_show !== false) && (
-            <div className="mt-3 rounded-card bg-bg-light p-3
-              text-center text-xs">
-              Are you a Vedic astrologer?
-              <Link href="/register-as-astrologer"
-                className="ml-1 font-semibold text-primary underline">
-                Join us as an astrologer
-              </Link>
-            </div>
-          )}
+          {/* Note: "Register as astrologer" is intentionally NOT shown
+              here. It lives only as the last item in the side menu and
+              only when the admin enables it (features.register_as_astro
+              _show). */}
         </div>
       </div>
     </div>

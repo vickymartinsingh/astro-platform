@@ -411,6 +411,20 @@ export default function TopNav() {
               ))}
             </div>
 
+            {/* LAST item: "Register as astrologer" - only when admin
+                enables it (features.register_as_astro_show). Hidden
+                from the desktop nav + login screen by design. */}
+            {features && features.register_as_astro_show && (
+              <div className="border-t border-gray-100 px-2 py-2">
+                <Link href="/register-as-astrologer"
+                  className="block rounded-lg bg-bg-light px-2.5 py-2
+                    text-[13px] font-semibold leading-tight text-primary
+                    hover:bg-primary/10">
+                  ⭐ Register as astrologer
+                </Link>
+              </div>
+            )}
+
             {/* Sticky bottom: Logout (when signed in). */}
             {user && (
               <div className="border-t border-gray-100 px-3 py-2

@@ -30,8 +30,11 @@ export default function IncomingRequest({ uid, isOnCall }) {
   useEffect(() => {
     if (!uid) return undefined;
     const recompute = () => {
+      // Opt-out: once admin enables AI for this astrologer, incoming
+      // chat requests are auto-accepted. Per-astrologer toggle only
+      // disables (explicit false).
       aiChatAuto.current = !!(aiAstroRef.current
-        && aiAstroRef.current.aiAssistant
+        && aiAstroRef.current.aiAssistant !== false
         && assistantService.aiAvailableForAstro(aiCfgRef.current, uid));
     };
     const u1 = assistantService.watchAiConfig((cfg) => {

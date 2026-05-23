@@ -40,7 +40,10 @@ export default function AiAutoResponder() {
     return () => { if (u1) u1(); if (u2) u2(); };
   }, [user && user.uid]);
 
-  const enabled = !!(user && astro && astro.aiAssistant
+  // Opt-out: AI is on by default once admin enables it for this
+  // astrologer's scope. The dashboard toggle only DISABLES (sets the
+  // field to explicit false). Avoids "I have to flip it off+on" UX.
+  const enabled = !!(user && astro && astro.aiAssistant !== false
     && assistantService.aiAvailableForAstro(cfg, user.uid));
 
   // Build (and cache + persist) the client's kundli context once.

@@ -98,12 +98,16 @@ module.exports = async (req, res) => {
   const lo = Math.max(0, Number(cfg.ai_delay_min) || 3);
   const hi = Math.max(lo, Number(cfg.ai_delay_max) || 9);
   const delayMs = Math.round((lo + Math.random() * (hi - lo)) * 1000);
+  // Default-on: once admin enables AI for an astrologer's scope, the
+  // assistant works automatically. The per-astrologer toggle is OPT-OUT
+  // (only treated as off when explicitly set to false).
+  const astroOptedIn = astroDoc.aiAssistant !== false;
   const inScope = !cfg.ai_enabled ? false
     : (cfg.ai_scope === 'selected'
       ? (Array.isArray(cfg.ai_astrologers)
         && cfg.ai_astrologers.includes(astroUid))
       : true);
-  if (!astroDoc.aiAssistant || !inScope) {
+  if (!astroOptedIn || !inScope) {
     return res.status(200).json({ ok: true, skipped: 'ai not enabled' });
   }
 

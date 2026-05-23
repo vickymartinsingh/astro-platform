@@ -40,11 +40,13 @@ export default function AstroDashboard() {
 
   async function toggleAi() {
     if (!astro) return;
-    const next = !astro.aiAssistant;
+    // Opt-out semantics: default ON when undefined; toggling sets the
+    // explicit boolean.
+    const current = astro.aiAssistant !== false;
     setBusy(true);
     try {
       await astrologerService.updateAstrologer(user.uid,
-        { aiAssistant: next });
+        { aiAssistant: !current });
     } finally { setBusy(false); }
   }
 
@@ -242,35 +244,38 @@ export default function AstroDashboard() {
         {/* AI Assistant: only shown once the admin enables it for this
             astrologer. When ON, incoming chats are auto-picked and answered
             for the astrologer (chat only, never calls). */}
-        {aiAvailable && (
+        {aiAvailable && (() => {
+          const aiOn = astro.aiAssistant !== false; // default ON
+          return (
           <div className="mt-3 flex items-center justify-between rounded-card
             border border-primary/30 bg-primary/5 p-3">
             <span className="font-medium">
               AI Assistant (auto-answer chats)
               <span className={`ml-2 text-xs font-semibold ${
-                astro.aiAssistant ? 'text-success' : 'text-sub-text'}`}>
-                {astro.aiAssistant ? 'On' : 'Off'}
+                aiOn ? 'text-success' : 'text-sub-text'}`}>
+                {aiOn ? 'On' : 'Off'}
               </span>
               <span className="mt-0.5 block text-[11px] text-sub-text">
-                Once you enable this option, AI will reply to client chats on
-                your behalf. It auto picks incoming chats and answers them
-                for you. Works for chat only, not calls.
+                AI replies to client chats on your behalf. It auto-picks
+                incoming chats and answers them for you. Chat only, never
+                calls. Turn this off to handle chats yourself.
               </span>
             </span>
             <button type="button" role="switch"
-              aria-checked={!!astro.aiAssistant}
+              aria-checked={aiOn}
               aria-label="AI assistant"
               onClick={() => !busy && toggleAi()}
               disabled={busy}
               className={`relative h-7 w-12 shrink-0 rounded-full
-                transition-colors ${astro.aiAssistant ? 'bg-primary'
+                transition-colors ${aiOn ? 'bg-primary'
                   : 'bg-gray-300'} ${busy ? 'opacity-50' : ''}`}>
               <span className={`absolute top-0.5 h-6 w-6 rounded-full
-                bg-white shadow transition-all ${astro.aiAssistant
+                bg-white shadow transition-all ${aiOn
                   ? 'left-[22px]' : 'left-0.5'}`} />
             </button>
           </div>
-        )}
+          );
+        })()}
       </div>
 
       {/* Online-hours dashboard. Cards open the Activity report. */}

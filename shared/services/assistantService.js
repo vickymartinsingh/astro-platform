@@ -76,8 +76,13 @@ export function aiAvailableForAstro(cfg, astroId) {
 
 // Whether THIS astrologer has turned their personal assistant ON.
 // Stored on the astrologer doc: astrologers/{id}.aiAssistant === true.
+// Opt-out semantics: AI is ON by default once admin enables it for this
+// astrologer's scope. Only treated as OFF when the astrologer explicitly
+// set aiAssistant to false. This stops the "have to toggle off then on
+// to make it work" footgun.
 export function astroAssistantOn(astroProfile) {
-  return !!(astroProfile && astroProfile.aiAssistant);
+  if (!astroProfile) return false;
+  return astroProfile.aiAssistant !== false;
 }
 
 export function watchAiConfig(callback) {
