@@ -23,11 +23,16 @@ on:
     branches: [main]
     paths:
       - 'client-web/**'
+      - 'astro-web/**'
+      - 'admin-web/**'
       - 'shared/**'
+      - 'brand/**'
       - '.github/workflows/ios.yml'
       - 'scripts/patch-native.mjs'
       - 'scripts/gen-icons.mjs'
       - 'com.astroseer.app.plist'
+      - 'com.astroseer.astrologer.plist'
+      - 'com.astroseer.admin.plist'
 
 jobs:
   prepare:
@@ -38,11 +43,12 @@ jobs:
       - id: set
         run: |
           APP="${{ inputs.app }}"
-          # push triggers don't carry inputs.app -> default to client-web
-          # (only the customer IPA is needed automatically; astro / admin
-          # remain available via manual dispatch).
+          # push triggers don't carry inputs.app -> build ALL 3 apps so
+          # the user gets fresh IPAs for customer + astrologer + admin
+          # on every code change. Manual dispatch can still pick a
+          # single app to save macOS runner minutes.
           if [ -z "$APP" ] && [ "${{ github.event_name }}" = "push" ]; then
-            APP=client-web
+            APP=all
           fi
           if [ "$APP" = "all" ]; then
             echo 'matrix={"app":["client-web","astro-web","admin-web"]}' >> "$GITHUB_OUTPUT"
