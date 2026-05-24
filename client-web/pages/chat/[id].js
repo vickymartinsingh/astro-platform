@@ -205,6 +205,42 @@ export default function ChatScreen() {
   }, [messages, session?.id, session?.status, chatId, astroId,
     user?.uid, isView]);
 
+  // Auto-retry the AI reply trigger if the client's last message has
+  // been hanging unanswered for 15 seconds (i.e. the initial
+  // triggerAiAssist either errored, was dropped by Vercel cold start,
+  // or the relay's stale aiRepliedTo flag wrongly skipped it). This
+  // is the customer-facing safety net for "I sent something and got
+  // nothing back". After 30s of still no reply, we try ONE more time
+  // and then stop; the idle-nudge flow takes over from there.
+  const replyRetryRef = useRef({ tries: 0, lastClientId: null });
+  useEffect(() => {
+    if (isView || !chatId || !astroId || !user?.uid) return undefined;
+    if (!session?.id || session.status !== 'active') return undefined;
+    if (!messages.length) return undefined;
+    const last = messages[messages.length - 1];
+    if (!last || last.senderId !== user.uid) return undefined;
+    // New client message? Reset the retry counter.
+    if (replyRetryRef.current.lastClientId !== last.id) {
+      replyRetryRef.current = { tries: 0, lastClientId: last.id };
+    }
+    if (replyRetryRef.current.tries >= 2) return undefined;
+    const t = setTimeout(() => {
+      // Re-check: still our turn? (No astro reply landed since.)
+      const cur = messages[messages.length - 1];
+      if (!cur || cur.senderId !== user.uid || cur.id !== last.id) return;
+      replyRetryRef.current.tries += 1;
+      // eslint-disable-next-line no-console
+      console.log('[aiAssist] no reply in 15s, re-firing trigger',
+        { try: replyRetryRef.current.tries, lastId: last.id });
+      assistantService.triggerAiAssist({
+        chatId, sessionId: session.id,
+        astroUid: astroId, clientUid: user.uid,
+      });
+    }, 15000);
+    return () => clearTimeout(t);
+  }, [messages, session?.id, session?.status, chatId, astroId,
+    user?.uid, isView]);
+
   // The consultation is only "connected" (timer + billing) once the
   // astrologer has accepted, which stamps startTime. Before that it is
   // strictly a waiting state - no countdown, no charge.
@@ -263,14 +299,32 @@ export default function ChatScreen() {
     const f = e.target.files && e.target.files[0];
     e.target.value = '';
     setSheet(false);
-    if (!f || !active || broke) return;
+    if (!f) return;
+    if (!active) {
+      window.alert('The consultation is not active yet, please wait '
+        + 'until the astrologer accepts before sending photos.');
+      return;
+    }
+    if (broke) {
+      window.alert('Your wallet balance is zero. Please recharge to '
+        + 'continue sending photos.');
+      return;
+    }
     setBusyImg(true);
-    const ok = await chatService.sendImageMessage(chatId, user.uid, f);
-    setBusyImg(false);
-    if (!ok) {
-      window.alert('Could not send the photo. Please check your '
-        + 'connection and try again.');
-    } else setAtBottom(true);
+    try {
+      await chatService.sendImageMessage(chatId, user.uid, f);
+      setAtBottom(true);
+    } catch (err) {
+      // sendImageMessage now throws a specific human-readable message
+      // (file too large / storage rules / network timeout / not
+      // signed in) so the user knows the real cause instead of the
+      // misleading "check your connection".
+      // eslint-disable-next-line no-console
+      console.error('[chat] photo send failed:', err);
+      window.alert(err && err.message
+        ? err.message
+        : 'Could not send the photo. Please try again.');
+    } finally { setBusyImg(false); }
   }
 
   async function confirmEnd() {
@@ -334,24 +388,36 @@ export default function ChatScreen() {
           className="-ml-1 p-1 text-2xl leading-none text-dark-text">
           &#8249;
         </button>
-        <img src={astro.profileImage || '/avatar.png'}
-          className="h-9 w-9 rounded-full object-cover" alt="" />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1 font-semibold
-                          text-dark-text">
-            <span className="truncate">{astro.name}</span>
-            {astro.approved && <VerifiedBadge size={15} />}
+        {/* Avatar + name are clickable: tap to open the astrologer's
+            full profile page (without leaving the chat). The session
+            stays "active" in the background - the ActiveSessionBar +
+            useSession hook bring the customer right back to this chat
+            with a single tap. */}
+        <button type="button"
+          onClick={() => astroId && router.push(`/astrologer/${astroId}`)}
+          className="flex min-w-0 flex-1 items-center gap-2.5 text-left">
+          <img src={astro.profileImage || '/avatar.png'}
+            className="h-9 w-9 rounded-full object-cover" alt="" />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1 font-semibold
+                            text-dark-text">
+              <span className="truncate underline-offset-2
+                hover:underline">{astro.name}</span>
+              {astro.approved && <VerifiedBadge size={15} />}
+            </div>
+            <div className="text-xs text-sub-text">
+              {otherTyping ? (
+                <span className="font-semibold text-primary">
+                  typing...
+                </span>
+              ) : isView ? 'Viewing past messages'
+                : waiting ? 'Connecting...'
+                : active && ratePerMin > 0 ? `${clock} left`
+                : active ? 'online'
+                : 'Consultation ended'}
+            </div>
           </div>
-          <div className="text-xs text-sub-text">
-            {otherTyping ? (
-              <span className="font-semibold text-primary">typing...</span>
-            ) : isView ? 'Viewing past messages'
-              : waiting ? 'Connecting...'
-              : active && ratePerMin > 0 ? `${clock} left`
-              : active ? 'online'
-              : 'Consultation ended'}
-          </div>
-        </div>
+        </button>
         {!isView && (
           <>
             <button onClick={() => router.push('/wallet')}

@@ -6,7 +6,7 @@ import {
 import {
   ref as storageRef, uploadBytes, getDownloadURL,
 } from 'firebase/storage';
-import { db, storage } from '../firebase.js';
+import { db, storage, auth } from '../firebase.js';
 import { sendPushToUser } from './pushService.js';
 
 // Deterministic conversation id prevents duplicate threads (blueprint 4.8):
@@ -66,39 +66,125 @@ export async function sendMessage(chatId, senderId, text) {
   }
 }
 
-// Send a photo in the chat (the "+" -> Choose Picture sheet). Uploads
-// to Storage then writes an image message. Returns true on success;
-// callers show a friendly message on false so text chat never breaks.
-export async function sendImageMessage(chatId, senderId, file) {
-  if (!chatId || !senderId || !file) return false;
+// Browser-side image downscale. Phones routinely produce 5-10 MB
+// photos that take forever to upload (and sometimes hit storage size
+// limits). Re-encode anything wider than `maxW` as a JPEG so the
+// upload is small enough to feel instant. Returns the original Blob
+// untouched if the helper can't run (SSR, unsupported types, etc).
+async function downscaleImage(file, maxW = 1600, quality = 0.85) {
+  if (typeof window === 'undefined' || !file
+    || !file.type || !/^image\/(jpeg|png|webp)/i.test(file.type)
+    || file.size <= 900 * 1024) return file;
   try {
-    // Use the media/ prefix: Storage rules already allow any signed-in
-    // user to write there, so photo send works with no rules redeploy.
-    const path = `media/chat/${chatId}/${Date.now()}_${
-      String(file.name || 'photo').replace(/[^\w.\-]/g, '')}`;
-    const r = storageRef(storage, path);
-    // Never hang the UI: if Storage is unreachable / rules block the
-    // write, fail after 30s so the spinner stops and we can tell the
-    // user instead of spinning forever.
-    const withTimeout = (p, ms) => Promise.race([
-      p,
-      new Promise((_, rej) => setTimeout(
-        () => rej(new Error('timeout')), ms)),
-    ]);
+    const dataUrl = await new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onerror = () => reject(new Error('read failed'));
+      fr.onload = () => resolve(fr.result);
+      fr.readAsDataURL(file);
+    });
+    const img = await new Promise((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error('decode failed'));
+      i.src = dataUrl;
+    });
+    const sc = Math.min(1, maxW / (img.width || maxW));
+    const w = Math.max(1, Math.round((img.width || maxW) * sc));
+    const h = Math.max(1, Math.round((img.height || maxW) * sc));
+    const cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    cv.getContext('2d').drawImage(img, 0, 0, w, h);
+    const blob = await new Promise((resolve) => cv.toBlob(
+      (b) => resolve(b), 'image/jpeg', quality));
+    if (!blob || blob.size >= file.size) return file;
+    blob.name = (file.name || 'photo').replace(/\.[a-z]+$/i, '.jpg');
+    return blob;
+  } catch (_) { return file; }
+}
+
+// Send a photo in the chat (the "+" -> Choose Picture sheet). Uploads
+// to Storage then writes an image message. THROWS a real Error with
+// a human-readable message on failure so the chat page can show the
+// user what actually went wrong (auth / rules / file size / network)
+// instead of the old generic "check your connection".
+export async function sendImageMessage(chatId, senderId, file) {
+  if (!chatId || !senderId || !file) {
+    throw new Error('Missing chat or file.');
+  }
+  // Hard cap so Firebase Storage doesn't reject huge uploads. Modern
+  // phones routinely produce 5-10 MB photos.
+  const HARD_MAX = 12 * 1024 * 1024;            // 12 MB
+  if (file.size > HARD_MAX) {
+    throw new Error(`Photo is too large (${Math.round(file.size / 1024 / 1024)
+      } MB). Please pick one under ${HARD_MAX / 1024 / 1024} MB.`);
+  }
+  // Re-encode/scale before upload to keep it snappy + stay well inside
+  // any per-file limit. Falls back to original on any failure.
+  const blob = await downscaleImage(file);
+
+  // Auth check: signed-in users only. Storage rules require it; we
+  // surface a clear message instead of a 403.
+  if (auth && !auth.currentUser) {
+    throw new Error('You need to sign in again before sending photos.');
+  }
+
+  // Use the media/ prefix: Storage rules already allow any signed-in
+  // user to write there.
+  const path = `media/chat/${chatId}/${Date.now()}_${
+    String(file.name || 'photo').replace(/[^\w.\-]/g, '')}`;
+  const r = storageRef(storage, path);
+  // Never hang the UI: if Storage is unreachable / rules block the
+  // write, fail after 30s so the spinner stops and we can tell the
+  // user instead of spinning forever.
+  const withTimeout = (p, ms, what) => Promise.race([
+    p,
+    new Promise((_, rej) => setTimeout(
+      () => rej(new Error(`${what} timed out`)), ms)),
+  ]);
+  try {
     await withTimeout(
-      uploadBytes(r, file, { contentType: file.type || 'image/jpeg' }),
-      30000);
-    const url = await withTimeout(getDownloadURL(r), 15000);
+      uploadBytes(r, blob,
+        { contentType: blob.type || file.type || 'image/jpeg' }),
+      30000, 'Upload');
+  } catch (e) {
+    const code = e && e.code;
+    if (code === 'storage/unauthorized') {
+      throw new Error('Photo upload was blocked (storage rules). '
+        + 'Admin needs to allow media/ writes for signed-in users.');
+    }
+    if (code === 'storage/canceled') throw new Error('Upload cancelled.');
+    if (code === 'storage/quota-exceeded') {
+      throw new Error('Storage is full. Contact support.');
+    }
+    if (code === 'storage/unauthenticated') {
+      throw new Error('You need to sign in again before sending photos.');
+    }
+    throw new Error(`Upload failed: ${(e && e.message)
+      || code || 'network error'}.`);
+  }
+  let url;
+  try {
+    url = await withTimeout(getDownloadURL(r), 15000, 'Fetch URL');
+  } catch (e) {
+    throw new Error(`Photo uploaded but link could not be fetched: ${
+      (e && e.message) || 'unknown'}.`);
+  }
+  try {
     await addDoc(collection(db, 'chats', chatId, 'messages'), {
       senderId, text: '', imageUrl: url, createdAt: serverTimestamp(),
     });
     await updateDoc(doc(db, 'chats', chatId), {
       lastMessage: '📷 Photo', updatedAt: serverTimestamp(),
     });
-    if (senderId !== 'system') {
-      const toUid = String(chatId).split('_').find(
-        (p) => p && p !== senderId);
-      if (toUid) {
+  } catch (e) {
+    throw new Error(`Could not post the photo to chat: ${
+      (e && e.message) || 'firestore error'}.`);
+  }
+  if (senderId !== 'system') {
+    const toUid = String(chatId).split('_').find(
+      (p) => p && p !== senderId);
+    if (toUid) {
+      try {
         const senderName = await resolveName(senderId);
         let route = `/chat/${senderId}`;
         try {
@@ -111,10 +197,10 @@ export async function sendImageMessage(chatId, senderId, file) {
           body: '📷 Photo',
           data: { type: 'chat', chatId, from: senderName || '', route },
         });
-      }
+      } catch (_) { /* push is best-effort, message already delivered */ }
     }
-    return true;
-  } catch (_) { return false; }
+  }
+  return true;
 }
 
 // Resolve a person's display name (astrologer profile first, then user).
