@@ -1,6 +1,7 @@
 import Head from 'next/head';
 import { useEffect, useState } from 'react';
-import { themeService } from '@astro/shared';
+import { themeService, auditService } from '@astro/shared';
+import { useRouter } from 'next/router';
 import '../styles/globals.css';
 import { AuthProvider, useAuth } from '../lib/useAuth';
 import { I18nProvider } from '../lib/i18n';
@@ -32,7 +33,16 @@ function WithProviders({ children }) {
 
 export default function App({ Component, pageProps }) {
   const [refreshKey, setRefreshKey] = useState(0);
+  const router = useRouter();
   useEffect(() => themeService.watchTheme(), []);
+  // Compliance: log every route change (deduped per uid+path) so admin
+  // can see what each user clicked / browsed in their activity log.
+  useEffect(() => {
+    const onChange = (url) => auditService.logRoute(url);
+    onChange(router.asPath);
+    router.events.on('routeChangeComplete', onChange);
+    return () => router.events.off('routeChangeComplete', onChange);
+  }, [router.events, router.asPath]);
   useEffect(() => {
     const onRefresh = () => setRefreshKey((k) => k + 1);
     window.addEventListener('app:refresh', onRefresh);

@@ -16,6 +16,7 @@ const GROUPS = [
     ['/admin-health', 'System Health'],
   ]],
   ['People', [
+    ['/admin-user-reach', 'User Reach (search)'],
     ['/admin-users', 'Users'],
     ['/admin-astrologers', 'Astrologers'],
     ['/admin-astro-applications', 'Astrologer Applications'],

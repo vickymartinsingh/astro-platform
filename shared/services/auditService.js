@@ -86,6 +86,26 @@ export async function logEvent(type, meta = {}) {
   } catch (_) { return false; }
 }
 
+// Lightweight page-view tracker, called by each app's _app.js on
+// router.events.routeChangeComplete. Dedupes per uid+path within a
+// short window so we don't write a doc on every render.
+const ROUTE_DEDUPE_MS = 8000;
+const lastRoute = new Map(); // key = uid:path -> ts
+
+export function logRoute(path, meta = {}) {
+  if (typeof window === 'undefined') return;
+  // Only log for signed-in users - we don't store anonymous route data.
+  const uid = auth && auth.currentUser && auth.currentUser.uid;
+  if (!uid) return;
+  const key = `${uid}:${path}`;
+  const now = Date.now();
+  const prev = lastRoute.get(key) || 0;
+  if (now - prev < ROUTE_DEDUPE_MS) return;
+  lastRoute.set(key, now);
+  // Fire-and-forget; never blocks the page.
+  logEvent('route', { path, ...meta });
+}
+
 // Admin reads -- list the latest events for a given uid. Firestore rules
 // should restrict this collection to admin reads only.
 export async function getAuditByUser(uid, lim = 100) {
