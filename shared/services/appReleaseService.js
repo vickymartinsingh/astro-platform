@@ -135,9 +135,8 @@ export async function publishRelease({
 } = {}) {
   const b = asBuild(build);
   if (!b) throw new Error('build required');
-  // Lazy import to avoid a circular dep with adminService.
-  const { setDoc: setDocFn } = await import('firebase/firestore');
-  await setDocFn(doc(db, 'settings', 'config'), {
+  // setDoc is already imported at the top of this module.
+  await setDoc(doc(db, 'settings', 'config'), {
     app_latest_build: b,
     app_latest_version: String(version || `1.0.${b}`),
     app_update_mode: channel === 'store' ? 'store' : 'apk',
@@ -147,7 +146,7 @@ export async function publishRelease({
     app_update_popup: popup !== false,
     app_published_at: serverTimestamp(),
   }, { merge: true });
-  return { success: true, build: b };
+  return { success: true, build: b, popup };
 }
 
 // Reads what's CURRENTLY published in settings/config (what end-user
