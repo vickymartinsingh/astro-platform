@@ -102,8 +102,16 @@ jobs:
           # in lockstep with what installs.
           VERSION=$(node -e "console.log(require('./shared/appVersion.js').APP_VERSION)")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          # SFX maps to the Firebase plist filename at repo root. It MUST
+          # match the bundle ID Capacitor uses for the iOS app (read
+          # from each app's capacitor.config.json `appId`):
+          #   client-web -> com.astroseer.mobile  -> com.astroseer.mobile.plist
+          #   astro-web  -> com.astroseer.astrologer -> com.astroseer.astrologer.plist
+          #   admin-web  -> com.astroseer.admin    -> com.astroseer.admin.plist
+          # Using a plist whose BUNDLE_ID doesn't match the app crashes
+          # Firebase at init -> app dies on launch.
           case "$APP" in
-            client-web)  IPA="AstroSeer-Customer-$VERSION" ;     SFX=app ;;
+            client-web)  IPA="AstroSeer-Customer-$VERSION" ;     SFX=mobile ;;
             astro-web)   IPA="AstroSeer-Astrologer-$VERSION" ;   SFX=astrologer ;;
             admin-web)   IPA="AstroSeer-Admin-$VERSION" ;        SFX=admin ;;
             *)           IPA="App-$VERSION" ;                    SFX=app ;;
@@ -143,6 +151,17 @@ jobs:
           #    Firebase native init succeeds and we keep it.
           echo "::group::strip firebase native plugins"
           node -e "const fs=require('fs');const app=process.env.APP;const f=app+'/package.json';const j=JSON.parse(fs.readFileSync(f));const keepGoogle=fs.existsSync(process.env.PLIST||'');const strip=['@capacitor/push-notifications','@codetrix-studio/capacitor-google-auth'];if(!keepGoogle)strip.push('@capacitor-firebase/authentication');for(const k of strip){if(j.dependencies)delete j.dependencies[k];}fs.writeFileSync(f,JSON.stringify(j,null,2)+'\n');console.log('keepGoogle='+keepGoogle+' (PLIST='+process.env.PLIST+') stripped='+strip.join(','));"
+          echo "::endgroup::"
+
+          # Strip plugin-config blocks for plugins we just removed.
+          # Capacitor reads capacitor.config.json on startup and tries
+          # to wire every named plugin to its native counterpart - a
+          # config block for a missing plugin throws and the app hangs
+          # on the splash forever. Drop GoogleAuth from the config to
+          # match the package.json strip. Also drop FirebaseAuthentication
+          # when its plugin was stripped (no keepGoogle).
+          echo "::group::strip plugin config from capacitor.config.json"
+          node -e "const fs=require('fs');const app=process.env.APP;const f=app+'/capacitor.config.json';const c=JSON.parse(fs.readFileSync(f));const keepGoogle=fs.existsSync(process.env.PLIST||'');if(c.plugins){delete c.plugins.GoogleAuth;if(!keepGoogle)delete c.plugins.FirebaseAuthentication;}fs.writeFileSync(f,JSON.stringify(c,null,2)+'\n');console.log('plugin config now:',Object.keys(c.plugins||{}).join(',')||'(none)');"
           echo "::endgroup::"
 
           # Capacitor 8 defaults to SPM; the capacitor-swift-pm mirror
