@@ -44,10 +44,16 @@ export default function ActiveSessionBar() {
   const join = () => {
     // Always pass ?resume=<sid> so useSession reuses THIS live session
     // (instead of starting a fresh one + re-sending the intro/kundli).
-    const q = `resume=${encodeURIComponent(s.sessionId)}`;
-    if (s.type === 'chat') router.push(`/chat/${s.astroId}?${q}`);
-    else router.push(`/call/${s.astroId}?type=${
-      s.type === 'video' ? 'video' : 'call'}&${q}`);
+    // The listener gives us `s.id`; `s.sessionId` is undefined here.
+    const sid = s.id || s.sessionId;
+    const q = sid ? `resume=${encodeURIComponent(sid)}` : '';
+    const sep = q ? '?' : '';
+    if (s.type === 'chat') {
+      router.push(`/chat/${s.astroId}${sep}${q}`);
+    } else {
+      const t = s.type === 'video' ? 'video' : 'call';
+      router.push(`/call/${s.astroId}?type=${t}${q ? `&${q}` : ''}`);
+    }
   };
   const cancel = async () => {
     // eslint-disable-next-line no-alert
