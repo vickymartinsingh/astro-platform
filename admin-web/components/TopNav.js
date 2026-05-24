@@ -63,6 +63,7 @@ const GROUPS = [
     ['/admin-sounds', 'Notification & Ringtone'],
     ['/admin-theme', 'App Theme'],
     ['/admin-ai', 'AI Assistant'],
+    ['/admin-ai-log', 'AI Diagnostic & Log'],
     ['/admin-email', 'Email & Alerts'],
     ['/admin-reset', 'Account Reset'],
     ['/admin-archive', 'Archive & Restore'],
