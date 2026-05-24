@@ -152,6 +152,59 @@ export default function ChatScreen() {
     });
   }, [session?.id, session?.status, chatId, astroId, user?.uid, isView]);
 
+  // Idle-nudge timer. Whenever the astrologer (AI) sends a message and
+  // the client doesn't respond, schedule a follow-up nudge through the
+  // relay. The relay tracks which nudge is next (1, 2, 3) and sends a
+  // goodbye + ends the session on the 4th unanswered tick so the
+  // client's wallet is not drained while they're away.
+  //   - 1st nudge: 45s after the astrologer's last message
+  //   - 2nd nudge: +30s after the 1st nudge
+  //   - 3rd nudge: +40s after the 2nd nudge
+  //   - goodbye:   +45s after the 3rd (relay also ends the session)
+  // The timer resets the moment the client sends ANY new message OR
+  // the astrologer (AI or human) sends a NEW non-nudge reply.
+  const nudgeTimerRef = useRef(null);
+  useEffect(() => {
+    if (isView || !chatId || !astroId || !user?.uid) return undefined;
+    if (!session?.id || session.status !== 'active') return undefined;
+    if (!messages.length) return undefined;
+    const last = messages[messages.length - 1];
+    if (!last || !last.senderId) return undefined;
+    // If the client just spoke, no nudge needed - cancel any pending.
+    if (last.senderId === user.uid) {
+      if (nudgeTimerRef.current) {
+        clearTimeout(nudgeTimerRef.current);
+        nudgeTimerRef.current = null;
+      }
+      return undefined;
+    }
+    // Last message is from the astrologer (real or AI). Pick the delay
+    // based on whether this message is itself a nudge.
+    let delayMs = 45000;
+    const nudgeIdx = Number(last.aiNudgeIndex || 0);
+    if (nudgeIdx === 1) delayMs = 30000;        // 1st nudge -> wait 30s
+    else if (nudgeIdx === 2) delayMs = 40000;   // 2nd nudge -> wait 40s
+    else if (nudgeIdx === 3) delayMs = 45000;   // 3rd nudge -> goodbye
+    else if (nudgeIdx >= 4) return undefined;   // goodbye already sent
+    if (nudgeTimerRef.current) clearTimeout(nudgeTimerRef.current);
+    nudgeTimerRef.current = setTimeout(() => {
+      // Re-check the session is still active before firing.
+      if (session?.status === 'active') {
+        assistantService.triggerAiNudge({
+          chatId, sessionId: session.id,
+          astroUid: astroId, clientUid: user.uid,
+        });
+      }
+    }, delayMs);
+    return () => {
+      if (nudgeTimerRef.current) {
+        clearTimeout(nudgeTimerRef.current);
+        nudgeTimerRef.current = null;
+      }
+    };
+  }, [messages, session?.id, session?.status, chatId, astroId,
+    user?.uid, isView]);
+
   // The consultation is only "connected" (timer + billing) once the
   // astrologer has accepted, which stamps startTime. Before that it is
   // strictly a waiting state - no countdown, no charge.

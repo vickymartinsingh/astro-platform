@@ -120,6 +120,36 @@ export async function probeAi() {
   } catch (e) { return { configured: false, error: String(e.message || e) }; }
 }
 
+// Server-side AI idle-nudge trigger: fire-and-forget POST asking the
+// relay to send the next idle-follow-up bubble (or the goodbye + end
+// the session, after 3 unanswered nudges). Customer chat page schedules
+// this at 45s -> 30s -> 40s after each astrologer reply (counters reset
+// the moment the client sends anything). Safe to call repeatedly; the
+// relay re-reads aiIdleNudgeCount before posting so duplicates no-op.
+export async function triggerAiNudge({ chatId, sessionId, astroUid,
+  clientUid } = {}) {
+  if (!chatId) return false;
+  const base = endpoint().replace(/\/assistant\/?$/, '');
+  const url = `${base}/aiNudge`;
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chatId, sessionId, astroUid, clientUid }),
+    });
+    let body = null;
+    try { body = await r.json(); } catch (_) {}
+    // eslint-disable-next-line no-console
+    if (typeof console !== 'undefined') console.log('[aiNudge]', r.status,
+      body || '(no body)');
+    return r.ok;
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    if (typeof console !== 'undefined') console.log('[aiNudge] error', e);
+    return false;
+  }
+}
+
 // Server-side AI trigger: fire-and-forget POST so the customer app
 // kicks the relay to auto-accept the chat session AND post an AI reply
 // AS the astrologer, even if the astrologer's app is closed. Safe to

@@ -10,6 +10,7 @@
 
 const {
   admin, ensureAdmin, loadProviderCfg, generateReply, buildSystemPrompt,
+  scrubReply, splitBubbles,
 } = require('../lib/providers');
 
 function readBody(req) {
@@ -241,18 +242,52 @@ module.exports = async (req, res) => {
   // Wait the admin-configured human-like delay (1-3s, 3-9s, etc).
   await new Promise((resolve) => setTimeout(resolve, delayMs));
 
-  // Write the reply as the astrologer + update chat metadata + clear typing.
+  // Scrub forbidden patterns (dashes, leading "Namaste", duplicate
+  // greeting) and split the reply into 1-3 short bubbles so it lands
+  // on the client like a real astrologer typing on WhatsApp instead of
+  // one long paragraph.
+  const cleaned = scrubReply(r.reply);
+  const bubbles = splitBubbles(cleaned).map(scrubReply)
+    .filter((s) => s && s.trim());
+  if (!bubbles.length) bubbles.push(cleaned || r.reply);
+
+  // Write each bubble as its own message doc, with a tiny inter-bubble
+  // pause + typing indicator so the client sees them appear one after
+  // another (capped so we don't blow past the function budget).
   try {
-    await db.collection(`chats/${chatId}/messages`).add({
-      senderId: astroUid,
-      text: r.reply,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      aiGenerated: true,
-    });
+    for (let i = 0; i < bubbles.length; i += 1) {
+      // Brief "typing..." between bubbles so the second / third one
+      // doesn't appear instantly.
+      if (i > 0) {
+        // eslint-disable-next-line no-await-in-loop
+        await db.doc(`chats/${chatId}`).set({
+          typing: { [astroUid]: Date.now() },
+        }, { merge: true });
+        // 600-1400ms between bubbles, scaled by bubble length.
+        const pause = Math.min(1400,
+          600 + Math.round(bubbles[i].length * 20));
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((resolve) => setTimeout(resolve, pause));
+      }
+      // eslint-disable-next-line no-await-in-loop
+      await db.collection(`chats/${chatId}/messages`).add({
+        senderId: astroUid,
+        text: bubbles[i],
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        aiGenerated: true,
+        aiBubbleIndex: i,
+        aiBubbleTotal: bubbles.length,
+      });
+    }
     await db.doc(`chats/${chatId}`).set({
-      lastMessage: r.reply,
+      lastMessage: bubbles[bubbles.length - 1],
       lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
       aiRepliedTo: last.id,
+      // Reset the idle-nudge counter every time we reply, so the
+      // /api/aiNudge endpoint starts a fresh 3-nudge cycle waiting on
+      // the NEXT client message.
+      aiIdleNudgeCount: 0,
+      aiLastReplyAt: admin.firestore.FieldValue.serverTimestamp(),
       typing: { [astroUid]: 0 },
     }, { merge: true });
   } catch (e) {
@@ -262,5 +297,6 @@ module.exports = async (req, res) => {
 
   return res.status(200).json({
     ok: true, accepted: acceptedNow, replied: true,
-    provider: r.provider, model: r.model });
+    provider: r.provider, model: r.model,
+    bubbles: bubbles.length });
 };
