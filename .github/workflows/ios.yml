@@ -149,19 +149,40 @@ jobs:
           #  - @capacitor-firebase/authentication: only strip when we
           #    have no iOS Firebase config (no plist). With a plist
           #    Firebase native init succeeds and we keep it.
-          echo "::group::strip firebase native plugins"
-          node -e "const fs=require('fs');const app=process.env.APP;const f=app+'/package.json';const j=JSON.parse(fs.readFileSync(f));const keepGoogle=fs.existsSync(process.env.PLIST||'');const strip=['@capacitor/push-notifications','@codetrix-studio/capacitor-google-auth'];if(!keepGoogle)strip.push('@capacitor-firebase/authentication');for(const k of strip){if(j.dependencies)delete j.dependencies[k];}fs.writeFileSync(f,JSON.stringify(j,null,2)+'\n');console.log('keepGoogle='+keepGoogle+' (PLIST='+process.env.PLIST+') stripped='+strip.join(','));"
+          # iOS native plugin strip - "minimal shell" approach.
+          #
+          # Every native plugin we ship on iOS is one more thing that
+          # can crash on launch (missing entitlement, missing Info.plist
+          # key, mismatched Firebase plist, CocoaPods version
+          # conflict). The web bundle already has the Firebase JS SDK
+          # and handles auth/messaging/storage just fine in a WKWebView,
+          # so for the unsigned-Sideloadly distribution path we strip
+          # ALL optional native plugins and ship a clean shell:
+          #   - @capacitor/push-notifications: needs APNs paid program
+          #     entitlements that a personal Apple ID cannot grant
+          #     -> instant crash on re-sign install.
+          #   - @capacitor/local-notifications: needs specific Info.plist
+          #     usage strings on iOS 17+, easy to misconfigure.
+          #   - @codetrix-studio/capacitor-google-auth: CocoaPods
+          #     conflict with FirebaseAuth (GTMSessionFetcher version
+          #     windows do not overlap).
+          #   - @capacitor-firebase/authentication: native Firebase init
+          #     is the most fragile thing in this stack; any plist
+          #     mismatch or missing URL scheme crashes the app at
+          #     launch. signInWithRedirect via Safari (Firebase JS SDK)
+          #     gives the same UX without the native risk.
+          # Native @capacitor/app + @capacitor/core + @capacitor/ios
+          # always stay - they ARE the runtime.
+          echo "::group::strip iOS-incompatible plugins"
+          node -e "const fs=require('fs');const app=process.env.APP;const f=app+'/package.json';const j=JSON.parse(fs.readFileSync(f));const strip=['@capacitor/push-notifications','@capacitor/local-notifications','@codetrix-studio/capacitor-google-auth','@capacitor-firebase/authentication'];for(const k of strip){if(j.dependencies)delete j.dependencies[k];}fs.writeFileSync(f,JSON.stringify(j,null,2)+'\n');console.log('iOS plugins kept:',Object.keys(j.dependencies||{}).filter(k=>k.startsWith('@capacitor')).join(',')||'(core only)');"
           echo "::endgroup::"
 
-          # Strip plugin-config blocks for plugins we just removed.
-          # Capacitor reads capacitor.config.json on startup and tries
-          # to wire every named plugin to its native counterpart - a
-          # config block for a missing plugin throws and the app hangs
-          # on the splash forever. Drop GoogleAuth from the config to
-          # match the package.json strip. Also drop FirebaseAuthentication
-          # when its plugin was stripped (no keepGoogle).
+          # Strip every plugin-config block from capacitor.config.json
+          # so Capacitor's plugin loader has nothing to wire to a
+          # missing native counterpart (which throws and hangs the
+          # splash forever).
           echo "::group::strip plugin config from capacitor.config.json"
-          node -e "const fs=require('fs');const app=process.env.APP;const f=app+'/capacitor.config.json';const c=JSON.parse(fs.readFileSync(f));const keepGoogle=fs.existsSync(process.env.PLIST||'');if(c.plugins){delete c.plugins.GoogleAuth;if(!keepGoogle)delete c.plugins.FirebaseAuthentication;}fs.writeFileSync(f,JSON.stringify(c,null,2)+'\n');console.log('plugin config now:',Object.keys(c.plugins||{}).join(',')||'(none)');"
+          node -e "const fs=require('fs');const app=process.env.APP;const f=app+'/capacitor.config.json';const c=JSON.parse(fs.readFileSync(f));if(c.plugins){delete c.plugins.GoogleAuth;delete c.plugins.FirebaseAuthentication;delete c.plugins.PushNotifications;delete c.plugins.LocalNotifications;}fs.writeFileSync(f,JSON.stringify(c,null,2)+'\n');console.log('plugin config now:',Object.keys(c.plugins||{}).join(',')||'(none)');"
           echo "::endgroup::"
 
           # Capacitor 8 defaults to SPM; the capacitor-swift-pm mirror

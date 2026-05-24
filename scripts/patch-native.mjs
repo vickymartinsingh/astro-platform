@@ -185,10 +185,24 @@ public class MainActivity extends BridgeActivity {
   return `mainactivity: patched (${app}, ${pkg})`;
 }
 
+// Every usage-description key that ANY plugin or web API in the app
+// might trigger. iOS 17+ insta-kills the app on launch if a plugin's
+// linked frameworks reference a permission family whose usage key is
+// missing, even before the user is asked. Cheaper to declare them all.
 const IOS_KEYS = `	<key>NSCameraUsageDescription</key>
 	<string>Camera is used for video consultations with astrologers.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Microphone is used for voice and video consultations.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Photos let you share images with astrologers in chat.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Save shared images to your photo library.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Used to set your birth place for accurate predictions.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Optional: invite friends from your contacts.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Optional: add consultation reminders to your calendar.</string>
 `;
 
 function patchIos(app) {
