@@ -95,11 +95,18 @@ jobs:
           sw_vers
           echo "::endgroup::"
 
+          # Read the version baked into shared/appVersion.js so the
+          # produced .ipa filename includes "1.0.<build>". That single
+          # source of truth is also what patch-native bakes into the
+          # native build.gradle / Info.plist, so the filename is always
+          # in lockstep with what installs.
+          VERSION=$(node -e "console.log(require('./shared/appVersion.js').APP_VERSION)")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           case "$APP" in
-            client-web)  IPA=AstroSeer ;        SFX=app ;;
-            astro-web)   IPA=AstroSeer-Astrologer ; SFX=astrologer ;;
-            admin-web)   IPA=AstroSeer-Admin ;  SFX=admin ;;
-            *)           IPA=App ;              SFX=app ;;
+            client-web)  IPA="AstroSeer-Customer-$VERSION" ;     SFX=app ;;
+            astro-web)   IPA="AstroSeer-Astrologer-$VERSION" ;   SFX=astrologer ;;
+            admin-web)   IPA="AstroSeer-Admin-$VERSION" ;        SFX=admin ;;
+            *)           IPA="App-$VERSION" ;                    SFX=app ;;
           esac
           echo "ipa=$IPA" >> "$GITHUB_OUTPUT"
           # Per-app Firebase iOS config the user generated for the new
