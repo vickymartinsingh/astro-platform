@@ -32,6 +32,16 @@ export default function PortalSwitcher() {
     setPortal(id);
     setOpen(false);
     setEditUrls(false);
+    // For non-iframe internal portals, jump to the right landing page
+    // so the admin lands on a useful screen instead of whatever they
+    // were just on. (iframe portals - client/astrologer - render the
+    // live site in-place, so no navigation needed.)
+    try {
+      if (id === 'hr') router.push('/admin-hr-dashboard');
+      else if (id === 'developer') router.push('/admin-builder');
+      else if (id === 'support') router.push('/admin-support');
+      else if (id === 'admin') router.push('/admin-dashboard');
+    } catch (_) { /* ignore */ }
   };
   const saveUrls = () => {
     setPortalUrls(urls);

@@ -5,6 +5,8 @@
 //   admin      - normal admin panel
 //   developer  - developer portal (build/config tools only)
 //   support    - support-desk subset
+//   hr         - HRMS / recruitment portal (applications, onboarding,
+//                KYC, bank, declarations, team hiring)
 //   client     - live customer site embedded in an iframe
 //   astrologer - live astrologer site embedded in an iframe
 //
@@ -16,6 +18,7 @@ export const PORTALS = [
   { id: 'admin', label: 'Admin', icon: '🛡️' },
   { id: 'developer', label: 'Developer', icon: '🛠️' },
   { id: 'support', label: 'Support', icon: '🎧' },
+  { id: 'hr', label: 'HR / Recruitment', icon: '🧑‍💼' },
   { id: 'client', label: 'Client', icon: '👤' },
   { id: 'astrologer', label: 'Astrologer', icon: '🔮' },
 ];

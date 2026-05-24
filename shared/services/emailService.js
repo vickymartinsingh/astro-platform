@@ -53,6 +53,58 @@ const T = {
     body: `${v.name} (${v.uid}) changed availability to `
       + `${v.status} at ${new Date().toLocaleString()}.`,
   }),
+  astro_application_received: (v) => ({
+    subject: `[AstroSeer] Application received - reference ${v.token}`,
+    body: `Hi ${v.name || 'there'},\n\n`
+      + 'Thank you for applying to join AstroSeer as an astrologer. '
+      + 'We have received your application and our recruitment team '
+      + 'will review it shortly.\n\n'
+      + `Your reference token: ${v.token}\n\n`
+      + 'You can resume your onboarding (KYC, bank details, '
+      + `declaration) at any time using this link:\n${v.onboardUrl}\n\n`
+      + 'Next steps:\n'
+      + '  1. Screening call by our recruitment team.\n'
+      + '  2. KYC documents upload (PAN + Aadhaar).\n'
+      + '  3. Bank details for payouts.\n'
+      + '  4. Signed code-of-conduct declaration.\n'
+      + '  5. Account approval and login credentials.\n\n'
+      + 'If you have any questions, just reply to this email.\n\n'
+      + '- AstroSeer Recruitment',
+  }),
+  astro_application_stage: (v) => ({
+    subject: `[AstroSeer] Your application moved to "${v.stage}"`,
+    body: `Hi ${v.name || 'there'},\n\n`
+      + `Your astrologer application (token ${v.token}) is now in `
+      + `the "${v.stage}" stage.\n\n`
+      + (v.action
+        ? `Action required from you:\n  ${v.action}\n\n`
+          + `Continue onboarding: ${v.onboardUrl}\n\n`
+        : '')
+      + (v.note ? `Recruitment note:\n  ${v.note}\n\n` : '')
+      + '- AstroSeer Recruitment',
+  }),
+  astro_application_approved: (v) => ({
+    subject: '[AstroSeer] Welcome - your astrologer account is live',
+    body: `Hi ${v.name || 'there'},\n\n`
+      + 'Congratulations - your application has been approved and '
+      + 'your AstroSeer astrologer account is now live.\n\n'
+      + `Login email: ${v.email}\n`
+      + `Temporary password: ${v.password}\n\n`
+      + 'Please log in to the astrologer app, change your password '
+      + 'immediately, and complete your profile.\n\n'
+      + '- AstroSeer Recruitment',
+  }),
+  astro_application_rejected: (v) => ({
+    subject: '[AstroSeer] Update on your application',
+    body: `Hi ${v.name || 'there'},\n\n`
+      + 'Thank you for your interest in joining AstroSeer. After '
+      + 'careful review we are unable to take your application '
+      + 'forward at this time.\n\n'
+      + (v.note ? `Reason / feedback:\n  ${v.note}\n\n` : '')
+      + 'You are welcome to re-apply in the future as our needs '
+      + 'evolve.\n\n'
+      + '- AstroSeer Recruitment',
+  }),
   generic: (v) => ({
     subject: v.subject || 'AstroSeer update',
     body: v.body || '',

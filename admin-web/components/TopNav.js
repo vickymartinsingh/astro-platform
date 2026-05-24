@@ -108,6 +108,33 @@ const DEV_GROUPS = [
     ['/admin-archive', 'Archive & Restore'],
   ]],
 ];
+// HR / Recruitment portal: hiring, screening, KYC, bank, declaration,
+// onboarding workflow + audit. Owner uses this to manage the entire
+// "join AstroSeer as an astrologer" pipeline end-to-end without
+// touching the rest of the admin surface area.
+const HR_GROUPS = [
+  ['Recruitment', [
+    ['/admin-hr-dashboard', 'HR Dashboard'],
+    ['/admin-astro-applications', 'Astrologer Applications'],
+    ['/admin-user-reach', 'User Reach (search)'],
+  ]],
+  ['Onboarding', [
+    ['/admin-astro-applications?stage=kyc', 'KYC Pending'],
+    ['/admin-astro-applications?stage=bank', 'Bank Pending'],
+    ['/admin-astro-applications?stage=declaration', 'Declaration Pending'],
+    ['/admin-astro-applications?stage=approved', 'Approved'],
+  ]],
+  ['People', [
+    ['/admin-astrologers', 'Astrologers'],
+    ['/admin-users', 'Users'],
+    ['/admin-team', 'Team Access'],
+  ]],
+  ['Compliance', [
+    ['/admin-audit', 'Audit Log'],
+    ['/admin-archive', 'Archive & Restore'],
+    ['/admin-email', 'Email & Alerts'],
+  ]],
+];
 // Support portal: a focused support-desk subset (no settings / payouts
 // / developer). Shown when you "Switch to Support".
 const SUPPORT_GROUPS = [
@@ -131,6 +158,7 @@ const SUPPORT_GROUPS = [
 const ALL = GROUPS.flatMap(([, items]) => items);
 const DEV_ALL = DEV_GROUPS.flatMap(([, items]) => items);
 const SUPPORT_ALL = SUPPORT_GROUPS.flatMap(([, items]) => items);
+const HR_ALL = HR_GROUPS.flatMap(([, items]) => items);
 
 export default function TopNav() {
   const [open, setOpen] = useState(false);
@@ -140,6 +168,7 @@ export default function TopNav() {
   const [portal, setPortal] = usePortal();
   const dev = portal === 'developer';
   const support = portal === 'support';
+  const hr = portal === 'hr';
   const router = useRouter();
   useEffect(() => brandingService.watchBranding((b) =>
     setLogo(b.logo || '')), []);
@@ -172,8 +201,12 @@ export default function TopNav() {
     } else { router.replace('/admin-dashboard'); }
   }
 
-  const GR = dev ? DEV_GROUPS : support ? SUPPORT_GROUPS : GROUPS;
-  const POOL = dev ? DEV_ALL : support ? SUPPORT_ALL : ALL;
+  const GR = dev ? DEV_GROUPS
+    : support ? SUPPORT_GROUPS
+      : hr ? HR_GROUPS : GROUPS;
+  const POOL = dev ? DEV_ALL
+    : support ? SUPPORT_ALL
+      : hr ? HR_ALL : ALL;
   const results = useMemo(() => {
     const s = q.trim().toLowerCase();
     if (!s) return [];
@@ -183,7 +216,9 @@ export default function TopNav() {
   return (
     <header data-topnav
       className={`sticky top-0 z-40 text-white ${dev
-      ? 'bg-[#1f1147]' : 'bg-dark-text'}`}
+        ? 'bg-[#1f1147]'
+        : hr ? 'bg-[#0e3a2a]'
+          : 'bg-dark-text'}`}
       style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
       <div className="mx-auto flex max-w-6xl items-center gap-3 px-4
                       py-2 md:py-3">
@@ -204,10 +239,14 @@ export default function TopNav() {
           {logo ? (
             <img src={logo} alt="logo"
               className="h-7 max-w-[120px] object-contain md:h-8" />
-          ) : (dev ? '🛠️' : '⚙️ Admin')}
+          ) : (dev ? '🛠️' : hr ? '🧑‍💼 HR' : '⚙️ Admin')}
           {dev && (
             <span className="rounded-full bg-amber-400 px-2 py-0.5
               text-[10px] font-bold text-dark-text">DEV</span>
+          )}
+          {hr && (
+            <span className="rounded-full bg-emerald-400 px-2 py-0.5
+              text-[10px] font-bold text-dark-text">HR</span>
           )}
         </Link>
 
@@ -340,6 +379,21 @@ export default function TopNav() {
             go live across all apps on Save.</span>
           <span className="sm:hidden">DEVELOPER PORTAL</span>
           <button onClick={toggleDev}
+            className="rounded-full bg-dark-text px-2.5 py-0.5
+              text-white">
+            Admin
+          </button>
+        </div>
+      )}
+      {hr && (
+        <div className="flex items-center justify-center gap-2
+          bg-emerald-400 px-3 py-1 text-[11px] font-semibold
+          text-dark-text">
+          <span className="hidden sm:inline">HR / RECRUITMENT PORTAL -
+            applications, KYC, bank, declarations &amp; onboarding.</span>
+          <span className="sm:hidden">HR PORTAL</span>
+          <button onClick={() => { setPortal('admin');
+            router.push('/admin-dashboard'); }}
             className="rounded-full bg-dark-text px-2.5 py-0.5
               text-white">
             Admin
