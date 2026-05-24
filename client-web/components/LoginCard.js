@@ -18,8 +18,28 @@ export default function LoginCard({ onDone, compact, initialMode }) {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
 
+  // Hard timeout for any auth promise. Firebase Auth occasionally hangs
+  // (flaky network, IndexedDB lock, popup race) and never resolves OR
+  // rejects, which used to leave the button stuck on "Please wait..."
+  // forever. We race the auth call against a timeout so the UI ALWAYS
+  // unsticks within `ms` and the user can retry.
+  function withTimeout(promise, ms, label) {
+    let timer;
+    return Promise.race([
+      promise.finally(() => clearTimeout(timer)),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          const e = new Error(`${label} timed out after ${ms / 1000}s`);
+          e.code = 'auth/timeout';
+          reject(e);
+        }, ms);
+      }),
+    ]);
+  }
+
   async function finish(user) {
-    const p = await userService.getUser(user.uid);
+    const p = await withTimeout(userService.getUser(user.uid), 15000,
+      'Profile lookup');
     if (p && p.isBlocked) {
       await authService.logoutUser();
       setErr('Your account has been suspended. Contact support.');
@@ -35,39 +55,61 @@ export default function LoginCard({ onDone, compact, initialMode }) {
 
   async function submit(e) {
     e.preventDefault();
+    // Re-entrancy guard: ignore submits while one is in flight so a
+    // double-click doesn't stack runaway auth promises.
+    if (busy) return;
+    // Validate BEFORE flipping busy, so a bad field never traps the
+    // button in the "Please wait..." state.
+    if (mode === 'signup') {
+      if (!name.trim()) { setErr('Enter your name.'); return; }
+      if (phone.replace(/\D/g, '').length < 10) {
+        setErr('Enter a valid 10-digit mobile number.'); return;
+      }
+      if (!/^\d{2}-\d{2}-\d{4}$/.test(dob)) {
+        setErr('Please select your date of birth.'); return;
+      }
+      if (password.length < 6) {
+        setErr('Password must be at least 6 characters.'); return;
+      }
+    }
     setErr(''); setBusy(true);
     try {
       let user;
       if (mode === 'signup') {
-        if (!name.trim()) { setErr('Enter your name.'); return; }
-        if (phone.replace(/\D/g, '').length < 10) {
-          setErr('Enter a valid 10-digit mobile number.'); return;
-        }
-        if (!/^\d{2}-\d{2}-\d{4}$/.test(dob)) {
-          setErr('Please select your date of birth.'); return;
-        }
-        if (password.length < 6) {
-          setErr('Password must be at least 6 characters.'); return;
-        }
-        user = await authService.signupUser(name.trim(), email.trim(),
-          password, { phone: phone.trim(), dob });
+        user = await withTimeout(
+          authService.signupUser(name.trim(), email.trim(),
+            password, { phone: phone.trim(), dob }),
+          25000, 'Signup');
       } else {
-        user = await authService.loginUser(email.trim(), password);
+        user = await withTimeout(
+          authService.loginUser(email.trim(), password),
+          25000, 'Login');
       }
       await finish(user);
     } catch (e2) {
-      setErr(mode === 'signup'
-        ? (e2?.code === 'auth/email-already-in-use'
+      const code = e2?.code || '';
+      if (code === 'auth/timeout') {
+        setErr('Network is slow or unavailable. Please check your '
+          + 'connection and try again.');
+      } else if (mode === 'signup') {
+        setErr(code === 'auth/email-already-in-use'
           ? 'That email is already registered.'
-          : 'Could not create account.')
-        : 'Invalid email or password.');
-    } finally { setBusy(false); }
+          : 'Could not create account.');
+      } else {
+        setErr('Invalid email or password.');
+      }
+    } finally {
+      // Belt and braces: always release the button, no matter what.
+      setBusy(false);
+    }
   }
 
   async function google() {
+    if (busy) return;
     setErr(''); setBusy(true);
     try {
-      const u = await authService.loginWithGoogle();
+      const u = await withTimeout(authService.loginWithGoogle(),
+        45000, 'Google sign-in');
       // null = a full-page redirect started; the browser navigates
       // away and watchAuth finishes the sign-in on return.
       if (u) await finish(u);
@@ -83,7 +125,9 @@ export default function LoginCard({ onDone, compact, initialMode }) {
       // DEVELOPER_ERROR / ApiException with no auth/* code.
       const isCfg = /DEVELOPER_ERROR|ApiException|: *10\b|status: *10|"?10"?:/i
         .test(`${c} ${msg}`);
-      if (c === 'auth/operation-not-allowed') {
+      if (c === 'auth/timeout') {
+        setErr('Google sign-in took too long. Please try again.');
+      } else if (c === 'auth/operation-not-allowed') {
         setErr('Google sign-in is disabled. Enable it in Firebase: '
           + 'Authentication > Sign-in method > Google.');
       } else if (c === 'auth/unauthorized-domain') {
