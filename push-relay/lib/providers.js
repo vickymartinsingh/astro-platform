@@ -279,18 +279,31 @@ function buildSystemPrompt({ astrologer, client, context }) {
 // Strip patterns the model occasionally slips through even when the
 // prompt forbids them. Runs on every reply before we write it to the
 // chat. Returns the cleaned reply.
+//
+// CRITICAL: this function must NEVER produce an empty string. If the
+// scrub would strip the entire message (e.g. the AI's reply was just
+// "Hello!" and our greeting filter would eat it), we return the
+// original input unchanged. Losing replies silently because of an
+// over-aggressive scrubber is the single worst UX bug here, so we
+// prefer a slightly off-style reply over no reply at all.
 function scrubReply(raw) {
   if (!raw) return '';
-  let s = String(raw).trim();
+  const original = String(raw).trim();
+  if (!original) return '';
+  let s = original;
   // 1. Kill any leading greeting line ("Namaste / Hello / Hi / Pranam
   // / Hey [name],"). The greeting is already sent by the server, so
-  // anything that starts a reply this way is a duplicate.
-  s = s.replace(
+  // anything that starts a reply this way is a duplicate. BUT only if
+  // there is meaningful content after it.
+  const greetingStripped = s.replace(
     /^\s*(namaste|namaskar|namaskaram|pranam|hello|hi|hey|dear)\b[^.!?\n]*[,!.\n]?\s*/i,
     '');
+  if (greetingStripped.trim().length >= 6) s = greetingStripped;
   // Also strip a leading "Arre <name>," / "Ah <name>!" style opener
-  // that often introduces a duplicate greeting feel.
-  s = s.replace(/^\s*(arre|ah|oh)\b[^.!?\n]{0,40}[,!.]\s*/i, '');
+  // that often introduces a duplicate greeting feel. Same guard.
+  const openerStripped = s.replace(
+    /^\s*(arre|ah|oh)\b[^.!?\n]{0,40}[,!.]\s*/i, '');
+  if (openerStripped.trim().length >= 6) s = openerStripped;
   // 2. Replace dash characters (hyphen-minus, en-dash, em-dash) when
   // used as separators (space-dash-space) with a comma. Standalone
   // hyphens inside words ("e-mail", "21-year-old") are left alone.
@@ -299,7 +312,10 @@ function scrubReply(raw) {
   s = s.replace(/[—–]/g, ',');
   // 3. Collapse any double spaces or double commas the scrubs created.
   s = s.replace(/\s{2,}/g, ' ').replace(/,\s*,/g, ',').trim();
-  return s;
+  // Final safety net: never return empty. If our scrubbing accidentally
+  // ate the whole reply, fall back to the original so SOMETHING reaches
+  // the chat.
+  return s || original;
 }
 
 // Split the AI reply into multiple chat bubbles. We instructed the
