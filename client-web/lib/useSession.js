@@ -53,12 +53,19 @@ export function useSession({ astroId, type, uid, clientName, view = false }) {
       }
 
       if (!sid) {
-        // A brand-new initiation. To survive only a quick refresh while
-        // still WAITING, reuse a 'requesting' session created < 90s ago.
+        // Also reuse any LIVE session (accepted / active) for this same
+        // astro/user pair - so when the customer comes back via the
+        // ActiveSessionBar or any other entry point, we continue the
+        // ongoing chat instead of starting a fresh one (which would
+        // re-send the intro + kundli card and feel like a reset).
+        const liveExisting = mine.find((s) => (s.status === 'active'
+          || s.status === 'accepted') && s.type === type);
         const freshReq = mine.find((s) => s.status === 'requesting'
           && s.createdAt?.toMillis
           && (Date.now() - s.createdAt.toMillis()) < 90 * 1000);
-        if (freshReq) {
+        if (liveExisting) {
+          sid = liveExisting.id;
+        } else if (freshReq) {
           sid = freshReq.id;
         } else {
           // Close any lingering session for this pair so the

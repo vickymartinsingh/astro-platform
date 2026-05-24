@@ -111,7 +111,10 @@ module.exports = async (req, res) => {
     return res.status(200).json({ ok: true, skipped: 'ai not enabled' });
   }
 
-  // 2. Auto-accept the session if it's still requesting.
+  // 2. Auto-accept the session if it's still requesting + immediately
+  // send a warm greeting AS the astrologer (English by default) so the
+  // client sees activity right away. The reply to actual client
+  // questions still goes through the normal delay window below.
   let acceptedNow = false;
   if (sessionId) {
     try {
@@ -126,6 +129,37 @@ module.exports = async (req, res) => {
             acceptedByAi: true,
           });
           acceptedNow = true;
+          // Send one immediate English greeting on accept. Skip if
+          // a greeting was already posted (idempotent).
+          try {
+            const chatRef = db.doc(`chats/${chatId}`);
+            const chatDoc = await chatRef.get();
+            const already = chatDoc.exists
+              && chatDoc.data().aiGreetingSent;
+            if (!already) {
+              const userDoc = await db.doc(`users/${clientUid}`).get();
+              const cName = (userDoc.data() || {}).name || 'friend';
+              const aName = astroDoc.name || astroDoc.displayName
+                || 'your astrologer';
+              const greeting = `Namaste ${cName}, I am ${aName}. `
+                + 'I have your details with me. Please tell me what is '
+                + 'on your mind today and I will guide you through '
+                + 'your chart.';
+              await db.collection(`chats/${chatId}/messages`).add({
+                senderId: astroUid,
+                text: greeting,
+                createdAt: admin.firestore
+                  .FieldValue.serverTimestamp(),
+                aiGenerated: true,
+              });
+              await chatRef.set({
+                lastMessage: greeting,
+                lastMessageAt: admin.firestore
+                  .FieldValue.serverTimestamp(),
+                aiGreetingSent: true,
+              }, { merge: true });
+            }
+          } catch (_) { /* greeting is best-effort */ }
         }
       }
     } catch (_) { /* non-fatal */ }

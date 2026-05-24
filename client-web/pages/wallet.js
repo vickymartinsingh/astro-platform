@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
-import { walletService, db } from '@astro/shared';
+import Link from 'next/link';
+import {
+  walletService, db, sessionService, astrologerService,
+} from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { SkeletonList } from '../components/Skeleton';
@@ -279,27 +282,7 @@ export default function Wallet() {
           ) : (
             <div className="space-y-2">
               {txns.map((t) => (
-                <div key={t.id} className="card flex justify-between">
-                  <div>
-                    <div className="font-medium capitalize">{t.reason}</div>
-                    <div className="text-xs text-sub-text">
-                      {t.createdAt?.toDate
-                        ? t.createdAt.toDate().toLocaleString() : ''}
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <div className={`font-bold ${t.amount >= 0
-                      ? 'text-success' : 'text-danger'}`}>
-                      {t.amount >= 0 ? '+' : ''}₹{Math.abs(t.amount)}
-                    </div>
-                    {t.reason === 'recharge' && t.referenceId && (
-                      <a href={`/invoice/${t.referenceId}`}
-                        className="text-xs text-primary underline">
-                        Invoice
-                      </a>
-                    )}
-                  </div>
-                </div>
+                <TxnRow key={t.id} t={t} />
               ))}
             </div>
           )}
@@ -307,4 +290,114 @@ export default function Wallet() {
       )}
     </Layout>
   );
+}
+
+// Detailed transaction row. For SESSION debits / refunds / settlements
+// it fetches the linked session + astrologer to show astrologer name,
+// session type, duration, ref no, and a clickable link to that chat /
+// call history. For RECHARGES it links to the invoice + shows the
+// payment-gateway reference if any.
+function fmtDur(secs) {
+  const s = Math.max(0, Math.round(Number(secs) || 0));
+  const m = Math.floor(s / 60);
+  if (m >= 60) return `${Math.floor(m / 60)}h ${m % 60}m`;
+  if (m > 0) return `${m}m ${s % 60}s`;
+  return `${s}s`;
+}
+const TYPE_ICON = { chat: '💬', call: '📞', video: '📹' };
+
+function TxnRow({ t }) {
+  const [sess, setSess] = useState(null);
+  const [astro, setAstro] = useState(null);
+  const reason = String(t.reason || '').toLowerCase();
+  const isSession = ['session', 'refund', 'settlement', 'session-end',
+    'consultation'].some((k) => reason.includes(k)) || (t.referenceId
+      && reason !== 'recharge' && reason !== 'gift card');
+
+  useEffect(() => {
+    if (!isSession || !t.referenceId) return;
+    sessionService.getSession(t.referenceId).then(async (s) => {
+      if (!s) return;
+      setSess(s);
+      if (s.astroId) {
+        try {
+          const a = await astrologerService.getAstrologer(s.astroId);
+          setAstro(a);
+        } catch (_) {}
+      }
+    }).catch(() => {});
+  }, [isSession, t.referenceId]);
+
+  const when = t.createdAt?.toDate
+    ? t.createdAt.toDate().toLocaleString('en-GB', {
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    }) : '';
+  const ref = isSession && t.referenceId
+    ? `#${String(t.referenceId).slice(-6).toUpperCase()}` : null;
+  const isCredit = t.amount >= 0;
+  const sign = isCredit ? '+' : '';
+
+  // Title + subtitle vary by what this transaction is.
+  let title = t.reason || 'Transaction';
+  let sub = when;
+  let href = null;
+  if (reason === 'recharge') {
+    title = 'Wallet recharge';
+    sub = t.gateway ? `${when} · via ${t.gateway}` : when;
+    href = t.referenceId ? `/invoice/${t.referenceId}` : null;
+  } else if (reason.includes('gift')) {
+    title = 'Gift card credit';
+  } else if (reason.includes('refund')) {
+    title = 'Refund credited';
+    sub = sess && astro
+      ? `${TYPE_ICON[sess.type] || ''} ${astro.name || 'Astrologer'} · ${
+        when}` : when;
+    href = sess ? `/chat/${sess.astroId}?view=1` : null;
+  } else if (isSession) {
+    if (sess) {
+      title = `${TYPE_ICON[sess.type] || ''} ${
+        (sess.type || 'session').toUpperCase()} with ${
+        astro?.name || 'Astrologer'}`;
+      sub = `${when} · ${fmtDur(sess.duration)}${
+        ref ? ` · Ref ${ref}` : ''}`;
+      href = sess.type === 'chat'
+        ? `/chat/${sess.astroId}?view=1`
+        : `/call-history`;
+    } else {
+      title = 'Session';
+      sub = ref ? `${when} · Ref ${ref}` : when;
+    }
+  }
+
+  const Body = (
+    <div className="card flex items-start justify-between gap-3">
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-semibold capitalize text-dark-text">
+          {title}
+        </div>
+        <div className="mt-0.5 truncate text-[11px] text-sub-text">
+          {sub}
+        </div>
+      </div>
+      <div className="text-right">
+        <div className={`text-base font-bold ${isCredit
+          ? 'text-success' : 'text-danger'}`}>
+          {sign}₹{Math.abs(t.amount)}
+        </div>
+        {href && (
+          <div className="text-[10px] font-semibold text-primary
+            underline">
+            {reason === 'recharge' ? 'Invoice'
+              : reason.includes('refund') ? 'View'
+              : 'Open'}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+  if (href) {
+    return <Link href={href} className="block">{Body}</Link>;
+  }
+  return Body;
 }

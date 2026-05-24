@@ -42,9 +42,12 @@ export default function ActiveSessionBar() {
   if (onThisSession) return null;
 
   const join = () => {
-    if (s.type === 'chat') router.push(`/chat/${s.astroId}`);
+    // Always pass ?resume=<sid> so useSession reuses THIS live session
+    // (instead of starting a fresh one + re-sending the intro/kundli).
+    const q = `resume=${encodeURIComponent(s.sessionId)}`;
+    if (s.type === 'chat') router.push(`/chat/${s.astroId}?${q}`);
     else router.push(`/call/${s.astroId}?type=${
-      s.type === 'video' ? 'video' : 'call'}`);
+      s.type === 'video' ? 'video' : 'call'}&${q}`);
   };
   const cancel = async () => {
     // eslint-disable-next-line no-alert
