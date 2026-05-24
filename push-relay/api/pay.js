@@ -20,10 +20,58 @@ async function gateways() {
   return s.exists ? (s.data() || {}) : {};
 }
 
-async function creditWallet(uid, amount, gateway, meta) {
+// Validate a coupon server-side BEFORE we credit. Returns either
+// { ok: true, doc, bonus } so the caller knows how much to add on top
+// of the recharge AND which doc to bump usedCount on, or { ok: false,
+// error } so we credit ONLY the recharge amount (the bonus is silently
+// skipped instead of failing the whole payment - the user should never
+// lose a successful payment over a bad coupon).
+async function validateCouponServer(db, rawCode, amount) {
+  const code = String(rawCode || '').trim().toUpperCase();
+  if (!code) return { ok: false, error: 'no code' };
+  const amt = Math.round(Number(amount) || 0);
+  if (amt <= 0) return { ok: false, error: 'no amount' };
+  try {
+    const snap = await db.collection('coupons')
+      .where('code', '==', code).limit(1).get();
+    if (snap.empty) return { ok: false, error: 'unknown code' };
+    const docSnap = snap.docs[0];
+    const c = docSnap.data() || {};
+    if (c.active === false) return { ok: false, error: 'inactive' };
+    if (c.expiry) {
+      const exp = new Date(c.expiry);
+      if (!Number.isNaN(exp.getTime())
+        && exp.getTime() < new Date().setHours(0, 0, 0, 0)) {
+        return { ok: false, error: 'expired' };
+      }
+    }
+    if (c.usageLimit
+      && Number(c.usedCount || 0) >= Number(c.usageLimit)) {
+      return { ok: false, error: 'usage limit reached' };
+    }
+    const percent = Math.max(0, Number(c.discountPercent || 0));
+    const cap = Math.max(0, Number(c.maxDiscount || 0));
+    const raw = Math.floor((amt * percent) / 100);
+    const bonus = cap ? Math.min(raw, cap) : raw;
+    if (bonus <= 0) return { ok: false, error: 'no discount' };
+    return { ok: true, doc: docSnap, bonus, code, percent, cap };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e) };
+  }
+}
+
+async function creditWallet(uid, amount, gateway, meta, couponCode) {
   const db = admin.firestore();
   const amt = Math.round(Number(amount));
   const m = meta || {};
+  // Coupon bonus is added on top of the paid amount: the customer
+  // sees their balance grow by amt + bonus, with two separate
+  // transaction rows ("recharge" + "coupon bonus") so it's auditable.
+  const coupon = couponCode
+    ? await validateCouponServer(db, couponCode, amt)
+    : { ok: false };
+  const bonus = coupon.ok ? coupon.bonus : 0;
+
   // Permanent, audit-grade payment record. The `payments` collection
   // is admin-only writable and is NEVER deleted/reset (the admin
   // revenue "reset" only moves a dashboard cutoff) - so the gateway
@@ -33,13 +81,27 @@ async function creditWallet(uid, amount, gateway, meta) {
     const uRef = db.collection('users').doc(uid);
     const u = await t.get(uRef);
     const ud = u.data() || {};
-    const w = Number(ud.wallet || 0) + amt;
+    const w = Number(ud.wallet || 0) + amt + bonus;
     t.update(uRef, { wallet: w });
     t.set(db.collection('transactions').doc(), {
       userId: uid, amount: amt, type: 'credit', reason: 'recharge',
       referenceId: payRef.id,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
+    if (bonus > 0) {
+      t.set(db.collection('transactions').doc(), {
+        userId: uid, amount: bonus, type: 'credit',
+        reason: 'coupon bonus',
+        referenceId: payRef.id,
+        couponCode: coupon.code,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      // Bump usedCount on the coupon atomically with the credit so a
+      // double-click can't spend the same coupon twice.
+      t.update(coupon.doc.ref, {
+        usedCount: admin.firestore.FieldValue.increment(1),
+      });
+    }
     t.set(payRef, {
       userId: uid,
       userName: ud.name || '',
@@ -47,6 +109,8 @@ async function creditWallet(uid, amount, gateway, meta) {
       userPhone: ud.phone || '',
       userCode: ud.userCode || '',
       amount: amt,
+      bonus,
+      couponCode: coupon.ok ? coupon.code : '',
       currency: 'INR',
       gateway,
       paymentId: m.paymentId || '',
@@ -60,13 +124,16 @@ async function creditWallet(uid, amount, gateway, meta) {
   try {
     await db.collection('notifications').add({
       userId: uid, title: 'Money added to your wallet',
-      message: `+ Rs ${amt} added to your wallet (recharge via `
-        + `${gateway}).`,
+      message: bonus > 0
+        ? `+ Rs ${amt} added to your wallet, plus Rs ${bonus} bonus `
+          + `(coupon ${coupon.code}).`
+        : `+ Rs ${amt} added to your wallet (recharge via `
+          + `${gateway}).`,
       type: 'wallet', read: false,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
   } catch (_) {}
-  return payRef.id;
+  return { payId: payRef.id, bonus };
 }
 
 module.exports = async (req, res) => {
@@ -124,15 +191,17 @@ module.exports = async (req, res) => {
           gateway: 'razorpay', orderId: j.id, keyId, amount });
       }
       if (action === 'verify') {
-        const { orderId, paymentId, signature, amount } = body;
+        const { orderId, paymentId, signature, amount,
+          couponCode } = body;
         const expect = crypto.createHmac('sha256', keySecret)
           .update(`${orderId}|${paymentId}`).digest('hex');
         if (expect !== signature) {
           return res.status(400).json({ error: 'signature mismatch' });
         }
-        const payId = await creditWallet(uid, amount, 'razorpay',
-          { paymentId, orderId });
-        return res.status(200).json({ success: true, amount, payId });
+        const r = await creditWallet(uid, amount, 'razorpay',
+          { paymentId, orderId }, couponCode);
+        return res.status(200).json({ success: true, amount,
+          bonus: r.bonus || 0, payId: r.payId });
       }
     }
 
@@ -184,15 +253,17 @@ module.exports = async (req, res) => {
         });
       }
       if (action === 'verify') {
-        const { orderId } = body;
+        const { orderId, couponCode } = body;
         const r = await fetch(`${baseUrl}/orders/${orderId}`,
           { headers: H });
         const j = await r.json();
         if (j.order_status === 'PAID') {
-          const payId = await creditWallet(uid, j.order_amount,
-            'cashfree', { orderId, paymentId: j.cf_order_id || '' });
+          const cr = await creditWallet(uid, j.order_amount,
+            'cashfree', { orderId, paymentId: j.cf_order_id || '' },
+            couponCode);
           return res.status(200).json({
-            success: true, amount: j.order_amount, payId });
+            success: true, amount: j.order_amount,
+            bonus: cr.bonus || 0, payId: cr.payId });
         }
         return res.status(200).json({
           success: false, status: j.order_status || 'PENDING' });

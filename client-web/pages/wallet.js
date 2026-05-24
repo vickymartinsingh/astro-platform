@@ -19,6 +19,11 @@ export default function Wallet() {
   const [wallet, setWallet] = useState(0);
   const [amount, setAmount] = useState(100);
   const [coupon, setCoupon] = useState('');
+  const [couponBusy, setCouponBusy] = useState(false);
+  // null = nothing applied, { valid, code, bonus, percent, message }
+  // = result of the last Apply attempt (kept so the user sees a green
+  // confirmation or a red error inline next to the field).
+  const [couponInfo, setCouponInfo] = useState(null);
   const [gift, setGift] = useState('');
   const [giftBusy, setGiftBusy] = useState(false);
   const [tab, setTab] = useState('add');
@@ -66,6 +71,40 @@ export default function Wallet() {
     });
   }
 
+  // Live-validate the coupon against the current amount. Re-runs
+  // whenever the user changes the amount AFTER applying, so the
+  // preview bonus (and the "this coupon doesn't qualify for this
+  // amount" error) stays in sync without them having to tap Apply
+  // again.
+  async function applyCoupon() {
+    setMsg(null);
+    setCouponBusy(true);
+    try {
+      const info = await walletService.validateCoupon(coupon, amount);
+      setCouponInfo(info);
+    } catch (e) {
+      setCouponInfo({ valid: false,
+        message: e?.message || 'Could not validate coupon.' });
+    } finally { setCouponBusy(false); }
+  }
+  // If the user changes the amount after applying, silently recompute
+  // the bonus so the preview matches what they'll be charged.
+  useEffect(() => {
+    if (!couponInfo || !couponInfo.valid) return;
+    (async () => {
+      try {
+        const info = await walletService.validateCoupon(
+          couponInfo.code, amount);
+        setCouponInfo(info);
+      } catch (_) { /* ignore - keep previous preview */ }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [amount]);
+  function clearCoupon() {
+    setCoupon('');
+    setCouponInfo(null);
+  }
+
   async function pay() {
     setMsg(null);
     const amt = Number(amount) || 0;
@@ -76,9 +115,14 @@ export default function Wallet() {
     setBusy(true);
     const back = typeof router.query.return === 'string'
       ? router.query.return : null;
+    // Only forward a coupon that the server-side check accepted in
+    // applyCoupon(); anything else is just a typed-but-not-applied
+    // value and should be ignored.
+    const couponCode = (couponInfo && couponInfo.valid)
+      ? couponInfo.code : '';
     try {
       const order = await walletService.payCall({
-        action: 'create', amount: amt,
+        action: 'create', amount: amt, couponCode,
         name: profile?.name, email: profile?.email,
         phone: profile?.phone,
         returnUrl: typeof window !== 'undefined'
@@ -101,15 +145,22 @@ export default function Wallet() {
           theme: { color: '#6C2BD9' },
           handler: async (resp) => {
             try {
-              await walletService.payCall({
+              const v = await walletService.payCall({
                 action: 'verify',
                 orderId: resp.razorpay_order_id,
                 paymentId: resp.razorpay_payment_id,
                 signature: resp.razorpay_signature,
                 amount: amt,
+                couponCode,
               });
+              const bonus = Number(v && v.bonus) || 0;
               setMsg({ ok: true,
-                t: `Payment successful, ₹${amt} added`, back });
+                t: bonus > 0
+                  ? `Payment successful. ₹${amt} added, +₹${bonus} `
+                    + `coupon bonus (${couponCode}).`
+                  : `Payment successful, ₹${amt} added`,
+                back });
+              clearCoupon();
             } catch {
               setMsg({ ok: false, t: 'Payment verification failed.' });
             }
@@ -120,10 +171,13 @@ export default function Wallet() {
           setMsg({ ok: false, t: 'Payment failed. Please try again.' }));
         rzp.open();
       } else if (order.gateway === 'cashfree') {
-        // Remember the order so we can verify after returning.
+        // Remember the order so we can verify after returning. Persist
+        // the coupon code with it so the post-redirect verify call can
+        // still credit the bonus even after a full page navigation.
         try {
           sessionStorage.setItem('cfPending',
-            JSON.stringify({ orderId: order.orderId, amount: amt, back }));
+            JSON.stringify({ orderId: order.orderId, amount: amt,
+              couponCode, back }));
         } catch (_) {}
         await loadScript('https://sdk.cashfree.com/js/v3/cashfree.js');
         // eslint-disable-next-line no-undef
@@ -149,14 +203,22 @@ export default function Wallet() {
     try { raw = sessionStorage.getItem('cfPending'); } catch (_) {}
     if (!raw || !user) return;
     try { sessionStorage.removeItem('cfPending'); } catch (_) {}
-    const { orderId, amount: amt, back } = JSON.parse(raw);
+    const { orderId, amount: amt, back, couponCode: storedCoupon }
+      = JSON.parse(raw);
     (async () => {
       try {
         const r = await walletService.payCall({
-          action: 'verify', orderId });
+          action: 'verify', orderId,
+          couponCode: storedCoupon || '' });
         if (r.success) {
+          const bonus = Number(r && r.bonus) || 0;
           setMsg({ ok: true,
-            t: `Payment successful, ₹${r.amount || amt} added`, back });
+            t: bonus > 0
+              ? `Payment successful. ₹${r.amount || amt} added, `
+                + `+₹${bonus} coupon bonus (${storedCoupon}).`
+              : `Payment successful, ₹${r.amount || amt} added`,
+            back });
+          clearCoupon();
         } else {
           setMsg({ ok: false,
             t: `Payment ${r.status || 'not completed'}.` });
@@ -232,9 +294,42 @@ export default function Wallet() {
             onChange={(e) => setAmount(e.target.value === ''
               ? '' : Number(e.target.value))}
             placeholder="Custom amount" />
-          <input className="input" value={coupon}
-            onChange={(e) => setCoupon(e.target.value.toUpperCase())}
-            placeholder="Have a coupon? Enter code" />
+          <div className="rounded-card border border-gray-200 p-3">
+            <div className="mb-2 text-sm font-semibold">
+              Apply a coupon
+            </div>
+            <div className="flex gap-2">
+              <input className="input flex-1 tracking-widest"
+                value={coupon}
+                onChange={(e) => {
+                  setCoupon(e.target.value.toUpperCase());
+                  // Typing a new code invalidates the last preview.
+                  if (couponInfo) setCouponInfo(null);
+                }}
+                placeholder="Have a coupon? Enter code" />
+              {couponInfo && couponInfo.valid ? (
+                <button onClick={clearCoupon}
+                  className="rounded-card border border-gray-300 px-4
+                    text-sm font-semibold text-sub-text">
+                  Remove
+                </button>
+              ) : (
+                <button onClick={applyCoupon}
+                  disabled={couponBusy || !coupon.trim()}
+                  className="btn-primary !min-h-0 px-4">
+                  {couponBusy ? '...' : 'Apply'}
+                </button>
+              )}
+            </div>
+            {couponInfo && (
+              <div className={`mt-2 rounded-card p-2 text-xs ${
+                couponInfo.valid
+                  ? 'bg-success/10 text-success'
+                  : 'bg-danger/10 text-danger'}`}>
+                {couponInfo.valid ? '✅ ' : '✗ '}{couponInfo.message}
+              </div>
+            )}
+          </div>
           <div className="rounded-card border border-gray-200 p-3">
             <div className="mb-2 text-sm font-semibold">
               Redeem a gift card
@@ -267,7 +362,10 @@ export default function Wallet() {
           <button onClick={pay} disabled={busy}
             className="btn-primary w-full">
             {busy ? 'Processing...'
-              : `Add ₹${Number(amount) || 0} to Wallet`}
+              : (couponInfo && couponInfo.valid && couponInfo.bonus > 0
+                ? `Pay ₹${Number(amount) || 0}, get `
+                  + `₹${(Number(amount) || 0) + couponInfo.bonus} in wallet`
+                : `Add ₹${Number(amount) || 0} to Wallet`)}
           </button>
           <p className="text-center text-xs text-sub-text">
             🔒 Secure online payment{gwName ? ` via ${gwName}` : ''}

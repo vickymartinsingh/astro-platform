@@ -67,6 +67,69 @@ export async function payCall(payload) {
   return j;
 }
 
+// Validate a coupon code client-side BEFORE the user hits Pay, so we
+// can show the discount preview ("SAVE10 applied, ₹10 bonus on top")
+// the moment they tap Apply. The actual bonus credit + usedCount
+// increment happens server-side in the relay's /api/pay verify path
+// (atomic, can't be tampered with from the browser), so this client
+// check is purely UX. Server is the source of truth.
+//
+// Coupon doc shape (from admin-coupons): {
+//   code, discountPercent, maxDiscount, expiry (YYYY-MM-DD),
+//   usageLimit, usedCount, active
+// }
+// Returns: { valid, code, bonus, percent, maxDiscount, message }
+export async function validateCoupon(rawCode, amount) {
+  const code = String(rawCode || '').trim().toUpperCase();
+  const amt = Math.max(0, Math.floor(Number(amount) || 0));
+  if (!code) return { valid: false, message: 'Enter a coupon code.' };
+  if (amt <= 0) {
+    return { valid: false, code,
+      message: 'Enter a recharge amount first.' };
+  }
+  try {
+    const snap = await getDocs(query(
+      collection(db, 'coupons'), where('code', '==', code)));
+    if (snap.empty) {
+      return { valid: false, code,
+        message: `Coupon "${code}" not found.` };
+    }
+    const c = { id: snap.docs[0].id, ...snap.docs[0].data() };
+    if (c.active === false) {
+      return { valid: false, code,
+        message: `Coupon "${code}" is not active right now.` };
+    }
+    if (c.expiry) {
+      const exp = new Date(c.expiry);
+      if (!Number.isNaN(exp.getTime())
+        && exp.getTime() < new Date().setHours(0, 0, 0, 0)) {
+        return { valid: false, code,
+          message: `Coupon "${code}" expired on ${c.expiry}.` };
+      }
+    }
+    if (c.usageLimit && Number(c.usedCount || 0) >= Number(c.usageLimit)) {
+      return { valid: false, code,
+        message: `Coupon "${code}" has reached its usage limit.` };
+    }
+    const percent = Math.max(0, Number(c.discountPercent || 0));
+    const cap = Math.max(0, Number(c.maxDiscount || 0));
+    const raw = Math.floor((amt * percent) / 100);
+    const bonus = cap ? Math.min(raw, cap) : raw;
+    if (bonus <= 0) {
+      return { valid: false, code,
+        message: `Coupon "${code}" has no discount for this amount.` };
+    }
+    return {
+      valid: true, code, bonus, percent, maxDiscount: cap,
+      message: `${code} applied. You will get an extra ₹${bonus} `
+        + 'as bonus credit on top of your recharge.',
+    };
+  } catch (e) {
+    return { valid: false, code,
+      message: `Could not check coupon: ${e.message || e}` };
+  }
+}
+
 // Redeem a gift card code into the wallet (server-side via the relay,
 // so the credit is atomic and a code can never be used twice).
 export async function redeemGiftCard(code) {
