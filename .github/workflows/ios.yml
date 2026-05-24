@@ -113,13 +113,23 @@ jobs:
           node scripts/gen-icons.mjs || echo "icon gen skipped"
           echo "::endgroup::"
 
-          # Always strip push (APNs needs the paid Apple program).
-          # Strip @capacitor-firebase/authentication ONLY when there is
-          # no iOS Firebase config - with GoogleService-Info.plist
-          # present, Firebase iOS initialises fine and native Google
-          # sign-in works, so we keep the plugin.
+          # iOS plugin strip:
+          #  - @capacitor/push-notifications: APNs needs paid Apple
+          #    program -> always strip for these unsigned builds.
+          #  - @codetrix-studio/capacitor-google-auth: native plugin
+          #    pulls GoogleSignIn 6.2 which transitively requires
+          #    GTMSessionFetcher < 3.0, but @capacitor-firebase/
+          #    authentication 8.x pulls FirebaseAuth 12.7 which needs
+          #    GTMSessionFetcher >= 3.4. The two are mutually exclusive
+          #    in CocoaPods. We always strip the codetrix plugin on
+          #    iOS; the Firebase JS SDK's signInWithRedirect handles
+          #    Google sign-in via Safari just fine without a native
+          #    plugin.
+          #  - @capacitor-firebase/authentication: only strip when we
+          #    have no iOS Firebase config (no plist). With a plist
+          #    Firebase native init succeeds and we keep it.
           echo "::group::strip firebase native plugins"
-          node -e "const fs=require('fs');const app=process.env.APP;const f=app+'/package.json';const j=JSON.parse(fs.readFileSync(f));const keepGoogle=fs.existsSync(process.env.PLIST||'');const strip=['@capacitor/push-notifications'];if(!keepGoogle)strip.push('@capacitor-firebase/authentication');for(const k of strip){if(j.dependencies)delete j.dependencies[k];}fs.writeFileSync(f,JSON.stringify(j,null,2)+'\n');console.log('keepGoogle='+keepGoogle+' (PLIST='+process.env.PLIST+') stripped='+strip.join(','));"
+          node -e "const fs=require('fs');const app=process.env.APP;const f=app+'/package.json';const j=JSON.parse(fs.readFileSync(f));const keepGoogle=fs.existsSync(process.env.PLIST||'');const strip=['@capacitor/push-notifications','@codetrix-studio/capacitor-google-auth'];if(!keepGoogle)strip.push('@capacitor-firebase/authentication');for(const k of strip){if(j.dependencies)delete j.dependencies[k];}fs.writeFileSync(f,JSON.stringify(j,null,2)+'\n');console.log('keepGoogle='+keepGoogle+' (PLIST='+process.env.PLIST+') stripped='+strip.join(','));"
           echo "::endgroup::"
 
           # Capacitor 8 defaults to SPM; the capacitor-swift-pm mirror
