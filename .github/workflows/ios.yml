@@ -1,8 +1,12 @@
 name: Build iOS IPA (unsigned)
 
-# Manual. Default builds ALL three apps in one run (each is an
-# independent job, so one failing app does not stop the others). You
-# can also pick a single app. Produces UNSIGNED .ipa artifacts.
+# Triggers:
+#   - workflow_dispatch: manual, pick which app(s) to build.
+#   - push to main: auto-builds the customer (client-web) IPA whenever
+#     code that affects the iOS bundle changes (the app folder, the
+#     shared package, the version file, or the workflow itself). Skip
+#     other paths so we don't burn macOS runner minutes on relay-only
+#     changes. Each manual / auto run uploads the IPA as an artifact.
 on:
   workflow_dispatch:
     inputs:
@@ -15,6 +19,15 @@ on:
           - client-web
           - astro-web
           - admin-web
+  push:
+    branches: [main]
+    paths:
+      - 'client-web/**'
+      - 'shared/**'
+      - '.github/workflows/ios.yml'
+      - 'scripts/patch-native.mjs'
+      - 'scripts/gen-icons.mjs'
+      - 'com.astroseer.app.plist'
 
 jobs:
   prepare:
@@ -24,10 +37,17 @@ jobs:
     steps:
       - id: set
         run: |
-          if [ "${{ inputs.app }}" = "all" ]; then
+          APP="${{ inputs.app }}"
+          # push triggers don't carry inputs.app -> default to client-web
+          # (only the customer IPA is needed automatically; astro / admin
+          # remain available via manual dispatch).
+          if [ -z "$APP" ] && [ "${{ github.event_name }}" = "push" ]; then
+            APP=client-web
+          fi
+          if [ "$APP" = "all" ]; then
             echo 'matrix={"app":["client-web","astro-web","admin-web"]}' >> "$GITHUB_OUTPUT"
           else
-            echo "matrix={\"app\":[\"${{ inputs.app }}\"]}" >> "$GITHUB_OUTPUT"
+            echo "matrix={\"app\":[\"$APP\"]}" >> "$GITHUB_OUTPUT"
           fi
 
   build:
