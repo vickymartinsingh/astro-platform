@@ -25,7 +25,9 @@ const VIEWS = {
 export default function Profile() {
   const router = useRouter();
   const { user, profile, loading } = useRequireClient();
-  const [view, setView] = useState(VIEWS.HOME);
+  // Account info row is OPEN by default - so users see their name /
+  // gender / mobile / email immediately instead of having to click.
+  const [view, setView] = useState(VIEWS.INFO);
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [gender, setGender] = useState('');
