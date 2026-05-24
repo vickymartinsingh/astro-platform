@@ -101,7 +101,13 @@ module.exports = async (req, res) => {
   // Default-on: once admin enables AI for an astrologer's scope, the
   // assistant works automatically. The per-astrologer toggle is OPT-OUT
   // (only treated as off when explicitly set to false).
-  const astroOptedIn = astroDoc.aiAssistant !== false;
+  // When admin sets cfg.ai_force_all = true, IGNORE the per-astrologer
+  // opt-out entirely - useful when you want AI guaranteed on for every
+  // astrologer in scope and don't want individual toggles to disable
+  // it. Defaults to true so legacy false values left over from earlier
+  // toggle tests do not silently block AI.
+  const forceAll = cfg.ai_force_all !== false;
+  const astroOptedIn = forceAll || astroDoc.aiAssistant !== false;
   const inScope = !cfg.ai_enabled ? false
     : (cfg.ai_scope === 'selected'
       ? (Array.isArray(cfg.ai_astrologers)

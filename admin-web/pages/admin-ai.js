@@ -104,6 +104,9 @@ export default function AdminAi() {
         ai_astrologers: selected,
         ai_delay_min: lo,
         ai_delay_max: hi,
+        // Force on for every astrologer in scope. Default true so it
+        // works even when an astrologer's old aiAssistant flag is false.
+        ai_force_all: cfg.ai_force_all !== false,
       });
       await assistantService.saveAiProviders({
         providers: providers.providers,
@@ -297,6 +300,24 @@ export default function AdminAi() {
             astrologers</span>
           <input type="checkbox" checked={!!cfg.ai_enabled}
             onChange={(e) => set('ai_enabled', e.target.checked)} />
+        </label>
+
+        {/* Force-all: ignore per-astrologer aiAssistant flag. Default
+            ON so a stray "false" left by earlier toggle tests doesn't
+            silently disable AI for that astrologer. */}
+        <label className="flex items-start justify-between gap-3 rounded-card
+          bg-bg-light p-3">
+          <span className="text-sm">
+            <span className="font-semibold">Force on for every astrologer in
+              scope</span>
+            <span className="mt-0.5 block text-[11px] text-sub-text">
+              When ON, the AI runs for every astrologer in the chosen scope
+              even if their personal AI toggle is off. Recommended.
+            </span>
+          </span>
+          <input type="checkbox"
+            checked={cfg.ai_force_all !== false}
+            onChange={(e) => set('ai_force_all', e.target.checked)} />
         </label>
 
         {cfg.ai_enabled && (
