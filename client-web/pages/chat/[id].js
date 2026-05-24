@@ -191,11 +191,18 @@ export default function ChatScreen() {
     await chatService.sendMessage(chatId, user.uid, v);
     // Kick the relay to auto-reply on behalf of the astrologer when
     // they have the AI assistant on. Fire-and-forget (no UI block).
-    if (session?.id && astroId && user?.uid) {
+    if (chatId && astroId && user?.uid) {
+      // eslint-disable-next-line no-console
+      console.log('[aiAssist] firing send-trigger', {
+        chatId, sessionId: session?.id, astroId, uid: user.uid });
       assistantService.triggerAiAssist({
-        chatId, sessionId: session.id,
+        chatId, sessionId: session?.id,
         astroUid: astroId, clientUid: user.uid,
       });
+    } else {
+      // eslint-disable-next-line no-console
+      console.log('[aiAssist] send-trigger SKIPPED - missing ids', {
+        chatId, sessionId: session?.id, astroId, uid: user?.uid });
     }
   }
 
