@@ -230,11 +230,14 @@ export default function ChatScreen() {
       if (!cur || cur.senderId !== user.uid || cur.id !== last.id) return;
       replyRetryRef.current.tries += 1;
       // eslint-disable-next-line no-console
-      console.log('[aiAssist] no reply in 15s, re-firing trigger',
+      console.log('[aiAssist] no reply in 15s, re-firing with force',
         { try: replyRetryRef.current.tries, lastId: last.id });
+      // force: true tells the relay to bypass the aiRepliedTo
+      // idempotency check on the retry, so even a stale flag from a
+      // prior partial run can never silence the reply.
       assistantService.triggerAiAssist({
         chatId, sessionId: session.id,
-        astroUid: astroId, clientUid: user.uid,
+        astroUid: astroId, clientUid: user.uid, force: true,
       });
     }, 15000);
     return () => clearTimeout(t);

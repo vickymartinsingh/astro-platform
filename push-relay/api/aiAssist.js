@@ -100,7 +100,7 @@ module.exports = async (req, res) => {
 
   const body = readBody(req);
   const { chatId, sessionId, astroUid: astroFromBody,
-    clientUid: clientFromBody } = body;
+    clientUid: clientFromBody, force } = body;
   if (!chatId) return res.status(400).json({ error: 'chatId required' });
 
   // -------- 1. Resolve participants ------------------------------------
@@ -178,8 +178,14 @@ module.exports = async (req, res) => {
     await logAttempt(db, { chatId, sessionId, astroUid,
       skipped: 'ai-not-enabled',
       reason: { astroOptedIn, inScope, aiMasterOn, forceAll,
-        scope: cfg.ai_scope || 'all' } });
-    return res.status(200).json({ ok: true, skipped: 'ai not enabled' });
+        scope: cfg.ai_scope || 'all',
+        astroAiAssistant: astroDoc.aiAssistant,
+        astroInList: Array.isArray(cfg.ai_astrologers)
+          && cfg.ai_astrologers.includes(astroUid),
+        listSize: Array.isArray(cfg.ai_astrologers)
+          ? cfg.ai_astrologers.length : 0 } });
+    return res.status(200).json({ ok: true, skipped: 'ai not enabled',
+      detail: { astroOptedIn, inScope } });
   }
 
   // -------- 4. Auto-accept + greeting ---------------------------------
@@ -260,13 +266,29 @@ module.exports = async (req, res) => {
     return res.status(200).json({ ok: true, accepted: acceptedNow,
       skipped: 'last is astro' });
   }
-  // Idempotency: don't reply twice to the same client message.
-  if (chatData.aiRepliedTo === last.id) {
+  // Idempotency: skip a duplicate reply only if we replied to the
+  // SAME client message id within the last 10 seconds. After 10s a
+  // re-trigger means the customer didn't see our reply (network
+  // dropped the message doc, fetch failed, etc) so we should send
+  // again. If the customer passed `force: true` (auto-retry), bypass
+  // entirely. This stops the deploy-breaks-AI symptom where a stale
+  // aiRepliedTo wrongly blocked every subsequent reply.
+  if (!force && chatData.aiRepliedTo === last.id) {
+    const lastReplyTs = (chatData.aiLastReplyAt
+      && chatData.aiLastReplyAt.toMillis
+      && chatData.aiLastReplyAt.toMillis()) || 0;
+    const sinceMs = Date.now() - lastReplyTs;
+    if (lastReplyTs && sinceMs < 10000) {
+      await logAttempt(db, { chatId, sessionId, astroUid,
+        accepted: acceptedNow, skipped: 'already-replied-recent',
+        lastId: last.id, sinceMs });
+      return res.status(200).json({ ok: true, accepted: acceptedNow,
+        skipped: 'already replied' });
+    }
+    // Stale flag: log it and proceed with a fresh reply.
     await logAttempt(db, { chatId, sessionId, astroUid,
-      accepted: acceptedNow, skipped: 'already-replied',
-      lastId: last.id });
-    return res.status(200).json({ ok: true, accepted: acceptedNow,
-      skipped: 'already replied' });
+      stale_idempotency_cleared: true, lastId: last.id,
+      sinceMs: lastReplyTs ? sinceMs : null });
   }
 
   // -------- 6. Generate reply (with hard fallback) --------------------

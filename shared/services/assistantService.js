@@ -155,7 +155,7 @@ export async function triggerAiNudge({ chatId, sessionId, astroUid,
 // AS the astrologer, even if the astrologer's app is closed. Safe to
 // call repeatedly (relay is idempotent on the last client message id).
 export async function triggerAiAssist({ chatId, sessionId, astroUid,
-  clientUid } = {}) {
+  clientUid, force } = {}) {
   if (!chatId) return false;
   const base = endpoint().replace(/\/assistant\/?$/, '');
   const url = `${base}/aiAssist`;
@@ -163,7 +163,8 @@ export async function triggerAiAssist({ chatId, sessionId, astroUid,
     const r = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chatId, sessionId, astroUid, clientUid }),
+      body: JSON.stringify({ chatId, sessionId, astroUid, clientUid,
+        force: !!force }),
     });
     // Surface the relay's decision in the browser console so admins can
     // diagnose "AI not replying" without server access. Look for
