@@ -185,6 +185,20 @@ jobs:
           node -e "const fs=require('fs');const app=process.env.APP;const f=app+'/capacitor.config.json';const c=JSON.parse(fs.readFileSync(f));if(c.plugins){delete c.plugins.GoogleAuth;delete c.plugins.FirebaseAuthentication;delete c.plugins.PushNotifications;delete c.plugins.LocalNotifications;}fs.writeFileSync(f,JSON.stringify(c,null,2)+'\n');console.log('plugin config now:',Object.keys(c.plugins||{}).join(',')||'(none)');"
           echo "::endgroup::"
 
+          # Point the iOS WKWebView at the LIVE astroseer.in domain
+          # instead of the locally-bundled /public folder. This makes
+          # the iOS app a thin Safari-in-a-shell that always shows the
+          # current production UI - no stale bundles after a rebuild,
+          # auto-updates the moment Vercel finishes a deploy, and zero
+          # chance of a native init crashing the app.
+          # Domain per app (parametrised by SFX):
+          #   client-web   -> https://astroseer.in
+          #   astro-web    -> https://astro.astroseer.in
+          #   admin-web    -> https://admin.astroseer.in
+          echo "::group::point Capacitor at live domain (iOS = remote shell)"
+          node -e "const fs=require('fs');const app=process.env.APP;const sfx=process.env.SFX;const url=sfx==='mobile'?'https://astroseer.in':sfx==='astrologer'?'https://astro.astroseer.in':sfx==='admin'?'https://admin.astroseer.in':'https://astroseer.in';const f=app+'/capacitor.config.json';const c=JSON.parse(fs.readFileSync(f));c.server=c.server||{};c.server.url=url;c.server.iosScheme='https';c.server.cleartext=false;c.server.allowNavigation=Array.from(new Set([...(c.server.allowNavigation||[]),'astroseer.in','*.astroseer.in','*.firebaseapp.com','accounts.google.com','*.google.com','apis.google.com','*.googleapis.com']));fs.writeFileSync(f,JSON.stringify(c,null,2)+'\n');console.log('iOS server.url =',url);"
+          echo "::endgroup::"
+
           # Capacitor 8 defaults to SPM; the capacitor-swift-pm mirror
           # drifts and breaks plugin compile. Force CocoaPods so
           # Capacitor builds from the exact matching npm package.
