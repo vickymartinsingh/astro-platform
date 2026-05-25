@@ -38,13 +38,17 @@ export default function Document() {
           }}
         />
         {/* Apply theme colours SYNCHRONOUSLY before the first paint
-            so the UI never flashes the old/default colour for a frame.
+            so the UI never flashes the old PURPLE for a single frame.
             Strategy:
-            1. Seed the CSS variables with the CURRENT default ("classic"
-               purple) inline. This guarantees that a cold cache (first
-               install, cleared storage, incognito) paints on-theme on
-               the very first frame instead of falling back to whatever
-               browser defaults the stylesheet declared months ago.
+            1. Seed the CSS variables with the CURRENTLY-ACTIVE theme
+               in settings/theme.active = "royal" (maroon / amber /
+               olive). A cold cache (first install, cleared storage,
+               incognito) now paints on-theme on the very first frame.
+               THESE VALUES MUST STAY IN LOCKSTEP WITH THE LIVE THEME
+               — if you switch the active theme in admin-themes,
+               update the d={...} block below and redeploy, otherwise
+               first-paint flashes the previous palette until the
+               localStorage override kicks in.
             2. THEN overlay any cached `appThemeVars2` from localStorage
                so a returning visitor sees the exact theme they last
                had (admin-changed custom theme, etc.) without waiting
@@ -52,12 +56,12 @@ export default function Document() {
         <script
           dangerouslySetInnerHTML={{
             __html: '(function(){var r=document.documentElement.style;'
-              + 'var d={"--c-primary":"108 43 217",'
-              + '"--c-bglight":"243 238 255","--grad-a":"#6C2BD9",'
-              + '"--grad-b":"#8B5CF6","--c-accent":"219 39 119",'
-              + '"--c-success":"27 107 47","--c-warning":"230 126 34",'
+              + 'var d={"--c-primary":"127 32 32",'
+              + '"--c-bglight":"247 239 227","--grad-a":"#7F2020",'
+              + '"--grad-b":"#F59E0B","--c-accent":"245 158 11",'
+              + '"--c-success":"132 153 79","--c-warning":"230 126 34",'
               + '"--c-danger":"192 57 43","--c-verify":"127 32 32",'
-              + '"--c-tarot":"#0F0A23","--c-tarot2":"#2A1A63"};'
+              + '"--c-tarot":"#2E361B","--c-tarot2":"#84994F"};'
               + 'for(var k in d){r.setProperty(k,d[k]);}'
               + "try{var c=window.localStorage.getItem('appThemeVars2');"
               + 'if(c){var v=JSON.parse(c);for(var k2 in v){'
@@ -65,7 +69,8 @@ export default function Document() {
               + 'r.setProperty(k2,v[k2]);}}}}catch(e){}})();',
           }}
         />
-        <meta name="theme-color" content="#0F0A23" />
+        {/* Status-bar tint matches the dark maroon-tinted brand cover. */}
+        <meta name="theme-color" content="#1A0F0F" />
         <link rel="icon" type="image/png" href="/favicon.png" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <meta property="og:image" content="/og.png" />
@@ -78,15 +83,15 @@ export default function Document() {
         />
       </Head>
       <body>
-        {/* Pre-hydration brand cover: opaque, on-theme (#0F0A23) with
-            the bundled logo, painted on the FIRST frame so the old
-            cached UI / colours can never flash during the reload
-            window. Removed once React has rendered (SplashScreen then
-            takes over seamlessly); hard 4s failsafe so it can never
-            get stuck even if the bundle fails. */}
+        {/* Pre-hydration brand cover: opaque, on-theme dark maroon
+            (#1A0F0F) with the bundled logo, painted on the FIRST
+            frame so the old cached UI / purple colour can never flash
+            during the reload window. Removed once React has rendered
+            (SplashScreen then takes over seamlessly); hard 4s failsafe
+            so it can never get stuck even if the bundle fails. */}
         <div id="__boot" style={{
           position: 'fixed', inset: 0, zIndex: 2147483646,
-          background: '#0F0A23', display: 'flex',
+          background: '#1A0F0F', display: 'flex',
           alignItems: 'center', justifyContent: 'center',
           transition: 'opacity .25s ease',
         }}>

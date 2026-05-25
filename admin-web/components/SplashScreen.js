@@ -1,33 +1,15 @@
-import { useEffect, useState } from 'react';
-
-// Brief launch screen: the brand mark centred on the app's dark theme
-// background (#0F0A23, styles --c-tarot), then fades out. Self-contained
-// (no network) so it can never get stuck.
-let SPLASH_DONE = false;
-
+// Brand launch screen.
+//
+// The _document.js pre-hydration boot cover (#__boot, on-theme dark
+// maroon #1A0F0F) already paints on frame #1 and removes itself the
+// instant __next has content. A second React-rendered splash on top
+// of that just added 1.8+ seconds of "the app feels stuck" AND
+// switched the background mid-load (boot=maroon -> splash=navy
+// #0F0A23 — visible colour flash).
+//
+// Kept as a no-op so a future revisit to the launch-screen story
+// (faster/smarter heuristic) is a drop-in replacement instead of a
+// refactor of every _app.js.
 export default function SplashScreen() {
-  const [gone, setGone] = useState(SPLASH_DONE);
-  const [fade, setFade] = useState(false);
-
-  useEffect(() => {
-    if (SPLASH_DONE) { setGone(true); return undefined; }
-    const t1 = setTimeout(() => setFade(true), 1300);
-    const t2 = setTimeout(() => { SPLASH_DONE = true; setGone(true); }, 1800);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, []);
-
-  if (gone) return null;
-  return (
-    <div
-      style={{ backgroundColor: '#0F0A23' }}
-      className={`fixed inset-0 z-[2147483647] flex flex-col items-center
-        justify-center transition-opacity duration-500 ${
-        fade ? 'opacity-0' : 'opacity-100'}`}>
-      <img src="/logo.png" alt="AstroSeer Admin"
-        className="max-h-[55vh] max-w-[78%] object-contain drop-shadow-2xl"
-        onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-      <div className="mt-8 h-7 w-7 animate-spin rounded-full border-2
-        border-white/40 border-t-white" />
-    </div>
-  );
+  return null;
 }

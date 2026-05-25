@@ -31,7 +31,31 @@ export default function Document() {
               + '});})();',
           }}
         />
-        <meta name="theme-color" content="#6C2BD9" />
+        {/* Apply theme colours SYNCHRONOUSLY before the first paint
+            so the UI never flashes the old PURPLE for a single frame
+            (settings/theme.active = "royal" = maroon / amber / olive
+            today). Cold-cache visitors paint on-theme on frame #1;
+            returning visitors have their localStorage cached palette
+            overlaid for instant custom-theme support.
+            STAYS IN LOCKSTEP WITH ADMIN-THEMES — if the active theme
+            switches, update the d={...} block and redeploy. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: '(function(){var r=document.documentElement.style;'
+              + 'var d={"--c-primary":"127 32 32",'
+              + '"--c-bglight":"247 239 227","--grad-a":"#7F2020",'
+              + '"--grad-b":"#F59E0B","--c-accent":"245 158 11",'
+              + '"--c-success":"132 153 79","--c-warning":"230 126 34",'
+              + '"--c-danger":"192 57 43","--c-verify":"127 32 32",'
+              + '"--c-tarot":"#2E361B","--c-tarot2":"#84994F"};'
+              + 'for(var k in d){r.setProperty(k,d[k]);}'
+              + "try{var c=window.localStorage.getItem('appThemeVars2');"
+              + 'if(c){var v=JSON.parse(c);for(var k2 in v){'
+              + 'if(Object.prototype.hasOwnProperty.call(v,k2)){'
+              + 'r.setProperty(k2,v[k2]);}}}}catch(e){}})();',
+          }}
+        />
+        <meta name="theme-color" content="#1A0F0F" />
         <link rel="icon" type="image/png" href="/favicon.png" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <meta property="og:image" content="/og.png" />
@@ -48,7 +72,7 @@ export default function Document() {
             stale cached UI. Removed once React renders; 4s failsafe. */}
         <div id="__boot" style={{
           position: 'fixed', inset: 0, zIndex: 2147483646,
-          background: '#0F0A23', display: 'flex',
+          background: '#1A0F0F', display: 'flex',
           alignItems: 'center', justifyContent: 'center',
           transition: 'opacity .25s ease',
         }}>
