@@ -48,8 +48,9 @@ export default function AstroProfile() {
       } else {
         setF((p) => ({ ...p, name: profile?.name || '' }));
       }
-    });
-    payoutService.getPayouts(user.uid).then(setPayouts);
+    }).catch(() => setExists(false));
+    payoutService.getPayouts(user.uid).then(setPayouts)
+      .catch(() => setPayouts([]));
   }, [user, profile]);
 
   async function save() {

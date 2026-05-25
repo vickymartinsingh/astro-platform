@@ -91,8 +91,22 @@ export default function AstroDashboard() {
     };
     const turningOn = !cur3[key];
     const label = (SVCS.find(([k]) => k === key) || [])[1] || key;
-    if (!window.confirm(turningOn
-      ? `Go ONLINE for ${label}?` : `Go OFFLINE for ${label}?`)) return;
+    // Themed confirm (matches the rest of the app). Lazy-imported so
+    // the modal host code doesn't sit in this page's boot chunk.
+    const { confirmModal } = await import('../components/ConfirmModal');
+    const ok = await confirmModal({
+      title: turningOn ? `Go ONLINE for ${label}?`
+        : `Go OFFLINE for ${label}?`,
+      message: turningOn
+        ? `Customers will be able to start ${label.toLowerCase()} sessions `
+          + 'with you immediately.'
+        : `You won't receive new ${label.toLowerCase()} requests until you `
+          + 'turn this back on.',
+      yes: turningOn ? 'Go online' : 'Go offline',
+      no: 'Cancel',
+      danger: !turningOn,
+    });
+    if (!ok) return;
     const next = { ...cur3, [key]: turningOn };
     const anyOn = next.chat || next.call || next.video;
     setBusy(true);

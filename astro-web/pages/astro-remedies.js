@@ -34,7 +34,14 @@ export default function AstroRemedies() {
   }
 
   async function remove(id) {
-    if (!window.confirm('Delete this remedy?')) return;
+    const { confirmModal } = await import('../components/ConfirmModal');
+    const ok = await confirmModal({
+      title: 'Delete this remedy?',
+      message: 'It will disappear from your offered remedies. You can '
+        + 'always add it back later.',
+      yes: 'Delete', no: 'Cancel', danger: true,
+    });
+    if (!ok) return;
     await remedyService.deleteAstrologerRemedy(user.uid, id);
     refresh();
   }

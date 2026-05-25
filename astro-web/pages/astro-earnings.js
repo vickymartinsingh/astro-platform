@@ -15,9 +15,13 @@ export default function AstroEarnings() {
     sessionService.collectAstrologerEarnings(user.uid)
       .catch(() => {})
       .finally(() => {
+        // Both reads are best-effort: a network blip shouldn't blow
+        // up the dashboard with an unhandled rejection.
         sessionService.getAstrologerSessions(user.uid).then((l) =>
-          setEnded(l.filter((s) => s.status === 'ended')));
-        astrologerService.getAstrologer(user.uid).then(setAstro);
+          setEnded(l.filter((s) => s.status === 'ended')))
+          .catch(() => setEnded([]));
+        astrologerService.getAstrologer(user.uid).then(setAstro)
+          .catch(() => {});
       });
   }, [user]);
 

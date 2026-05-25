@@ -77,7 +77,8 @@ export default function AstroLive() {
 
   useEffect(() => {
     if (!user) return undefined;
-    astrologerService.getAstrologer(user.uid).then(setAstro);
+    astrologerService.getAstrologer(user.uid).then(setAstro)
+      .catch(() => setAstro(null));
     const u1 = liveService.listenLive(user.uid, setInfo);
     const u2 = liveService.listenLiveComments(user.uid, setComments);
     const u3 = liveService.listenScheduledLive(user.uid, setSched);

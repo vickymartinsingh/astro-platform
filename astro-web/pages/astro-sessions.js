@@ -30,6 +30,9 @@ export default function AstroSessions() {
   const [rfReason, setRfReason] = useState(REFUND_REASONS[0]);
   const [rfNote, setRfNote] = useState('');
   const [rfBusy, setRfBusy] = useState(false);
+  // Themed post-action banner (replaces window.alert) — disappears
+  // after 6s on success, sticks until dismissed on error.
+  const [toast, setToast] = useState(null);
 
   async function load() {
     const list = await sessionService.getAstrologerSessions(user.uid);
@@ -50,16 +53,17 @@ export default function AstroSessions() {
       const r = await sessionService.instantRefund(rfSession.id, reason);
       setRfSession(null); setRfNote(''); setRfReason(REFUND_REASONS[0]);
       await load();
-      // eslint-disable-next-line no-alert
-      alert(r.ok
+      const msg = r.ok
         ? (r.already
           ? 'This session was already refunded.'
           : `Refund processed instantly. ₹${r.refunded} credited to the `
             + 'customer wallet. Admin has been notified for records.')
-        : 'Refund queued - admin will process within a few minutes.');
+        : 'Refund queued — admin will process within a few minutes.';
+      setToast({ kind: 'ok', msg });
+      setTimeout(() => setToast(null), 6000);
     } catch (e) {
-      // eslint-disable-next-line no-alert
-      alert(`Could not submit the refund: ${e.message || 'error'}`);
+      setToast({ kind: 'err',
+        msg: `Could not submit the refund: ${e.message || 'error'}` });
     }
     setRfBusy(false);
   }
@@ -75,6 +79,17 @@ export default function AstroSessions() {
   return (
     <Layout>
       <h1 className="mb-3 text-2xl font-bold">My Sessions</h1>
+      {toast && (
+        <div className={`mb-3 flex items-start justify-between rounded-card
+            p-3 text-sm shadow-sm ${toast.kind === 'err'
+              ? 'border border-rose-200 bg-rose-50 text-rose-800'
+              : 'border border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
+          <span className="pr-2">{toast.msg}</span>
+          <button onClick={() => setToast(null)}
+            aria-label="Dismiss"
+            className="shrink-0 text-current/60 hover:text-current">✕</button>
+        </div>
+      )}
       <div className="surface overflow-x-auto p-2">
         <table className="w-full text-sm">
           <thead className="text-left text-sub-text">
