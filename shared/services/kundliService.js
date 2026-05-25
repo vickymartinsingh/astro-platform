@@ -14,10 +14,12 @@ function parseZodiac(dob) {
   return zodiacFromDOB(d, m);
 }
 
-// Real kundli via the relay (Prokerala API; secret stays server-side).
+// Real kundli via the relay. The relay picks the provider
+// (settings/kundliApi.provider in Firestore — astroseer / prokerala /
+// etc); the actual provider key stays server-side.
 // Endpoint derives from the push relay URL, or NEXT_PUBLIC_KUNDLI_ENDPOINT.
 // Returns null if not configured / on any failure (caller shows the
-// basic zodiac instead - never throws).
+// basic zodiac instead — never throws).
 function kundliEndpoint() {
   // Reference process.env.NEXT_PUBLIC_* DIRECTLY: Next.js only inlines
   // the literal expression at build time, so an aliased read is
@@ -28,7 +30,14 @@ function kundliEndpoint() {
   if (explicit) return explicit;
   const push = (typeof process !== 'undefined' && process.env
     && process.env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
-  return push ? push.replace(/\/sendPush\/?$/, '/kundli') : '';
+  if (push) return push.replace(/\/sendPush\/?$/, '/kundli');
+  // Hardcoded fallback — same pattern as authService / pushService.
+  // Lets localhost / env-less builds talk to the live relay so
+  // Kundli generation never silently no-ops because of a missing
+  // .env.local entry. Override either NEXT_PUBLIC_KUNDLI_ENDPOINT
+  // or NEXT_PUBLIC_PUSH_ENDPOINT to point at a different relay
+  // (staging, local relay dev server, etc).
+  return 'https://astro-platform-push-relay.vercel.app/api/kundli';
 }
 
 export async function getProkeralaKundli(birth) {
@@ -394,18 +403,89 @@ export function downloadKundliReport(kundli, report) {
   return true;
 }
 
-// Full kundli with CACHING. The report is stored on the profile doc and
-// returned as-is unless dob / time / place changed (signature differs),
-// which avoids re-hitting the Prokerala API every time.
+// Defensive: every provider's response gets normalised here so the
+// rendering page can ALWAYS render strings/arrays without crashing.
+// AstroSeer (our Render API) returns objects for nakshatra / moon_sign
+// / sun_sign (rich detail with pada/lord/yoni/gana/nadi); rendering
+// the object directly throws "Objects are not valid as a React child"
+// on the /kundli overview tab. Prokerala already returns strings, so
+// this is a no-op for it.
+function flatName(x) {
+  if (!x) return null;
+  if (typeof x === 'string') return x;
+  return x.name || x.sign || null;
+}
+function normaliseReport(r) {
+  if (!r || typeof r !== 'object') return r;
+  const out = { ...r };
+  // 1. Top-level scalar fields the page reads directly.
+  if (out.nakshatra && typeof out.nakshatra === 'object') {
+    out.nakshatraDetail = out.nakshatra;
+    out.nakshatra = flatName(out.nakshatra);
+  }
+  if (out.chandra_rasi && typeof out.chandra_rasi === 'object') {
+    out.moonSign = out.chandra_rasi;
+    out.chandra_rasi = flatName(out.chandra_rasi);
+  }
+  if (out.soorya_rasi && typeof out.soorya_rasi === 'object') {
+    out.sunSign = out.soorya_rasi;
+    out.soorya_rasi = flatName(out.soorya_rasi);
+  }
+  // Fallbacks for AstroSeer where the relay didn't pre-flatten —
+  // pull from the raw moon_sign / sun_sign objects if present.
+  if (!out.chandra_rasi && r.raw && r.raw.moon_sign) {
+    out.chandra_rasi = flatName(r.raw.moon_sign);
+  }
+  if (!out.soorya_rasi && r.raw && r.raw.sun_sign) {
+    out.soorya_rasi = flatName(r.raw.sun_sign);
+  }
+  // 2. Planets: ensure each row has a string `degree` field for the
+  //    <table> render. AstroSeer ships degree_display + degree_in_sign
+  //    but no `degree`.
+  if (Array.isArray(out.planets)) {
+    out.planets = out.planets.map((p) => {
+      if (!p || typeof p !== 'object') return p;
+      const degree = p.degree
+        || p.degree_display
+        || (typeof p.degree_in_sign === 'number'
+          ? p.degree_in_sign.toFixed(2) : null);
+      return {
+        ...p,
+        degree,
+        // Some adapters ship the nakshatra-per-planet as an object too.
+        nakshatra: typeof p.nakshatra === 'object'
+          ? flatName(p.nakshatra) : p.nakshatra,
+        retrograde: !!(p.retrograde || p.isRetro),
+      };
+    });
+  }
+  return out;
+}
+
+// Full kundli with CACHING. The report is stored on the profile doc
+// and returned as-is unless dob / time / place changed (signature
+// differs), which avoids re-hitting the Prokerala / AstroSeer API
+// every time.
+// Provider stamp ('astroseer' vs 'prokerala' etc) is included in the
+// signature so a cached buggy-shape report from an older relay
+// release is regenerated under the current provider.
 export async function getFullKundli(profile) {
   if (!profile) return null;
   const sig = birthSig(profile);
   if (profile.report && profile.reportSig === sig) {
-    return { ...profile.report, cached: true };
+    // Detect the legacy buggy-shape cache (nakshatra still an object
+    // from a pre-fix relay) and force a refetch so the user doesn't
+    // stay stuck on the cached crash.
+    const stale = profile.report.nakshatra
+      && typeof profile.report.nakshatra === 'object';
+    if (!stale) {
+      return { ...normaliseReport(profile.report), cached: true };
+    }
   }
   const data = await getProkeralaKundli(profile);
   if (!data) return null;
-  const report = { ...data, narrative: generateNarrative(data) };
+  const normalised = normaliseReport(data);
+  const report = { ...normalised, narrative: generateNarrative(normalised) };
   if (profile.id) {
     try {
       await updateDoc(doc(db, 'kundliProfiles', profile.id), {

@@ -373,23 +373,70 @@ async function runAstroSeer(creds, p, lat, lng) {
   const j = await r.json().catch(() => ({}));
 
   // Best-effort mapping back to the shape the rest of the app expects.
-  // Pass everything through under `raw` so the client can render any
-  // section of the rich response (avkahada_chakra, yogas, doshas,
-  // panchang, divisional charts), but ALSO expose the common fields
-  // at the top level so the existing FullKundli component renders
-  // without any client-side changes.
+  // AstroSeer returns objects for nakshatra / moon_sign / sun_sign
+  // (rich detail with pada/lord/yoni/gana/nadi) while the client
+  // expects strings ("Dhanishta", "Capricorn", "Libra") — rendering
+  // an object directly throws "Objects are not valid as a React
+  // child". We flatten to strings at the top level AND surface the
+  // full detail under nakshatraDetail / moonSign / sunSign for any
+  // future UI that wants the extra info. The raw response stays
+  // under `raw` for the rich sections we don't map yet (avkahada
+  // chakra, 16 divisional charts, panchang, yogas, doshas).
   const ascendant = j.ascendant
     || (j.lagna ? { sign: j.lagna.sign, lord: j.lagna.lord } : null);
-  const planets = Array.isArray(j.planetary_position) ? j.planetary_position
+  const planetsSrc = Array.isArray(j.planetary_position)
+    ? j.planetary_position
     : Array.isArray(j.planets) ? j.planets : [];
-  const dashaList = Array.isArray(j.vimshottari_dasha) ? j.vimshottari_dasha
-    : Array.isArray(j.dasha) ? j.dasha : [];
+  // Normalise each planet so the client's <table> renders cleanly.
+  // AstroSeer ships {name, sign, house, degree_display, retrograde}
+  // (degree as both numeric `degree_in_sign` and pre-formatted
+  // `degree_display`). The client reads `degree` only.
+  const planets = planetsSrc.map((pl) => ({
+    name: pl.name,
+    sign: pl.sign || pl.zodiac_sign_name,
+    house: pl.house,
+    degree: pl.degree_display || (typeof pl.degree_in_sign === 'number'
+      ? pl.degree_in_sign.toFixed(2) : pl.degree),
+    retrograde: !!(pl.retrograde || pl.isRetro),
+    nakshatra: typeof pl.nakshatra === 'string'
+      ? pl.nakshatra : (pl.nakshatra && pl.nakshatra.name) || null,
+    nakshatraLord: pl.nakshatra_lord || null,
+    pada: pl.pada || null,
+    combust: !!pl.combust,
+    dignity: pl.dignity || null,
+  }));
+  const dashaList = Array.isArray(j.vimshottari_dasha)
+    ? j.vimshottari_dasha : Array.isArray(j.dasha) ? j.dasha : [];
+
+  // Flatten object-or-string fields. AstroSeer's:
+  //   nakshatra: { name, pada, lord, yoni, gana, nadi }
+  //   moon_sign: { sign, nakshatra, pada, lord }
+  //   sun_sign:  { sign, lord }
+  // The client renders these as plain text — extract `.name` /
+  // `.sign` so React doesn't bail.
+  function flatName(x) {
+    if (!x) return null;
+    if (typeof x === 'string') return x;
+    return x.name || x.sign || null;
+  }
+  const nakshatra = flatName(j.nakshatra)
+    || (j.avkahada_chakra && flatName(j.avkahada_chakra.nakshatra))
+    || null;
+  const chandraRasi = flatName(j.moon_sign)
+    || j.chandra_rasi || j.moon_rasi || null;
+  const sooryaRasi = flatName(j.sun_sign)
+    || j.soorya_rasi || j.sun_rasi || null;
+
   return {
     provider: 'astroseer',
     ascendant,
-    nakshatra: j.nakshatra || (j.avkahada_chakra && j.avkahada_chakra.nakshatra) || null,
-    chandra_rasi: j.chandra_rasi || j.moon_rasi || null,
-    soorya_rasi: j.soorya_rasi || j.sun_rasi || null,
+    nakshatra,
+    chandra_rasi: chandraRasi,
+    soorya_rasi: sooryaRasi,
+    // Detail objects for any future UI that wants pada / nadi / lord.
+    nakshatraDetail: typeof j.nakshatra === 'object' ? j.nakshatra : null,
+    moonSign: typeof j.moon_sign === 'object' ? j.moon_sign : null,
+    sunSign: typeof j.sun_sign === 'object' ? j.sun_sign : null,
     zodiac: ascendant && ascendant.sign,
     additional_info: j.avkahada_chakra || null,
     planets,
