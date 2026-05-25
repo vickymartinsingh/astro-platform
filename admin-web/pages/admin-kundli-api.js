@@ -9,6 +9,12 @@ import { flash } from '../lib/flash';
 // relay (just paste the key and it works). The rest are listed so you
 // can store the key now; their adapter is added on request with docs.
 const PROVIDERS = [
+  // AstroSeer — our own Render-hosted API. POST {baseUrl}/api/kundli
+  // with X-API-Key header. The "secret" slot doubles as an optional
+  // base-URL override so you can rotate hosts (Render preview, custom
+  // domain) without redeploying the relay.
+  ['astroseer', 'AstroSeer API (our own, Render)', true,
+    ['API Key (as_live_…)', 'Base URL override (optional)']],
   ['prokerala', 'Prokerala', true, ['Client ID', 'Client Secret']],
   ['astrologyapi', 'AstrologyAPI.com', true, ['User ID', 'API Key']],
   ['vedicastroapi', 'VedicAstroAPI.com', true, ['API Key', '']],
@@ -153,6 +159,55 @@ export default function AdminKundliApi() {
                 </div>
                 {probe.providerNote && (
                   <p className="mt-1 text-warning">{probe.providerNote}</p>
+                )}
+                {probe.provider === 'astroseer' && (
+                  <div className="mt-2 space-y-0.5 border-t border-gray-100
+                                  pt-2 text-[11px]">
+                    <div>Base URL in use:{' '}
+                      <code className="break-all">
+                        {probe.baseUrlInUse || '(default)'}
+                      </code>
+                    </div>
+                    <div>
+                      ASTROSEER_API_URL env on relay:{' '}
+                      {probe.envUrl
+                        ? <span className="text-success">✅ set</span>
+                        : <span className="text-warning">⚠ not set</span>}
+                    </div>
+                    <div>
+                      ASTROSEER_API_KEY env on relay:{' '}
+                      {probe.envKey
+                        ? <span className="text-success">✅ set</span>
+                        : <span className="text-warning">⚠ not set</span>}
+                    </div>
+                    <div>
+                      Firestore key saved:{' '}
+                      {probe.firestoreKey
+                        ? <span className="text-success">✅ yes</span>
+                        : <span className="text-sub-text">— no</span>}
+                    </div>
+                    <div>
+                      <code>/health</code> ping:{' '}
+                      {probe.healthError
+                        ? <span className="text-danger">
+                            ❌ {probe.healthError}
+                          </span>
+                        : probe.healthStatus === 200
+                          ? <span className="text-success">
+                              ✅ HTTP 200
+                            </span>
+                          : <span className="text-warning">
+                              HTTP {probe.healthStatus || '?'}
+                            </span>}
+                    </div>
+                    {probe.health && (
+                      <pre className="mt-1 max-h-32 overflow-auto
+                                       rounded bg-bg-light p-1 text-[10px]
+                                       leading-tight">
+                        {JSON.stringify(probe.health, null, 2)}
+                      </pre>
+                    )}
+                  </div>
                 )}
                 {!probe.adminInit && (
                   <p className="mt-1 text-danger">

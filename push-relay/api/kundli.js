@@ -291,6 +291,108 @@ async function runFreeAstrologyApi(creds, p, lat, lng) {
   }
 }
 
+// ---- AstroSeer (our own Render-hosted API) ----
+// Docs: POST {BASE}/api/kundli with X-API-Key header.
+// Body shape: { year, month, day, hour, minute, tz_offset,
+//               latitude, longitude }.
+// Returns a rich Vedic kundli ({ ascendant, planetary_position,
+//   avkahada_chakra, houses, yogas, doshas, panchang, _meta, ...}).
+//
+// Two ways to configure (env wins, then Firestore creds):
+//   1. ASTROSEER_API_URL + ASTROSEER_API_KEY env vars set on the
+//      push-relay Vercel project (NOT on astroseer.in - the relay is
+//      what makes the call, not the customer app).
+//   2. settings/kundliApi.astroseer.{key, baseUrl, tz} in Firestore
+//      via /admin-kundli-api so the operator can rotate the key
+//      without redeploying.
+// IMPORTANT: env vars MUST be on the push-relay project. The user docs
+// say "astroseer.in Vercel dashboard" but our architecture funnels all
+// provider calls through the relay so the key stays server-side.
+async function runAstroSeer(creds, p, lat, lng) {
+  // creds.secret doubles as a base-URL override (admin form's 2nd
+  // positional field). creds.baseUrl is the explicit name for clarity.
+  // Precedence: explicit Firestore field > positional secret slot >
+  // env var > Render default. That way the admin form "just works"
+  // without a special case AND a dev / CI run can override via env.
+  const overrideUrl = (creds && (creds.baseUrl || creds.secret)) || '';
+  const looksLikeUrl = /^https?:\/\//i.test(overrideUrl);
+  const base = (looksLikeUrl && overrideUrl)
+    || process.env.ASTROSEER_API_URL
+    || 'https://astroseer-api.onrender.com';
+  const key = (creds && creds.key)
+    || process.env.ASTROSEER_API_KEY || '';
+  if (!key) {
+    throw new Error('AstroSeer API key not set. Paste it in '
+      + '/admin-kundli-api (AstroSeer row) or set ASTROSEER_API_KEY '
+      + 'on the push-relay Vercel project.');
+  }
+  // tz_offset: India default 5.5; admin can override via creds.tz.
+  const tz = Number(creds && creds.tz);
+  const tzOffset = Number.isFinite(tz) ? tz : 5.5;
+  const body = {
+    year: p.y,
+    month: p.m,
+    day: p.d,
+    hour: p.hh,   // already 24-hour after AM/PM normalisation
+    minute: p.mm,
+    tz_offset: tzOffset,
+    latitude: lat,
+    longitude: lng,
+  };
+  const r = await fetch(`${base.replace(/\/+$/, '')}/api/kundli`, {
+    method: 'POST',
+    headers: {
+      'X-API-Key': key,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) {
+    const t = await r.text().catch(() => '');
+    throw new Error(`AstroSeer ${r.status}: ${t.slice(0, 200)}`);
+  }
+  const j = await r.json().catch(() => ({}));
+
+  // Best-effort mapping back to the shape the rest of the app expects.
+  // Pass everything through under `raw` so the client can render any
+  // section of the rich response (avkahada_chakra, yogas, doshas,
+  // panchang, divisional charts), but ALSO expose the common fields
+  // at the top level so the existing FullKundli component renders
+  // without any client-side changes.
+  const ascendant = j.ascendant
+    || (j.lagna ? { sign: j.lagna.sign, lord: j.lagna.lord } : null);
+  const planets = Array.isArray(j.planetary_position) ? j.planetary_position
+    : Array.isArray(j.planets) ? j.planets : [];
+  const dashaList = Array.isArray(j.vimshottari_dasha) ? j.vimshottari_dasha
+    : Array.isArray(j.dasha) ? j.dasha : [];
+  return {
+    provider: 'astroseer',
+    ascendant,
+    nakshatra: j.nakshatra || (j.avkahada_chakra && j.avkahada_chakra.nakshatra) || null,
+    chandra_rasi: j.chandra_rasi || j.moon_rasi || null,
+    soorya_rasi: j.soorya_rasi || j.sun_rasi || null,
+    zodiac: ascendant && ascendant.sign,
+    additional_info: j.avkahada_chakra || null,
+    planets,
+    dasha: markDasha(dashaList),
+    currentDasha: dashaList.find((x) => {
+      const s = x.start && Date.parse(x.start);
+      const e = x.end && Date.parse(x.end);
+      return s && e && Date.now() >= s && Date.now() < e;
+    }) || null,
+    charts: j.charts || { rasi: null, navamsa: null },
+    panchang: j.panchang || null,
+    yogas: j.yogas || [],
+    doshas: j.doshas || null,
+    karakas: j.karakas || null,
+    cacheKey: (j._meta && j._meta.cache_key) || j.cache_key || null,
+    // Raw response so the client can show any extra section the
+    // mapping above didn't cover (16 divisional charts, special
+    // lagnas, etc.).
+    raw: j,
+  };
+}
+
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -309,11 +411,42 @@ module.exports = async (req, res) => {
   // without computing a kundli (no API quota used).
   if (src.probe === '1' || src.probe === 1) {
     const pc = await readProviderConfig();
+    // AstroSeer extras: report env-var presence + a /health ping so
+    // the admin can tell at a glance whether the relay can reach the
+    // Render API without burning a real kundli call.
+    const extras = {};
+    if (pc.provider === 'astroseer') {
+      const base = (pc.creds && pc.creds.baseUrl)
+        || process.env.ASTROSEER_API_URL
+        || 'https://astroseer-api.onrender.com';
+      const key = (pc.creds && pc.creds.key)
+        || process.env.ASTROSEER_API_KEY || '';
+      extras.envUrl = !!process.env.ASTROSEER_API_URL;
+      extras.envKey = !!process.env.ASTROSEER_API_KEY;
+      extras.firestoreKey = !!(pc.creds && pc.creds.key);
+      extras.baseUrlInUse = base;
+      try {
+        const hr = await fetch(`${base.replace(/\/+$/, '')}/health`, {
+          method: 'GET',
+          headers: key ? { 'X-API-Key': key } : {},
+        });
+        extras.healthStatus = hr.status;
+        try {
+          const hj = await hr.json();
+          extras.health = hj;
+        } catch (_) { /* not JSON */ }
+      } catch (e) {
+        extras.healthError = String((e && e.message) || e);
+      }
+    }
     return res.status(200).json({
       provider: pc.provider,
       adminInit: pc.adminInit,
-      hasKey: !!(pc.creds && (pc.creds.key || pc.creds.secret)),
+      hasKey: !!(pc.creds && (pc.creds.key || pc.creds.secret))
+        || (pc.provider === 'astroseer'
+          && !!process.env.ASTROSEER_API_KEY),
       providerNote: pc.providerNote || '',
+      ...extras,
     });
   }
 
@@ -339,6 +472,10 @@ module.exports = async (req, res) => {
       astrologyapi: () => runAstrologyApi(creds, p, lat, lng),
       vedicastroapi: () => runVedicAstroApi(creds, p, lat, lng),
       freeastrologyapi: () => runFreeAstrologyApi(creds, p, lat, lng),
+      // Our own Render-hosted API. Rich Vedic kundli (avkahada chakra,
+      // yogas, doshas, panchang, divisional charts) returned as one
+      // JSON blob.
+      astroseer: () => runAstroSeer(creds, p, lat, lng),
     }[provider];
 
     let data;
