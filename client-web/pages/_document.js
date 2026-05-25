@@ -37,19 +37,35 @@ export default function Document() {
               + '});})();',
           }}
         />
-        {/* Apply the cached theme colours SYNCHRONOUSLY before the
-            first paint, so a reload never flashes the old/default
-            colour for a frame. */}
+        {/* Apply theme colours SYNCHRONOUSLY before the first paint
+            so the UI never flashes the old/default colour for a frame.
+            Strategy:
+            1. Seed the CSS variables with the CURRENT default ("classic"
+               purple) inline. This guarantees that a cold cache (first
+               install, cleared storage, incognito) paints on-theme on
+               the very first frame instead of falling back to whatever
+               browser defaults the stylesheet declared months ago.
+            2. THEN overlay any cached `appThemeVars2` from localStorage
+               so a returning visitor sees the exact theme they last
+               had (admin-changed custom theme, etc.) without waiting
+               for the Firestore live-snapshot. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: 'try{var c=window.localStorage.getItem('
-              + "'appThemeVars2');if(c){var v=JSON.parse(c);"
-              + 'var r=document.documentElement.style;'
-              + 'for(var k in v){if(Object.prototype.hasOwnProperty'
-              + '.call(v,k)){r.setProperty(k,v[k]);}}}}catch(e){}',
+            __html: '(function(){var r=document.documentElement.style;'
+              + 'var d={"--c-primary":"108 43 217",'
+              + '"--c-bglight":"243 238 255","--grad-a":"#6C2BD9",'
+              + '"--grad-b":"#8B5CF6","--c-accent":"219 39 119",'
+              + '"--c-success":"27 107 47","--c-warning":"230 126 34",'
+              + '"--c-danger":"192 57 43","--c-verify":"127 32 32",'
+              + '"--c-tarot":"#0F0A23","--c-tarot2":"#2A1A63"};'
+              + 'for(var k in d){r.setProperty(k,d[k]);}'
+              + "try{var c=window.localStorage.getItem('appThemeVars2');"
+              + 'if(c){var v=JSON.parse(c);for(var k2 in v){'
+              + 'if(Object.prototype.hasOwnProperty.call(v,k2)){'
+              + 'r.setProperty(k2,v[k2]);}}}}catch(e){}})();',
           }}
         />
-        <meta name="theme-color" content="#6C2BD9" />
+        <meta name="theme-color" content="#0F0A23" />
         <link rel="icon" type="image/png" href="/favicon.png" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         <meta property="og:image" content="/og.png" />

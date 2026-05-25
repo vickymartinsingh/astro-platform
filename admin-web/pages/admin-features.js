@@ -5,6 +5,9 @@ import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
 import { flash } from '../lib/flash';
 
+// 3-tuple: [key, label, defaultOn?]. defaultOn defaults to true (opt-OUT
+// = visible unless admin unchecks). Set defaultOn:false for toggles
+// that should stay HIDDEN unless the admin explicitly opts in.
 const TOGGLES = [
   ['enable_chat', 'Chat'],
   ['enable_call', 'Voice Call'],
@@ -19,11 +22,18 @@ const TOGGLES = [
   ['free_call_enabled', 'Free Call'],
   // Sign-in / signup controls - persist in Firestore; auto live across
   // every app the moment you Save. No code deploy needed.
-  ['google_signin_mobile', 'Google sign-in on mobile app'],
-  ['google_signin_desktop', 'Google sign-in on desktop / web'],
+  // Google sign-in is opt-IN (default OFF). The web flow opens Safari
+  // for the redirect; the native plugin is stripped on iOS to avoid a
+  // CocoaPods conflict + plist crash, so leave OFF until you're sure
+  // you want to expose it. Email + password works regardless.
+  ['google_signin_mobile', 'Google sign-in on mobile app', false],
+  ['google_signin_desktop', 'Google sign-in on desktop / web', false],
   ['email_verification', 'Require email verification on signup'],
   ['register_as_astro_show', 'Show "Register as astrologer" on client'],
 ];
+const isOn = (val, defaultOn) => (defaultOn === false
+  ? val === true        // opt-IN: only ON when explicitly true
+  : val !== false);     // opt-OUT: ON unless explicitly false
 const NAV_LABELS = [
   ['nav_home', 'Home'],
   ['nav_chat', 'Chat'],
@@ -57,11 +67,17 @@ export default function AdminFeatures() {
       <h1 className="mb-3 text-xl font-bold">Feature Toggle System</h1>
       {msg && <div className="card mb-3 bg-success/10 text-success">{msg}</div>}
       <div className="card space-y-2">
-        {TOGGLES.map(([k, label]) => (
+        {TOGGLES.map(([k, label, defaultOn]) => (
           <label key={k} className="flex items-center justify-between
                                     border-b py-2 last:border-0">
-            <span>{label}</span>
-            <input type="checkbox" checked={f[k] !== false}
+            <span>
+              {label}
+              {defaultOn === false && (
+                <span className="ml-2 rounded-full bg-bg-light px-2
+                  py-0.5 text-[10px] font-bold text-sub-text">opt-in</span>
+              )}
+            </span>
+            <input type="checkbox" checked={isOn(f[k], defaultOn)}
               onChange={(e) => setF({ ...f, [k]: e.target.checked })} />
           </label>
         ))}

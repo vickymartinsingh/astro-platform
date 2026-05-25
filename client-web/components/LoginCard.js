@@ -216,13 +216,16 @@ export default function LoginCard({ onDone, compact, initialMode }) {
           {(() => {
             // Admin-toggled per platform (admin -> Feature Toggles):
             //   google_signin_mobile, google_signin_desktop
-            // Default: ON when the toggle key is missing (back-compat).
+            // Default: OFF (hidden) until admin explicitly enables. The
+            // admin Feature Toggles page has both checkboxes so the
+            // operator can re-enable Google sign-in for either platform
+            // at any time without a rebuild.
             const isNative = typeof window !== 'undefined'
               && window.Capacitor && window.Capacitor.isNativePlatform
               && window.Capacitor.isNativePlatform();
             const key = isNative ? 'google_signin_mobile'
               : 'google_signin_desktop';
-            const showGoogle = !features || features[key] !== false;
+            const showGoogle = !!(features && features[key] === true);
             if (!showGoogle) return null;
             return (
               <>
