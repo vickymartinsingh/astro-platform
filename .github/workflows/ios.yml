@@ -111,10 +111,10 @@ jobs:
           # Using a plist whose BUNDLE_ID doesn't match the app crashes
           # Firebase at init -> app dies on launch.
           case "$APP" in
-            client-web)  IPA="AstroSeer-Customer-$VERSION" ;     SFX=mobile ;;
-            astro-web)   IPA="AstroSeer-Astrologer-$VERSION" ;   SFX=astrologer ;;
-            admin-web)   IPA="AstroSeer-Admin-$VERSION" ;        SFX=admin ;;
-            *)           IPA="App-$VERSION" ;                    SFX=app ;;
+            client-web)  IPA="AstroSeer-Customer-v$VERSION" ;    SFX=mobile ;;
+            astro-web)   IPA="AstroSeer-Astrologer-v$VERSION" ;  SFX=astrologer ;;
+            admin-web)   IPA="AstroSeer-Admin-v$VERSION" ;       SFX=admin ;;
+            *)           IPA="App-v$VERSION" ;                   SFX=app ;;
           esac
           echo "ipa=$IPA" >> "$GITHUB_OUTPUT"
           # Per-app Firebase iOS config the user generated for the new
@@ -194,22 +194,20 @@ jobs:
           node -e "const fs=require('fs');const app=process.env.APP;const f=app+'/capacitor.config.json';const c=JSON.parse(fs.readFileSync(f));if(c.plugins){delete c.plugins.GoogleAuth;delete c.plugins.FirebaseAuthentication;delete c.plugins.PushNotifications;delete c.plugins.LocalNotifications;}fs.writeFileSync(f,JSON.stringify(c,null,2)+'\n');console.log('plugin config now:',Object.keys(c.plugins||{}).join(',')||'(none)');"
           echo "::endgroup::"
 
-          # Point the iOS WKWebView at the LIVE astroseer.in domain
-          # instead of the locally-bundled /public folder. This makes
-          # the iOS app a thin Safari-in-a-shell that always shows the
-          # current production UI - no stale bundles after a rebuild,
-          # auto-updates the moment Vercel finishes a deploy, and zero
-          # chance of a native init crashing the app.
-          # Domain per app (parametrised by SFX). NOTE: the astrologer
-          # app is hosted at astrologer.astroseer.in (the short
-          # "astro." subdomain has NO Vercel deployment and 404s, so
-          # an iOS shell pointing there shows DEPLOYMENT_NOT_FOUND on
-          # launch -- this caught us once).
-          #   client-web   -> https://astroseer.in
-          #   astro-web    -> https://astrologer.astroseer.in
-          #   admin-web    -> https://admin.astroseer.in
-          echo "::group::point Capacitor at live domain (iOS = remote shell)"
-          node -e "const fs=require('fs');const app=process.env.APP;const sfx=process.env.SFX;const url=sfx==='mobile'?'https://astroseer.in':sfx==='astrologer'?'https://astrologer.astroseer.in':sfx==='admin'?'https://admin.astroseer.in':'https://astroseer.in';const f=app+'/capacitor.config.json';const c=JSON.parse(fs.readFileSync(f));c.server=c.server||{};c.server.url=url;c.server.iosScheme='https';c.server.cleartext=false;c.server.allowNavigation=Array.from(new Set([...(c.server.allowNavigation||[]),'astroseer.in','*.astroseer.in','*.firebaseapp.com','accounts.google.com','*.google.com','apis.google.com','*.googleapis.com']));fs.writeFileSync(f,JSON.stringify(c,null,2)+'\n');console.log('iOS server.url =',url);"
+          # Bundled-app mode (REVERTED from remote-URL shell).
+          # User feedback: remote shells "look like a website" — splash
+          # was actually a browser-style load. With bundled mode the
+          # static Next export sits INSIDE the IPA and Capacitor loads
+          # it from the local file system, so the app opens instantly
+          # like a real native app. All Firebase / relay calls still
+          # hit the live backend; only the static UI shell is local.
+          #
+          # We DROP any leftover server.url that prior runs may have
+          # written into capacitor.config.json (the file is committed,
+          # so a stale URL would persist). allowNavigation is kept so
+          # external auth popups + payment redirects keep working.
+          echo "::group::strip server.url for bundled-app mode"
+          node -e "const fs=require('fs');const app=process.env.APP;const f=app+'/capacitor.config.json';const c=JSON.parse(fs.readFileSync(f));if(c.server){delete c.server.url;delete c.server.cleartext;c.server.allowNavigation=Array.from(new Set([...(c.server.allowNavigation||[]),'astroseer.in','*.astroseer.in','*.firebaseapp.com','accounts.google.com','*.google.com','apis.google.com','*.googleapis.com']));if(!c.server.allowNavigation.length&&!c.server.iosScheme&&!c.server.androidScheme){delete c.server;}}fs.writeFileSync(f,JSON.stringify(c,null,2)+'\n');console.log('bundled mode: server.url removed for',app);"
           echo "::endgroup::"
 
           # Capacitor 8 defaults to SPM; the capacitor-swift-pm mirror
