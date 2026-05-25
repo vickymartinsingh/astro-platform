@@ -309,23 +309,43 @@ async function runFreeAstrologyApi(creds, p, lat, lng) {
 // say "astroseer.in Vercel dashboard" but our architecture funnels all
 // provider calls through the relay so the key stays server-side.
 async function runAstroSeer(creds, p, lat, lng) {
-  // creds.secret doubles as a base-URL override (admin form's 2nd
-  // positional field). creds.baseUrl is the explicit name for clarity.
-  // Precedence: explicit Firestore field > positional secret slot >
-  // env var > Render default. That way the admin form "just works"
-  // without a special case AND a dev / CI run can override via env.
-  const overrideUrl = (creds && (creds.baseUrl || creds.secret)) || '';
-  const looksLikeUrl = /^https?:\/\//i.test(overrideUrl);
-  const base = (looksLikeUrl && overrideUrl)
-    || process.env.ASTROSEER_API_URL
+  // Defensive URL resolution — we've seen ASTROSEER_API_URL get
+  // accidentally set to the API KEY value on Vercel (the two env
+  // vars are easy to swap). Validate that whatever we pull is
+  // actually an http(s) URL; otherwise fall back to the next
+  // candidate so a config mistake on one env var doesn't break
+  // the whole kundli endpoint.
+  //
+  // Precedence (each validated as a URL):
+  //   1. explicit Firestore creds.baseUrl
+  //   2. creds.secret if it looks like a URL (admin form's
+  //      positional 2nd field, doubling as base-URL override)
+  //   3. ASTROSEER_API_URL env var on the relay
+  //   4. Render default
+  const candidates = [
+    creds && creds.baseUrl,
+    creds && creds.secret,
+    process.env.ASTROSEER_API_URL,
+    'https://astroseer-api.onrender.com',
+  ];
+  const base = candidates.find(
+    (u) => typeof u === 'string' && /^https?:\/\//i.test(u))
     || 'https://astroseer-api.onrender.com';
-  const key = (creds && creds.key)
-    || process.env.ASTROSEER_API_KEY || '';
-  if (!key) {
-    throw new Error('AstroSeer API key not set. Paste it in '
-      + '/admin-kundli-api (AstroSeer row) or set ASTROSEER_API_KEY '
-      + 'on the push-relay Vercel project.');
+
+  // Same defensive treatment for the key — accept either env var,
+  // ignore values that don't look like an AstroSeer key. The API
+  // currently accepts unauthenticated calls so an empty key still
+  // works; we send the header only when we have something.
+  function looksLikeKey(s) {
+    return typeof s === 'string' && /^as_(live|test)_/i.test(s);
   }
+  const keyCandidates = [
+    creds && creds.key,
+    process.env.ASTROSEER_API_KEY,
+    // Defensive: if URL got set to the key by mistake, salvage it.
+    process.env.ASTROSEER_API_URL,
+  ];
+  const key = keyCandidates.find(looksLikeKey) || '';
   // tz_offset: India default 5.5; admin can override via creds.tz.
   const tz = Number(creds && creds.tz);
   const tzOffset = Number.isFinite(tz) ? tz : 5.5;
@@ -339,12 +359,11 @@ async function runAstroSeer(creds, p, lat, lng) {
     latitude: lat,
     longitude: lng,
   };
+  const headers = { 'Content-Type': 'application/json' };
+  if (key) headers['X-API-Key'] = key;
   const r = await fetch(`${base.replace(/\/+$/, '')}/api/kundli`, {
     method: 'POST',
-    headers: {
-      'X-API-Key': key,
-      'Content-Type': 'application/json',
-    },
+    headers,
     body: JSON.stringify(body),
   });
   if (!r.ok) {
@@ -416,15 +435,31 @@ module.exports = async (req, res) => {
     // Render API without burning a real kundli call.
     const extras = {};
     if (pc.provider === 'astroseer') {
-      const base = (pc.creds && pc.creds.baseUrl)
-        || process.env.ASTROSEER_API_URL
+      // Mirror the adapter's defensive URL/key resolution so the
+      // admin probe shows EXACTLY what runAstroSeer would pick.
+      const isUrl = (u) => typeof u === 'string'
+        && /^https?:\/\//i.test(u);
+      const isKey = (k) => typeof k === 'string'
+        && /^as_(live|test)_/i.test(k);
+      const urlCandidates = [
+        pc.creds && pc.creds.baseUrl,
+        pc.creds && pc.creds.secret,
+        process.env.ASTROSEER_API_URL,
+        'https://astroseer-api.onrender.com',
+      ];
+      const base = urlCandidates.find(isUrl)
         || 'https://astroseer-api.onrender.com';
-      const key = (pc.creds && pc.creds.key)
-        || process.env.ASTROSEER_API_KEY || '';
+      const key = [pc.creds && pc.creds.key,
+        process.env.ASTROSEER_API_KEY,
+        process.env.ASTROSEER_API_URL].find(isKey) || '';
       extras.envUrl = !!process.env.ASTROSEER_API_URL;
+      extras.envUrlIsUrl = isUrl(process.env.ASTROSEER_API_URL);
       extras.envKey = !!process.env.ASTROSEER_API_KEY;
+      extras.envKeyLooksLikeKey = isKey(process.env.ASTROSEER_API_KEY);
+      extras.envUrlLooksLikeKey = isKey(process.env.ASTROSEER_API_URL);
       extras.firestoreKey = !!(pc.creds && pc.creds.key);
       extras.baseUrlInUse = base;
+      extras.keyResolved = !!key;
       try {
         const hr = await fetch(`${base.replace(/\/+$/, '')}/health`, {
           method: 'GET',
