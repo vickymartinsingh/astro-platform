@@ -4,7 +4,7 @@ import {
   orderBy, onSnapshot, getDocs, serverTimestamp,
 } from 'firebase/firestore';
 import {
-  ref as storageRef, uploadBytes, getDownloadURL,
+  ref as storageRef, uploadBytesResumable, getDownloadURL,
 } from 'firebase/storage';
 import { db, storage, auth } from '../firebase.js';
 import { sendPushToUser } from './pushService.js';
@@ -133,38 +133,67 @@ export async function sendImageMessage(chatId, senderId, file) {
   const path = `media/chat/${chatId}/${Date.now()}_${
     String(file.name || 'photo').replace(/[^\w.\-]/g, '')}`;
   const r = storageRef(storage, path);
-  // Never hang the UI: if Storage is unreachable / rules block the
-  // write, fail after 30s so the spinner stops and we can tell the
-  // user instead of spinning forever.
-  const withTimeout = (p, ms, what) => Promise.race([
-    p,
-    new Promise((_, rej) => setTimeout(
-      () => rej(new Error(`${what} timed out`)), ms)),
-  ]);
-  try {
-    await withTimeout(
-      uploadBytes(r, blob,
-        { contentType: blob.type || file.type || 'image/jpeg' }),
-      30000, 'Upload');
-  } catch (e) {
-    const code = e && e.code;
-    if (code === 'storage/unauthorized') {
+  // Resumable upload with a "no-progress for 20s" watchdog. The watch-
+  // dog catches the specific case where Firebase Storage hangs because
+  // the bucket's CORS doesn't allow the origin (e.g. http://localhost
+  // on a new .firebasestorage.app bucket) - the previous fixed-30s
+  // timeout looked indistinguishable from a slow network, which led
+  // to a vague "Upload timed out" message with no idea what was wrong.
+  await new Promise((resolve, reject) => {
+    let lastTransferred = 0;
+    let stuckSince = Date.now();
+    const watchdog = setInterval(() => {
+      if (Date.now() - stuckSince > 20000) {
+        clearInterval(watchdog);
+        try { task.cancel(); } catch (_) { /* ignore */ }
+        reject(new Error('storage/cors-or-network'));
+      }
+    }, 1000);
+    const task = uploadBytesResumable(r, blob,
+      { contentType: blob.type || file.type || 'image/jpeg' });
+    task.on('state_changed',
+      (snap) => {
+        if (snap.bytesTransferred > lastTransferred) {
+          lastTransferred = snap.bytesTransferred;
+          stuckSince = Date.now();
+        }
+      },
+      (err) => { clearInterval(watchdog); reject(err); },
+      () => { clearInterval(watchdog); resolve(); });
+  }).catch((e) => {
+    const code = (e && e.code) || (e && e.message) || '';
+    if (code === 'storage/unauthorized'
+      || /unauthor/i.test(code)) {
       throw new Error('Photo upload was blocked (storage rules). '
         + 'Admin needs to allow media/ writes for signed-in users.');
     }
     if (code === 'storage/canceled') throw new Error('Upload cancelled.');
-    if (code === 'storage/quota-exceeded') {
+    if (code === 'storage/quota-exceeded'
+      || /quota/i.test(code)) {
       throw new Error('Storage is full. Contact support.');
     }
-    if (code === 'storage/unauthenticated') {
+    if (code === 'storage/unauthenticated'
+      || /unauthenticated/i.test(code)) {
       throw new Error('You need to sign in again before sending photos.');
+    }
+    if (/cors-or-network|preflight|cors/i.test(code)) {
+      throw new Error('Photo upload stalled - the storage bucket is '
+        + 'not configured to accept uploads from this origin (CORS). '
+        + 'Try again on the live site, or contact admin to allow '
+        + 'this origin on the bucket.');
     }
     throw new Error(`Upload failed: ${(e && e.message)
       || code || 'network error'}.`);
-  }
+  });
+  // getDownloadURL with a 15s ceiling - same Promise.race pattern as
+  // before but inline since we dropped the helper above.
   let url;
   try {
-    url = await withTimeout(getDownloadURL(r), 15000, 'Fetch URL');
+    url = await Promise.race([
+      getDownloadURL(r),
+      new Promise((_, rej) => setTimeout(
+        () => rej(new Error('Fetch URL timed out')), 15000)),
+    ]);
   } catch (e) {
     throw new Error(`Photo uploaded but link could not be fetched: ${
       (e && e.message) || 'unknown'}.`);
