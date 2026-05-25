@@ -170,16 +170,45 @@ export default function AdminKundliApi() {
                     </div>
                     <div>
                       ASTROSEER_API_URL env on relay:{' '}
-                      {probe.envUrl
-                        ? <span className="text-success">✅ set</span>
-                        : <span className="text-warning">⚠ not set</span>}
+                      {!probe.envUrl
+                        ? <span className="text-warning">⚠ not set</span>
+                        : probe.envUrlIsUrl
+                          ? <span className="text-success">
+                              ✅ set (valid URL)
+                            </span>
+                          : probe.envUrlLooksLikeKey
+                            ? <span className="text-danger">
+                                ❌ set but contains an API key, not a URL
+                              </span>
+                            : <span className="text-warning">
+                                ⚠ set but is not a URL
+                              </span>}
                     </div>
                     <div>
                       ASTROSEER_API_KEY env on relay:{' '}
-                      {probe.envKey
-                        ? <span className="text-success">✅ set</span>
-                        : <span className="text-warning">⚠ not set</span>}
+                      {!probe.envKey
+                        ? <span className="text-warning">⚠ not set</span>
+                        : probe.envKeyLooksLikeKey
+                          ? <span className="text-success">
+                              ✅ set (valid key)
+                            </span>
+                          : <span className="text-warning">
+                              ⚠ set but doesn't look like an as_live_… key
+                            </span>}
                     </div>
+                    {probe.envUrl && probe.envUrlLooksLikeKey && (
+                      <p className="mt-1 rounded bg-danger/10 p-1.5
+                                     text-[10px] leading-snug text-danger">
+                        Looks like the two env vars are swapped on the
+                        push-relay Vercel project.{' '}
+                        <code>ASTROSEER_API_URL</code> should be{' '}
+                        <code>https://astroseer-api.onrender.com</code>{' '}
+                        and <code>ASTROSEER_API_KEY</code> should be the{' '}
+                        <code>as_live_…</code> string. The adapter is
+                        salvaging it now (kundli still works), but
+                        fixing the swap removes the warning.
+                      </p>
+                    )}
                     <div>
                       Firestore key saved:{' '}
                       {probe.firestoreKey
