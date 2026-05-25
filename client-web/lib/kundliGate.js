@@ -66,7 +66,21 @@ export function KundliGateProvider({ children }) {
     }
     const list = await kundliService.getKundliProfiles(user.uid);
     setProfiles(list);
-    setForm({ ...BLANK, name: profile?.name || '' });
+    // Pre-fill EVERY field the user has already saved on their main
+    // profile (signup form collects name + dob; profile page also
+    // collects tob + city). Without this, the demo user re-typed
+    // their DOB and city for every astrologer chat - exactly the
+    // friction the user reported.
+    setForm({
+      ...BLANK,
+      name: profile?.name || '',
+      dob: profile?.dob || '',
+      tob: profile?.tob || '',
+      ampm: profile?.ampm || 'AM',
+      place: profile?.city
+        ? `${profile.city}${profile.state ? `, ${profile.state}` : ''}`
+        : '',
+    });
     setAdding(list.length === 0);
     setPending({ type, astro, href });
   }

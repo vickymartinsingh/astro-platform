@@ -593,8 +593,14 @@ export default function ChatScreen() {
           <input
             className="h-11 flex-1 rounded-full border border-gray-200
               bg-gray-50 px-4 text-[15px] outline-none focus:border-primary"
-            placeholder={active ? 'Message...'
-              : 'Waiting for the astrologer to accept...'}
+            placeholder={
+              active ? 'Message...'
+                : session?.status === 'ended'
+                  ? 'Consultation ended.'
+                  : session?.status === 'cancelled'
+                    ? 'Consultation cancelled.'
+                    : isView ? 'Viewing past messages.'
+                      : 'Waiting for the astrologer to accept...'}
             value={text} disabled={!active}
             onChange={(e) => onType(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && send()} />
