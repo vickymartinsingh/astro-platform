@@ -119,8 +119,17 @@ jobs:
           echo "ipa=$IPA" >> "$GITHUB_OUTPUT"
           # Per-app Firebase iOS config the user generated for the new
           # com.astroseer.* bundle IDs (committed at repo root).
+          # EXPORT both PLIST and SFX -- the later "node -e" block reads
+          # process.env.SFX to pick the server.url per app, and without
+          # the export the spawned node process saw SFX undefined and
+          # silently fell back to the customer URL for ALL THREE apps
+          # (so the astrologer + admin IPAs opened the customer site,
+          # which is exactly the "all are just client" bug). Exporting
+          # makes the variable visible to every child process for the
+          # remainder of the run step.
+          export SFX
           export PLIST="com.astroseer.$SFX.plist"
-          echo "using iOS plist: $PLIST"
+          echo "using iOS plist: $PLIST (SFX=$SFX)"
 
           echo "::group::install deps"
           npm ci || npm install
