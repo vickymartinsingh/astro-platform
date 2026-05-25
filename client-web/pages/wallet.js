@@ -121,12 +121,19 @@ export default function Wallet() {
     const couponCode = (couponInfo && couponInfo.valid)
       ? couponInfo.code : '';
     try {
+      // Cashfree rejects any non-https return_url ("url should be
+       // https"). Only forward the return URL when the page is on
+       // HTTPS (production) or already https-loaded, otherwise omit it
+       // so the gateway uses its own default redirect.
+      const origin = typeof window !== 'undefined'
+        ? window.location.origin : '';
+      const safeReturnUrl = origin.startsWith('https://')
+        ? `${origin}/wallet` : '';
       const order = await walletService.payCall({
         action: 'create', amount: amt, couponCode,
         name: profile?.name, email: profile?.email,
         phone: profile?.phone,
-        returnUrl: typeof window !== 'undefined'
-          ? `${window.location.origin}/wallet` : '',
+        returnUrl: safeReturnUrl,
       });
 
       if (order.gateway === 'razorpay') {
@@ -408,9 +415,15 @@ function TxnRow({ t }) {
   const [sess, setSess] = useState(null);
   const [astro, setAstro] = useState(null);
   const reason = String(t.reason || '').toLowerCase();
-  const isSession = ['session', 'refund', 'settlement', 'session-end',
-    'consultation'].some((k) => reason.includes(k)) || (t.referenceId
-      && reason !== 'recharge' && reason !== 'gift card');
+  // Strictly match the reason strings that we KNOW are sessions or
+  // session-derived (refund/settlement). The old fallback
+  // "any txn with a referenceId" wrongly bucketed seeds (demo seed),
+  // coupon bonuses, manual admin credits, etc. as "Session" with no
+  // matching session doc, which then rendered as the bare title
+  // "Session" with no astrologer name.
+  const SESSION_REASONS = ['session', 'session-end', 'consultation',
+    'refund', 'settlement'];
+  const isSession = SESSION_REASONS.some((k) => reason.includes(k));
 
   useEffect(() => {
     if (!isSession || !t.referenceId) return;
@@ -437,13 +450,20 @@ function TxnRow({ t }) {
   const sign = isCredit ? '+' : '';
 
   // Title + subtitle vary by what this transaction is.
-  let title = t.reason || 'Transaction';
+  // Default: title-case the raw reason so unknown types still read as
+  // human English (e.g. "demo seed" -> "Demo seed", "coupon bonus" ->
+  // "Coupon bonus") instead of the bare backend identifier.
+  let title = (t.reason || 'Transaction')
+    .replace(/^./, (c) => c.toUpperCase());
   let sub = when;
   let href = null;
   if (reason === 'recharge') {
     title = 'Wallet recharge';
     sub = t.gateway ? `${when} · via ${t.gateway}` : when;
     href = t.referenceId ? `/invoice/${t.referenceId}` : null;
+  } else if (reason.includes('coupon')) {
+    title = 'Coupon bonus';
+    if (t.couponCode) sub = `${when} · code ${t.couponCode}`;
   } else if (reason.includes('gift')) {
     title = 'Gift card credit';
   } else if (reason.includes('refund')) {

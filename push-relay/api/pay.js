@@ -237,7 +237,15 @@ module.exports = async (req, res) => {
               customer_email: body.email || 'user@astroconnect.app',
               customer_name: body.name || 'AstroSeer User',
             },
-            order_meta: { return_url: `${body.returnUrl || ''}` },
+            // Cashfree rejects empty / non-https return URLs with
+            // "order_meta.return_url : url should be https". Only
+            // include order_meta when the client sent a proper
+            // https:// URL, otherwise omit it so Cashfree falls back
+            // to its own default redirect (works fine for the hosted
+            // checkout flow).
+            ...(/^https:\/\//i.test(body.returnUrl || '')
+              ? { order_meta: { return_url: body.returnUrl } }
+              : {}),
           }),
         });
         const j = await r.json();
