@@ -17,6 +17,15 @@ export default function LoginCard({ onDone, compact, initialMode }) {
   const [password, setPassword] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  // OTP step state. Only entered when the admin has
+  // settings/features.email_verification === true AND the user is
+  // creating a fresh account (mode === 'signup'). otpUser holds the
+  // freshly-created Firebase user so we can complete sign-in once the
+  // OTP verifies; while otpUser is set, the form re-renders as the
+  // OTP-entry screen instead of the email/password fields.
+  const [otpUser, setOtpUser] = useState(null);
+  const [otpCode, setOtpCode] = useState('');
+  const [otpInfo, setOtpInfo] = useState('');
 
   // Hard timeout for any auth promise. Firebase Auth occasionally hangs
   // (flaky network, IndexedDB lock, popup race) and never resolves OR
@@ -80,6 +89,27 @@ export default function LoginCard({ onDone, compact, initialMode }) {
           authService.signupUser(name.trim(), email.trim(),
             password, { phone: phone.trim(), dob }),
           25000, 'Signup');
+        // Admin-toggled email verification:
+        // settings/features.email_verification === true forces a
+        // 6-digit OTP sent from support@astroseer.in before the new
+        // user is signed in. Default OFF: signup completes as before.
+        if (features && features.email_verification === true) {
+          try {
+            await authService.requestEmailOtp(email.trim(), name.trim());
+            setOtpUser(user);
+            setOtpInfo(`We just emailed a 6-digit code to ${email.trim()}.`
+              + ' Please enter it below to finish signing up.');
+            return;
+          } catch (e3) {
+            // OTP send failed - keep the user logged in so they aren't
+            // locked out, but surface the error.
+            setErr('Could not send the verification email: '
+              + (e3 && e3.message || 'unknown') + '. You can still '
+              + 'continue but the operator has been notified.');
+            // Fall through to finish() so the user lands on home
+            // rather than being trapped on a non-functional OTP screen.
+          }
+        }
       } else {
         user = await withTimeout(
           authService.loginUser(email.trim(), password),
@@ -162,18 +192,54 @@ export default function LoginCard({ onDone, compact, initialMode }) {
     } catch { setErr('Could not send reset email.'); }
   }
 
+  async function verifyOtp(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    if (busy) return;
+    setErr('');
+    const code = String(otpCode || '').trim();
+    if (!/^\d{6}$/.test(code)) {
+      setErr('Enter the 6-digit code from the email.'); return;
+    }
+    setBusy(true);
+    try {
+      await authService.verifyEmailOtp(email.trim(), code);
+      // Re-load the auth user so user.emailVerified flips to true
+      // locally too (server-side it was already updated by the relay).
+      try { await otpUser.reload(); } catch (_) { /* ignore */ }
+      const u = otpUser;
+      setOtpUser(null); setOtpCode(''); setOtpInfo('');
+      await finish(u);
+    } catch (e2) {
+      setErr(e2 && e2.message ? e2.message
+        : 'Could not verify the code. Please try again.');
+    } finally { setBusy(false); }
+  }
+
+  async function resendOtp() {
+    if (busy) return;
+    setErr(''); setBusy(true);
+    try {
+      await authService.requestEmailOtp(email.trim(), name.trim());
+      setOtpInfo(`A new code has been emailed to ${email.trim()}.`);
+    } catch (e) {
+      setErr(e && e.message ? e.message : 'Could not resend the code.');
+    } finally { setBusy(false); }
+  }
+
   return (
     <div className={compact ? '' : 'w-full max-w-md'}>
       <div className="overflow-hidden rounded-2xl bg-white shadow-xl">
         <div className="hero-grad p-6 text-white">
           <div className="text-xl font-bold">AstroSeer</div>
           <div className="mt-1 text-2xl font-bold">
-            {mode === 'signup' ? 'Create your account' : 'Welcome back'}
+            {otpUser ? 'Verify your email'
+              : mode === 'signup' ? 'Create your account' : 'Welcome back'}
           </div>
           <p className="mt-1 text-sm opacity-90">
-            {mode === 'signup'
-              ? 'Sign up to connect with astrologers.'
-              : 'Sign in to continue.'}
+            {otpUser ? 'Enter the 6-digit code from your inbox.'
+              : mode === 'signup'
+                ? 'Sign up to connect with astrologers.'
+                : 'Sign in to continue.'}
           </p>
         </div>
         <div className="p-6">
@@ -181,6 +247,29 @@ export default function LoginCard({ onDone, compact, initialMode }) {
             <div className="mb-3 rounded-xl bg-rose-50 p-3 text-sm
                             text-rose-600">{err}</div>
           )}
+          {otpUser && otpInfo && (
+            <div className="mb-3 rounded-xl bg-emerald-50 p-3 text-sm
+                            text-emerald-700">{otpInfo}</div>
+          )}
+          {otpUser ? (
+            <form onSubmit={verifyOtp} className="space-y-3">
+              <input className="input text-center tracking-[0.4em]
+                font-mono text-2xl" inputMode="numeric"
+                placeholder="000000" maxLength={6}
+                value={otpCode}
+                onChange={(e) => setOtpCode(
+                  e.target.value.replace(/\D/g, '').slice(0, 6))}
+                autoFocus />
+              <button className="btn-grad w-full justify-center py-3"
+                disabled={busy || otpCode.length !== 6}>
+                {busy ? 'Please wait…' : 'Verify & finish'}
+              </button>
+              <button type="button" onClick={resendOtp} disabled={busy}
+                className="w-full text-sm text-primary">
+                Didn&apos;t get the email? Resend code
+              </button>
+            </form>
+          ) : (
           <form onSubmit={submit} className="space-y-3">
             {mode === 'signup' && (
               <>
@@ -212,8 +301,9 @@ export default function LoginCard({ onDone, compact, initialMode }) {
               </button>
             )}
           </form>
+          )}
 
-          {(() => {
+          {!otpUser && (() => {
             // Admin-toggled per platform (admin -> Feature Toggles):
             //   google_signin_mobile, google_signin_desktop
             // Default: OFF (hidden) until admin explicitly enables. The
@@ -248,14 +338,16 @@ export default function LoginCard({ onDone, compact, initialMode }) {
             );
           })()}
 
-          <button
-            onClick={() => { setErr(''); setMode(
-              mode === 'signup' ? 'login' : 'signup'); }}
-            className="mt-3 w-full text-center text-sm text-primary">
-            {mode === 'signup'
-              ? 'Already have an account? Login'
-              : 'New here? Create an account'}
-          </button>
+          {!otpUser && (
+            <button
+              onClick={() => { setErr(''); setMode(
+                mode === 'signup' ? 'login' : 'signup'); }}
+              className="mt-3 w-full text-center text-sm text-primary">
+              {mode === 'signup'
+                ? 'Already have an account? Login'
+                : 'New here? Create an account'}
+            </button>
+          )}
           <p className="mt-3 text-center text-xs text-sub-text">
             By continuing you agree to our{' '}
             <Link href="/terms" className="text-primary">Terms</Link>

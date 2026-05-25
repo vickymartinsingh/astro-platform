@@ -5,7 +5,8 @@
   "description": "Tiny serverless relay for the AstroSeer apps: sends FCM lock-screen pushes (Firebase service account) and mints Agora RTC tokens (App Certificate). Both secrets live ONLY here as env vars. Deploy free on Vercel.",
   "dependencies": {
     "agora-token": "^2.0.5",
-    "firebase-admin": "^12.7.0"
+    "firebase-admin": "^12.7.0",
+    "nodemailer": "^6.10.1"
   },
   "engines": {
     "node": "20.x"

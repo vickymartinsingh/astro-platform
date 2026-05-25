@@ -58,6 +58,45 @@ export async function loginUser(email, password) {
   return cred.user;
 }
 
+// ---- Email OTP signup verification ----------------------------------
+// Talks to the relay's /api/emailOtp endpoint. Two actions:
+//   requestEmailOtp(email, name)  -> sends a 6-digit code from
+//                                    support@astroseer.in (SMTP via
+//                                    admin's settings/email config).
+//   verifyEmailOtp(email, code)   -> checks the code and flips the
+//                                    Auth user's emailVerified flag.
+// Throws Error with the human-readable relay message on failure.
+function otpEndpoint() {
+  const push = (typeof process !== 'undefined' && process.env
+    && process.env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
+  return push ? push.replace(/\/sendPush\/?$/, '/emailOtp')
+    : 'https://astro-platform-push-relay.vercel.app/api/emailOtp';
+}
+
+export async function requestEmailOtp(email, name) {
+  const r = await fetch(otpEndpoint(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'request', email, name }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error
+    || `OTP request failed (HTTP ${r.status}).`);
+  return j;
+}
+
+export async function verifyEmailOtp(email, code) {
+  const r = await fetch(otpEndpoint(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'verify', email, code }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error
+    || `OTP verify failed (HTTP ${r.status}).`);
+  return j;
+}
+
 export async function logoutUser() {
   // Log BEFORE signing out so the audit POST still has a fresh ID token.
   try { await logAudit('logout', {}); } catch (_) {}
