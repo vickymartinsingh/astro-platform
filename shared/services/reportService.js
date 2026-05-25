@@ -2,7 +2,13 @@
 // HTML is built client-side for the preview modal; PDF generation + email
 // happen server-side in the generatePDFReport / emailReport Cloud Functions.
 import { httpsCallable } from 'firebase/functions';
-import { functions } from '../firebase.js';
+import { getFunctionsLazy } from '../firebase.js';
+
+async function callable(name) {
+  const fns = await getFunctionsLazy();
+  if (!fns) throw new Error('Cloud Functions unavailable.');
+  return httpsCallable(fns, name);
+}
 import { getAllUsers, getAllTransactions } from './adminService.js';
 
 export async function fetchReportData(type, filters = {}) {
@@ -39,11 +45,11 @@ export function generateReportHTML(data) {
 }
 
 export async function generatePDF(type, filters) {
-  const fn = httpsCallable(functions, 'generatePDFReport');
+  const fn = await callable('generatePDFReport');
   return (await fn({ type, filters })).data; // { url }
 }
 
 export async function emailReport(reportUrl, email) {
-  const fn = httpsCallable(functions, 'emailReport');
+  const fn = await callable('emailReport');
   return (await fn({ reportUrl, email })).data;
 }

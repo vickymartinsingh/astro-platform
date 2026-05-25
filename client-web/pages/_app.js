@@ -1,6 +1,12 @@
 import Head from 'next/head';
 import { useEffect, useState } from 'react';
-import { themeService, auditService } from '@astro/shared';
+import dynamic from 'next/dynamic';
+// Deep imports (not the barrel) — pull ONLY the two services _app
+// actually uses. Going through `@astro/shared` index re-exports drags
+// ~30 services + their Firestore queries into the boot chunk even
+// when only a couple are referenced.
+import * as themeService from '@astro/shared/services/themeService.js';
+import * as auditService from '@astro/shared/services/auditService.js';
 import { useRouter } from 'next/router';
 import '../styles/globals.css';
 import { AuthProvider, useAuth } from '../lib/useAuth';
@@ -9,13 +15,26 @@ import { AuthModalProvider } from '../lib/authModal';
 import { KundliGateProvider } from '../lib/kundliGate';
 import { PendingSessionProvider } from '../lib/pendingSession';
 import useNativeBack from '../lib/useNativeBack';
-import GuidedTour from '../components/GuidedTour';
 import SplashScreen from '../components/SplashScreen';
 import NativeBack from '../components/NativeBack';
-import AdminLiveEditor from '../components/AdminLiveEditor';
-import ActiveSessionBar from '../components/ActiveSessionBar';
 import ErrorBoundary from '../components/ErrorBoundary';
-import ConfirmModalHost from '../components/ConfirmModal';
+
+// Perf: lazy-load chrome that doesn't need to be on the first-paint
+// path. Each ssr:false dynamic() ships its component code in its OWN
+// chunk that the browser pulls only after hydration, so the initial
+// _app.js stays small.
+//   - GuidedTour: only on a first-time visit (localStorage gate).
+//   - AdminLiveEditor: only for admins.
+//   - ActiveSessionBar: only while the user has a live chat/call.
+//   - ConfirmModalHost: only when something calls confirmModal().
+const GuidedTour = dynamic(() => import('../components/GuidedTour'),
+  { ssr: false });
+const AdminLiveEditor = dynamic(() => import(
+  '../components/AdminLiveEditor'), { ssr: false });
+const ActiveSessionBar = dynamic(() => import(
+  '../components/ActiveSessionBar'), { ssr: false });
+const ConfirmModalHost = dynamic(
+  () => import('../components/ConfirmModal'), { ssr: false });
 
 function WithProviders({ children }) {
   const { user, profile } = useAuth();

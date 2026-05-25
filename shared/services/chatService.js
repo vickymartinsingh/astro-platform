@@ -6,7 +6,7 @@ import {
 import {
   ref as storageRef, uploadBytesResumable, getDownloadURL,
 } from 'firebase/storage';
-import { db, storage, auth } from '../firebase.js';
+import { db, auth, getStorageLazy } from '../firebase.js';
 import { sendPushToUser } from './pushService.js';
 
 // Deterministic conversation id prevents duplicate threads (blueprint 4.8):
@@ -132,6 +132,10 @@ export async function sendImageMessage(chatId, senderId, file) {
   // user to write there.
   const path = `media/chat/${chatId}/${Date.now()}_${
     String(file.name || 'photo').replace(/[^\w.\-]/g, '')}`;
+  // First-call lazy-loads firebase/storage (saves ~25 KB brotli on
+  // every page that never sends a photo, which is almost all of them).
+  const storage = await getStorageLazy();
+  if (!storage) throw new Error('Storage is not available right now.');
   const r = storageRef(storage, path);
   // Resumable upload with a "no-progress for 20s" watchdog. The watch-
   // dog catches the specific case where Firebase Storage hangs because
@@ -259,6 +263,8 @@ export async function sendAudioMessage(chatId, senderId, blob) {
           : type.includes('wav') ? 'wav'
             : 'webm';
     const path = `media/chat/${chatId}/${Date.now()}_voice.${ext}`;
+    const storage = await getStorageLazy();
+    if (!storage) return false;
     const r = storageRef(storage, path);
     const withTimeout = (p, ms) => Promise.race([
       p, new Promise((_, rej) => setTimeout(

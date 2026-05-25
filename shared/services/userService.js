@@ -4,7 +4,7 @@ import {
   getDocs, serverTimestamp,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { db, functions } from '../firebase.js';
+import { db, getFunctionsLazy } from '../firebase.js';
 import { isAdminEmail } from '../admins.js';
 
 // Fallback for when the createUser Cloud Function isn't deployed (Spark/no
@@ -61,7 +61,9 @@ export async function ensureUserDoc(authUser) {
 
 // Apply a referrer's userCode after signup (credits both, server-side).
 export async function applyReferral(code) {
-  const fn = httpsCallable(functions, 'applyReferral');
+  const fns = await getFunctionsLazy();
+  if (!fns) throw new Error('Cloud Functions unavailable.');
+  const fn = httpsCallable(fns, 'applyReferral');
   return (await fn({ code })).data;
 }
 

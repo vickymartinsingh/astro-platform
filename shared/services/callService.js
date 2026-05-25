@@ -1,7 +1,7 @@
 // callService, blueprint 8.2. Thin wrapper over Agora RTC.
 // SDK is dynamically imported so it never runs during SSR / static export.
 import { httpsCallable } from 'firebase/functions';
-import { functions } from '../firebase.js';
+import { getFunctionsLazy } from '../firebase.js';
 
 // Agora App ID. Baked in so packaged APK / iOS builds (which have no
 // NEXT_PUBLIC_* env at runtime) can still connect. An env override wins
@@ -39,7 +39,9 @@ export async function fetchAgoraToken(channelName, uid) {
     } catch (_) { /* fall through */ }
   }
   try {
-    const fn = httpsCallable(functions, 'generateAgoraToken');
+    const fns = await getFunctionsLazy();
+    if (!fns) return { appId: AGORA_APP_ID, token: null };
+    const fn = httpsCallable(fns, 'generateAgoraToken');
     return (await fn({ channelName, uid })).data;
   } catch (e) {
     return { appId: AGORA_APP_ID, token: null };

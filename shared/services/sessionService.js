@@ -5,7 +5,7 @@ import {
   getDocs, serverTimestamp, runTransaction, addDoc,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { db, functions } from '../firebase.js';
+import { db, getFunctionsLazy } from '../firebase.js';
 import { sendPushToUser } from './pushService.js';
 import { notifyWallet } from './walletNotify.js';
 
@@ -279,7 +279,9 @@ export function listenSession(id, callback) {
 // (computes duration, cost, commission, astrologer earnings, reverts
 // astrologer status). The browser only requests the end.
 export async function endSession(id) {
-  const fn = httpsCallable(functions, 'endSession');
+  const fns = await getFunctionsLazy();
+  if (!fns) throw new Error('Cloud Functions unavailable.');
+  const fn = httpsCallable(fns, 'endSession');
   const res = await fn({ sessionId: id });
   return res.data;
 }

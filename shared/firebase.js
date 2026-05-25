@@ -1,10 +1,18 @@
 // Shared Firebase client init, used by all three portals.
 // Config comes from NEXT_PUBLIC_* env vars (safe for the browser).
 //
-// Real instances are created at import time. The Firebase modular SDK
-// type-checks these objects (e.g. collection(db...) verifies db is a
-// real Firestore), so they must NOT be wrapped in a Proxy. Init is guarded
-// on the API key so a build with no env (bare CI) doesn't throw, the app
+// Real instances are created at import time for the modules every
+// page hits (auth + firestore). The OPTIONAL modules
+// (storage / functions / realtime-database) are dynamic-imported on
+// first use via getStorageLazy / getFunctionsLazy / getRtdbLazy.
+// That keeps roughly 80 KB of brotli-compressed Firebase SDK out of
+// the boot _app.js bundle on pages that never need them - which is
+// almost every page (home, dashboard, kundli, profile, etc).
+//
+// The Firebase modular SDK type-checks the singletons (e.g.
+// collection(db, ...) verifies db is a real Firestore), so the
+// returned objects are NOT wrapped in a Proxy. Init is guarded on the
+// API key so a build with no env (bare CI) doesn't throw - the app
 // genuinely can't run without config, which is expected. rtdb is
 // additionally gated on the database URL being set.
 import { initializeApp, getApps, getApp } from 'firebase/app';
@@ -16,9 +24,6 @@ import {
 import {
   getFirestore, initializeFirestore,
 } from 'firebase/firestore';
-import { getStorage } from 'firebase/storage';
-import { getFunctions } from 'firebase/functions';
-import { getDatabase } from 'firebase/database';
 
 // The Firebase WEB config is NOT secret (it ships in every client and
 // the Android APK already). Baking it as a default - with env override
@@ -84,13 +89,65 @@ function initDb() {
     try { return getFirestore(app); } catch (e) { return undefined; }
   }
 }
-function safe(fn) { try { return fn(); } catch (_) { return undefined; } }
 
 export const auth = initAuth();
 export const db = initDb();
-export const storage = safe(() => (app ? getStorage(app) : undefined));
-export const functions = safe(
-  () => (app ? getFunctions(app) : undefined));
-export const rtdb = safe(() => ((app && firebaseConfig.databaseURL)
-  ? getDatabase(app) : undefined));
+
+// ---- Lazy modules ---------------------------------------------------
+// Each helper:
+//   1. Returns the cached instance on second-and-later calls (cheap).
+//   2. Dynamically imports the Firebase module on the FIRST call so
+//      the boot bundle never pulls it.
+//   3. Returns undefined if the global app failed to init (bare-CI
+//      build with no config) so callers can early-return without
+//      crashing the whole tree.
+let _storage; let _storagePromise;
+export function getStorageLazy() {
+  if (_storage) return Promise.resolve(_storage);
+  if (!app) return Promise.resolve(undefined);
+  if (_storagePromise) return _storagePromise;
+  _storagePromise = import('firebase/storage').then((m) => {
+    _storage = m.getStorage(app);
+    return _storage;
+  }).catch(() => undefined);
+  return _storagePromise;
+}
+
+let _functions; let _functionsPromise;
+export function getFunctionsLazy() {
+  if (_functions) return Promise.resolve(_functions);
+  if (!app) return Promise.resolve(undefined);
+  if (_functionsPromise) return _functionsPromise;
+  _functionsPromise = import('firebase/functions').then((m) => {
+    _functions = m.getFunctions(app);
+    return _functions;
+  }).catch(() => undefined);
+  return _functionsPromise;
+}
+
+let _rtdb; let _rtdbPromise;
+export function getRtdbLazy() {
+  if (_rtdb) return Promise.resolve(_rtdb);
+  if (!app || !firebaseConfig.databaseURL) {
+    return Promise.resolve(undefined);
+  }
+  if (_rtdbPromise) return _rtdbPromise;
+  _rtdbPromise = import('firebase/database').then((m) => {
+    _rtdb = m.getDatabase(app);
+    return _rtdb;
+  }).catch(() => undefined);
+  return _rtdbPromise;
+}
+
+// Back-compat: the old sync exports stay declared so old imports
+// resolve, but they're undefined until the matching getXxxLazy() is
+// awaited. Callers that used to read `storage` / `functions` / `rtdb`
+// at the top level must now `await getStorageLazy()` etc inside the
+// async function that needs the instance. The handful of services
+// that still use them have all been migrated to the lazy form (see
+// chatService, recordService, presenceService, walletService etc).
+export const storage = undefined;
+export const functions = undefined;
+export const rtdb = undefined;
+
 export default app;

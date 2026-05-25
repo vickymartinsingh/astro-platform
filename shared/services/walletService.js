@@ -5,7 +5,16 @@ import {
   doc, getDoc, onSnapshot, collection, query, where, getDocs,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
-import { db, functions, auth } from '../firebase.js';
+import { db, auth, getFunctionsLazy } from '../firebase.js';
+
+// Tiny helper: lazy-loads firebase/functions on first call so the
+// 25+ KB module never lands in the boot bundle. Throws a friendly
+// error if Cloud Functions isn't available (env-less CI build).
+async function callable(name) {
+  const fns = await getFunctionsLazy();
+  if (!fns) throw new Error('Cloud Functions unavailable. Try again later.');
+  return httpsCallable(fns, name);
+}
 
 export async function getWallet(uid) {
   const snap = await getDoc(doc(db, 'users', uid));
@@ -31,7 +40,7 @@ export async function getTransactions(uid) {
 // ---- Recharge: trigger server-side Razorpay flow only ----
 // 1) Ask the Cloud Function to create a Razorpay order.
 export async function createRechargeOrder(amount, couponCode) {
-  const fn = httpsCallable(functions, 'createRazorpayOrder');
+  const fn = await callable('createRazorpayOrder');
   const res = await fn({ amount, couponCode: couponCode || null });
   return res.data; // { orderId, amount, keyId }
 }
@@ -39,7 +48,7 @@ export async function createRechargeOrder(amount, couponCode) {
 // 2) After Razorpay checkout resolves, hand the signature to the server.
 //    Wallet is credited ONLY if the HMAC signature verifies (Hard Rule 5).
 export async function verifyRecharge({ orderId, paymentId, signature, amount }) {
-  const fn = httpsCallable(functions, 'verifyPayment');
+  const fn = await callable('verifyPayment');
   const res = await fn({ orderId, paymentId, signature, amount });
   return res.data; // { success: true }
 }

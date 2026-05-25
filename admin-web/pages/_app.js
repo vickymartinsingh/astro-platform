@@ -1,14 +1,23 @@
 import Head from 'next/head';
 import { useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/router';
-import { themeService, auditService } from '@astro/shared';
+// Deep imports avoid the @astro/shared barrel pulling all 30+ services
+// into the boot chunk.
+import * as themeService from '@astro/shared/services/themeService.js';
+import * as auditService from '@astro/shared/services/auditService.js';
 import '../styles/globals.css';
 import { AuthProvider } from '../lib/useAuth';
 import useNativeBack from '../lib/useNativeBack';
 import ErrorBoundary from '../components/ErrorBoundary';
 import SplashScreen from '../components/SplashScreen';
 import NativeBack from '../components/NativeBack';
-import PortalSwitcher from '../components/PortalSwitcher';
+
+// Perf: portal switcher is only meaningful when an authenticated admin
+// opens the floating widget. Lazy-load + ssr:false keeps it out of the
+// initial _app boot chunk.
+const PortalSwitcher = dynamic(() => import(
+  '../components/PortalSwitcher'), { ssr: false });
 
 export default function App({ Component, pageProps }) {
   useNativeBack();

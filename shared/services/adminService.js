@@ -12,7 +12,7 @@ import {
   getAuth, createUserWithEmailAndPassword, signOut,
 } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
-import { db, functions, auth } from '../firebase.js';
+import { db, auth, getFunctionsLazy } from '../firebase.js';
 import { sendPushToUser } from './pushService.js';
 import { notifyWallet } from './walletNotify.js';
 
@@ -60,7 +60,9 @@ export async function adminUpdateAuthUser(uid, { email, password } = {}) {
 
 async function tryCloud(name, payload, local) {
   try {
-    const fn = httpsCallable(functions, name);
+    const fns = await getFunctionsLazy();
+    if (!fns) return local();
+    const fn = httpsCallable(fns, name);
     return (await fn(payload)).data;
   } catch (e) {
     // Functions unavailable or errored, do it client-side (admin-gated).

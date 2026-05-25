@@ -4,8 +4,24 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/router';
-import LoginCard from '../components/LoginCard';
+import dynamic from 'next/dynamic';
 import { useAuth } from './useAuth';
+
+// LoginCard is the single biggest chrome dep on the boot path (~140 KB
+// minified — it pulls Firebase Auth flows, OTP plumbing, Google sign-in
+// helpers). It is only visible when the auth modal opens, so we ship
+// it in its own chunk that the browser fetches on demand. Until the
+// chunk lands the overlay shows a lightweight spinner, then swaps in
+// the real card with no layout shift.
+const LoginCard = dynamic(() => import('../components/LoginCard'), {
+  ssr: false,
+  loading: () => (
+    <div className="rounded-2xl bg-white p-10 text-center text-sm
+                    text-gray-500">
+      Loading sign-in…
+    </div>
+  ),
+});
 
 // Global login popup. openLogin(onSuccess, { onDismiss }).
 // Closes ONLY on: successful login, the X / "Maybe later" buttons, or a

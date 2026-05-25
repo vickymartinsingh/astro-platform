@@ -1,6 +1,10 @@
 import Head from 'next/head';
 import { useEffect } from 'react';
-import { themeService, auditService } from '@astro/shared';
+import dynamic from 'next/dynamic';
+// Deep imports avoid the @astro/shared barrel pulling all 30+ services
+// into the boot chunk.
+import * as themeService from '@astro/shared/services/themeService.js';
+import * as auditService from '@astro/shared/services/auditService.js';
 import { useRouter } from 'next/router';
 import '../styles/globals.css';
 import { AuthProvider } from '../lib/useAuth';
@@ -8,9 +12,16 @@ import useNativeBack from '../lib/useNativeBack';
 import ErrorBoundary from '../components/ErrorBoundary';
 import SplashScreen from '../components/SplashScreen';
 import NativeBack from '../components/NativeBack';
-import AdminLiveEditor from '../components/AdminLiveEditor';
-import AiAutoResponder from '../components/AiAutoResponder';
-import ConfirmModalHost from '../components/ConfirmModal';
+
+// Perf: chrome that doesn't drive first paint is dynamic + ssr:false
+// so it ships in its own chunk fetched after hydration. Keeps the
+// boot _app.js small (was 218 KB brotli; this is the main cut).
+const AdminLiveEditor = dynamic(() => import(
+  '../components/AdminLiveEditor'), { ssr: false });
+const AiAutoResponder = dynamic(() => import(
+  '../components/AiAutoResponder'), { ssr: false });
+const ConfirmModalHost = dynamic(() => import(
+  '../components/ConfirmModal'), { ssr: false });
 
 export default function App({ Component, pageProps }) {
   useNativeBack();

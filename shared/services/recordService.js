@@ -11,7 +11,7 @@ import {
   collection, addDoc, query, where, onSnapshot, serverTimestamp,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '../firebase.js';
+import { db, getStorageLazy } from '../firebase.js';
 import { getClient, getLocalTracks } from './callService.js';
 
 let rec = null;
@@ -145,6 +145,8 @@ export async function stopRecording() {
     const ts = Date.now();
     const path = `media/recordings/${m.type || 'session'}/`
       + `${m.sessionId || 's'}-${ts}.webm`;
+    const storage = await getStorageLazy();
+    if (!storage) return;
     const sref = ref(storage, path);
     await uploadBytes(sref, blob,
       { contentType: blob.type || 'audio/webm' });
