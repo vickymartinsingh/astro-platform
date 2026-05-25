@@ -154,13 +154,12 @@ export default function ChatScreen() {
 
   // Idle-nudge timer. Whenever the astrologer (AI) sends a message and
   // the client doesn't respond, schedule a follow-up nudge through the
-  // relay. The relay tracks which nudge is next (1, 2, 3) and sends a
-  // goodbye + ends the session on the 4th unanswered tick so the
-  // client's wallet is not drained while they're away.
+  // relay. Total inactivity window = exactly 2 minutes per user spec:
   //   - 1st nudge: 45s after the astrologer's last message
-  //   - 2nd nudge: +30s after the 1st nudge
-  //   - 3rd nudge: +40s after the 2nd nudge
-  //   - goodbye:   +45s after the 3rd (relay also ends the session)
+  //   - 2nd nudge: +45s after the 1st nudge (90s total)
+  //   - goodbye:   +30s after the 2nd (120s total). Relay ends the
+  //                session AND refunds the last 2 minutes of billed
+  //                time so the client is not charged for the silence.
   // The timer resets the moment the client sends ANY new message OR
   // the astrologer (AI or human) sends a NEW non-nudge reply.
   const nudgeTimerRef = useRef(null);
@@ -182,10 +181,9 @@ export default function ChatScreen() {
     // based on whether this message is itself a nudge.
     let delayMs = 45000;
     const nudgeIdx = Number(last.aiNudgeIndex || 0);
-    if (nudgeIdx === 1) delayMs = 30000;        // 1st nudge -> wait 30s
-    else if (nudgeIdx === 2) delayMs = 40000;   // 2nd nudge -> wait 40s
-    else if (nudgeIdx === 3) delayMs = 45000;   // 3rd nudge -> goodbye
-    else if (nudgeIdx >= 4) return undefined;   // goodbye already sent
+    if (nudgeIdx === 1) delayMs = 45000;        // 1st nudge -> wait 45s
+    else if (nudgeIdx === 2) delayMs = 30000;   // 2nd nudge -> goodbye in 30s
+    else if (nudgeIdx >= 3) return undefined;   // goodbye already sent
     if (nudgeTimerRef.current) clearTimeout(nudgeTimerRef.current);
     nudgeTimerRef.current = setTimeout(() => {
       // Re-check the session is still active before firing.
@@ -650,10 +648,76 @@ export default function ChatScreen() {
       )}
 
       {showRate && (
+        <EndReasonBanner session={session} />
+      )}
+      {showRate && (
         <RateModal uid={user.uid} astroId={astroId}
           sessionId={session?.id}
           onDone={() => router.replace('/dashboard')} />
       )}
+    </div>
+  );
+}
+
+// Sits on top of the dark backdrop just above the "Rate your
+// astrologer" modal. Explains WHY the chat ended:
+//   - inactivity timeout: shows the refund amount + thanks
+//   - normal end (user / astrologer / wallet exhausted): a warm
+//     "thank you, hope you had a good experience" line
+// Reads session.endReason + session.inactivityRefund set server-side
+// by aiNudge / endSession.
+function EndReasonBanner({ session }) {
+  if (!session || session.status !== 'ended') return null;
+  const reason = String(session.endReason || '').toLowerCase();
+  const refund = Number(session.inactivityRefund) || 0;
+  const refundSec = Number(session.inactivityRefundSeconds) || 0;
+  const isIdle = reason === 'idle-timeout';
+  const isWalletOut = reason === 'wallet-exhausted'
+    || reason === 'low-balance';
+  return (
+    <div className="pointer-events-none fixed inset-x-0 top-0 z-[60]
+      flex justify-center px-3 pt-[env(safe-area-inset-top)]">
+      <div className={`pointer-events-auto mt-3 w-full max-w-md
+        rounded-2xl px-4 py-3 text-sm shadow-2xl ${isIdle
+          ? 'bg-amber-50 text-amber-900 border border-amber-200'
+          : isWalletOut
+            ? 'bg-rose-50 text-rose-900 border border-rose-200'
+            : 'bg-emerald-50 text-emerald-900 border border-emerald-200'}`}>
+        {isIdle ? (
+          <>
+            <div className="font-bold">
+              Chat ended because of inactivity
+            </div>
+            <div className="mt-0.5">
+              You were away for over 2 minutes, so the chat was closed
+              automatically.{refund > 0 ? (
+                <> We have refunded <b>₹{refund}</b>
+                {refundSec ? ` (${Math.round(refundSec / 60 * 10) / 10
+                  } min)` : ''} to your wallet for the unused time.</>
+              ) : null}
+              {' '}Thank you, we hope to see you again.
+            </div>
+          </>
+        ) : isWalletOut ? (
+          <>
+            <div className="font-bold">
+              Chat ended (wallet ran out)
+            </div>
+            <div className="mt-0.5">
+              Your balance was used up. Recharge anytime to continue
+              your consultation. Thank you for using AstroSeer.
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="font-bold">Consultation ended</div>
+            <div className="mt-0.5">
+              Thank you, we hope you had a great experience. Please
+              rate your astrologer below.
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

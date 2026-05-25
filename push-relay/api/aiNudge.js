@@ -1,13 +1,12 @@
 // Idle-nudge endpoint. The customer chat page calls this when the
-// client has gone silent after the astrologer's last reply. We send up
-// to 3 short, distinct follow-up messages and then end the session so
-// the client's wallet stops getting charged.
-//
-// Schedule (handled client-side via setTimeout):
-//   - first call:  ~45s after the astrologer's last message
-//   - second call: ~30s after the first nudge (so ~75s total idle)
-//   - third call:  ~40s after the second nudge (~115s total idle)
-//   - fourth call: triggers the goodbye + ends the session
+// client has gone silent after the astrologer's last reply. The total
+// inactivity window is exactly **2 minutes** (per user spec):
+//   - first call:  45s after the astrologer's last message  (nudge 1)
+//   - second call: +45s after the first nudge (90s total)   (nudge 2)
+//   - third call:  +30s after the second nudge (120s total) (goodbye
+//                  + end session + refund the last 2 minutes of
+//                  billed time so the customer is not charged for the
+//                  unused inactivity window).
 //
 // Server-side guards: we re-read chats/{chatId}.aiIdleNudgeCount before
 // sending so duplicate triggers (network retries, dev refreshes,
@@ -171,8 +170,10 @@ module.exports = async (req, res) => {
   const count = Number(chat.aiIdleNudgeCount || 0);
   const nextCount = count + 1;
 
-  // After 3 nudges (nextCount === 4) -> goodbye + end session.
-  if (nextCount > 3) {
+  // After 2 nudges (nextCount === 3) -> goodbye + end session + refund
+  // the inactivity window. Total idle time at this point: 45s (first
+  // nudge fired) + 45s (second nudge) + 30s (this call) = 120s.
+  if (nextCount > 2) {
     const sysGoodbye = buildSystemPrompt({
       astrologer: astroDoc.name || astroDoc.displayName || 'your astrologer',
       client: 'the client', context: '',
@@ -188,36 +189,88 @@ module.exports = async (req, res) => {
       if (r.ok) text = scrubReply(r.reply).split(/\s*\|\|\|\s*/)[0]
         || GOODBYE_FALLBACK;
     } catch (_) { /* fall back */ }
+
+    // ---- INACTIVITY REFUND ----------------------------------------
+    // The user has been idle for ~120s. Refund the per-minute billed
+    // time for that window so they are not charged for the silence.
+    // Cap at the session's actual elapsed time so we never refund
+    // more than was billed (e.g. session that ended <120s in).
+    let refundedAmount = 0;
+    let refundSeconds = 0;
+    let sessionData = session || {};
+    try {
+      if (sessionId) {
+        const sSnap = await db.doc(`sessions/${sessionId}`).get();
+        if (sSnap.exists) sessionData = sSnap.data() || {};
+      }
+      const ratePerSec = Number(sessionData.ratePerSecond) || 0;
+      const startMs = (sessionData.startTime && sessionData.startTime.toMillis
+        && sessionData.startTime.toMillis()) || 0;
+      const elapsedSec = startMs > 0
+        ? Math.max(0, Math.floor((Date.now() - startMs) / 1000)) : 0;
+      refundSeconds = Math.min(120, elapsedSec);
+      refundedAmount = ratePerSec > 0
+        ? Math.ceil(ratePerSec * refundSeconds) : 0;
+    } catch (_) { /* refund is best-effort */ }
+
     try {
       await db.collection(`chats/${chatId}/messages`).add({
         senderId: astroUid,
         text,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
         aiGenerated: true,
-        aiNudgeIndex: 4,
+        aiNudgeIndex: 3,
         aiGoodbye: true,
       });
       await chatRef.set({
         lastMessage: text,
         lastMessageAt: admin.firestore.FieldValue.serverTimestamp(),
-        aiIdleNudgeCount: 4,
+        aiIdleNudgeCount: 3,
         typing: { [astroUid]: 0 },
       }, { merge: true });
-      // End the session so the client wallet stops being charged.
+
+      // Credit the refund + write a transactions ledger row, then end
+      // the session - all in one Firestore transaction so a partial
+      // failure can't leave a half-applied refund.
       if (sessionId) {
-        try {
-          await db.doc(`sessions/${sessionId}`).update({
+        const sessRef = db.doc(`sessions/${sessionId}`);
+        await db.runTransaction(async (t) => {
+          const sSnap = await t.get(sessRef);
+          if (!sSnap.exists) return;
+          const sd = sSnap.data() || {};
+          if (sd.status !== 'active') return;       // already ended
+          // Credit wallet if refund > 0 and we have a userId.
+          if (refundedAmount > 0 && sd.userId) {
+            const uRef = db.collection('users').doc(sd.userId);
+            const uSnap = await t.get(uRef);
+            const w = Number((uSnap.exists ? uSnap.data() : {}).wallet || 0)
+              + refundedAmount;
+            t.update(uRef, { wallet: w });
+            t.set(db.collection('transactions').doc(), {
+              userId: sd.userId,
+              amount: refundedAmount,
+              type: 'credit',
+              reason: 'inactivity refund',
+              referenceId: sessionId,
+              refundSeconds,
+              createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+          }
+          t.update(sessRef, {
             status: 'ended',
             endTime: admin.firestore.FieldValue.serverTimestamp(),
             endedByAi: true,
             endReason: 'idle-timeout',
+            inactivityRefund: refundedAmount,
+            inactivityRefundSeconds: refundSeconds,
           });
-        } catch (_) { /* non-fatal */ }
+        });
       }
     } catch (e) {
       return res.status(500).json({ error: String((e && e.message) || e) });
     }
-    return res.status(200).json({ ok: true, ended: true, nudge: 4 });
+    return res.status(200).json({ ok: true, ended: true, nudge: 3,
+      refundedAmount, refundSeconds });
   }
 
   // Otherwise send nudge #1, #2, or #3 (whichever is next).
