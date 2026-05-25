@@ -93,10 +93,31 @@ export default function LoginCard({ onDone, compact, initialMode }) {
         // settings/features.email_verification === true forces a
         // 6-digit OTP sent from support@astroseer.in before the new
         // user is signed in. Default OFF: signup completes as before.
-        if (features && features.email_verification === true) {
+        // Belt-and-braces: also peek at the localStorage cache in case
+        // the in-memory `features` prop hasn't hydrated yet (the form
+        // can be submitted before the live snapshot lands).
+        let liveFeatures = features;
+        try {
+          if ((!liveFeatures || liveFeatures.email_verification == null)
+            && typeof localStorage !== 'undefined') {
+            const cached = JSON.parse(
+              localStorage.getItem('settings_features') || '{}');
+            liveFeatures = { ...(features || {}), ...cached };
+          }
+        } catch (_) { /* ignore */ }
+        if (liveFeatures && liveFeatures.email_verification === true) {
           try {
+            // Sign the freshly-created user OUT immediately so the
+            // AuthModalProvider's auto-close-on-login effect does NOT
+            // fire and yank the modal away from us. We re-sign-in
+            // with the same email/password after the OTP verifies.
+            try { await authService.logoutUser(); } catch (_) { /* ignore */ }
             await authService.requestEmailOtp(email.trim(), name.trim());
-            setOtpUser(user);
+            setOtpUser({
+              email: email.trim(),
+              password,
+              displayName: name.trim(),
+            });
             setOtpInfo(`We just emailed a 6-digit code to ${email.trim()}.`
               + ' Please enter it below to finish signing up.');
             return;
@@ -106,6 +127,11 @@ export default function LoginCard({ onDone, compact, initialMode }) {
             setErr('Could not send the verification email: '
               + (e3 && e3.message || 'unknown') + '. You can still '
               + 'continue but the operator has been notified.');
+            // Try to re-login so the user lands on home (we logged out
+            // above as part of the OTP path).
+            try {
+              user = await authService.loginUser(email.trim(), password);
+            } catch (_) { /* user can log in manually */ }
             // Fall through to finish() so the user lands on home
             // rather than being trapped on a non-functional OTP screen.
           }
@@ -202,13 +228,15 @@ export default function LoginCard({ onDone, compact, initialMode }) {
     }
     setBusy(true);
     try {
-      await authService.verifyEmailOtp(email.trim(), code);
-      // Re-load the auth user so user.emailVerified flips to true
-      // locally too (server-side it was already updated by the relay).
-      try { await otpUser.reload(); } catch (_) { /* ignore */ }
-      const u = otpUser;
+      await authService.verifyEmailOtp(otpUser.email, code);
+      // Sign back in with the credentials we held on otpUser - the
+      // signup path signed out so the modal would stay open. Now that
+      // the email is verified we can finish login normally.
+      const user = await withTimeout(
+        authService.loginUser(otpUser.email, otpUser.password),
+        25000, 'Login');
       setOtpUser(null); setOtpCode(''); setOtpInfo('');
-      await finish(u);
+      await finish(user);
     } catch (e2) {
       setErr(e2 && e2.message ? e2.message
         : 'Could not verify the code. Please try again.');
@@ -219,8 +247,10 @@ export default function LoginCard({ onDone, compact, initialMode }) {
     if (busy) return;
     setErr(''); setBusy(true);
     try {
-      await authService.requestEmailOtp(email.trim(), name.trim());
-      setOtpInfo(`A new code has been emailed to ${email.trim()}.`);
+      const target = (otpUser && otpUser.email) || email.trim();
+      const dn = (otpUser && otpUser.displayName) || name.trim();
+      await authService.requestEmailOtp(target, dn);
+      setOtpInfo(`A new code has been emailed to ${target}.`);
     } catch (e) {
       setErr(e && e.message ? e.message : 'Could not resend the code.');
     } finally { setBusy(false); }
