@@ -48,30 +48,107 @@ async function logAttempt(db, payload) {
   } catch (_) { /* ignore */ }
 }
 
-// Build a short Vedic-context string from the client's default kundli
-// profile (if any).
+// Build a Vedic-context block from the SIGNED-IN CLIENT's default
+// kundli profile.
+//
+// SECURITY (Hard Rule, per user requirement):
+//   - The query is `kundliProfiles WHERE userId == clientUid` with
+//     clientUid resolved from the chats/{chatId}.participants array
+//     (the customer half of the conversation, see "resolve
+//     participants" block in the main handler). Each AI reply
+//     re-runs this — there is no in-memory cache — so user A's
+//     chart can never bleed into user B's chat.
+//   - Returns `{ text, profileId, signature }`. The caller passes
+//     `profileId` and `signature` into the audit log so any future
+//     mis-routing is visible in aiLog/. The signature is a short
+//     digest of (clientUid, profileId, dob+tob+place) so an admin
+//     can confirm at a glance that the chart used matches the right
+//     person.
 async function kundliContext(db, clientUid) {
+  const empty = { text: '', profileId: null, signature: '' };
   try {
     const q = await db.collection('kundliProfiles')
       .where('userId', '==', clientUid).get();
-    if (q.empty) return '';
+    if (q.empty) return empty;
     const profiles = q.docs.map((d) => ({ id: d.id, ...d.data() }));
     const k = profiles.find((p) => p.isDefault) || profiles[0];
-    if (!k || !k.dob) return '';
+    if (!k || !k.dob) return empty;
+
+    // BELT-AND-BRACES: drop the kundli if its userId doesn't match the
+    // chat's clientUid. The query above already filters by userId so
+    // this should never trigger — but if a stray doc ever lands with
+    // a mismatched userId (admin manual write etc), we want to NEVER
+    // forward someone else's chart into the LLM context.
+    if (String(k.userId || '') !== String(clientUid)) return empty;
+
     const r = (k.report && typeof k.report === 'object') ? k.report : null;
     const n = (r && r.narrative) || {};
     const asc = (r && ((r.ascendant && r.ascendant.sign)
       || r.zodiac)) || '';
-    return [
-      `Client birth details: DOB ${k.dob}, time ${k.tob || '?'} `
-      + `${k.ampm || ''}, place ${k.place || '?'}.`,
+
+    // Current Maha → Antar → Pratyantar (AstroSeer fills this).
+    const cd = r && r.currentDasha;
+    let dashaLine = '';
+    if (cd && cd.planet) {
+      const pieces = [`Current Maha Dasha: ${cd.planet} `
+        + `(${String(cd.start || '').slice(0, 10)} to `
+        + `${String(cd.end || '').slice(0, 10)})`];
+      if (cd.antar && cd.antar.planet) {
+        pieces.push(`Antar Dasha: ${cd.antar.planet} `
+          + `(${String(cd.antar.start || '').slice(0, 10)} to `
+          + `${String(cd.antar.end || '').slice(0, 10)})`);
+      }
+      if (cd.pratyantar && cd.pratyantar.planet) {
+        pieces.push(`Pratyantar Dasha: ${cd.pratyantar.planet} `
+          + `(${String(cd.pratyantar.start || '').slice(0, 10)} to `
+          + `${String(cd.pratyantar.end || '').slice(0, 10)})`);
+      }
+      dashaLine = pieces.join('. ') + '.';
+    }
+
+    // Top 3 yogas + doshas if available (AstroSeer ships these).
+    const yogas = Array.isArray(r && r.yogas) ? r.yogas
+      .slice(0, 5)
+      .map((y) => (typeof y === 'string' ? y : (y.name || y.title)))
+      .filter(Boolean) : [];
+    const doshas = r && r.doshas;
+    let doshaLine = '';
+    if (doshas && typeof doshas === 'object') {
+      const flags = [];
+      if (doshas.mangal && doshas.mangal.present) flags.push('Mangal');
+      if (doshas.kalsarp && doshas.kalsarp.present) flags.push('Kalsarp');
+      if (doshas.sade_sati && doshas.sade_sati.active) flags.push('Sade Sati');
+      if (flags.length) doshaLine = `Doshas active: ${flags.join(', ')}.`;
+    }
+
+    const text = [
+      `=== CLIENT'S OWN KUNDLI (use this and ONLY this) ===`,
+      `Name: ${k.name || '(not given)'}.`,
+      `Birth: DOB ${k.dob}, time ${k.tob || '?'} ${k.ampm || ''}, `
+        + `place ${k.place || '?'}.`,
       asc ? `Ascendant (Lagna): ${asc}.` : '',
-      r && r.chandra_rasi ? `Moon sign: ${r.chandra_rasi}.` : '',
-      r && r.nakshatra ? `Nakshatra: ${r.nakshatra}.` : '',
-      n.personality ? `Personality: ${n.personality}` : '',
-      n.career || '',
-    ].filter(Boolean).join(' ').slice(0, 1200);
-  } catch (_) { return ''; }
+      r && r.chandra_rasi ? `Moon sign (Rasi): ${r.chandra_rasi}.` : '',
+      r && r.soorya_rasi ? `Sun sign: ${r.soorya_rasi}.` : '',
+      r && r.nakshatra ? `Birth nakshatra: ${r.nakshatra}.` : '',
+      dashaLine,
+      yogas.length ? `Notable yogas: ${yogas.join(', ')}.` : '',
+      doshaLine,
+      n.personality ? `Personality reading: ${n.personality}` : '',
+      n.career ? `Career indication: ${n.career}` : '',
+    ].filter(Boolean).join('\n').slice(0, 2500);
+
+    // Short signature so the audit log can confirm at a glance that
+    // we used the RIGHT person's chart. (clientUid + profileId + dob
+    // + place head digest.) Not a security primitive on its own —
+    // the userId match above is the actual gate — but it makes
+    // cross-user leakage detectable if it ever happened.
+    const sig = `${String(clientUid).slice(0, 6)}/`
+      + `${String(k.id || '').slice(0, 6)}/`
+      + `${String(k.dob || '').slice(0, 10)}/`
+      + `${String(k.place || '').slice(0, 16)}`;
+
+    return { text, profileId: k.id || null, signature: sig };
+  } catch (_) { return empty; }
 }
 
 // Safe fallback bubbles when the AI provider chain completely fails.
@@ -303,7 +380,12 @@ module.exports = async (req, res) => {
     .data()?.name || 'the client';
   const astroName = astroDoc.name || astroDoc.displayName
     || 'your astrologer';
-  const context = await kundliContext(db, clientUid);
+  // Per-user kundli context. The function returns the text block
+  // plus the kundli profile id + signature so we can audit-log which
+  // chart was used for THIS reply (any future cross-user leak would
+  // show up as a profileId on the wrong user's chat).
+  const kctx = await kundliContext(db, clientUid);
+  const context = kctx.text || '';
   const systemText = buildSystemPrompt({ astrologer: astroName,
     client: clientName, context });
 
@@ -385,6 +467,13 @@ module.exports = async (req, res) => {
   }
 
   await logAttempt(db, { chatId, sessionId, astroUid,
+    clientUid,
+    // Audit which kundli profile (if any) was used for this reply.
+    // Cross-user leakage would surface here as a profileId on the
+    // wrong user's chat — easy to grep / monitor.
+    kundliProfileId: kctx.profileId || null,
+    kundliSignature: kctx.signature || '',
+    kundliUsed: !!kctx.text,
     accepted: acceptedNow, replied: true, bubbles: bubbles.length,
     provider, model, fallback: !!aiError,
     aiError: aiError || null });
@@ -392,5 +481,6 @@ module.exports = async (req, res) => {
   return res.status(200).json({
     ok: true, accepted: acceptedNow, replied: true,
     provider, model, bubbles: bubbles.length,
+    kundliUsed: !!kctx.text,
     fallback: !!aiError, aiError: aiError || null });
 };

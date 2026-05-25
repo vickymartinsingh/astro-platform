@@ -188,6 +188,100 @@ function Sec({ title, children }) {
   );
 }
 
+// Collapsible Maha-dasha row with nested Antar -> Pratyantar.
+// Current period (any level) is always expanded + highlighted; the
+// rest collapse so the list of 9 mahas stays scannable.
+function DashaRow({ d }) {
+  const [open, setOpen] = useState(!!d.current);
+  const has = (d.antardasha || []).length > 0;
+  return (
+    <div className={`rounded-card border p-2 text-xs ${d.current
+      ? 'border-primary/40 bg-primary/5'
+      : 'border-gray-200 bg-white'}`}>
+      <button type="button"
+        onClick={() => has && setOpen((o) => !o)}
+        className="flex w-full items-center justify-between gap-2
+                    text-left">
+        <span className={`flex items-center gap-2 font-semibold
+          ${d.current ? 'text-primary' : ''}`}>
+          {has && (
+            <span className={`inline-block w-3 text-center
+                transition-transform ${open ? 'rotate-90' : ''}`}>›</span>
+          )}
+          {d.planet}
+          {d.current && (
+            <span className="rounded-full bg-primary px-2 py-0.5
+                              text-[10px] font-bold text-white">
+              current
+            </span>
+          )}
+        </span>
+        <span className="shrink-0 text-sub-text">
+          {String(d.start || '').slice(0, 10)} —{' '}
+          {String(d.end || '').slice(0, 10)}
+        </span>
+      </button>
+      {has && open && (
+        <div className="mt-2 space-y-1 border-t border-gray-200 pt-2">
+          {d.antardasha.map((a, j) => (
+            <AntarRow key={j} a={a} parentCurrent={!!d.current} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AntarRow({ a, parentCurrent }) {
+  const [open, setOpen] = useState(!!a.current);
+  const has = (a.pratyantardasha || []).length > 0;
+  return (
+    <div className={`rounded p-1.5 text-[11px] ${a.current
+      ? 'bg-primary/10 font-semibold text-primary'
+      : parentCurrent ? '' : 'text-sub-text'}`}>
+      <button type="button"
+        onClick={() => has && setOpen((o) => !o)}
+        className="flex w-full items-center justify-between gap-2
+                    text-left">
+        <span className="flex items-center gap-1.5">
+          {has && (
+            <span className={`inline-block w-2.5 text-center
+                transition-transform ${open ? 'rotate-90' : ''}`}>›</span>
+          )}
+          {!has && <span className="inline-block w-2.5" />}
+          {a.planet}
+          {a.current && (
+            <span className="rounded-full bg-primary px-1.5 py-0.5
+                              text-[9px] font-bold text-white">
+              now
+            </span>
+          )}
+        </span>
+        <span className="shrink-0">
+          {String(a.start || '').slice(0, 10)} —{' '}
+          {String(a.end || '').slice(0, 10)}
+        </span>
+      </button>
+      {has && open && (
+        <div className="mt-1 space-y-0.5 border-t border-primary/10 pt-1
+                         pl-4">
+          {a.pratyantardasha.map((p, k) => (
+            <div key={k}
+              className={`flex justify-between ${p.current
+                ? 'font-bold text-accent' : 'text-sub-text'}`}>
+              <span>{p.planet}{p.current ? ' · now' : ''}</span>
+              <span>
+                {String(p.start || '').slice(0, 10)} —{' '}
+                {String(p.end || '').slice(0, 10)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FullKundli({ r, kundli }) {
   const [tab, setTab] = useState('overview');
   const n = r.narrative || {};
@@ -349,48 +443,58 @@ function FullKundli({ r, kundli }) {
 
       {tab === 'dasha' && (
         <div className="mt-3">
+          {/* Current period card — drilled all the way to pratyantar
+              when AstroSeer's /api/dasha/current returns it. */}
           {r.currentDasha && (
-            <div className="mb-2 rounded-card bg-primary p-3 text-sm
-                            text-white">
-              Current Maha Dasha: <b>{r.currentDasha.planet}</b>{' '}
-              ({String(r.currentDasha.start || '').slice(0, 10)} to{' '}
-              {String(r.currentDasha.end || '').slice(0, 10)})
+            <div className="mb-3 rounded-card bg-gradient-to-br
+                            from-primary to-accent p-4 text-white">
+              <div className="text-xs uppercase tracking-wide
+                              opacity-80">
+                Current period
+              </div>
+              <div className="mt-1 text-lg font-bold">
+                {r.currentDasha.planet}
+                {r.currentDasha.antar
+                  ? <> / <span className="opacity-90">
+                      {r.currentDasha.antar.planet}
+                    </span></>
+                  : null}
+                {r.currentDasha.pratyantar
+                  ? <> / <span className="opacity-80">
+                      {r.currentDasha.pratyantar.planet}
+                    </span></>
+                  : null}
+              </div>
+              <div className="mt-1 text-xs opacity-90">
+                Maha&nbsp;{r.currentDasha.planet}{' '}
+                ({String(r.currentDasha.start || '').slice(0, 10)} —{' '}
+                {String(r.currentDasha.end || '').slice(0, 10)})
+              </div>
+              {r.currentDasha.antar && (
+                <div className="text-xs opacity-90">
+                  Antar&nbsp;{r.currentDasha.antar.planet}{' '}
+                  ({String(r.currentDasha.antar.start || '').slice(0, 10)} —{' '}
+                  {String(r.currentDasha.antar.end || '').slice(0, 10)})
+                </div>
+              )}
+              {r.currentDasha.pratyantar && (
+                <div className="text-xs opacity-90">
+                  Pratyantar&nbsp;{r.currentDasha.pratyantar.planet}{' '}
+                  ({String(r.currentDasha.pratyantar.start || '').slice(0, 10)} —{' '}
+                  {String(r.currentDasha.pratyantar.end || '').slice(0, 10)})
+                </div>
+              )}
             </div>
           )}
           <Sec title="Vimshottari Maha Dasha">
             <div className="space-y-1">
               {(r.dasha || []).length === 0 && (
                 <div className="text-sub-text">
-                  Dasha unavailable on the current Prokerala plan.
+                  Dasha not available for this profile.
                 </div>
               )}
               {(r.dasha || []).map((d, i) => (
-                <div key={i}
-                  className={`rounded-card p-2 text-xs ${d.current
-                    ? 'bg-primary/10 font-semibold' : 'bg-white'}`}>
-                  <div className="flex justify-between">
-                    <span>{d.planet}{d.current ? ' (current)' : ''}</span>
-                    <span className="text-sub-text">
-                      {String(d.start || '').slice(0, 10)} to{' '}
-                      {String(d.end || '').slice(0, 10)}
-                    </span>
-                  </div>
-                  {d.current && d.antardasha && d.antardasha.length > 0 && (
-                    <div className="mt-1 border-t border-gray-200 pt-1">
-                      {d.antardasha.map((a, j) => (
-                        <div key={j}
-                          className={`flex justify-between ${a.current
-                            ? 'font-bold text-primary' : ''}`}>
-                          <span>{a.planet}</span>
-                          <span>
-                            {String(a.start || '').slice(0, 10)} to{' '}
-                            {String(a.end || '').slice(0, 10)}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <DashaRow key={i} d={d} />
               ))}
             </div>
           </Sec>

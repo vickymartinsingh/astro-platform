@@ -83,17 +83,44 @@ function toIso(p, tz) {
     + `${tz || '+05:30'}`;
 }
 
+// Stamp `current: true` on whichever maha / antar / pratyantar
+// period the user is sitting in right now. Used by the legacy
+// Prokerala / AstrologyAPI adapters (which call with a flat list)
+// AND by the AstroSeer adapter (which calls with the deep tree).
 function markDasha(list) {
   const now = Date.now();
   const dasha = (list || []).map((x) => {
     const s = x.start ? Date.parse(x.start) : 0;
     const e = x.end ? Date.parse(x.end) : 0;
+    const antar = Array.isArray(x.antardasha) ? x.antardasha.map((a) => {
+      const as = a.start ? Date.parse(a.start) : 0;
+      const ae = a.end ? Date.parse(a.end) : 0;
+      const praty = Array.isArray(a.pratyantardasha)
+        ? a.pratyantardasha.map((p) => {
+          const ps = p.start ? Date.parse(p.start) : 0;
+          const pe = p.end ? Date.parse(p.end) : 0;
+          return {
+            planet: p.planet, start: p.start, end: p.end,
+            current: ps && pe && now >= ps && now < pe,
+          };
+        }) : [];
+      return {
+        planet: a.planet, start: a.start, end: a.end,
+        current: as && ae && now >= as && now < ae,
+        pratyantardasha: praty,
+      };
+    }) : [];
     return {
       planet: x.planet, start: x.start, end: x.end,
       current: s && e && now >= s && now < e,
-      antardasha: Array.isArray(x.antardasha) ? x.antardasha : [],
+      antardasha: antar,
     };
   });
+  // The legacy callers (prokerala, astrologyapi, vedicastroapi,
+  // freeastrologyapi) destructure { dasha, currentDasha }. Keep
+  // that shape, AND attach the array itself as `dasha` so the
+  // AstroSeer adapter can `markDasha(tree).dasha` to get just the
+  // array without the wrapper.
   return { dasha, currentDasha: dasha.find((d) => d.current) || null };
 }
 
@@ -361,16 +388,33 @@ async function runAstroSeer(creds, p, lat, lng) {
   };
   const headers = { 'Content-Type': 'application/json' };
   if (key) headers['X-API-Key'] = key;
-  const r = await fetch(`${base.replace(/\/+$/, '')}/api/kundli`, {
+  const baseUrl = base.replace(/\/+$/, '');
+  const post = (path) => fetch(`${baseUrl}${path}`, {
     method: 'POST',
     headers,
     body: JSON.stringify(body),
   });
-  if (!r.ok) {
-    const t = await r.text().catch(() => '');
-    throw new Error(`AstroSeer ${r.status}: ${t.slice(0, 200)}`);
+  // Fan out the kundli + dasha calls in parallel so the user gets
+  // EVERY chart section (lagna, planets, dasha tree) from a single
+  // /api/kundli request to our relay. Dasha is fetched as a separate
+  // AstroSeer endpoint (/api/dasha is the full Vimshottari tree;
+  // /api/dasha/current resolves the running maha/antar/pratyantar)
+  // because their /api/kundli omits dasha by default. We swallow
+  // dasha failures so a kundli still renders if dasha is down.
+  const [kRes, dRes, dCurRes] = await Promise.all([
+    post('/api/kundli'),
+    post('/api/dasha').catch((e) => ({ ok: false, _err: e })),
+    post('/api/dasha/current').catch((e) => ({ ok: false, _err: e })),
+  ]);
+  if (!kRes.ok) {
+    const t = await kRes.text().catch(() => '');
+    throw new Error(`AstroSeer ${kRes.status}: ${t.slice(0, 200)}`);
   }
-  const j = await r.json().catch(() => ({}));
+  const j = await kRes.json().catch(() => ({}));
+  const dashaJson = (dRes && dRes.ok)
+    ? await dRes.json().catch(() => null) : null;
+  const dashaCurJson = (dCurRes && dCurRes.ok)
+    ? await dCurRes.json().catch(() => null) : null;
 
   // Best-effort mapping back to the shape the rest of the app expects.
   // AstroSeer returns objects for nakshatra / moon_sign / sun_sign
@@ -405,8 +449,108 @@ async function runAstroSeer(creds, p, lat, lng) {
     combust: !!pl.combust,
     dignity: pl.dignity || null,
   }));
-  const dashaList = Array.isArray(j.vimshottari_dasha)
-    ? j.vimshottari_dasha : Array.isArray(j.dasha) ? j.dasha : [];
+  // Vimshottari dasha tree. Pulled from /api/dasha when the kundli
+  // endpoint itself doesn't include it (AstroSeer's design — keeps
+  // the kundli call snappy and dasha optional). Each maha period has
+  // a nested antardasha[] and each antardasha has a pratyantardasha[]
+  // (sub-sub). Falls back to whatever /api/kundli might already have
+  // inline for adapters that DO include it.
+  function extractDashaArray(d) {
+    if (!d) return [];
+    if (Array.isArray(d)) return d;
+    // AstroSeer /api/dasha returns an object — common keys to try.
+    const keys = ['vimshottari', 'periods', 'mahadasha', 'maha_dasha',
+      'dasha', 'data', 'result', 'list'];
+    for (const k of keys) {
+      if (Array.isArray(d[k])) return d[k];
+      if (d[k] && Array.isArray(d[k].periods)) return d[k].periods;
+    }
+    return [];
+  }
+  const dashaList = extractDashaArray(dashaJson)
+    .length ? extractDashaArray(dashaJson)
+    : (Array.isArray(j.vimshottari_dasha)
+      ? j.vimshottari_dasha
+      : Array.isArray(j.dasha) ? j.dasha : []);
+
+  // Normalise the nested tree:
+  //   maha.{planet, start, end, antardasha[]}
+  //   antar.{planet, start, end, pratyantardasha[]}
+  //   pratyantar.{planet, start, end}
+  // AstroSeer uses these exact names; some other adapters use
+  // `sub`/`sub_sub` which we alias.
+  function normPeriod(p) {
+    if (!p || typeof p !== 'object') return null;
+    const out = {
+      planet: p.planet || p.lord || p.name || '',
+      start: p.start || p.start_date || p.from || '',
+      end: p.end || p.end_date || p.to || '',
+    };
+    const antar = p.antardasha || p.antar_dasha || p.antar
+      || p.sub || p.sub_dasha || p.subPeriods || [];
+    if (Array.isArray(antar) && antar.length) {
+      out.antardasha = antar.map((a) => {
+        const inner = normPeriod(a);
+        const pratyantar = a.pratyantardasha || a.pratyantar
+          || a.pratyantar_dasha || a.sub_sub || a.subSub
+          || a.subSubPeriods || [];
+        if (Array.isArray(pratyantar) && pratyantar.length) {
+          inner.pratyantardasha = pratyantar.map(normPeriod).filter(Boolean);
+        }
+        return inner;
+      }).filter(Boolean);
+    }
+    return out;
+  }
+  const dashaTree = dashaList.map(normPeriod).filter(Boolean);
+
+  // Current period (Maha + Antar + Pratyantar). AstroSeer's
+  // /api/dasha/current returns this already drilled-down; otherwise
+  // we compute it from the tree.
+  function pickCurrent(tree) {
+    const now = Date.now();
+    const m = tree.find((x) => Date.parse(x.start) <= now
+      && now < Date.parse(x.end));
+    if (!m) return null;
+    const a = (m.antardasha || []).find((x) =>
+      Date.parse(x.start) <= now && now < Date.parse(x.end));
+    const pr = a && (a.pratyantardasha || []).find((x) =>
+      Date.parse(x.start) <= now && now < Date.parse(x.end));
+    return {
+      planet: m.planet, start: m.start, end: m.end,
+      antar: a ? { planet: a.planet, start: a.start, end: a.end } : null,
+      pratyantar: pr
+        ? { planet: pr.planet, start: pr.start, end: pr.end }
+        : null,
+    };
+  }
+  function currentFromApi(d) {
+    if (!d || typeof d !== 'object') return null;
+    // AstroSeer's /api/dasha/current commonly returns
+    //   { maha: {...}, antar: {...}, pratyantar: {...} }
+    // or { mahadasha: {...}, antardasha: {...}, pratyantardasha: {...} }
+    const m = d.maha || d.mahadasha || d.current_maha || d.current_dasha;
+    const a = d.antar || d.antardasha || d.current_antar;
+    const pr = d.pratyantar || d.pratyantardasha || d.current_pratyantar;
+    if (!m) return null;
+    return {
+      planet: m.planet || m.lord || m.name,
+      start: m.start || m.start_date || m.from,
+      end: m.end || m.end_date || m.to,
+      antar: a ? {
+        planet: a.planet || a.lord || a.name,
+        start: a.start || a.start_date || a.from,
+        end: a.end || a.end_date || a.to,
+      } : null,
+      pratyantar: pr ? {
+        planet: pr.planet || pr.lord || pr.name,
+        start: pr.start || pr.start_date || pr.from,
+        end: pr.end || pr.end_date || pr.to,
+      } : null,
+    };
+  }
+  const currentDasha = currentFromApi(dashaCurJson)
+    || pickCurrent(dashaTree);
 
   // Flatten object-or-string fields. AstroSeer's:
   //   nakshatra: { name, pada, lord, yoni, gana, nadi }
@@ -440,12 +584,19 @@ async function runAstroSeer(creds, p, lat, lng) {
     zodiac: ascendant && ascendant.sign,
     additional_info: j.avkahada_chakra || null,
     planets,
-    dasha: markDasha(dashaList),
-    currentDasha: dashaList.find((x) => {
-      const s = x.start && Date.parse(x.start);
-      const e = x.end && Date.parse(x.end);
-      return s && e && Date.now() >= s && Date.now() < e;
-    }) || null,
+    // Full Vimshottari tree (each maha has nested antardasha[],
+    // each antar has nested pratyantardasha[]). `current: true` is
+    // stamped on the period containing now at every level.
+    // markDasha returns {dasha, currentDasha} — we just want the
+    // marked array here; AstroSeer's separate /api/dasha/current
+    // already gives us the current period drilled down (see
+    // currentDasha below) so we don't lose that detail.
+    dasha: markDasha(dashaTree).dasha,
+    currentDasha,
+    // Raw responses from the dasha endpoints (handy if any
+    // downstream consumer wants the original AstroSeer shape).
+    dashaRaw: dashaJson || null,
+    dashaCurrentRaw: dashaCurJson || null,
     charts: j.charts || { rasi: null, navamsa: null },
     panchang: j.panchang || null,
     yogas: j.yogas || [],
