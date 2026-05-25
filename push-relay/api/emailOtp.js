@@ -71,7 +71,7 @@ async function smtpTransport(db) {
   const pass = cfg.smtpPass || process.env.SMTP_PASS || '';
   const secure = typeof cfg.smtpSecure === 'boolean'
     ? cfg.smtpSecure : port === 465;
-  const from = cfg.fromAddress || process.env.MAIL_FROM
+  const from = cfg.fromAddress || cfg.smtpFrom || process.env.MAIL_FROM
     || 'AstroSeer <support@astroseer.in>';
   if (!host || !user || !pass) {
     throw new Error('SMTP not configured. Admin must set host / user / '
