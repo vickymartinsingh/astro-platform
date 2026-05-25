@@ -38,13 +38,19 @@ export default function AstroKundli() {
         }
         if (!seen.has(s.userId)) seen.set(s.userId, null);
       }
-      const arr = [];
-      for (const uid of seen.keys()) {
-        // eslint-disable-next-line no-await-in-loop
-        const u = await userService.getUser(uid).catch(() => null);
-        arr.push({ uid, name: (u && u.name) || 'Client',
-          code: (u && u.userCode) || '' });
-      }
+      // Parallel fan-out for all client lookups (was serial N+1 — a
+      // 30-client list took ~3s on a slow connection). With Promise.all
+      // it's one round-trip wide instead of N round-trips deep.
+      const arr = await Promise.all(
+        Array.from(seen.keys()).map(async (uid) => {
+          const u = await userService.getUser(uid).catch(() => null);
+          return {
+            uid,
+            name: (u && u.name) || 'Client',
+            code: (u && u.userCode) || '',
+          };
+        }),
+      );
       setClients(arr);
       if (activeUid) { setSel(activeUid); }
     })();

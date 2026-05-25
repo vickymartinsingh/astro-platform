@@ -26,6 +26,15 @@ export default function AstroChat() {
   const [aiAvailable, setAiAvailable] = useState(false); // admin-enabled
   const [aiOn, setAiOn] = useState(false);                // this astro's
   const [aiBusy, setAiBusy] = useState(false);
+  // Themed toast (auto-clears after 5s). Replaces the native
+  // window.alert calls inside the voice-recording flow that don't fit
+  // a confirm modal (informational only).
+  const [toast, setToast] = useState(null);
+  function notify(msg, kind = 'err') {
+    setToast({ msg, kind });
+    setTimeout(() => setToast((t) =>
+      (t && t.msg === msg ? null : t)), 5000);
+  }
   const scrollRef = useRef(null);
   const lastCount = useRef(0);
   const typingTsRef = useRef(0);
@@ -165,7 +174,7 @@ export default function AstroChat() {
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (e) {
-      window.alert(e && e.name === 'NotAllowedError'
+      notify(e && e.name === 'NotAllowedError'
         ? 'Microphone permission is needed. Allow it in Settings.'
         : 'Cannot access the microphone.');
       return;
@@ -180,7 +189,7 @@ export default function AstroChat() {
       mr.onerror = () => {
         try { stream.getTracks().forEach((t) => t.stop()); } catch (_) {}
         setRecording(false);
-        window.alert('Recording failed. Please try again.');
+        notify('Recording failed. Please try again.');
       };
       mr.onstop = async () => {
         try { stream.getTracks().forEach((t) => t.stop()); } catch (_) {}
@@ -192,14 +201,14 @@ export default function AstroChat() {
         const ok = await chatService.sendAudioMessage(
           chatId, user.uid, blob);
         setBusyAudio(false);
-        if (!ok) window.alert('Could not send the voice note.');
+        if (!ok) notify('Could not send the voice note.');
       };
       recRef.current = mr;
       mr.start();
       setRecording(true);
     } catch (e) {
       try { stream.getTracks().forEach((t) => t.stop()); } catch (_) {}
-      window.alert('Voice recording is not supported on this device.');
+      notify('Voice recording is not supported on this device.');
     }
   }
 
@@ -210,6 +219,22 @@ export default function AstroChat() {
   return (
     <div className="flex h-screen flex-col md:flex-row"
       style={{ background: '#F1FAF6' }}>
+      {toast && (
+        <div className={`pointer-events-none fixed inset-x-0 top-2 z-50
+            flex justify-center px-3`}>
+          <div className={`pointer-events-auto flex items-start gap-2
+              rounded-card px-3 py-2 text-sm shadow-md
+              ${toast.kind === 'ok'
+                ? 'border border-emerald-200 bg-emerald-50 text-emerald-800'
+                : 'border border-rose-200 bg-rose-50 text-rose-800'}`}>
+            <span>{toast.msg}</span>
+            <button onClick={() => setToast(null)}
+              aria-label="Dismiss" className="opacity-60 hover:opacity-100">
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
       <aside className="bg-bg-light p-4 md:w-72">
         <button onClick={() => router.push('/astro-sessions')}
           className="mb-3 text-sm font-semibold text-primary">

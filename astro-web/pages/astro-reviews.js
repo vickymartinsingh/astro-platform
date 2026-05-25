@@ -49,7 +49,16 @@ export default function AstroReviews() {
               <div className="flex items-center justify-between">
                 <div className="font-semibold">{r.reviewer}</div>
                 <div className="text-gold">
-                  {'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}
+                  {(() => {
+                    // Bug guard: rating can land here as undefined / a
+                    // stringified number / a value outside 0..5. Bare
+                    // String.repeat throws RangeError on negatives or
+                    // NaN, which would crash the entire reviews list
+                    // for a single malformed doc.
+                    const n = Math.max(0,
+                      Math.min(5, Math.round(Number(r.rating) || 0)));
+                    return '★'.repeat(n) + '☆'.repeat(5 - n);
+                  })()}
                 </div>
               </div>
               <div className="text-xs text-sub-text">
