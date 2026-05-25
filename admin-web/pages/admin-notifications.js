@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { adminService } from '@astro/shared';
 import Layout from '../components/Layout';
 import UserPicker from '../components/UserPicker';
@@ -13,8 +13,31 @@ export default function AdminNotifications() {
   const [picked, setPicked] = useState([]); // selected user objects
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
+  // Per-session memory of "what did I just send" so an accidental
+  // double-click on Send doesn't fan out the same broadcast 48 times
+  // to every customer's inbox (which we found in production).
+  const lastSentRef = useRef({ key: '', at: 0 });
 
   async function send() {
+    // Re-entrancy + double-click guard. Without this, the click handler
+    // could fire twice while busy state is still rendering -> two
+    // identical broadcasts going out within a few ms.
+    if (busy) return;
+    const key = `${target}|${title.trim()}|${message.trim()}`;
+    const sinceLast = Date.now() - lastSentRef.current.at;
+    if (key === lastSentRef.current.key && sinceLast < 60_000) {
+      const okAgain = window.confirm(
+        `You just sent this same notification ${Math.round(sinceLast / 1000)
+        }s ago.\n\nSend it AGAIN?\n\n(If you clicked Send twice by mistake, `
+        + 'press Cancel.)');
+      if (!okAgain) return;
+    } else if (target !== 'user') {
+      const ok = window.confirm(
+        `Send "${title}" as a BROADCAST to all ${target === 'all'
+          ? 'users' : `${target}`}? This shows up in every recipient's `
+        + 'notifications inbox.');
+      if (!ok) return;
+    }
     setBusy(true); setMsg('');
     try {
       if (target === 'user') {
@@ -38,6 +61,7 @@ export default function AdminNotifications() {
         flash(`Notification sent to ${res.sent} user(s)`);
         setTitle(''); setMessage('');
       }
+      lastSentRef.current = { key, at: Date.now() };
     } catch (e) {
       setMsg('Failed: ' + (e?.message || 'error'));
     } finally { setBusy(false); }

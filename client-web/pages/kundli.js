@@ -192,12 +192,26 @@ function FullKundli({ r, kundli }) {
   const [tab, setTab] = useState('overview');
   const n = r.narrative || {};
   const lucky = n.lucky || {};
+  // Tabs that have no data on the current API plan are hidden entirely
+  // instead of showing a "Chart/Dasha unavailable on the current
+  // Prokerala plan" placeholder, which read like a broken feature to
+  // the user. The Overview + Planets & Houses tabs always work from
+  // the basic kundli payload, so they stay.
+  const hasChart = !!(r.charts && (r.charts.rasi || r.charts.navamsa));
+  const hasDasha = Array.isArray(r.dasha) && r.dasha.length > 0;
   const TABS = [
     ['overview', 'Overview'],
-    ['chart', 'Chart'],
+    hasChart && ['chart', 'Chart'],
     ['planets', 'Planets & Houses'],
-    ['dasha', 'Dasha'],
-  ];
+    hasDasha && ['dasha', 'Dasha'],
+  ].filter(Boolean);
+  // If the currently-selected tab was just removed (e.g. user was on
+  // 'dasha' but reloaded into a kundli without dasha data) snap back
+  // to Overview so we never show a blank section.
+  useEffect(() => {
+    if (!TABS.find(([k]) => k === tab)) setTab('overview');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasChart, hasDasha]);
   // Group planets by house (1..12) for the "planets in houses" view.
   const byHouse = {};
   (r.planets || []).forEach((p) => {

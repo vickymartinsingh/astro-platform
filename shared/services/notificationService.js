@@ -34,6 +34,31 @@ export async function saveDeviceToken(token, uid) {
 const byCreatedDesc = (a, b) =>
   (b.createdAt?.toMillis?.() || 0) - (a.createdAt?.toMillis?.() || 0);
 
+// Dedupe broadcast notifications.
+//
+// The admin "Send broadcast" button on /admin-notifications has no
+// rate-limit, so an accidental double-click (or 48 of them) used to
+// produce 48 identical "Welcome" notifications in every customer's
+// inbox. Until that page gets a server-side dedupe, collapse
+// duplicates here: for each broadcast (userId === 'all') we keep only
+// the NEWEST entry for any given (type, title, message) tuple.
+// Per-user notifications (incoming call, low balance, etc.) are kept
+// as-is - those are not user-clickable spam.
+function dedupeBroadcasts(rows) {
+  const seen = new Set();
+  const out = [];
+  for (const r of rows) {                       // rows are already newest-first
+    if (r.userId === 'all') {
+      const key = `${r.type || ''}|${(r.title || '').trim()}|`
+        + `${(r.message || '').trim()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    out.push(r);
+  }
+  return out;
+}
+
 // Single `in` filter (auto-indexed); ordered client-side so no composite
 // index is required.
 export async function getNotifications(uid) {
@@ -42,7 +67,8 @@ export async function getNotifications(uid) {
     where('userId', 'in', [uid, 'all']),
   );
   const snap = await getDocs(q);
-  return snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort(byCreatedDesc);
+  return dedupeBroadcasts(
+    snap.docs.map((d) => ({ id: d.id, ...d.data() })).sort(byCreatedDesc));
 }
 
 export function listenNotifications(uid, callback) {
@@ -51,8 +77,8 @@ export function listenNotifications(uid, callback) {
     where('userId', 'in', [uid, 'all']),
   );
   return onSnapshot(q, (snap) =>
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }))
-      .sort(byCreatedDesc)));
+    callback(dedupeBroadcasts(snap.docs.map(
+      (d) => ({ id: d.id, ...d.data() })).sort(byCreatedDesc))));
 }
 
 export async function markNotificationRead(id) {

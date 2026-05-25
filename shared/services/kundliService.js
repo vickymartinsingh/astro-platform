@@ -129,7 +129,7 @@ export function generateNarrative(r) {
       + `${moon ? `${moon} colours your emotional nature. ` : ''}`
       + `${nak ? `Your birth star ${nak} adds its own signature to your `
         + 'temperament and instincts.' : ''}`,
-    career: `Career: you ${t.c}. ${ai.planet
+    career: `Career: you thrive in ${t.c}. ${ai.planet
       ? `Your ruling planet ${ai.planet} supports focused growth when `
         + 'you align effort with timing.' : ''}`,
     health: `Health: ${t.h}. ${ai.nadi
