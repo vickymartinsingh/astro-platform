@@ -405,7 +405,7 @@ function Banner({ title, sub }) {
   return (
     <div className="mt-3 rounded-card py-2 text-center"
       style={{
-        background: 'linear-gradient(135deg, #6C2BD9, #8B5CF6)',
+        background: 'linear-gradient(135deg, #D4A12A 0%, #B45309 50%, #7F2020 100%)',
       }}>
       <div className="text-sm font-bold text-white">{title}</div>
       {sub && (
@@ -456,8 +456,11 @@ function KundliPickerModal({ list, onPick, onAddNew, onClose }) {
         bg-black/50 px-3 py-4 sm:items-center"
       role="dialog" aria-modal="true">
       <div className="w-full max-w-md overflow-hidden rounded-2xl
-        border-2 border-primary bg-white shadow-2xl"
-        style={{ boxShadow: '0 20px 50px rgba(108,43,217,.25)' }}>
+        bg-white shadow-2xl"
+        style={{
+          border: '2px solid #7F2020',
+          boxShadow: '0 20px 50px rgba(127,32,32,.25)',
+        }}>
         {/* Brand header — maroon gradient strip with title +
             saved-count chip + close button. The close button is
             ALWAYS shown (was previously gated behind a "canClose"
@@ -466,7 +469,7 @@ function KundliPickerModal({ list, onPick, onAddNew, onClose }) {
         <div className="flex items-center justify-between gap-2
           px-4 py-3 text-white"
           style={{
-            background: 'linear-gradient(135deg, #6C2BD9, #8B5CF6)',
+            background: 'linear-gradient(135deg, #D4A12A 0%, #B45309 50%, #7F2020 100%)',
           }}>
           <div>
             <div className="text-[10px] uppercase tracking-[0.2em]
@@ -485,7 +488,8 @@ function KundliPickerModal({ list, onPick, onAddNew, onClose }) {
                 aria-label="Close"
                 className="grid h-8 w-8 place-items-center
                   rounded-full bg-white text-lg font-bold
-                  text-primary shadow-sm hover:bg-bg-light">
+                  shadow-sm hover:bg-bg-light"
+                style={{ color: '#7F2020' }}>
                 ×
               </button>
             )}
@@ -536,16 +540,17 @@ function KundliPickerModal({ list, onPick, onAddNew, onClose }) {
           ))}
         </div>
 
-        {/* CTA footer. Inline brand-gradient (#6C2BD9 -> #8B5CF6)
-            so even a stale Tailwind purge / CDN cache can never
-            ship this as yellow. */}
+        {/* CTA footer. Inline Royal brand gradient (Amber
+            #D4A12A -> Rust #B45309 -> Maroon #7F2020) so even a
+            stale Tailwind purge or CDN cache can never ship this
+            in a non-brand colour. No purple, no flat yellow. */}
         <div className="border-t border-gray-100 p-3">
           <button type="button" onClick={onAddNew}
             className="w-full rounded-full py-2.5 text-sm
               font-bold text-white shadow-sm hover:opacity-90"
             style={{
               background:
-                'linear-gradient(135deg, #6C2BD9, #8B5CF6)',
+                'linear-gradient(135deg, #D4A12A 0%, #B45309 50%, #7F2020 100%)',
             }}>
             + Add new kundli
           </button>
@@ -570,7 +575,7 @@ function TalkChatCTA() {
   return (
     <div className="mt-4 rounded-card p-3 text-center"
       style={{
-        background: 'linear-gradient(135deg, #6C2BD9, #8B5CF6)',
+        background: 'linear-gradient(135deg, #D4A12A 0%, #B45309 50%, #7F2020 100%)',
       }}>
       <div className="mb-2 text-[12px] font-semibold text-white">
         Connect with an Astrologer on Call or Chat for more
@@ -986,7 +991,7 @@ function YBox({ title, rows }) {
       bg-white">
       <div className="py-2 text-center text-sm font-bold text-white"
         style={{
-          background: 'linear-gradient(135deg, #6C2BD9, #8B5CF6)',
+          background: 'linear-gradient(135deg, #D4A12A 0%, #B45309 50%, #7F2020 100%)',
         }}>
         {title}
       </div>

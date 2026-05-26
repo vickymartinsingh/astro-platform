@@ -35,9 +35,9 @@ export function generateReportHTML(data) {
     .join('');
   return `<!doctype html><html><head><meta charset="utf-8">
     <style>body{font-family:Arial;color:#1A1A2E}
-    h1{color:#6C2BD9}table{border-collapse:collapse;width:100%}
-    th,td{border:1px solid #ccc;padding:6px;font-size:12px;text-align:left}
-    th{background:#F3EEFF}</style></head><body>
+    h1{color:#7F2020}table{border-collapse:collapse;width:100%}
+    th,td{border:1px solid #E6DEC9;padding:6px;font-size:12px;text-align:left}
+    th{background:#FBF7EE;color:#7F2020}</style></head><body>
     <h1>${(data.type || 'Custom').toUpperCase()} REPORT</h1>
     <p>Generated ${new Date().toLocaleString()}</p>
     <table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>

@@ -35,23 +35,21 @@ export const THEME_FIELDS = [
   ['tarot', 'Tarot card'],
 ];
 
+// Royal (Maroon / Amber / Olive) is the ONLY approved brand
+// palette. The Classic (Purple) variant has been retired — its
+// key now resolves to the Royal palette so any legacy save in
+// settings/branding still renders the brand-correct colours.
+const ROYAL = {
+  label: 'Royal (Maroon / Amber / Olive)',
+  primary: '#7F2020', gradA: '#D4A12A', gradB: '#7F2020',
+  bgLight: '#FBF7EE', accent: '#B45309', success: '#5A6E32',
+  warning: '#D4A12A', danger: '#C0392B', verify: '#7F2020',
+  tarot: '#2A1408',
+  swatch: ['#7F2020', '#D4A12A', '#5A6E32'],
+};
 export const THEMES = {
-  classic: {
-    label: 'Classic (Purple)',
-    primary: '#6C2BD9', gradA: '#6C2BD9', gradB: '#8B5CF6',
-    bgLight: '#F3EEFF', accent: '#DB2777', success: '#1B6B2F',
-    warning: '#E67E22', danger: '#C0392B', verify: '#7F2020',
-    tarot: '#2A1A63',
-    swatch: ['#6C2BD9', '#8B5CF6', '#DB2777'],
-  },
-  royal: {
-    label: 'Royal (Maroon / Amber / Olive)',
-    primary: '#7F2020', gradA: '#7F2020', gradB: '#F59E0B',
-    bgLight: '#F7EFE3', accent: '#F59E0B', success: '#84994F',
-    warning: '#E67E22', danger: '#C0392B', verify: '#7F2020',
-    tarot: '#84994F',
-    swatch: ['#7F2020', '#F59E0B', '#84994F'],
-  },
+  classic: ROYAL,
+  royal: ROYAL,
 };
 
 export function themeVars(t) {
