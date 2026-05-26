@@ -215,7 +215,7 @@ export default function Kundli() {
                                 text-sm text-danger">
                   <span>
                     Could not load the chart right now. The kundli
-                    service may be waking up — please try again in a
+                    service may be waking up. Please try again in a
                     moment.
                   </span>
                   <button type="button"
@@ -275,7 +275,7 @@ function DashaRow({ d }) {
           )}
         </span>
         <span className="shrink-0 text-sub-text">
-          {String(d.start || '').slice(0, 10)} —{' '}
+          {String(d.start || '').slice(0, 10)} to{' '}
           {String(d.end || '').slice(0, 10)}
         </span>
       </button>
@@ -316,7 +316,7 @@ function AntarRow({ a, parentCurrent }) {
           )}
         </span>
         <span className="shrink-0">
-          {String(a.start || '').slice(0, 10)} —{' '}
+          {String(a.start || '').slice(0, 10)} to{' '}
           {String(a.end || '').slice(0, 10)}
         </span>
       </button>
@@ -329,7 +329,7 @@ function AntarRow({ a, parentCurrent }) {
                 ? 'font-bold text-accent' : 'text-sub-text'}`}>
               <span>{p.planet}{p.current ? ' · now' : ''}</span>
               <span>
-                {String(p.start || '').slice(0, 10)} —{' '}
+                {String(p.start || '').slice(0, 10)} to{' '}
                 {String(p.end || '').slice(0, 10)}
               </span>
             </div>
@@ -435,7 +435,7 @@ function FullKundli({ r, kundli }) {
                 dangerouslySetInnerHTML={{ __html: r.charts.rasi }} />
             </div>
           ) : (
-            <HouseGrid r={r} title="Rasi (D1) — houses & planets" />
+            <HouseGrid r={r} title="Rasi (D1) houses and planets" />
           )}
           {r.charts && r.charts.navamsa && (
             <div>
@@ -518,20 +518,20 @@ function FullKundli({ r, kundli }) {
               </div>
               <div className="mt-1 text-xs opacity-90">
                 Maha&nbsp;{r.currentDasha.planet}{' '}
-                ({String(r.currentDasha.start || '').slice(0, 10)} —{' '}
+                ({String(r.currentDasha.start || '').slice(0, 10)} to{' '}
                 {String(r.currentDasha.end || '').slice(0, 10)})
               </div>
               {r.currentDasha.antar && (
                 <div className="text-xs opacity-90">
                   Antar&nbsp;{r.currentDasha.antar.planet}{' '}
-                  ({String(r.currentDasha.antar.start || '').slice(0, 10)} —{' '}
+                  ({String(r.currentDasha.antar.start || '').slice(0, 10)} to{' '}
                   {String(r.currentDasha.antar.end || '').slice(0, 10)})
                 </div>
               )}
               {r.currentDasha.pratyantar && (
                 <div className="text-xs opacity-90">
                   Pratyantar&nbsp;{r.currentDasha.pratyantar.planet}{' '}
-                  ({String(r.currentDasha.pratyantar.start || '').slice(0, 10)} —{' '}
+                  ({String(r.currentDasha.pratyantar.start || '').slice(0, 10)} to{' '}
                   {String(r.currentDasha.pratyantar.end || '').slice(0, 10)})
                 </div>
               )}
@@ -576,16 +576,18 @@ const REPORT_TOC = {
     title: 'Free 250+ Page Vedic Kundli',
     badge: 'No charge',
     sections: [
-      ['🏠', 'Birth chart (D1 Rasi) with planet positions in DMS'],
-      ['🪐', '16 divisional charts — Navamsa, Dasamsa, Chaturthamsa, …'],
-      ['🌑', 'Nakshatra detail with pada, lord, yoni, gana, nadi'],
-      ['📊', 'Vimshottari Maha → Antar → Pratyantar dasha tree'],
-      ['🪐', 'Planetary aspects, dignities, friendship table'],
-      ['🕉️', 'Yogas (Mahapurusha, Raj, Gajakesari, …)'],
-      ['⚠️', 'Doshas — Mangal, Kalsarp, Sade Sati (if present)'],
-      ['🧮', 'Avkahada Chakra, Ghatak, Favourable Points'],
-      ['📅', 'Panchang — Tithi, Yoga, Karana, Nakshatra at birth'],
-      ['📩', 'PDF emailed to you + saved in Orders for re-download'],
+      'Birth chart (D1 Rasi) with planet positions in degrees, '
+        + 'minutes and seconds',
+      '16 divisional charts (Navamsa, Dasamsa, Chaturthamsa and more)',
+      'Nakshatra detail with pada, lord, yoni, gana and nadi',
+      'Full Vimshottari dasha tree with Maha, Antar and Pratyantar '
+        + 'periods',
+      'Planetary aspects, dignities and friendship table',
+      'Yogas (Mahapurusha, Raj, Gajakesari and others)',
+      'Doshas (Mangal, Kalsarp, Sade Sati where present)',
+      'Avkahada Chakra, Ghatak and Favourable Points',
+      'Panchang at birth (Tithi, Yoga, Karana, Nakshatra)',
+      'PDF emailed to you and saved in Orders for re-download',
     ],
     tat: 'Usually ready in under 60 seconds.',
     confirmCta: 'Yes, generate the report',
@@ -594,19 +596,19 @@ const REPORT_TOC = {
     title: '12-Month Vedic Forecast',
     badge: '', // injected with the live price
     sections: [
-      ['📅', 'Personalised monthly outlook — 12 months ahead'],
-      ['🪐', 'Maha + Antar + Pratyantar dasha for every month'],
-      ['💼', 'Career, finance, business indications month by month'],
-      ['❤️', 'Love + relationships + marriage timing windows'],
-      ['🩺', 'Health & wellbeing watch-outs'],
-      ['🌍', 'Travel + relocation opportunities'],
-      ['🔮', 'Important transits (Saturn, Jupiter, Rahu/Ketu)'],
-      ['🪔', 'Remedies + lucky days, colours, mantras per month'],
-      ['📩', 'PDF emailed to you + saved in Orders for re-download'],
+      'Personalised monthly outlook for the next 12 months',
+      'Maha, Antar and Pratyantar dasha for every month',
+      'Career, finance and business indications month by month',
+      'Love, relationships and marriage timing windows',
+      'Health and wellbeing watch-outs',
+      'Travel and relocation opportunities',
+      'Important transits (Saturn, Jupiter, Rahu and Ketu)',
+      'Remedies with lucky days, colours and mantras per month',
+      'PDF emailed to you and saved in Orders for re-download',
     ],
-    tat: 'Usually ready in under 60 seconds. '
-      + 'Wallet is debited only after the PDF is delivered — if '
-      + 'generation fails, your wallet is refunded automatically.',
+    tat: 'Usually ready in under 60 seconds. Wallet is debited only '
+      + 'after the PDF is delivered. If generation fails, your '
+      + 'wallet is refunded automatically.',
     confirmCta: 'Yes, proceed to payment',
   },
 };
@@ -658,7 +660,7 @@ function ReportButtons({ kundli }) {
             font-bold text-white disabled:opacity-60">
           {busy === 'free'
             ? 'Preparing…'
-            : '⬇ Free 250+ page Kundli (PDF)'}
+            : 'Free 250+ page Kundli (PDF)'}
         </button>
         <button type="button" onClick={() => ask('forecast12')}
           disabled={!!busy}
@@ -715,48 +717,76 @@ function ReportButtons({ kundli }) {
 function ConfirmReportPopup({ spec, price, kind, onCancel, onConfirm }) {
   if (!spec) return null;
   const isPaid = kind === 'forecast12';
+  // Professional, dash-free layout: serif-feel title, a single muted
+  // divider, a numbered list (no colourful emojis), a quiet outlined
+  // delivery panel and balanced full-width CTAs. Replaces the older
+  // emoji-heavy / dash-heavy popup that read "messy".
   return (
     <div className="fixed inset-0 z-[2147483647] flex items-center
                     justify-center bg-black/60 p-4">
-      <div className="w-full max-w-md rounded-2xl bg-white p-5
-                      shadow-2xl">
-        <div className="flex items-baseline justify-between gap-3">
-          <h2 className="text-lg font-bold text-primary">
-            {spec.title}
-          </h2>
-          <span className={`shrink-0 rounded-full px-2 py-0.5
-              text-[11px] font-bold ${isPaid
-                ? 'bg-accent/15 text-accent'
-                : 'bg-success/15 text-success'}`}>
-            {isPaid ? `₹${price} from wallet` : spec.badge}
-          </span>
+      <div className="w-full max-w-md overflow-hidden rounded-2xl
+                      bg-white shadow-2xl">
+        {/* Header */}
+        <div className="border-b border-gray-100 px-5 pt-5 pb-4">
+          <div className="flex items-start justify-between gap-3">
+            <h2 className="text-xl font-bold text-primary">
+              {spec.title}
+            </h2>
+            <span className={`shrink-0 rounded-full px-3 py-1
+                text-[11px] font-bold uppercase tracking-wide
+                ${isPaid
+                  ? 'bg-accent/10 text-accent'
+                  : 'bg-success/10 text-success'}`}>
+              {isPaid ? `₹${price} from wallet` : spec.badge}
+            </span>
+          </div>
+          <p className="mt-2 text-xs font-medium uppercase
+                        tracking-wide text-sub-text">
+            What is included in your PDF
+          </p>
         </div>
-        <p className="mt-1 text-xs text-sub-text">
-          What you will get in your PDF:
-        </p>
-        <ul className="mt-2 max-h-64 space-y-1 overflow-auto
-                       rounded-card bg-bg-light p-3 text-sm">
-          {spec.sections.map(([icon, text]) => (
-            <li key={text} className="flex items-start gap-2">
-              <span className="shrink-0">{icon}</span>
+
+        {/* Sections — numbered, plain text, scrollable */}
+        <ol className="max-h-72 list-none space-y-2 overflow-auto
+                       px-5 py-4 text-[13px] leading-snug
+                       text-dark-text">
+          {spec.sections.map((text, i) => (
+            <li key={text} className="flex items-start gap-3">
+              <span className="mt-0.5 inline-flex h-5 w-5 shrink-0
+                  items-center justify-center rounded-full
+                  bg-primary/10 text-[10px] font-bold text-primary">
+                {i + 1}
+              </span>
               <span>{text}</span>
             </li>
           ))}
-        </ul>
-        <div className="mt-3 rounded-card border border-primary/30
-                        bg-primary/5 p-2 text-[11px] text-dark-text">
-          <b className="text-primary">Delivery:</b> {spec.tat}
+        </ol>
+
+        {/* Delivery panel */}
+        <div className="border-t border-gray-100 bg-bg-light px-5 py-3">
+          <div className="text-[11px] font-bold uppercase
+                          tracking-wide text-primary">
+            Delivery
+          </div>
+          <p className="mt-1 text-[12px] leading-snug text-dark-text">
+            {spec.tat}
+          </p>
         </div>
-        <div className="mt-4 flex gap-2">
+
+        {/* CTAs */}
+        <div className="flex gap-2 border-t border-gray-100 px-5 py-4">
           <button type="button" onClick={onCancel}
             className="flex-1 rounded-full border border-gray-300
-              bg-white py-2.5 text-sm font-bold text-dark-text">
+              bg-white py-2.5 text-sm font-bold text-dark-text
+              transition hover:bg-bg-light">
             No
           </button>
           <button type="button" onClick={onConfirm}
             className={`flex-1 rounded-full py-2.5 text-sm
-              font-bold text-white ${isPaid
-                ? 'bg-accent' : 'bg-primary'}`}>
+              font-bold text-white shadow-sm transition
+              ${isPaid
+                ? 'bg-accent hover:brightness-95'
+                : 'bg-primary hover:brightness-95'}`}>
             {spec.confirmCta}
           </button>
         </div>
@@ -772,34 +802,54 @@ function DownloadPopup({ result, onClose }) {
   return (
     <div className="fixed inset-0 z-[2147483647] flex items-center
                     justify-center bg-black/60 p-4">
-      <div className="w-full max-w-sm rounded-2xl bg-white p-5
-                      text-center shadow-2xl">
-        <div className="text-3xl">🎉</div>
-        <div className="mt-2 text-lg font-bold text-primary">
-          {result.kind === 'forecast12'
-            ? '12-month forecast is ready'
-            : 'Your Vedic kundli is ready'}
+      <div className="w-full max-w-sm overflow-hidden rounded-2xl
+                      bg-white shadow-2xl">
+        {/* Header strip on the brand colour — gives a confident,
+            professional vibe without resorting to emoji confetti. */}
+        <div className="bg-primary px-5 py-4 text-white">
+          <div className="text-[11px] font-bold uppercase
+                          tracking-wide opacity-80">
+            Report ready
+          </div>
+          <div className="mt-0.5 text-lg font-bold">
+            {result.kind === 'forecast12'
+              ? '12-Month Forecast'
+              : 'Your Vedic Kundli'}
+          </div>
         </div>
-        <div className="mt-1 text-xs text-sub-text">
-          {result.amount > 0
-            ? `₹${result.amount} deducted from wallet. `
-            : ''}
-          {result.emailed ? 'Also sent to your email. ' : ''}
-          Saved in Orders for unlimited re-download.
+
+        {/* Body */}
+        <div className="px-5 py-4 text-center">
+          <p className="text-[13px] leading-snug text-dark-text">
+            Your PDF is ready to download.
+          </p>
+          <p className="mt-2 text-[12px] text-sub-text">
+            {result.amount > 0
+              ? `₹${result.amount} deducted from wallet. `
+              : ''}
+            {result.emailed
+              ? 'A copy has also been sent to your email. '
+              : ''}
+            Saved in Orders for unlimited re-download.
+          </p>
+
+          <a href={result.pdfUrl} target="_blank" rel="noreferrer"
+            className="mt-4 block rounded-full bg-primary py-2.5
+              text-sm font-bold text-white shadow-sm transition
+              hover:brightness-95">
+            Download PDF now
+          </a>
+          <a href="/orders"
+            className="mt-2 block text-xs font-semibold text-primary
+                       hover:underline">
+            View all my orders
+          </a>
+          <button type="button" onClick={onClose}
+            className="mt-2 block w-full text-xs text-sub-text
+                       hover:text-dark-text">
+            Close
+          </button>
         </div>
-        <a href={result.pdfUrl} target="_blank" rel="noreferrer"
-          className="mt-4 block rounded-full bg-primary py-2.5
-            text-sm font-bold text-white">
-          ⬇ Download PDF now
-        </a>
-        <a href="/orders"
-          className="mt-2 block text-xs font-semibold text-primary">
-          View all my orders →
-        </a>
-        <button type="button" onClick={onClose}
-          className="mt-2 block w-full text-xs text-sub-text">
-          Close
-        </button>
       </div>
     </div>
   );
@@ -839,7 +889,7 @@ function HouseGrid({ r, title }) {
               </div>
               <div className="mt-1 min-h-[36px] text-xs font-semibold
                               text-dark-text">
-                {planets.length ? planets.join(', ') : '—'}
+                {planets.length ? planets.join(', ') : '·'}
               </div>
             </div>
           );

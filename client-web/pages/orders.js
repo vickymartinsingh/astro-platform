@@ -41,7 +41,7 @@ export default function Orders() {
         return { text: o.status === 'failed_refunded'
           ? 'Failed (refunded)' : 'Failed',
           cls: 'bg-danger/10 text-danger' };
-      default: return { text: o.status || '—',
+      default: return { text: o.status || '·',
         cls: 'bg-bg-light text-sub-text' };
     }
   }
@@ -51,7 +51,7 @@ export default function Orders() {
       <h1 className="mb-1 text-xl font-bold">My Orders</h1>
       <p className="mb-3 text-sm text-sub-text">
         Every PDF report you bought. One click re-downloads the same
-        file from the cloud — no charge, no waiting.
+        file from the cloud at no charge.
       </p>
       {rows.length === 0 ? (
         <div className="card text-center text-sub-text">
@@ -76,7 +76,7 @@ export default function Orders() {
                     <div className="text-xs text-sub-text">
                       {at ? at.toLocaleDateString('en-GB', {
                         day: '2-digit', month: 'short', year: 'numeric',
-                      }) : '—'}
+                      }) : '·'}
                       {o.amount > 0 ? ` · ₹${o.amount}` : ' · free'}
                     </div>
                   </div>
