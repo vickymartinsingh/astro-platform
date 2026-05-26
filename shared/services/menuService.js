@@ -8,6 +8,11 @@ import { db } from '../firebase.js';
 export const DEFAULT_CLIENT_MENU = [
   { href: '/dashboard', label: 'Home' },
   { href: '/astrologers', label: 'Astrologers' },
+  // Discover dashboard surfaces every AstroSeer-API reading on one
+  // monochrome-icon grid (35+ features). Placed near the top so
+  // customers find numerology, palmistry, vastu, lucky-mobile etc
+  // without hunting through individual menu items.
+  { href: '/discover', label: 'Discover' },
   { href: '/horoscope', label: 'Horoscope' },
   { href: '/tarot', label: 'Tarot' },
   { href: '/kundli', label: 'Kundli' },

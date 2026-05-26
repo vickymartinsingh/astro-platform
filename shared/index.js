@@ -19,6 +19,9 @@ export {
   LANGUAGES, SKILLS, EXPERIENCE_BUCKETS, MAX_REJECTIONS_BEFORE_BLOCK,
   DEFAULT_REFERRAL, resolveReferral,
 } from './astroProfile.js';
+export {
+  FEATURE_GROUPS, FEATURES, featurePrice, featureById,
+} from './astroFeatures.js';
 
 export * as authService from './services/authService.js';
 export * as userService from './services/userService.js';
