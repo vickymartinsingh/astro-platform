@@ -268,12 +268,85 @@ export default function Kundli() {
   );
 }
 
+// AstroTalk-style yellow banner header used at the top of every
+// boxed section. Matches the reference screenshots:
+// rounded-edge yellow strip with bold centred dark text.
+function Banner({ title, sub }) {
+  return (
+    <div className="mt-3 rounded-card bg-[#FFD63A] py-2 text-center">
+      <div className="text-sm font-bold text-dark-text">{title}</div>
+      {sub && (
+        <div className="mt-0.5 text-[11px] font-semibold text-dark-text/80">
+          {sub}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Legacy small-header section used inside cards; left as-is for the
+// existing tabs (transits / yogas / doshas etc) that haven't been
+// restyled yet.
 function Sec({ title, children }) {
   return (
     <div className="mt-3">
       <div className="mb-1 text-sm font-bold text-primary">{title}</div>
       <div className="text-sm text-dark-text">{children}</div>
     </div>
+  );
+}
+
+// "Connect with an Astrologer..." CTA strip the AstroTalk reference
+// drops between sections. Two pill buttons -> Astrologer list, with
+// the call mode pre-selected.
+function TalkChatCTA() {
+  return (
+    <div className="mt-4 rounded-card bg-[#FFD63A] p-3 text-center">
+      <div className="mb-2 text-[12px] font-semibold text-dark-text">
+        Connect with an Astrologer on Call or Chat for more
+        personalised detailed predictions.
+      </div>
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <Link href="/astrologers?mode=call"
+          className="inline-flex items-center gap-1.5 rounded-full
+            bg-white px-4 py-1.5 text-xs font-bold text-dark-text
+            shadow-sm">
+          <span>📞</span> Talk to Astrologer
+        </Link>
+        <Link href="/astrologers?mode=chat"
+          className="inline-flex items-center gap-1.5 rounded-full
+            bg-white px-4 py-1.5 text-xs font-bold text-dark-text
+            shadow-sm">
+          <span>💬</span> Chat with Astrologer
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+// "Download & share your kundli report" dark banner the reference
+// places at the bottom of each tab. Wires straight to the same
+// download path the Reports section uses.
+function DownloadBanner({ kundli, full }) {
+  return (
+    <button type="button"
+      onClick={() => kundliService.downloadKundliReport(
+        kundli || {}, full || {})}
+      className="mt-3 flex w-full items-center gap-3 rounded-card
+        bg-gradient-to-r from-[#0F0A23] to-[#1A1245] p-4 text-left
+        text-white shadow">
+      <div className="grid h-12 w-12 shrink-0 place-items-center
+        rounded-full bg-[#FFD63A]/15 text-2xl">📜</div>
+      <div className="flex-1">
+        <div className="text-sm font-bold">
+          Download &amp; share your kundli report
+        </div>
+        <span className="mt-1 inline-block rounded-full bg-[#FFD63A]
+          px-3 py-1 text-[11px] font-bold text-dark-text">
+          Download Kundli PDF
+        </span>
+      </div>
+    </button>
   );
 }
 
@@ -400,18 +473,28 @@ function FullKundli({ r, kundli }) {
     } catch (_) { /* best effort */ }
   }
 
+  // Seven top-level tabs that mirror the AstroTalk reference exactly.
+  // Older tabs (transits / yogas / doshas / compat / numerology) are
+  // folded into the relevant new tab as a sub-section so nothing is
+  // lost — just reorganised to match the reference layout.
   const TABS = [
-    ['overview', 'Overview'],
-    ['chart', 'Chart'],
-    ['planets', 'Planets & Houses'],
-    ['dasha', 'Dashas'],
-    ['transits', 'Transits'],
-    ['yogas', 'Yogas'],
-    ['doshas', 'Doshas'],
-    ['panchang', 'Panchang'],
-    ['compat', 'Compatibility'],
-    ['nav', 'Numerology'],
+    ['basic', 'Basic'],
+    ['kundli', 'Kundli'],
+    ['kp', 'KP'],
+    ['ashtakvarga', 'Ashtakvarga'],
+    ['charts', 'Charts'],
+    ['dasha', 'Dasha'],
+    ['freeReport', 'Free Report'],
   ];
+
+  // Coerce older saved tab keys to the new schema so the bookmarked
+  // ?tab=overview keeps working after the rename.
+  const ALIAS = {
+    overview: 'basic', chart: 'kundli', planets: 'kundli',
+    transits: 'kundli', yogas: 'kundli', doshas: 'kundli',
+    panchang: 'basic', compat: 'freeReport', nav: 'freeReport',
+  };
+  const activeTab = ALIAS[tab] || tab;
 
   return (
     <div className="mt-3 rounded-card bg-bg-light p-4">
@@ -423,30 +506,523 @@ function FullKundli({ r, kundli }) {
       </div>
       <ReportButtons kundli={kundli} />
 
-      <div className="mt-2 flex flex-wrap gap-1 overflow-x-auto">
+      {/* Yellow-active pill tabs, matching the AstroTalk web view. */}
+      <div className="mt-3 flex flex-nowrap gap-1 overflow-x-auto
+        rounded-card bg-white p-1">
         {TABS.map(([k, label]) => (
           <button key={k} type="button" onClick={() => setTab(k)}
-            className={`shrink-0 rounded-full px-3 py-1 text-xs
-              font-semibold ${tab === k ? 'bg-primary text-white'
-                : 'bg-white text-sub-text'}`}>
+            className={`shrink-0 rounded-card px-3 py-1.5
+              text-[12px] font-bold transition ${activeTab === k
+                ? 'bg-[#FFD63A] text-dark-text shadow-sm'
+                : 'text-sub-text hover:text-dark-text'}`}>
             {label}
           </button>
         ))}
       </div>
 
-      {tab === 'overview' && <OverviewTab r={r} n={n} lucky={lucky} />}
-      {tab === 'chart' && (
-        <ChartTab r={r} chartStyle={chartStyle}
-          onChangeStyle={saveChartStyle} />
+      {activeTab === 'basic' && (
+        <BasicTab r={r} raw={raw} kundli={kundli} />
       )}
-      {tab === 'planets' && <PlanetsTab r={r} />}
-      {tab === 'dasha' && <DashaTab r={r} />}
-      {tab === 'transits' && <TransitsTab r={r} kundli={kundli} />}
-      {tab === 'yogas' && <YogasTab r={r} raw={raw} />}
-      {tab === 'doshas' && <DoshasTab r={r} raw={raw} kundli={kundli} />}
-      {tab === 'panchang' && <PanchangTab r={r} raw={raw} kundli={kundli} />}
-      {tab === 'compat' && <CompatibilityTab kundli={kundli} />}
-      {tab === 'nav' && <NumerologyTab kundli={kundli} />}
+      {activeTab === 'kundli' && (
+        <KundliMainTab r={r} raw={raw} kundli={kundli}
+          chartStyle={chartStyle} onChangeStyle={saveChartStyle} />
+      )}
+      {activeTab === 'kp' && <KpTab r={r} raw={raw} />}
+      {activeTab === 'ashtakvarga' && (
+        <AshtakvargaTab r={r} raw={raw} />
+      )}
+      {activeTab === 'charts' && (
+        <ChartsGridTab r={r} raw={raw} chartStyle={chartStyle} />
+      )}
+      {activeTab === 'dasha' && <DashaTab r={r} />}
+      {activeTab === 'freeReport' && (
+        <FreeReportTab r={r} n={n} lucky={lucky} kundli={kundli} />
+      )}
+
+      <TalkChatCTA />
+      <DownloadBanner kundli={kundli} full={r} />
+    </div>
+  );
+}
+
+// =====================================================================
+// AstroTalk-style tabs. Mirror the user's reference screenshots:
+//   Basic | Kundli | KP | Ashtakvarga | Charts | Dasha | Free Report
+// Each tab opens with a yellow banner header, content in clean rows,
+// and the CTA + download banner appear underneath via the shell.
+// =====================================================================
+
+// ---------- Tab: Basic --------------------------------------------
+// Three boxed tables: Basic Details, Avakhada Details, Panchang Details.
+// Mirrors User-kundali-report.pdf p.2 + p.3 layout.
+function BasicTab({ r, raw, kundli }) {
+  const a = r.ascendant || {};
+  const p = (raw && raw.panchang) || r.panchang || {};
+  const moon = (r.planets || []).find((x) => /moon/i.test(x.name || ''))
+    || {};
+  // Birth details, taken from the kundli profile + r.basic when set.
+  const basic = r.basic || {};
+  const tz = basic.timezone || kundli?.tz != null
+    ? `GMT${kundli.tz >= 0 ? '+' : ''}${kundli.tz}` : '·';
+  const placeStr = kundli?.place
+    || [basic.city, basic.state, basic.country].filter(Boolean).join(', ');
+  const dobStr = kundli?.dob || basic.date || '·';
+  const tobStr = kundli?.tob
+    ? `${kundli.tob} ${kundli.ampm || ''}`.trim()
+    : (basic.time || '·');
+  const birthRows = [
+    ['Name', kundli?.name || basic.name || '·'],
+    ['Date', dobStr],
+    ['Time', tobStr],
+    ['Place', placeStr || '·'],
+    ['Latitude', kundli?.lat != null ? Number(kundli.lat).toFixed(2)
+      : basic.latitude || '·'],
+    ['Longitude', kundli?.lng != null ? Number(kundli.lng).toFixed(2)
+      : basic.longitude || '·'],
+    ['Timezone', tz || basic.timezone || '·'],
+    ['Sunrise', basic.sunrise || p.sunrise || '·'],
+    ['Sunset', basic.sunset || p.sunset || '·'],
+    ['Ayanamsha', basic.ayanamsha || raw?.ayanamsha || '·'],
+  ];
+  // Avakhada — pull from raw.avakhada if AstroSeer returns it,
+  // fall back to derived values from the existing fields so the
+  // table is never empty.
+  const av = raw?.avakhada || raw?.avakhada_details || {};
+  const avakhadaRows = [
+    ['Varna', av.varna || '·'],
+    ['Vashya', av.vashya || '·'],
+    ['Yoni', av.yoni || '·'],
+    ['Gan', av.gan || av.gana || '·'],
+    ['Nadi', av.nadi || '·'],
+    ['Sign', av.sign || moon.sign || r.chandra_rasi || '·'],
+    ['Sign Lord', av.sign_lord || moon.sign_lord || '·'],
+    ['Nakshatra-Charan',
+      av.nakshatra_charan || moon.pada || r.nakshatra || '·'],
+    ['Yog', av.yog || p.yoga || '·'],
+    ['Karan', av.karan || p.karana || '·'],
+    ['Tithi', av.tithi || p.tithi || '·'],
+    ['Yunja', av.yunja || '·'],
+    ['Tatva', av.tatva || '·'],
+    ['Name alphabet', av.name_alphabet || av.syllable || '·'],
+    ['Paya', av.paya || '·'],
+  ];
+  const panchangRows = [
+    ['Tithi', p.tithi || '·'],
+    ['Karan', p.karana || '·'],
+    ['Yog', p.yoga || '·'],
+    ['Nakshatra', p.nakshatra || r.nakshatra || '·'],
+  ];
+  return (
+    <>
+      <Banner title="Basic Astrological Details" />
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <YBox title="Basic Details" rows={birthRows} />
+        <YBox title="Avakhada Details" rows={avakhadaRows} />
+      </div>
+      <div className="mt-3">
+        <YBox title="Panchang Details" rows={panchangRows} />
+      </div>
+    </>
+  );
+}
+
+// Yellow-headed two-column key/value table — the building block used
+// by every "Details" box across the AstroTalk reference.
+function YBox({ title, rows }) {
+  return (
+    <div className="overflow-hidden rounded-card border border-gray-200
+      bg-white">
+      <div className="bg-[#FFD63A] py-2 text-center text-sm
+        font-bold text-dark-text">
+        {title}
+      </div>
+      <div className="divide-y divide-gray-100">
+        {rows.map(([k, v]) => (
+          <div key={k} className="flex gap-2 px-3 py-1.5 text-[12px]">
+            <span className="w-1/2 shrink-0 font-bold text-dark-text">
+              {k}
+            </span>
+            <span className="flex-1 text-dark-text">{v}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------- Tab: Kundli (Lagna chart + Planets table) --------------
+function KundliMainTab({ r, raw, kundli,
+  chartStyle, onChangeStyle }) {
+  return (
+    <>
+      <Banner title="Lagna / Ascendant / Basic Birth chart" />
+      <div className="mt-2 flex items-center justify-center gap-2">
+        {['north', 'south'].map((s) => (
+          <button key={s} type="button"
+            onClick={() => onChangeStyle(s)}
+            className={`rounded-full px-3 py-1 text-[11px] font-bold
+              ${chartStyle === s
+                ? 'bg-[#FFD63A] text-dark-text'
+                : 'bg-white text-sub-text'}`}>
+            {s === 'north' ? 'North Indian' : 'South Indian'}
+          </button>
+        ))}
+      </div>
+      <div className="mt-3 rounded-card bg-[#FFF7E0] p-3">
+        {chartStyle === 'north'
+          ? <NorthChart r={r} />
+          : <SouthChart r={r} />}
+      </div>
+
+      <Banner title="Planets" />
+      <div className="mt-2 overflow-x-auto rounded-card bg-white p-2">
+        <table className="w-full text-[11px]">
+          <thead className="bg-[#FFF7E0] text-left text-dark-text">
+            <tr>
+              <th className="px-2 py-1.5">Planet</th>
+              <th className="px-2 py-1.5">Sign</th>
+              <th className="px-2 py-1.5">Sign Lord</th>
+              <th className="px-2 py-1.5">Nakshatra</th>
+              <th className="px-2 py-1.5">Naksh Lord</th>
+              <th className="px-2 py-1.5">Degree</th>
+              <th className="px-2 py-1.5">Retro(R)</th>
+              <th className="px-2 py-1.5">Combust</th>
+              <th className="px-2 py-1.5">Avastha</th>
+              <th className="px-2 py-1.5">House</th>
+              <th className="px-2 py-1.5">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(r.planets || []).map((p) => (
+              <tr key={p.name} className="border-t border-gray-100">
+                <td className="px-2 py-1 font-semibold">{p.name}</td>
+                <td className="px-2 py-1">{p.sign || '·'}</td>
+                <td className="px-2 py-1">{p.sign_lord || '·'}</td>
+                <td className="px-2 py-1">{p.nakshatra || '·'}</td>
+                <td className="px-2 py-1">{p.nakshatra_lord || '·'}</td>
+                <td className="px-2 py-1">{p.degree || '·'}</td>
+                <td className="px-2 py-1">
+                  {p.retrograde ? 'Retro' : 'Direct'}
+                </td>
+                <td className="px-2 py-1">
+                  {p.combust ? 'Yes' : 'No'}
+                </td>
+                <td className="px-2 py-1">{p.avastha || '·'}</td>
+                <td className="px-2 py-1">{p.house ?? '·'}</td>
+                <td className={`px-2 py-1 ${p.dignity === 'Debilitated'
+                  ? 'text-danger'
+                  : p.dignity === 'Exalted' ? 'text-success' : ''}`}>
+                  {p.dignity || p.status || '·'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+// ---------- Tab: KP (Bhav Chalit + Ruling Planets + KP Planets) ----
+function KpTab({ r, raw }) {
+  const kp = raw?.kp || {};
+  const ruling = kp.ruling_planets || raw?.ruling_planets || {};
+  const cusps = kp.cusps || raw?.cusps || [];
+  return (
+    <>
+      <Banner title="Bhav Chalit Chart" />
+      <div className="mt-3 rounded-card bg-[#FFF7E0] p-3">
+        <NorthChart r={r} />
+      </div>
+
+      <Banner title="Ruling Planets" />
+      <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
+        {[['Sign Lord', ruling.sign_lord],
+          ['Star Lord', ruling.star_lord],
+          ['Sub Lord', ruling.sub_lord]].map(([k, v]) => (
+          <div key={k} className="rounded-card border border-gray-200
+            bg-white p-3 text-center text-sm">
+            <div className="text-[11px] font-bold uppercase
+              tracking-wide text-sub-text">{k}</div>
+            <div className="mt-1 font-bold text-dark-text">
+              {(v && (v.name || v)) || '·'}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-2 text-[12px]">
+        <div className="rounded-card bg-white p-2">
+          <span className="font-bold text-dark-text">Day Lord:</span>{' '}
+          {ruling.day_lord || '·'}
+        </div>
+        <div className="rounded-card bg-white p-2">
+          <span className="font-bold text-dark-text">Asc:</span>{' '}
+          {(r.ascendant && r.ascendant.sign) || '·'}
+        </div>
+      </div>
+
+      <Banner title="Planets" />
+      <div className="mt-2 overflow-x-auto rounded-card bg-white p-2">
+        <table className="w-full text-[11px]">
+          <thead className="bg-[#FFF7E0] text-left text-dark-text">
+            <tr>
+              <th className="px-2 py-1.5">Planet</th>
+              <th className="px-2 py-1.5">Cusp</th>
+              <th className="px-2 py-1.5">Sign</th>
+              <th className="px-2 py-1.5">Sign Lord</th>
+              <th className="px-2 py-1.5">Star Lord</th>
+              <th className="px-2 py-1.5">Sub Lord</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(r.planets || []).map((p) => (
+              <tr key={p.name} className="border-t border-gray-100">
+                <td className="px-2 py-1 font-semibold">{p.name}</td>
+                <td className="px-2 py-1">{p.cusp ?? p.house ?? '·'}</td>
+                <td className="px-2 py-1">{p.sign || '·'}</td>
+                <td className="px-2 py-1">{p.sign_lord || '·'}</td>
+                <td className="px-2 py-1">{p.nakshatra_lord
+                  || p.star_lord || '·'}</td>
+                <td className="px-2 py-1">{p.sub_lord || '·'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <Banner title="Cusps" />
+      <div className="mt-2 overflow-x-auto rounded-card bg-white p-2">
+        <table className="w-full text-[11px]">
+          <thead className="bg-[#FFF7E0] text-left text-dark-text">
+            <tr>
+              <th className="px-2 py-1.5">Cusp</th>
+              <th className="px-2 py-1.5">Degree</th>
+              <th className="px-2 py-1.5">Sign</th>
+              <th className="px-2 py-1.5">Sign Lord</th>
+              <th className="px-2 py-1.5">Star Lord</th>
+              <th className="px-2 py-1.5">Sub Lord</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(cusps && cusps.length > 0
+              ? cusps : Array.from({ length: 12 }, (_, i) => ({
+                cusp: i + 1, degree: '·',
+              }))).map((c, i) => (
+              <tr key={i} className="border-t border-gray-100">
+                <td className="px-2 py-1">{c.cusp || (i + 1)}</td>
+                <td className="px-2 py-1">{c.degree || '·'}</td>
+                <td className="px-2 py-1">{c.sign || '·'}</td>
+                <td className="px-2 py-1">{c.sign_lord || '·'}</td>
+                <td className="px-2 py-1">{c.star_lord || '·'}</td>
+                <td className="px-2 py-1">{c.sub_lord || '·'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+// ---------- Tab: Ashtakvarga (grid of 8 mini-charts) ---------------
+function AshtakvargaTab({ r, raw }) {
+  // Use raw.ashtakvarga from AstroSeer when present (a map keyed by
+  // planet -> 12 house numbers). Fall back to a placeholder layout
+  // that still renders the structure the user is asking for.
+  const av = raw?.ashtakvarga || raw?.ashtakvarga_full || null;
+  const ENTRIES = [
+    ['Sav', 'Sarvashtaka'],
+    ['Asc', 'Ascendant'],
+    ['Jupiter', 'Jupiter'],
+    ['Mars', 'Mars'],
+    ['Mercury', 'Mercury'],
+    ['Moon', 'Moon'],
+    ['Saturn', 'Saturn'],
+    ['Sun', 'Sun'],
+    ['Venus', 'Venus'],
+  ];
+  function bindu(key) {
+    if (!av) return null;
+    return av[key] || av[key.toLowerCase()]
+      || av[(key === 'Sav' ? 'sarvashtaka' : key.toLowerCase())]
+      || null;
+  }
+  return (
+    <>
+      <Banner title="Ashtakvarga Chart" />
+      <p className="mt-2 text-[11px] text-sub-text">
+        Ashtakvarga is used to assess the strength and patterns each
+        planet creates in your chart. A score of 1 to 8 bindus is given
+        per house; the total across all 8 BAVs are overlaid here. A
+        score of 4 or less indicates the house should be 30+.
+      </p>
+      <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3">
+        {ENTRIES.map(([key, label]) => (
+          <div key={key}
+            className="rounded-card bg-[#FFF7E0] p-2 text-center">
+            <div className="mb-1 text-[12px] font-bold text-dark-text">
+              {label}
+            </div>
+            <AshtakvargaMiniChart bindus={bindu(key)} />
+          </div>
+        ))}
+      </div>
+    </>
+  );
+}
+
+// Mini Ashtakvarga chart — North-Indian diamond with one bindu number
+// per house. Reused 8 times in the AshtakvargaTab grid.
+function AshtakvargaMiniChart({ bindus }) {
+  const cells = bindus && typeof bindus === 'object'
+    ? bindus : {};
+  const HOUSES = [
+    { h: 1, x: 100, y: 60 }, { h: 2, x: 50, y: 38 },
+    { h: 3, x: 30, y: 80 }, { h: 4, x: 50, y: 100 },
+    { h: 5, x: 30, y: 120 }, { h: 6, x: 50, y: 160 },
+    { h: 7, x: 100, y: 140 }, { h: 8, x: 150, y: 160 },
+    { h: 9, x: 170, y: 120 }, { h: 10, x: 150, y: 100 },
+    { h: 11, x: 170, y: 80 }, { h: 12, x: 150, y: 38 },
+  ];
+  return (
+    <svg viewBox="0 0 200 200" className="mx-auto w-full max-w-[170px]">
+      <rect x="8" y="8" width="184" height="184" fill="#fff"
+        stroke="#A77B1F" strokeWidth="1.5" />
+      <line x1="8" y1="8" x2="192" y2="192"
+        stroke="#A77B1F" strokeWidth="1" />
+      <line x1="192" y1="8" x2="8" y2="192"
+        stroke="#A77B1F" strokeWidth="1" />
+      <line x1="100" y1="8" x2="8" y2="100"
+        stroke="#A77B1F" strokeWidth="1" />
+      <line x1="100" y1="8" x2="192" y2="100"
+        stroke="#A77B1F" strokeWidth="1" />
+      <line x1="192" y1="100" x2="100" y2="192"
+        stroke="#A77B1F" strokeWidth="1" />
+      <line x1="8" y1="100" x2="100" y2="192"
+        stroke="#A77B1F" strokeWidth="1" />
+      {HOUSES.map(({ h, x, y }) => (
+        <text key={h} x={x} y={y} textAnchor="middle"
+          fontSize="11" fontWeight="bold" fill="#1a1a2e">
+          {cells[h] != null ? String(cells[h]) : ''}
+        </text>
+      ))}
+    </svg>
+  );
+}
+
+// ---------- Tab: Charts (12 divisional charts grid) ----------------
+function ChartsGridTab({ r, raw, chartStyle }) {
+  const div = raw?.divisional || raw?.divisional_charts || {};
+  // Canonical divisional list with the AstroTalk subtitle. Each entry
+  // pulls its planets/sign data from raw.divisional[<key>] when
+  // present; otherwise the slot still renders the layout so it's
+  // obvious where the data is missing.
+  const DIVS = [
+    ['Hora', 'Prospects of marriage', 'd2'],
+    ['Drekkana', 'Relationship with siblings', 'd3'],
+    ['Chaturthamsa', 'Assets', 'd4'],
+    ['Saptamsa', 'Progeny', 'd7'],
+    ['Navamsa', 'Marriage', 'd9'],
+    ['Dasamsa', 'Profession', 'd10'],
+    ['Dvadasamsa', 'Native parents / Ancestors', 'd12'],
+    ['Shodasamsa', 'Travel', 'd16'],
+    ['Vimsamsa', 'Spiritual progress', 'd20'],
+    ['Chaturvimsamsa', 'Intellectual', 'd24'],
+    ['Saptavimsamsa', 'Strength / Protection', 'd27'],
+    ['Trimsamsa', 'Misfortunes', 'd30'],
+    ['Khavedamsa', 'Auspiciousness', 'd40'],
+    ['Akshavedamsa', 'General issues', 'd45'],
+    ['Shastiamsa', 'Summary of charts', 'd60'],
+  ];
+  return (
+    <>
+      <Banner title="Divisional Charts" />
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2
+        md:grid-cols-3">
+        {DIVS.map(([name, sub, key]) => {
+          const d = div[key] || div[name.toLowerCase()] || null;
+          // Provider returns either the same { planets[], ascendant }
+          // shape as the main report or a flat string. Coerce to a
+          // shape NorthChart can render.
+          const rd = (d && d.planets) ? d
+            : { planets: r.planets || [], ascendant: r.ascendant };
+          return (
+            <div key={key}
+              className="rounded-card bg-[#FFF7E0] p-2 text-center">
+              <div className="text-[12px] font-bold text-dark-text">
+                {name}
+              </div>
+              <div className="mb-1 text-[10px] text-sub-text">{sub}</div>
+              {chartStyle === 'south'
+                ? <SouthChart r={rd} />
+                : <NorthChart r={rd} />}
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+// ---------- Tab: Free Report (Ascendant report sections) -----------
+function FreeReportTab({ r, n, lucky, kundli }) {
+  const a = r.ascendant || {};
+  const sign = a.sign || r.chandra_rasi || '·';
+  return (
+    <>
+      <Banner title="Free Report" />
+      <Banner title="Ascendant Report" />
+      {a.sign && (
+        <div className="mt-3 rounded-card bg-[#FFF7E0] p-3 text-sm">
+          <b>Description.</b> Ascendant is one of the most sought
+          concepts in astrology when it comes to predicting the minute
+          events in your life. At the time of birth, the sign that
+          rises in the sky is the person&apos;s ascendant. It helps in
+          making predictions about the minute events, unlike your Moon
+          or Sun sign that help in making weekly, monthly or yearly
+          predictions for you. Your ascendant is {sign}.
+        </div>
+      )}
+      {n.personality && (
+        <ReportSection label="Personality" body={n.personality} />
+      )}
+      {n.career && (
+        <ReportSection label="Career" body={n.career} />
+      )}
+      {n.health && (
+        <ReportSection label="Health" body={n.health} />
+      )}
+      {n.love && (
+        <ReportSection label="Love &amp; Relationships" body={n.love} />
+      )}
+      {n.life && (
+        <ReportSection label="Life Path" body={n.life} />
+      )}
+
+      {(lucky.deity || lucky.color || lucky.stone) && (
+        <>
+          <Banner title="Lucky" />
+          <div className="mt-3 rounded-card bg-white p-3 text-sm">
+            <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
+              {lucky.deity && <div>Deity: <b>{lucky.deity}</b></div>}
+              {lucky.color && <div>Colour: <b>{lucky.color}</b></div>}
+              {lucky.stone && <div>Stone: <b>{lucky.stone}</b></div>}
+              {lucky.direction && (
+                <div>Direction: <b>{lucky.direction}</b></div>)}
+              {lucky.syllables && (
+                <div>Syllables: <b>{lucky.syllables}</b></div>)}
+            </div>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+function ReportSection({ label, body }) {
+  return (
+    <div className="mt-3 rounded-card bg-white p-3 text-sm">
+      <div className="mb-1 font-bold text-dark-text">{label}</div>
+      <p className="text-dark-text">{body}</p>
     </div>
   );
 }
@@ -917,9 +1493,18 @@ function DashaDrilldown({ dasha }) {
       {/* Stepper: 4 chips showing the 4 levels, with the
           currently-viewed level highlighted + breadcrumb of
           chosen lords underneath. */}
-      <div className="rounded-card border border-primary/20
-                      bg-white p-3">
-        <div className="grid grid-cols-4 gap-1.5">
+      {/* Horizontal 4-step stepper matching the AstroTalk reference.
+          Numbered circles connected by a dashed line; active = yellow,
+          visited = success-green, todo = gray. Tap any visited step to
+          jump back to that level. */}
+      <div className="rounded-card border border-gray-200 bg-white p-3">
+        <div className="mb-3 text-center text-[11px] font-bold
+          uppercase tracking-wider text-sub-text">
+          Vimshottari Dasha
+        </div>
+        <div className="relative flex items-start justify-between">
+          <div className="absolute left-6 right-6 top-3
+            border-t border-dashed border-gray-300" />
           {LEVEL_LABELS.map((label, i) => {
             const active = i === depth;
             const visited = i < depth;
@@ -928,33 +1513,38 @@ function DashaDrilldown({ dasha }) {
               <button key={label} type="button"
                 disabled={i > depth}
                 onClick={() => setPath(path.slice(0, i))}
-                className={`rounded-card px-2 py-1.5 text-left
-                  text-[10px] font-bold transition
-                  ${active
-                    ? 'bg-primary text-white shadow'
-                    : visited
-                      ? 'bg-primary/10 text-primary'
-                      : 'bg-gray-100 text-sub-text opacity-60'}`}>
-                <div className="uppercase tracking-wide">
-                  {`L${i + 1}`}
-                </div>
-                <div className="mt-0.5 truncate">{label}</div>
+                className="relative z-10 flex flex-col items-center
+                  bg-bg-light px-1
+                  disabled:cursor-default">
+                <span className={`grid h-7 w-7 place-items-center
+                  rounded-full text-[12px] font-bold transition
+                  ${active ? 'bg-[#FFD63A] text-dark-text shadow'
+                    : visited ? 'bg-success text-white'
+                      : 'bg-gray-100 text-sub-text'}`}>
+                  {i + 1}
+                </span>
+                <span className={`mt-1 text-center text-[10px]
+                  font-bold ${active ? 'text-dark-text'
+                    : visited ? 'text-success' : 'text-sub-text'}`}>
+                  {label}
+                </span>
                 {sel && (
-                  <div className="mt-0.5 text-[9px] opacity-80">
+                  <span className="text-[9px] text-sub-text">
                     {vimshottari.SHORT[sel.lord] || sel.lord}
-                  </div>
+                  </span>
                 )}
               </button>
             );
           })}
         </div>
         {crumbs.length > 0 && (
-          <div className="mt-2 flex flex-wrap items-center gap-1.5
-                          text-[10px] text-sub-text">
+          <div className="mt-3 flex flex-wrap items-center
+            justify-center gap-1.5 border-t border-gray-100 pt-2
+            text-[10px] text-sub-text">
             <span className="font-semibold">Path:</span>
             {crumbs.map((c, i) => (
-              <span key={i} className="rounded-full bg-primary/10
-                px-2 py-0.5 font-bold text-primary">
+              <span key={i} className="rounded-full bg-[#FFF7E0]
+                px-2 py-0.5 font-bold text-dark-text">
                 {vimshottari.SHORT[c.lord] || c.lord}
                 {i < crumbs.length - 1 && (
                   <span className="ml-1 opacity-50">›</span>
@@ -965,15 +1555,17 @@ function DashaDrilldown({ dasha }) {
         )}
       </div>
 
-      {/* Level Up button — visible whenever we're below level 1. */}
+      {/* Level Up button — visible whenever we're below level 1.
+          AstroTalk reference shows this as a full-width yellow strip
+          underneath the table; we use a centered pill that fits the
+          same visual language. */}
       {depth > 0 && (
         <button type="button"
           onClick={() => setPath(path.slice(0, -1))}
-          className="flex items-center gap-1.5 rounded-full
-            border border-primary bg-white px-3 py-1
-            text-[11px] font-bold text-primary
-            hover:bg-primary hover:text-white">
-          <span>↑</span> LEVEL UP
+          className="mx-auto block rounded-full bg-[#FFD63A] px-6
+            py-1.5 text-[11px] font-bold uppercase tracking-wider
+            text-dark-text shadow-sm">
+          LEVEL UP
         </button>
       )}
 
