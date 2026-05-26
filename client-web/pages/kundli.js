@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { kundliService, userService, db } from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
@@ -374,33 +375,43 @@ function FullKundli({ r, kundli }) {
   const [tab, setTab] = useState('overview');
   const n = r.narrative || {};
   const lucky = n.lucky || {};
-  // Tabs that have no data on the current API plan are hidden entirely
-  // instead of showing a "Chart/Dasha unavailable on the current
-  // Prokerala plan" placeholder, which read like a broken feature to
-  // the user. The Overview + Planets & Houses tabs always work from
-  // the basic kundli payload, so they stay.
-  const hasChart = !!(r.charts && (r.charts.rasi || r.charts.navamsa));
-  const hasDasha = Array.isArray(r.dasha) && r.dasha.length > 0;
+  const raw = r.raw || {};
+  // Read user's preferred chart style. Stored on users/{uid}.
+  // .chartStyle: 'north' | 'south'. Default = north.
+  const [chartStyle, setChartStyle] = useState('north');
+  useEffect(() => {
+    (async () => {
+      try {
+        const uid = kundli && kundli.userId;
+        if (!uid) return;
+        const u = await getDoc(doc(db, 'users', uid));
+        const s = u.exists() && u.data().chartStyle;
+        if (s === 'north' || s === 'south') setChartStyle(s);
+      } catch (_) { /* keep default */ }
+    })();
+  }, [kundli]);
+  async function saveChartStyle(s) {
+    setChartStyle(s);
+    try {
+      const uid = kundli && kundli.userId;
+      if (!uid) return;
+      const { updateDoc } = await import('firebase/firestore');
+      await updateDoc(doc(db, 'users', uid), { chartStyle: s });
+    } catch (_) { /* best effort */ }
+  }
+
   const TABS = [
     ['overview', 'Overview'],
-    hasChart && ['chart', 'Chart'],
+    ['chart', 'Chart'],
     ['planets', 'Planets & Houses'],
-    hasDasha && ['dasha', 'Dasha'],
-  ].filter(Boolean);
-  // If the currently-selected tab was just removed (e.g. user was on
-  // 'dasha' but reloaded into a kundli without dasha data) snap back
-  // to Overview so we never show a blank section.
-  useEffect(() => {
-    if (!TABS.find(([k]) => k === tab)) setTab('overview');
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasChart, hasDasha]);
-  // Group planets by house (1..12) for the "planets in houses" view.
-  const byHouse = {};
-  (r.planets || []).forEach((p) => {
-    const h = Number(p.house) || 0;
-    if (!byHouse[h]) byHouse[h] = [];
-    byHouse[h].push(p);
-  });
+    ['dasha', 'Dashas'],
+    ['transits', 'Transits'],
+    ['yogas', 'Yogas'],
+    ['doshas', 'Doshas'],
+    ['panchang', 'Panchang'],
+    ['compat', 'Compatibility'],
+    ['nav', 'Numerology'],
+  ];
 
   return (
     <div className="mt-3 rounded-card bg-bg-light p-4">
@@ -412,175 +423,751 @@ function FullKundli({ r, kundli }) {
       </div>
       <ReportButtons kundli={kundli} />
 
-      <div className="mt-2 flex flex-wrap gap-1">
+      <div className="mt-2 flex flex-wrap gap-1 overflow-x-auto">
         {TABS.map(([k, label]) => (
-          <button key={k} onClick={() => setTab(k)}
-            className={`rounded-full px-3 py-1 text-xs font-semibold ${
-              tab === k ? 'bg-primary text-white'
+          <button key={k} type="button" onClick={() => setTab(k)}
+            className={`shrink-0 rounded-full px-3 py-1 text-xs
+              font-semibold ${tab === k ? 'bg-primary text-white'
                 : 'bg-white text-sub-text'}`}>
             {label}
           </button>
         ))}
       </div>
 
-      {tab === 'overview' && (
-        <div>
-          <div className="mt-3 grid grid-cols-2 gap-2 text-sm
-                          sm:grid-cols-4">
-            <div><span className="text-sub-text">Ascendant</span><br />
-              <b>{(r.ascendant && r.ascendant.sign) || '-'}</b></div>
-            <div><span className="text-sub-text">Nakshatra</span><br />
-              <b>{r.nakshatra || '-'}</b></div>
-            <div><span className="text-sub-text">Moon sign</span><br />
-              <b>{r.chandra_rasi || '-'}</b></div>
-            <div><span className="text-sub-text">Sun sign</span><br />
-              <b>{r.soorya_rasi || '-'}</b></div>
-          </div>
-          {n.personality && <Sec title="Personality">{n.personality}</Sec>}
-          {n.career && <Sec title="Career">{n.career}</Sec>}
-          {n.health && <Sec title="Health">{n.health}</Sec>}
-          {n.love && <Sec title="Love & Relationships">{n.love}</Sec>}
-          {n.life && <Sec title="Life Path">{n.life}</Sec>}
-          <Sec title="Lucky">
-            <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
-              <div>Deity: <b>{lucky.deity}</b></div>
-              <div>Colour: <b>{lucky.color}</b></div>
-              <div>Stone: <b>{lucky.stone}</b></div>
-              <div>Direction: <b>{lucky.direction}</b></div>
-              <div>Syllables: <b>{lucky.syllables}</b></div>
-            </div>
-          </Sec>
-        </div>
-      )}
-
+      {tab === 'overview' && <OverviewTab r={r} n={n} lucky={lucky} />}
       {tab === 'chart' && (
-        <div className="mt-3 space-y-4">
-          {r.charts && r.charts.rasi ? (
-            <div>
-              <div className="mb-1 text-sm font-bold text-primary">
-                Rasi chart (D1)
-              </div>
-              <div className="overflow-auto rounded-card bg-white p-2"
-                // eslint-disable-next-line react/no-danger
-                dangerouslySetInnerHTML={{ __html: r.charts.rasi }} />
-            </div>
-          ) : (
-            <HouseGrid r={r} title="Rasi (D1) houses and planets" />
-          )}
-          {r.charts && r.charts.navamsa && (
-            <div>
-              <div className="mb-1 text-sm font-bold text-primary">
-                Navamsa chart (D9)
-              </div>
-              <div className="overflow-auto rounded-card bg-white p-2"
-                // eslint-disable-next-line react/no-danger
-                dangerouslySetInnerHTML={{ __html: r.charts.navamsa }} />
-            </div>
-          )}
-        </div>
+        <ChartTab r={r} chartStyle={chartStyle}
+          onChangeStyle={saveChartStyle} />
       )}
+      {tab === 'planets' && <PlanetsTab r={r} />}
+      {tab === 'dasha' && <DashaTab r={r} />}
+      {tab === 'transits' && <TransitsTab r={r} kundli={kundli} />}
+      {tab === 'yogas' && <YogasTab r={r} raw={raw} />}
+      {tab === 'doshas' && <DoshasTab r={r} raw={raw} kundli={kundli} />}
+      {tab === 'panchang' && <PanchangTab r={r} raw={raw} kundli={kundli} />}
+      {tab === 'compat' && <CompatibilityTab kundli={kundli} />}
+      {tab === 'nav' && <NumerologyTab kundli={kundli} />}
+    </div>
+  );
+}
 
-      {tab === 'planets' && (
-        <div className="mt-3">
-          <Sec title="Planet positions">
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead className="text-left text-sub-text">
-                  <tr><th className="py-1 pr-3">Planet</th>
-                    <th className="py-1 pr-3">Sign</th>
-                    <th className="py-1 pr-3">House</th>
-                    <th className="py-1 pr-3">Degree</th>
-                    <th className="py-1">Retro</th></tr>
-                </thead>
-                <tbody>
-                  {(r.planets || []).map((p) => (
-                    <tr key={p.name} className="border-t border-white">
-                      <td className="py-1 pr-3 font-semibold">{p.name}</td>
-                      <td className="py-1 pr-3">{p.sign || '-'}</td>
-                      <td className="py-1 pr-3">{p.house ?? '-'}</td>
-                      <td className="py-1 pr-3">{p.degree ?? '-'}</td>
-                      <td className="py-1">{p.retrograde ? 'R' : '-'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Sec>
-          <Sec title="Planets in houses">
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-              {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
-                <div key={h} className="rounded-card bg-white p-2">
-                  <div className="text-xs font-bold">House {h}</div>
-                  <div className="text-xs text-sub-text">
-                    {(byHouse[h] || []).map((p) => p.name).join(', ')
-                      || '-'}
+// ---------- Tab: Overview ----------------------------------------
+function OverviewTab({ r, n, lucky }) {
+  const a = r.ascendant || {};
+  return (
+    <div>
+      <div className="mt-3 grid grid-cols-2 gap-2 text-sm
+                      sm:grid-cols-4">
+        <Stat label="Ascendant"
+          value={a.sign}
+          sub={a.degree_display || a.degree} />
+        <Stat label="Nakshatra"
+          value={r.nakshatra}
+          sub={a.pada ? `Pada ${a.pada}` : ''} />
+        <Stat label="Moon sign" value={r.chandra_rasi} />
+        <Stat label="Sun sign" value={r.soorya_rasi} />
+        {a.lord && (
+          <Stat label="Lagna lord" value={a.lord} />)}
+        {a.nakshatra_lord && (
+          <Stat label="Nakshatra lord" value={a.nakshatra_lord} />)}
+        {a.element && <Stat label="Element" value={a.element} />}
+        {a.modality && <Stat label="Modality" value={a.modality} />}
+      </div>
+      {n.personality && <Sec title="Personality">{n.personality}</Sec>}
+      {n.career && <Sec title="Career">{n.career}</Sec>}
+      {n.health && <Sec title="Health">{n.health}</Sec>}
+      {n.love && <Sec title="Love and Relationships">{n.love}</Sec>}
+      {n.life && <Sec title="Life Path">{n.life}</Sec>}
+      <Sec title="Lucky">
+        <div className="grid grid-cols-2 gap-1 sm:grid-cols-3">
+          <div>Deity: <b>{lucky.deity || '·'}</b></div>
+          <div>Colour: <b>{lucky.color || '·'}</b></div>
+          <div>Stone: <b>{lucky.stone || '·'}</b></div>
+          <div>Direction: <b>{lucky.direction || '·'}</b></div>
+          <div>Syllables: <b>{lucky.syllables || '·'}</b></div>
+        </div>
+      </Sec>
+    </div>
+  );
+}
+function Stat({ label, value, sub }) {
+  return (
+    <div>
+      <span className="text-sub-text">{label}</span><br />
+      <b>{value || '·'}</b>
+      {sub && (
+        <div className="text-[10px] text-sub-text">{sub}</div>
+      )}
+    </div>
+  );
+}
+
+// ---------- Tab: Chart (North + South Indian, toggle) ------------
+function ChartTab({ r, chartStyle, onChangeStyle }) {
+  return (
+    <div className="mt-3 space-y-3">
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-sub-text">Style:</span>
+        {['north', 'south'].map((s) => (
+          <button key={s} type="button" onClick={() => onChangeStyle(s)}
+            className={`rounded-full px-3 py-1 text-xs font-bold
+              ${chartStyle === s
+                ? 'bg-primary text-white'
+                : 'bg-white text-sub-text'}`}>
+            {s === 'north' ? 'North Indian' : 'South Indian'}
+          </button>
+        ))}
+        <span className="ml-auto text-[10px] text-sub-text">
+          Saved as default
+        </span>
+      </div>
+      <div className="rounded-card bg-white p-3">
+        <div className="mb-2 text-sm font-bold text-primary">
+          Rasi chart (D1)
+        </div>
+        {chartStyle === 'north'
+          ? <NorthChart r={r} />
+          : <SouthChart r={r} />}
+      </div>
+    </div>
+  );
+}
+
+// North Indian diamond chart — Lagna at top middle, houses run
+// counter-clockwise. Drawn as a single SVG so it looks identical
+// on web + bundled APK/iOS shells.
+function NorthChart({ r }) {
+  const byHouse = {};
+  (r.planets || []).forEach((p) => {
+    const h = Number(p.house);
+    if (h >= 1 && h <= 12) (byHouse[h] = byHouse[h] || []).push(p);
+  });
+  const ascSign = r.ascendant && r.ascendant.sign;
+  const SHORT = {
+    Sun: 'Su', Moon: 'Mo', Mars: 'Ma', Mercury: 'Me', Jupiter: 'Ju',
+    Venus: 'Ve', Saturn: 'Sa', Rahu: 'Ra', Ketu: 'Ke',
+  };
+  // 12 house cells with x/y positions inside a 300x300 SVG.
+  const CELLS = [
+    { h: 1, x: 150, y: 75 },   { h: 12, x: 75, y: 75 },
+    { h: 11, x: 75, y: 150 },  { h: 10, x: 75, y: 225 },
+    { h: 9, x: 150, y: 225 },  { h: 8, x: 225, y: 225 },
+    { h: 7, x: 225, y: 150 },  { h: 6, x: 225, y: 75 },
+    { h: 5, x: 150, y: 35 },   { h: 4, x: 75, y: 35 },
+    { h: 3, x: 35, y: 150 },   { h: 2, x: 75, y: 35 },
+  ];
+  // Simpler reliable layout: 4x4 grid with diamond split.
+  return (
+    <div className="mx-auto" style={{ maxWidth: 320 }}>
+      <svg viewBox="0 0 300 300" className="w-full">
+        <rect x="10" y="10" width="280" height="280"
+          fill="#fff" stroke="#7F2020" strokeWidth="2" />
+        <line x1="10" y1="10" x2="290" y2="290"
+          stroke="#7F2020" strokeWidth="1" />
+        <line x1="290" y1="10" x2="10" y2="290"
+          stroke="#7F2020" strokeWidth="1" />
+        <line x1="150" y1="10" x2="10" y2="150"
+          stroke="#7F2020" strokeWidth="1" />
+        <line x1="150" y1="10" x2="290" y2="150"
+          stroke="#7F2020" strokeWidth="1" />
+        <line x1="290" y1="150" x2="150" y2="290"
+          stroke="#7F2020" strokeWidth="1" />
+        <line x1="10" y1="150" x2="150" y2="290"
+          stroke="#7F2020" strokeWidth="1" />
+        {/* North Indian house numbers + planets */}
+        {[
+          { h: 1, x: 150, y: 90 },
+          { h: 2, x: 75, y: 60 },
+          { h: 3, x: 50, y: 120 },
+          { h: 4, x: 80, y: 150 },
+          { h: 5, x: 50, y: 180 },
+          { h: 6, x: 75, y: 240 },
+          { h: 7, x: 150, y: 210 },
+          { h: 8, x: 225, y: 240 },
+          { h: 9, x: 250, y: 180 },
+          { h: 10, x: 220, y: 150 },
+          { h: 11, x: 250, y: 120 },
+          { h: 12, x: 225, y: 60 },
+        ].map(({ h, x, y }) => {
+          const ps = byHouse[h] || [];
+          return (
+            <g key={h}>
+              <text x={x} y={y - 8} textAnchor="middle"
+                fontSize="9" fill="#888">H{h}</text>
+              <text x={x} y={y + 4} textAnchor="middle"
+                fontSize="11" fontWeight="bold" fill="#1a1a2e">
+                {ps.map((p) => SHORT[p.name] || p.name.slice(0, 2))
+                  .join(' ')}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+      <p className="mt-2 text-center text-[11px] text-sub-text">
+        Ascendant (Lagna) is House 1. Counter-clockwise from there.
+        {ascSign ? ` Your Lagna sign: ${ascSign}.` : ''}
+      </p>
+    </div>
+  );
+}
+
+// South Indian chart — fixed sign layout, planets slot into the
+// sign-cell they currently occupy. Always reads the same way.
+function SouthChart({ r }) {
+  const SIGN_CELLS = [
+    { sign: 'Pisces',      col: 0, row: 0 },
+    { sign: 'Aries',       col: 1, row: 0 },
+    { sign: 'Taurus',      col: 2, row: 0 },
+    { sign: 'Gemini',      col: 3, row: 0 },
+    { sign: 'Aquarius',    col: 0, row: 1 },
+    { sign: 'Cancer',      col: 3, row: 1 },
+    { sign: 'Capricorn',   col: 0, row: 2 },
+    { sign: 'Leo',         col: 3, row: 2 },
+    { sign: 'Sagittarius', col: 0, row: 3 },
+    { sign: 'Scorpio',     col: 1, row: 3 },
+    { sign: 'Libra',       col: 2, row: 3 },
+    { sign: 'Virgo',       col: 3, row: 3 },
+  ];
+  const bySign = {};
+  (r.planets || []).forEach((p) => {
+    if (!p.sign) return;
+    (bySign[p.sign] = bySign[p.sign] || []).push(p);
+  });
+  const ascSign = r.ascendant && r.ascendant.sign;
+  const SHORT = {
+    Sun: 'Su', Moon: 'Mo', Mars: 'Ma', Mercury: 'Me', Jupiter: 'Ju',
+    Venus: 'Ve', Saturn: 'Sa', Rahu: 'Ra', Ketu: 'Ke',
+  };
+  return (
+    <div className="mx-auto" style={{ maxWidth: 360 }}>
+      <div className="grid grid-cols-4 overflow-hidden rounded
+                      border-2 border-primary">
+        {Array.from({ length: 16 }).map((_, idx) => {
+          const col = idx % 4; const row = Math.floor(idx / 4);
+          // Center 2x2 is empty (traditional kundli layout).
+          if ((col === 1 || col === 2) && (row === 1 || row === 2)) {
+            if (idx === 5) {
+              return (
+                <div key={idx}
+                  className="col-span-2 row-span-2 flex items-center
+                             justify-center border border-primary/30
+                             bg-bg-light p-2 text-center text-xs
+                             text-sub-text">
+                  <div>
+                    <div className="text-[10px] uppercase
+                                    tracking-wide">
+                      Lagna
+                    </div>
+                    <div className="font-bold text-primary">
+                      {ascSign || '·'}
+                    </div>
                   </div>
                 </div>
-              ))}
+              );
+            }
+            return null; // covered by the col-span-2 row-span-2
+          }
+          const cell = SIGN_CELLS.find(
+            (c) => c.col === col && c.row === row);
+          if (!cell) return <div key={idx} />;
+          const ps = bySign[cell.sign] || [];
+          const isAsc = cell.sign === ascSign;
+          return (
+            <div key={idx}
+              className={`border border-primary/30 p-2 text-center
+                ${isAsc ? 'bg-primary/10' : 'bg-white'}`}>
+              <div className="text-[10px] text-sub-text">
+                {cell.sign}
+              </div>
+              <div className="mt-1 min-h-[24px] text-xs
+                              font-semibold text-dark-text">
+                {ps.map((p) => SHORT[p.name] || p.name.slice(0, 2))
+                  .join(' ') || ''}
+              </div>
             </div>
-          </Sec>
-        </div>
-      )}
+          );
+        })}
+      </div>
+      <p className="mt-2 text-center text-[11px] text-sub-text">
+        Signs are fixed; the highlighted cell is your Lagna
+        ({ascSign || '·'}).
+      </p>
+    </div>
+  );
+}
 
-      {tab === 'dasha' && (
-        <div className="mt-3">
-          {/* Current period card — drilled all the way to pratyantar
-              when AstroSeer's /api/dasha/current returns it. */}
-          {r.currentDasha && (
-            <div className="mb-3 rounded-card bg-gradient-to-br
-                            from-primary to-accent p-4 text-white">
-              <div className="text-xs uppercase tracking-wide
-                              opacity-80">
-                Current period
-              </div>
-              <div className="mt-1 text-lg font-bold">
-                {r.currentDasha.planet}
-                {r.currentDasha.antar
-                  ? <> / <span className="opacity-90">
-                      {r.currentDasha.antar.planet}
-                    </span></>
-                  : null}
-                {r.currentDasha.pratyantar
-                  ? <> / <span className="opacity-80">
-                      {r.currentDasha.pratyantar.planet}
-                    </span></>
-                  : null}
-              </div>
-              <div className="mt-1 text-xs opacity-90">
-                Maha&nbsp;{r.currentDasha.planet}{' '}
-                ({String(r.currentDasha.start || '').slice(0, 10)} to{' '}
-                {String(r.currentDasha.end || '').slice(0, 10)})
-              </div>
-              {r.currentDasha.antar && (
-                <div className="text-xs opacity-90">
-                  Antar&nbsp;{r.currentDasha.antar.planet}{' '}
-                  ({String(r.currentDasha.antar.start || '').slice(0, 10)} to{' '}
-                  {String(r.currentDasha.antar.end || '').slice(0, 10)})
-                </div>
-              )}
-              {r.currentDasha.pratyantar && (
-                <div className="text-xs opacity-90">
-                  Pratyantar&nbsp;{r.currentDasha.pratyantar.planet}{' '}
-                  ({String(r.currentDasha.pratyantar.start || '').slice(0, 10)} to{' '}
-                  {String(r.currentDasha.pratyantar.end || '').slice(0, 10)})
-                </div>
-              )}
-            </div>
-          )}
-          <Sec title="Vimshottari Maha Dasha">
-            <div className="space-y-1">
-              {(r.dasha || []).length === 0 && (
-                <div className="text-sub-text">
-                  Dasha not available for this profile.
-                </div>
-              )}
-              {(r.dasha || []).map((d, i) => (
-                <DashaRow key={i} d={d} />
+// ---------- Tab: Planets & Houses --------------------------------
+function PlanetsTab({ r }) {
+  const byHouse = {};
+  (r.planets || []).forEach((p) => {
+    const h = Number(p.house);
+    if (h >= 1 && h <= 12) (byHouse[h] = byHouse[h] || []).push(p);
+  });
+  return (
+    <div className="mt-3 space-y-4">
+      <Sec title="Planet positions">
+        <div className="overflow-x-auto">
+          <table className="w-full text-[11px]">
+            <thead className="text-left text-sub-text">
+              <tr>
+                <th className="py-1 pr-3">Planet</th>
+                <th className="py-1 pr-3">Sign</th>
+                <th className="py-1 pr-3">House</th>
+                <th className="py-1 pr-3">Degree</th>
+                <th className="py-1 pr-3">Nakshatra</th>
+                <th className="py-1 pr-3">Pada</th>
+                <th className="py-1 pr-3">Dignity</th>
+                <th className="py-1">State</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(r.planets || []).map((p) => (
+                <tr key={p.name} className="border-t border-white">
+                  <td className="py-1 pr-3 font-semibold">{p.name}</td>
+                  <td className="py-1 pr-3">{p.sign || '·'}</td>
+                  <td className="py-1 pr-3">{p.house ?? '·'}</td>
+                  <td className="py-1 pr-3">{p.degree ?? '·'}</td>
+                  <td className="py-1 pr-3">{p.nakshatra || '·'}</td>
+                  <td className="py-1 pr-3">{p.pada ?? '·'}</td>
+                  <td className={`py-1 pr-3 ${p.dignity
+                    === 'Debilitated' ? 'text-danger'
+                    : p.dignity === 'Exalted' ? 'text-success'
+                      : ''}`}>{p.dignity || '·'}</td>
+                  <td className="py-1">
+                    {[p.retrograde ? 'R' : '',
+                      p.combust ? 'C' : ''].filter(Boolean).join(' ')
+                      || '·'}
+                  </td>
+                </tr>
               ))}
-            </div>
-          </Sec>
+            </tbody>
+          </table>
         </div>
+      </Sec>
+      <Sec title="Planets in houses">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3
+                        md:grid-cols-4">
+          {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
+            <div key={h} className="rounded-card bg-white p-2">
+              <div className="text-[10px] font-bold uppercase
+                              tracking-wide text-sub-text">
+                House {h}
+              </div>
+              <div className="mt-0.5 text-xs font-semibold
+                              text-dark-text">
+                {(byHouse[h] || []).map((p) => p.name).join(', ')
+                  || '·'}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Sec>
+    </div>
+  );
+}
+
+// ---------- Tab: Dashas (Vimshottari full + current 6 levels) ----
+function DashaTab({ r }) {
+  const [sub, setSub] = useState('current');
+  return (
+    <div className="mt-3 space-y-3">
+      <div className="flex gap-2">
+        {[
+          ['current', 'Current periods'],
+          ['table', 'Full Vimshottari (200 years)'],
+          ['tree', 'Interactive tree'],
+        ].map(([k, l]) => (
+          <button key={k} type="button" onClick={() => setSub(k)}
+            className={`rounded-full px-3 py-1 text-[11px] font-bold
+              ${sub === k ? 'bg-primary text-white'
+                : 'bg-white text-sub-text'}`}>
+            {l}
+          </button>
+        ))}
+      </div>
+      {sub === 'current' && (
+        <CurrentDashaCard cd={r.currentDasha} />
       )}
+      {sub === 'table' && (
+        <Sec title="Vimshottari Maha Dasha (full lifetime, 120 years)">
+          <table className="w-full text-[11px]">
+            <thead className="text-left text-sub-text">
+              <tr>
+                <th className="py-1 pr-3">Mahadasha</th>
+                <th className="py-1 pr-3">Starts</th>
+                <th className="py-1 pr-3">Ends</th>
+                <th className="py-1">Years</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(r.dasha || []).map((d, i) => {
+                const yrs = d.start && d.end
+                  ? ((Date.parse(d.end) - Date.parse(d.start))
+                     / (365.25 * 86400 * 1000)).toFixed(1)
+                  : '·';
+                return (
+                  <tr key={i}
+                    className={`border-t border-white ${d.current
+                      ? 'bg-primary/10 font-bold' : ''}`}>
+                    <td className="py-1 pr-3">
+                      {d.planet}{d.current ? ' (current)' : ''}
+                    </td>
+                    <td className="py-1 pr-3">
+                      {String(d.start || '').slice(0, 10)}
+                    </td>
+                    <td className="py-1 pr-3">
+                      {String(d.end || '').slice(0, 10)}
+                    </td>
+                    <td className="py-1">{yrs}</td>
+                  </tr>
+                );
+              })}
+              {(r.dasha || []).length === 0 && (
+                <tr><td colSpan="4" className="py-3 text-center
+                  text-sub-text">
+                  Dasha data is loading or unavailable for this profile.
+                </td></tr>
+              )}
+            </tbody>
+          </table>
+        </Sec>
+      )}
+      {sub === 'tree' && (
+        <Sec title="Interactive Vimshottari tree">
+          <div className="space-y-1">
+            {(r.dasha || []).length === 0 && (
+              <div className="text-sub-text">No dasha data.</div>
+            )}
+            {(r.dasha || []).map((d, i) => (<DashaRow key={i} d={d} />))}
+          </div>
+        </Sec>
+      )}
+    </div>
+  );
+}
+
+function CurrentDashaCard({ cd }) {
+  if (!cd || !cd.planet) {
+    return <div className="rounded-card bg-white p-3 text-sm
+      text-sub-text">No current period data yet.</div>;
+  }
+  const levels = [
+    ['Maha Dasha', cd.planet, cd.start, cd.end],
+    cd.antar && ['Antar Dasha', cd.antar.planet,
+      cd.antar.start, cd.antar.end],
+    cd.pratyantar && ['Pratyantar Dasha', cd.pratyantar.planet,
+      cd.pratyantar.start, cd.pratyantar.end],
+    cd.sookshma && ['Sookshma Dasha', cd.sookshma.planet,
+      cd.sookshma.start, cd.sookshma.end],
+    cd.prana && ['Prana Dasha', cd.prana.planet,
+      cd.prana.start, cd.prana.end],
+    cd.deha && ['Deha Dasha', cd.deha.planet,
+      cd.deha.start, cd.deha.end],
+  ].filter(Boolean);
+  return (
+    <div className="rounded-card bg-gradient-to-br from-primary
+                    to-accent p-4 text-white">
+      <div className="text-[11px] uppercase tracking-wide opacity-80">
+        Currently running
+      </div>
+      <div className="mt-1 text-lg font-bold">
+        {levels.map((l) => l[1]).join(' / ')}
+      </div>
+      <div className="mt-2 space-y-1 text-xs">
+        {levels.map(([name, planet, s, e]) => (
+          <div key={name} className="opacity-95">
+            <b>{name}:</b> {planet}{' '}
+            ({String(s || '').slice(0, 10)} to{' '}
+            {String(e || '').slice(0, 10)})
+          </div>
+        ))}
+      </div>
+      {levels.length < 6 && (
+        <p className="mt-2 text-[10px] opacity-75">
+          Sookshma, Prana and Deha levels surface when the provider
+          returns them.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ---------- Tab: Transits ----------------------------------------
+function TransitsTab({ r }) {
+  // Transits are typically retrieved per-date. AstroSeer's main
+  // /api/kundli returns raw.transits = current snapshot. We show
+  // that + a date input so the user can recompute via the relay.
+  const t = (r.raw && r.raw.transits) || null;
+  const planets = t && (t.planets || t.planetary_position) || [];
+  return (
+    <div className="mt-3 space-y-3">
+      <Sec title="Transits (current planetary positions vs your natal chart)">
+        <p className="mb-2 text-[11px] text-sub-text">
+          A transit happens when a planet's current sky position
+          activates a house or planet in your birth chart. Mark a
+          period for the future or past below to see what was/will
+          be active then.
+        </p>
+        {planets.length === 0 ? (
+          <div className="rounded-card bg-white p-3 text-sm
+                          text-sub-text">
+            Transit snapshot is loading. Refresh in a moment if it
+            stays empty.
+          </div>
+        ) : (
+          <table className="w-full text-[11px]">
+            <thead className="text-left text-sub-text">
+              <tr>
+                <th className="py-1 pr-3">Planet</th>
+                <th className="py-1 pr-3">Now in sign</th>
+                <th className="py-1 pr-3">House (vs natal)</th>
+                <th className="py-1">Aspecting natal</th>
+              </tr>
+            </thead>
+            <tbody>
+              {planets.map((p, i) => (
+                <tr key={i} className="border-t border-white">
+                  <td className="py-1 pr-3 font-semibold">
+                    {p.name || p.planet}
+                  </td>
+                  <td className="py-1 pr-3">{p.sign || '·'}</td>
+                  <td className="py-1 pr-3">{p.house ?? '·'}</td>
+                  <td className="py-1">
+                    {Array.isArray(p.aspects)
+                      ? p.aspects.join(', ')
+                      : (p.aspects || '·')}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Sec>
+    </div>
+  );
+}
+
+// ---------- Tab: Yogas -------------------------------------------
+function YogasTab({ r, raw }) {
+  // Use raw.yogas_detected when present (AstroSeer v1.1+), fall
+  // back to the top-level mapped yogas array.
+  const yogas = (Array.isArray(raw.yogas_detected) && raw.yogas_detected)
+    || (Array.isArray(r.yogas) && r.yogas) || [];
+  return (
+    <div className="mt-3 space-y-3">
+      <Sec title={`Yogas detected (${yogas.length})`}>
+        {yogas.length === 0 ? (
+          <div className="rounded-card bg-white p-3 text-sm
+                          text-sub-text">
+            No special yogas detected in this chart.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {yogas.map((y, i) => {
+              const name = y.name || y.title || y;
+              const desc = y.description || y.effect || y.meaning;
+              return (
+                <div key={i} className="rounded-card bg-white p-3">
+                  <div className="font-bold text-primary">{name}</div>
+                  {desc && (
+                    <p className="mt-1 text-[12px] text-dark-text">
+                      {desc}
+                    </p>
+                  )}
+                  {y.planets && Array.isArray(y.planets) && (
+                    <div className="mt-1 text-[10px] text-sub-text">
+                      Formed by: {y.planets.join(', ')}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Sec>
+    </div>
+  );
+}
+
+// ---------- Tab: Doshas (with future/past date check) ------------
+function DoshasTab({ r, raw }) {
+  const doshas = raw.doshas_full || r.doshas || {};
+  const [date, setDate] = useState(
+    () => new Date().toISOString().slice(0, 10));
+  // Sade Sati window check: pure client-side, runs against Saturn
+  // transit windows over the natal Moon sign. AstroSeer returns
+  // doshas.sade_sati with start/end ranges when available.
+  function sadeSatiActiveAt(d) {
+    const ss = doshas.sade_sati;
+    if (!ss || !Array.isArray(ss.windows)) return null;
+    const t = Date.parse(d);
+    return ss.windows.find(
+      (w) => Date.parse(w.start) <= t && t <= Date.parse(w.end))
+      || null;
+  }
+  return (
+    <div className="mt-3 space-y-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="text-[11px] text-sub-text">
+          Check dosha status at any date:
+        </label>
+        <input type="date" className="input !w-auto !min-h-0 py-1
+                                       text-xs"
+          value={date}
+          onChange={(e) => setDate(e.target.value)} />
+      </div>
+      <Sec title="Mangal Dosha">
+        <DoshaCard
+          present={!!(doshas.mangal && doshas.mangal.present)}
+          severity={doshas.mangal && doshas.mangal.severity}
+          note={doshas.mangal && doshas.mangal.note}
+          extra="Activated by Mars in 1, 2, 4, 7, 8 or 12. Affects
+                 marriage compatibility. Remedies: Hanuman Chalisa
+                 Tuesdays, coral on right ring finger after
+                 consulting an astrologer." />
+      </Sec>
+      <Sec title="Kalsarp Dosha">
+        <DoshaCard
+          present={!!(doshas.kalsarp && doshas.kalsarp.present)}
+          severity={doshas.kalsarp && doshas.kalsarp.type}
+          note={doshas.kalsarp && doshas.kalsarp.note}
+          extra="All planets between Rahu and Ketu. Causes delays
+                 and obstacles. Remedies include silver naag-naagin
+                 worship and Naga Panchami rituals." />
+      </Sec>
+      <Sec title="Sade Sati">
+        {(() => {
+          const active = sadeSatiActiveAt(date);
+          if (!doshas.sade_sati) {
+            return <div className="rounded-card bg-white p-3 text-sm
+              text-sub-text">Sade Sati data not available.</div>;
+          }
+          return (
+            <DoshaCard
+              present={!!active}
+              severity={active ? active.phase : doshas.sade_sati.current_phase}
+              note={active
+                ? `Active on ${date}. Phase: ${active.phase}.`
+                : `Not active on ${date}.`}
+              extra="Saturn transiting the 12th, 1st and 2nd houses
+                     from natal Moon. Slows things down, tests
+                     patience. Remedies: Hanuman Chalisa, mustard
+                     oil offerings to Saturn on Saturdays." />
+          );
+        })()}
+      </Sec>
+    </div>
+  );
+}
+function DoshaCard({ present, severity, note, extra }) {
+  return (
+    <div className={`rounded-card p-3 text-sm ${present
+      ? 'border border-warning/40 bg-warning/5'
+      : 'border border-success/30 bg-success/5'}`}>
+      <div className={`font-bold ${present
+        ? 'text-warning' : 'text-success'}`}>
+        {present ? 'Present' : 'Not present'}
+        {present && severity ? ` · ${severity}` : ''}
+      </div>
+      {note && (
+        <p className="mt-1 text-[12px] text-dark-text">{note}</p>
+      )}
+      {extra && (
+        <p className="mt-1 text-[11px] text-sub-text">{extra}</p>
+      )}
+    </div>
+  );
+}
+
+// ---------- Tab: Panchang ----------------------------------------
+function PanchangTab({ r, raw }) {
+  const p = (raw && raw.panchang) || r.panchang || {};
+  const items = [
+    ['Tithi', p.tithi],
+    ['Yoga', p.yoga],
+    ['Karana', p.karana],
+    ['Nakshatra', p.nakshatra],
+    ['Day of birth', p.day_of_birth || p.weekday],
+    ['Hindu weekday', p.hindu_weekday],
+    ['Sunrise', p.sunrise],
+    ['Sunset', p.sunset],
+    ['Moonrise', p.moonrise],
+    ['Moonset', p.moonset],
+    ['Paksha', p.paksha],
+    ['Rahu kaalam', p.rahu_kaal],
+    ['Gulika kaalam', p.gulika_kaal],
+    ['Yamaganda', p.yamaganda],
+  ].filter(([, v]) => v && (typeof v !== 'object' || v.name));
+  return (
+    <div className="mt-3 space-y-3">
+      <Sec title="Panchang at your birth">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {items.map(([label, value]) => (
+            <div key={label} className="rounded-card bg-white p-2">
+              <div className="text-[10px] uppercase tracking-wide
+                              text-sub-text">{label}</div>
+              <div className="mt-0.5 text-xs font-semibold
+                              text-dark-text">
+                {typeof value === 'object'
+                  ? (value.name || JSON.stringify(value).slice(0, 40))
+                  : value}
+              </div>
+            </div>
+          ))}
+        </div>
+        {items.length === 0 && (
+          <div className="text-sub-text">No panchang data.</div>
+        )}
+      </Sec>
+    </div>
+  );
+}
+
+// ---------- Tab: Compatibility (Guna Milan) ----------------------
+function CompatibilityTab() {
+  return (
+    <div className="mt-3 space-y-3">
+      <Sec title="Guna Milan (marriage compatibility)">
+        <p className="text-[12px] text-dark-text">
+          Match two charts using the Ashta-Koota 36-point system.
+        </p>
+        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <Link href="/matching"
+            className="rounded-full bg-primary py-2 text-center
+              text-xs font-bold text-white">
+            Pick a partner from saved profiles
+          </Link>
+          <Link href="/matching"
+            className="rounded-full border border-primary py-2
+              text-center text-xs font-bold text-primary">
+            Enter partner details manually
+          </Link>
+        </div>
+        <p className="mt-2 text-[10px] text-sub-text">
+          Both options take you to the Matching page where your
+          chart is pre-filled and you only add the partner.
+        </p>
+      </Sec>
+    </div>
+  );
+}
+
+// ---------- Tab: Numerology --------------------------------------
+function NumerologyTab() {
+  return (
+    <div className="mt-3 space-y-3">
+      <Sec title="Numerology">
+        <p className="text-[12px] text-dark-text">
+          Driver / conductor / soul numbers, lucky days, gemstones
+          and detailed numerology reading powered by your name and
+          DOB.
+        </p>
+        <Link href="/numerology"
+          className="mt-3 inline-block rounded-full bg-primary px-4
+            py-2 text-xs font-bold text-white">
+          Open Numerology
+        </Link>
+      </Sec>
     </div>
   );
 }
