@@ -24,6 +24,21 @@ const TOGGLES = [
   // --- Kundli viewer behaviour ---
   ['dasha_predictions_enabled',
     'Show per-dasha "Likely areas" insight under each Vimshottari period'],
+  // --- Kundli Free Report sections (each is independently
+  //     toggleable so admin can hide / show the entire section
+  //     across every customer's report) ---
+  ['free_report_general_enabled',
+    'Free Report > General — Ascendant overview + personality + career + health + love + life path + lucky'],
+  ['free_report_planetary_enabled',
+    'Free Report > Planetary — per-planet sign + house narratives'],
+  ['free_report_dasha_enabled',
+    'Free Report > Vimshottari — per-mahadasha narratives'],
+  ['free_report_yoga_enabled',
+    'Free Report > Yoga — detected yogas with detailed descriptions'],
+  ['free_report_remedies_enabled',
+    'Free Report > Remedies — gemstone, rudraksha, mantras, fasting, charity'],
+  ['free_report_doshas_enabled',
+    'Free Report > Doshas — Mangal, Kalsarp, Sade Sati, Pitra, Guru Chandal'],
   // --- Reports / monetisation ---
   // Master kill-switch for the paid + free PDF reports. When OFF the
   // /kundli buy buttons hide and the relay refuses /api/kundli/report.

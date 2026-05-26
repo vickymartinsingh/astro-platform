@@ -1310,41 +1310,191 @@ function ChartsGridTab({ r, raw, chartStyle }) {
 }
 
 // ---------- Tab: Free Report (Ascendant report sections) -----------
+// Default-on admin toggle reader. Returns true unless features doc
+// explicitly sets the flag to false, so a new feature ships visible.
+function useFeatureFlag(key, defaultOn = true) {
+  const [on, setOn] = useState(defaultOn);
+  useEffect(() => {
+    (async () => {
+      try {
+        const s = await getDoc(doc(db, 'settings', 'features'));
+        if (s.exists()) {
+          const v = s.data()[key];
+          if (v === false) setOn(false);
+          else if (v === true) setOn(true);
+        }
+      } catch (_) {}
+    })();
+  }, [key]);
+  return on;
+}
+
 function FreeReportTab({ r, n, lucky, kundli }) {
-  const a = r.ascendant || {};
-  const sign = txt(a.sign || r.chandra_rasi) || '·';
+  const raw = r.raw || {};
+  // Sub-tab state — mirrors the AstroTalk Free Report top strip:
+  // General · Remedies · Doshas, with General further split into
+  // General / Planetary / Vimshottari Dasha / Yoga via nested
+  // chip tabs. Each section is independently admin-gated.
+  const [sub, setSub] = useState('general');
+  const [innerSub, setInnerSub] = useState('overview');
+
+  // Per-section admin toggles. Default ON. Admin can flip any of
+  // these in /admin-features under "Kundli Free Report sections".
+  const showGeneral = useFeatureFlag('free_report_general_enabled');
+  const showPlanetary = useFeatureFlag('free_report_planetary_enabled');
+  const showDasha = useFeatureFlag('free_report_dasha_enabled');
+  const showYoga = useFeatureFlag('free_report_yoga_enabled');
+  const showRemedies = useFeatureFlag('free_report_remedies_enabled');
+  const showDoshas = useFeatureFlag('free_report_doshas_enabled');
+
+  // Build the visible sub-tab list dynamically so a fully-disabled
+  // group doesn't leave an empty chip.
+  const TOP_TABS = [
+    showGeneral || showPlanetary || showDasha || showYoga
+      ? ['general', 'General'] : null,
+    showRemedies ? ['remedies', 'Remedies'] : null,
+    showDoshas ? ['doshas', 'Doshas'] : null,
+  ].filter(Boolean);
+
+  const INNER_TABS = [
+    showGeneral ? ['overview', 'General'] : null,
+    showPlanetary ? ['planetary', 'Planetary'] : null,
+    showDasha ? ['dasha', 'Vimshottari Dasha'] : null,
+    showYoga ? ['yoga', 'Yoga'] : null,
+  ].filter(Boolean);
+
+  // Coerce inner tab to a visible one if the admin disabled it.
+  const activeInner = INNER_TABS.some(([k]) => k === innerSub)
+    ? innerSub : (INNER_TABS[0] && INNER_TABS[0][0]) || 'overview';
+
   return (
     <>
       <Banner title="Free Report" />
-      <Banner title="Ascendant Report" />
-      {a.sign && (
-        <div className="mt-3 rounded-card bg-bg-light p-3 text-sm">
-          <b>Description.</b> Ascendant is one of the most sought
-          concepts in astrology when it comes to predicting the minute
-          events in your life. At the time of birth, the sign that
-          rises in the sky is the person&apos;s ascendant. It helps in
-          making predictions about the minute events, unlike your Moon
-          or Sun sign that help in making weekly, monthly or yearly
-          predictions for you. Your ascendant is {sign}.
+
+      {/* Top sub-tabs — General / Remedies / Doshas */}
+      {TOP_TABS.length > 1 && (
+        <div className="mt-3 flex flex-wrap justify-center gap-2">
+          {TOP_TABS.map(([k, label]) => (
+            <button key={k} type="button" onClick={() => setSub(k)}
+              className={`rounded-full px-4 py-1 text-[12px]
+                font-bold transition ${sub === k
+                  ? 'bg-primary text-white'
+                  : 'bg-white text-sub-text'}`}>
+              {label}
+            </button>
+          ))}
         </div>
       )}
-      {n.personality && (
-        <ReportSection label="Personality" body={n.personality} />
-      )}
-      {n.career && (
-        <ReportSection label="Career" body={n.career} />
-      )}
-      {n.health && (
-        <ReportSection label="Health" body={n.health} />
-      )}
-      {n.love && (
-        <ReportSection label="Love &amp; Relationships" body={n.love} />
-      )}
-      {n.life && (
-        <ReportSection label="Life Path" body={n.life} />
+
+      {sub === 'general' && (
+        <>
+          {/* Inner chip tabs — General · Planetary · Vimshottari ·
+              Yoga. Hidden when admin disables all of them. */}
+          {INNER_TABS.length > 1 && (
+            <div className="mt-2 flex flex-wrap justify-center gap-1.5">
+              {INNER_TABS.map(([k, label]) => (
+                <button key={k} type="button"
+                  onClick={() => setInnerSub(k)}
+                  className={`rounded-full border px-3 py-1
+                    text-[11px] font-bold transition
+                    ${activeInner === k
+                      ? 'border-primary bg-primary text-white'
+                      : 'border-gray-300 bg-white text-sub-text'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {activeInner === 'overview' && showGeneral && (
+            <AscendantOverviewSection r={r} n={n} lucky={lucky} />
+          )}
+          {activeInner === 'planetary' && showPlanetary && (
+            <PlanetaryNarrativeSection r={r} raw={raw} />
+          )}
+          {activeInner === 'dasha' && showDasha && (
+            <VimshottariNarrativeSection r={r} raw={raw} />
+          )}
+          {activeInner === 'yoga' && showYoga && (
+            <YogaNarrativeSection r={r} raw={raw} />
+          )}
+        </>
       )}
 
-      {(lucky.deity || lucky.color || lucky.stone) && (
+      {sub === 'remedies' && showRemedies && (
+        <RemediesSection r={r} raw={raw} />
+      )}
+      {sub === 'doshas' && showDoshas && (
+        <DoshasNarrativeSection r={r} raw={raw} />
+      )}
+    </>
+  );
+}
+
+// ---- Free Report: Ascendant overview ----------------------------
+function AscendantOverviewSection({ r, n, lucky }) {
+  const a = r.ascendant || {};
+  const sign = txt(a.sign || r.chandra_rasi) || '·';
+  const moonSign = txt(r.chandra_rasi);
+  const sunSign = txt(r.soorya_rasi);
+  const nakshatra = txt(r.nakshatra);
+  // Compose richer paragraphs by stitching together the provider's
+  // narrative with sign/nakshatra/lord context so the rendered
+  // section reads like a real reading rather than 1-line stubs.
+  function richPara(label, base, augment) {
+    if (!base && !augment) return null;
+    return (
+      <ReportSection label={label}>
+        {base && <p>{base}</p>}
+        {augment && <p className="mt-2">{augment}</p>}
+      </ReportSection>
+    );
+  }
+  return (
+    <>
+      <Banner title="Ascendant Report" />
+      {a.sign && (
+        <div className="mt-3 rounded-card bg-bg-light p-3 text-sm
+          leading-relaxed">
+          <b>Description.</b> Ascendant is one of the most sought
+          concepts in astrology when it comes to predicting the
+          minute events in your life. At the time of birth, the
+          sign that rises in the sky is the person&apos;s ascendant.
+          It helps in making predictions about the minute events,
+          unlike your Moon or Sun sign that help in making weekly,
+          monthly or yearly predictions for you. Your ascendant is{' '}
+          <b>{sign}</b>{moonSign ? `, your Moon sign is ${moonSign}`
+            : ''}{sunSign ? `, your Sun sign is ${sunSign}` : ''}
+          {nakshatra ? `, and your birth star is ${nakshatra}` : ''}.
+        </div>
+      )}
+      {richPara('Personality', n.personality,
+        a.sign && `Your Lagna (ascendant) is ${sign}. `
+          + houseBlurb('lagna', sign)
+          + (moonSign ? ` Moon in ${moonSign} colours your `
+            + 'emotional nature.' : '')
+          + (nakshatra ? ` Your birth star ${nakshatra} adds its `
+            + 'own signature to your temperament and instincts.'
+            : ''))}
+      {richPara('Career', n.career,
+        a.sign && `Career path: ${careerBlurb(sign)} `
+          + 'Pair these tendencies with the running dasha lord to '
+          + 'time professional decisions.')}
+      {richPara('Health', n.health,
+        a.sign && `Health constitution: ${healthBlurb(sign)} `
+          + 'Routine, sleep and a moderate diet matter more than '
+          + 'fasting fixes.')}
+      {richPara('Love & Relationships', n.love,
+        a.sign && `In love: ${loveBlurb(sign)}`)}
+      {richPara('Life Path', n.life,
+        a.sign && `Life path: with ${nakshatra || moonSign || sign}, `
+          + 'your journey rewards patience, dharma and using your '
+          + 'natural gifts in service of clear goals. Favourable '
+          + `direction as per chart, lucky colour ${lucky.color
+            || '·'}, birth stone ${lucky.stone || '·'}.`)}
+
+      {(lucky.deity || lucky.color || lucky.stone
+        || lucky.direction || lucky.syllables) && (
         <>
           <Banner title="Lucky" />
           <div className="mt-3 rounded-card bg-white p-3 text-sm">
@@ -1363,11 +1513,374 @@ function FreeReportTab({ r, n, lucky, kundli }) {
     </>
   );
 }
-function ReportSection({ label, body }) {
+
+// Per-sign micro-blurbs used to thicken the Ascendant section even
+// when the provider returns terse one-liners. Picked from classical
+// associations — generic but accurate.
+function houseBlurb(_kind, sign) {
+  const S = (sign || '').toLowerCase();
+  if (S === 'aries') return 'You lead with initiative, courage and a '
+    + 'pioneering spirit. You move first and refine later.';
+  if (S === 'taurus') return 'You move steadily, value comfort and '
+    + 'beauty, and resist what is rushed.';
+  if (S === 'gemini') return 'You think in possibilities, speak '
+    + 'fluently and pick up skills quickly.';
+  if (S === 'cancer') return 'You are caring, intuitive and '
+    + 'protective with deep emotional intelligence.';
+  if (S === 'leo') return 'You radiate warmth, want recognition and '
+    + 'lead by example.';
+  if (S === 'virgo') return 'You analyse, refine and serve. Details '
+    + 'others miss are obvious to you.';
+  if (S === 'libra') return 'You weigh, balance and seek fair '
+    + 'partnerships in everything.';
+  if (S === 'scorpio') return 'You feel intensely, dig deep and '
+    + 'transform what you touch.';
+  if (S === 'sagittarius') return 'You aim high, travel widely and '
+    + 'teach what you have learned.';
+  if (S === 'capricorn') return 'You build patiently, plan long and '
+    + 'achieve through structure.';
+  if (S === 'aquarius') return 'You think originally, network widely '
+    + 'and reform what is stuck.';
+  if (S === 'pisces') return 'You feel collectively, imagine vividly '
+    + 'and dissolve boundaries.';
+  return '';
+}
+function careerBlurb(sign) {
+  const S = (sign || '').toLowerCase();
+  const M = {
+    aries: 'leadership, sport, military, surgery, entrepreneurship.',
+    taurus: 'finance, food, design, luxury goods, real estate.',
+    gemini: 'media, writing, sales, tech, teaching.',
+    cancer: 'care-giving, hospitality, real estate, family business.',
+    leo: 'government, performance, gold, leadership roles.',
+    virgo: 'analytics, accounts, editing, health, service roles.',
+    libra: 'law, diplomacy, design, partnerships, beauty.',
+    scorpio: 'research, surgery, finance, intelligence, occult.',
+    sagittarius: 'teaching, law, travel, publishing, advisory.',
+    capricorn: 'administration, construction, mining, long-haul work.',
+    aquarius: 'tech, research, social causes, networks.',
+    pisces: 'arts, healing, spirituality, marine, charity.',
+  };
+  return M[S] || 'work where your natural gifts apply.';
+}
+function healthBlurb(sign) {
+  const S = (sign || '').toLowerCase();
+  const M = {
+    aries: 'strong vitality; mind headaches and burn-out.',
+    taurus: 'sturdy frame; mind throat and weight.',
+    gemini: 'fast metabolism; mind lungs and nerves.',
+    cancer: 'sensitive digestion and emotions; nurture rest and diet.',
+    leo: 'strong heart; mind blood pressure and back.',
+    virgo: 'sharp digestion; mind anxiety and intestines.',
+    libra: 'balanced look; mind kidneys and sugar.',
+    scorpio: 'powerful constitution; mind reproductive system.',
+    sagittarius: 'athletic frame; mind hips and liver.',
+    capricorn: 'lean, lasting; mind knees and joints.',
+    aquarius: 'wiry; mind circulation and ankles.',
+    pisces: 'sensitive; mind feet, immune system, moods.',
+  };
+  return M[S] || 'pay attention to your body signals early.';
+}
+function loveBlurb(sign) {
+  const S = (sign || '').toLowerCase();
+  const M = {
+    aries: 'you fall fast and need a partner who can keep pace.',
+    taurus: 'you love steadily and value loyalty above all.',
+    gemini: 'you want conversation and variety in a partner.',
+    cancer: 'you are devoted and nurturing; family and emotional '
+      + 'safety matter most.',
+    leo: 'you love grandly and need to be appreciated.',
+    virgo: 'you love through care and quiet acts of service.',
+    libra: 'you are romantic and want harmony, almost any cost.',
+    scorpio: 'you bond intensely; trust and depth matter.',
+    sagittarius: 'you want a partner who shares your search.',
+    capricorn: 'you commit slowly but for life.',
+    aquarius: 'you love freedom and friendship-first partnerships.',
+    pisces: 'you love selflessly; protect against being absorbed.',
+  };
+  return M[S] || 'partnership themes vary with the chart.';
+}
+
+// ---- Free Report: Planetary narratives (Sun..Ketu per planet) ---
+function PlanetaryNarrativeSection({ r, raw }) {
+  // Provider may put per-planet narratives under raw.planetary,
+  // raw.planet_reports, or fold them into narrative.planets. Try
+  // all three. Each entry: { planet, sign, house, text }.
+  const list = (Array.isArray(raw.planetary) && raw.planetary)
+    || (Array.isArray(raw.planet_reports) && raw.planet_reports)
+    || (Array.isArray(r.planetary) && r.planetary)
+    || [];
+  const planets = r.planets || [];
+  if (list.length === 0 && planets.length === 0) {
+    return <PlaceholderNote text="Planetary narratives are loading
+      or unavailable for this profile." />;
+  }
   return (
-    <div className="mt-3 rounded-card bg-white p-3 text-sm">
-      <div className="mb-1 font-bold text-dark-text">{label}</div>
-      <p className="text-dark-text">{body}</p>
+    <>
+      <Banner title="Planetary Influence" />
+      <div className="mt-3 space-y-2">
+        {planets.map((p) => {
+          const provider = list.find((x) =>
+            txt(x.planet || x.name).toLowerCase()
+              === txt(p.name).toLowerCase());
+          const text = provider
+            && (provider.text || provider.description
+              || provider.body);
+          return (
+            <div key={p.name} className="rounded-card bg-white p-3
+              text-sm">
+              <div className="mb-1 font-bold text-primary">
+                {txt(p.name)}
+                {p.sign && (
+                  <span className="ml-2 text-[11px] font-semibold
+                    text-sub-text">in {txt(p.sign)}{p.house
+                    ? `, house ${p.house}` : ''}</span>
+                )}
+              </div>
+              <p className="leading-relaxed text-dark-text">
+                {text || (`${txt(p.name)} (${PLANET_KARAKA[txt(p.name)]
+                  || 'karaka'}) sits in ${txt(p.sign) || 'your chart'}`
+                  + (p.house ? `, house ${p.house}` : '')
+                  + (p.house && HOUSE_THEMES[p.house]
+                    ? ` — ${HOUSE_THEMES[p.house]}` : '')
+                  + `. ${(p.retrograde ? 'Retrograde here turns its '
+                    + 'energy inward — old themes get revisited.'
+                    : 'Direct motion runs its themes forward in this '
+                      + 'life.')}`)}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+// ---- Free Report: Vimshottari dasha narratives ------------------
+function VimshottariNarrativeSection({ r, raw }) {
+  // Provider may return per-mahadasha narratives under
+  // raw.dasha_narratives or r.dashaNarratives. Each: { planet,
+  // start, end, text }.
+  const list = (Array.isArray(raw.dasha_narratives)
+    && raw.dasha_narratives)
+    || (Array.isArray(r.dashaNarratives) && r.dashaNarratives)
+    || [];
+  const mahas = r.dasha || [];
+  if (mahas.length === 0) {
+    return <PlaceholderNote text="Dasha periods are loading or
+      unavailable for this profile." />;
+  }
+  return (
+    <>
+      <Banner title="Vimshottari Dasha — Period Predictions" />
+      <div className="mt-3 space-y-2">
+        {mahas.map((d, i) => {
+          const provider = list.find((x) =>
+            txt(x.planet).toLowerCase()
+              === txt(d.planet).toLowerCase());
+          const text = (provider && (provider.text
+            || provider.description)) || '';
+          const startYear = String(d.start || '').slice(0, 4);
+          const endYear = String(d.end || '').slice(0, 4);
+          return (
+            <div key={i} className={`rounded-card p-3 text-sm
+              leading-relaxed ${d.current
+                ? 'bg-primary/5 ring-1 ring-primary/30'
+                : 'bg-white'}`}>
+              <div className="mb-1 font-bold text-primary">
+                {txt(d.planet)} Mahadasha
+                <span className="ml-2 text-[11px] font-semibold
+                  text-sub-text">
+                  {startYear}{startYear && endYear
+                    ? `–${endYear}` : ''}
+                  {d.current ? ' · current' : ''}
+                </span>
+              </div>
+              <p className="text-dark-text">
+                {text || (`The ${txt(d.planet)} Mahadasha runs from `
+                  + `${String(d.start || '').slice(0, 10)} to `
+                  + `${String(d.end || '').slice(0, 10)}. `
+                  + `${PLANET_KARAKA[txt(d.planet)]
+                    ? 'Themes activated: ' + PLANET_KARAKA[txt(d.planet)]
+                      + '. ' : ''}`
+                  + 'The sub-periods inside refine the year-by-year '
+                  + 'experience; consult the Dasha tab for the '
+                  + 'antardasha drilldown.')}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+// ---- Free Report: Yoga narratives (detected yogas in detail) ----
+function YogaNarrativeSection({ r, raw }) {
+  const yogas = (Array.isArray(raw.yogas_detected) && raw.yogas_detected)
+    || (Array.isArray(r.yogas) && r.yogas) || [];
+  if (yogas.length === 0) {
+    return <PlaceholderNote text="No classical yogas detected in
+      this chart." />;
+  }
+  return (
+    <>
+      <Banner title={`Yogas Detected (${yogas.length})`} />
+      <div className="mt-3 space-y-2">
+        {yogas.map((y, i) => {
+          const name = txt(y.name || y.title || y);
+          const desc = y.description || y.effect || y.meaning
+            || y.text;
+          const planets = Array.isArray(y.planets)
+            ? y.planets.map(txt).join(', ') : '';
+          return (
+            <div key={i} className="rounded-card bg-white p-3
+              text-sm leading-relaxed">
+              <div className="mb-1 font-bold text-primary">{name}</div>
+              {desc && <p className="text-dark-text">{desc}</p>}
+              {planets && (
+                <div className="mt-2 text-[11px] text-sub-text">
+                  Formed by: <b>{planets}</b>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+// ---- Free Report: Remedies (gemstone, rudraksha, mantras…) ------
+function RemediesSection({ r, raw }) {
+  const rem = raw.remedies || r.remedies || {};
+  const gem = rem.gemstone || rem.birthstone;
+  const rudraksha = rem.rudraksha;
+  const mantra = rem.mantra || rem.mantras;
+  const fast = rem.fasting || rem.fasts;
+  const charity = rem.charity || rem.donations;
+  return (
+    <>
+      <Banner title="Remedies" />
+      {!gem && !rudraksha && !mantra && !fast && !charity && (
+        <PlaceholderNote text="No remedy block returned by the
+          provider for this chart yet." />
+      )}
+      {gem && (
+        <RemedyCard title="Gemstone"
+          body={typeof gem === 'string' ? gem
+            : (gem.text || gem.description
+              || `${gem.name || ''} ${gem.metal
+                ? `set in ${gem.metal}` : ''}`)} />
+      )}
+      {rudraksha && (
+        <RemedyCard title="Rudraksha"
+          body={typeof rudraksha === 'string' ? rudraksha
+            : (rudraksha.text || rudraksha.description
+              || `${rudraksha.mukhi || ''} Mukhi rudraksha`)} />
+      )}
+      {mantra && (
+        <RemedyCard title="Mantras"
+          body={typeof mantra === 'string' ? mantra
+            : Array.isArray(mantra)
+              ? mantra.map(txt).filter(Boolean).join('\n')
+              : (mantra.text || mantra.description)} />
+      )}
+      {fast && (
+        <RemedyCard title="Fasting"
+          body={typeof fast === 'string' ? fast
+            : (fast.text || fast.description)} />
+      )}
+      {charity && (
+        <RemedyCard title="Charity / Donations"
+          body={typeof charity === 'string' ? charity
+            : (charity.text || charity.description)} />
+      )}
+    </>
+  );
+}
+function RemedyCard({ title, body }) {
+  return (
+    <div className="mt-3 rounded-card bg-white p-3 text-sm
+      leading-relaxed">
+      <div className="mb-1 font-bold text-primary">{title}</div>
+      <p className="whitespace-pre-line text-dark-text">
+        {body || '·'}
+      </p>
+    </div>
+  );
+}
+
+// ---- Free Report: Dosha narratives -------------------------------
+function DoshasNarrativeSection({ r, raw }) {
+  const d = raw.doshas_full || r.doshas || {};
+  const items = [
+    ['Mangal Dosha', d.mangal, 'Mars in 1, 2, 4, 7, 8 or 12. '
+      + 'Affects marriage compatibility. Remedies: Hanuman Chalisa '
+      + 'Tuesdays, coral on right ring finger after consulting an '
+      + 'astrologer.'],
+    ['Kalsarp Dosha', d.kalsarp, 'All planets between Rahu and Ketu. '
+      + 'Causes delays and obstacles. Silver naag-naagin worship and '
+      + 'Naga Panchami rituals help.'],
+    ['Sade Sati', d.sade_sati, 'Saturn through 12th, 1st and 2nd '
+      + 'from natal Moon. Slows things, tests patience. Hanuman '
+      + 'Chalisa and Saturday Saturn offerings help.'],
+    ['Pitra Dosha', d.pitra, 'Karma carried from ancestors; ease '
+      + 'with shradh on Pitru Paksha + selfless service.'],
+    ['Guru Chandal', d.guru_chandal, 'Jupiter conjunct Rahu — '
+      + 'wisdom mixed with confusion. Yellow sapphire after expert '
+      + 'consultation.'],
+  ].filter(([, val]) => val);
+  return (
+    <>
+      <Banner title="Doshas" />
+      {items.length === 0 && (
+        <PlaceholderNote text="No major doshas flagged in this chart." />
+      )}
+      {items.map(([label, val, fallback]) => {
+        const present = val && (val.present || val.is_present
+          || val.detected);
+        const severity = val && (val.severity || val.type
+          || val.phase || val.current_phase);
+        const note = val && (val.text || val.note || val.description);
+        return (
+          <div key={label} className={`mt-3 rounded-card p-3 text-sm
+            leading-relaxed ${present
+              ? 'border border-warning/40 bg-warning/5'
+              : 'border border-success/30 bg-success/5'}`}>
+            <div className={`font-bold ${present
+              ? 'text-warning' : 'text-success'}`}>
+              {label} · {present ? 'Present' : 'Not present'}
+              {present && severity ? ` (${severity})` : ''}
+            </div>
+            {note && (
+              <p className="mt-1 text-dark-text">{note}</p>
+            )}
+            <p className="mt-1 text-[11.5px] text-sub-text">
+              {fallback}
+            </p>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+function PlaceholderNote({ text }) {
+  return (
+    <div className="mt-3 rounded-card bg-bg-light p-3 text-sm
+      text-sub-text">
+      {text}
+    </div>
+  );
+}
+
+function ReportSection({ label, children }) {
+  return (
+    <div className="mt-3 rounded-card bg-white p-3 text-sm
+      leading-relaxed">
+      <div className="mb-1 font-bold text-primary">{label}</div>
+      <div className="text-dark-text">{children}</div>
     </div>
   );
 }
