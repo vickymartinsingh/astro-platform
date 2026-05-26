@@ -137,12 +137,26 @@ export default function AdminArchive() {
                         ? ` · ${(a.parts || []).join(', ')}` : ''}
                     </div>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <button onClick={() => openArchive(a.id)}
                       className="rounded-full bg-bg-light px-3 py-1.5
                         text-xs font-bold text-primary">
                       {openId === a.id ? 'Hide' : 'View'}
                     </button>
+                    {/* Compliance: even after the customer deletes
+                        their account the archived uid still owns
+                        every audit/IP/UA event we logged. Routing
+                        to /admin-user-profile/{uid} keeps the
+                        Device + Activity History panels reachable
+                        for fraud / abuse / authority requests. */}
+                    <a href={a.role === 'astrologer'
+                      ? `/admin-astro-profile/${a.uid}`
+                      : `/admin-user-profile/${a.uid}`}
+                      className="rounded-full border border-primary
+                        px-3 py-1.5 text-xs font-bold text-primary
+                        hover:bg-primary hover:text-white">
+                      Compliance logs
+                    </a>
                     {!a.restored && (
                       <button onClick={() => restore(a.id)}
                         disabled={busy}

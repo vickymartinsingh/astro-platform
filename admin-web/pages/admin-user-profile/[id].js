@@ -55,8 +55,17 @@ export default function AdminUserProfile() {
   useEffect(() => {
     if (loading || !id) return;
     (async () => {
-      try { setU(await userService.getUser(id)); }
-      catch (_) { setU(null); }
+      try {
+        const fetched = await userService.getUser(id);
+        // Account may be deleted/purged; keep the page alive with a
+        // stub so compliance logs (Activity History, Device Sessions,
+        // Audit) still render for the same uid.
+        setU(fetched || { id, deleted: true,
+          name: '(deleted account)', email: '', phone: '' });
+      } catch (_) {
+        setU({ id, deleted: true, name: '(deleted account)',
+          email: '', phone: '' });
+      }
       try {
         const list = await sessionService.getUserSessions(id);
         setSessions(list || []);
@@ -99,6 +108,11 @@ export default function AdminUserProfile() {
     kundliService.downloadKundliReport(k, data || {});
   }
 
+  // We still mount the full page when the users/{uid} doc no longer
+  // exists (account deleted / purged). The effect above writes a
+  // stub user object in that case so every panel below (Activity
+  // History, Device Sessions, Audit, Orders) keeps rendering and
+  // admin can pull compliance data even for purged accounts.
   if (loading || !u) {
     return <Layout><div className="surface p-4">Loading…</div></Layout>;
   }
@@ -133,12 +147,19 @@ export default function AdminUserProfile() {
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-bold">{u.name || 'Customer'}</h1>
-            <span className={`rounded-full px-2 py-0.5 text-[10px]
-              font-bold capitalize ${
-              u.status === 'blocked' ? 'bg-red-100 text-red-700'
-              : 'bg-emerald-100 text-emerald-700'}`}>
-              {u.status || 'active'}
-            </span>
+            {u.deleted ? (
+              <span className="rounded-full bg-danger/10 px-2 py-0.5
+                text-[10px] font-bold uppercase text-danger">
+                Deleted · compliance view
+              </span>
+            ) : (
+              <span className={`rounded-full px-2 py-0.5 text-[10px]
+                font-bold capitalize ${
+                u.status === 'blocked' ? 'bg-red-100 text-red-700'
+                : 'bg-emerald-100 text-emerald-700'}`}>
+                {u.status || 'active'}
+              </span>
+            )}
             <span className="rounded-full bg-gray-100 px-2 py-0.5
               text-[10px] font-bold uppercase text-gray-700">
               {u.role || 'client'}
@@ -216,7 +237,10 @@ export default function AdminUserProfile() {
                     </div>
                     <div className="text-xs text-sub-text">
                       {k.dob} · {k.tob} {k.ampm} · {k.place}
-                      {k.zodiac ? ` · ${k.zodiac}` : ''}
+                      {/* Zodiac (sun sign by DOB) intentionally
+                          omitted — that's a horoscope concept, not
+                          a kundli identifier. Moon sign + Lagna
+                          live inside the generated report. */}
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
@@ -427,8 +451,9 @@ function EmailKundliButton({ k, u, report, onLoad }) {
       }
       const okMsg = j.emailed
         ? `Complimentary kundli PDF emailed to ${u.email}`
-        : 'PDF generated but the email send failed. Check '
-          + '/admin-email SMTP config.';
+        : 'PDF generated but the email send failed.'
+          + (j.emailError ? ` Reason: ${j.emailError}` : '')
+          + ' Open /admin-email and verify the SMTP settings.';
       setMsg({ text: okMsg, kind: j.emailed ? 'ok' : 'err' });
     } catch (e) {
       setMsg({ text: e.message || 'Send failed.', kind: 'err' });

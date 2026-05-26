@@ -310,6 +310,12 @@ async function uploadPdf(uid, kind, buf) {
   };
 }
 
+// Returns either { transporter, from } on success or
+// { error: '...' } when SMTP isn't configured. Callers that want a
+// silent best-effort send can treat error like a falsy transporter;
+// callers that want to surface the failure to admin (the new
+// /api/kundli action:'report' path does this) pass the error string
+// up into the JSON response.
 async function smtpTransport(db) {
   let cfg = {};
   try {
@@ -324,7 +330,11 @@ async function smtpTransport(db) {
     ? cfg.smtpSecure : port === 465;
   const from = cfg.fromAddress || cfg.smtpFrom || process.env.MAIL_FROM
     || 'AstroSeer <support@astroseer.in>';
-  if (!host || !user || !pass) return null; // email is best-effort
+  if (!host || !user || !pass) {
+    return { error: 'SMTP not configured. Set host / user / pass '
+      + 'in /admin-email (settings/email) or SMTP_HOST / SMTP_USER '
+      + '/ SMTP_PASS env vars on the relay.' };
+  }
   return {
     transporter: nodemailer.createTransport({
       host, port, secure, auth: { user, pass },
@@ -350,7 +360,10 @@ async function emailReport({
   complimentary, senderNote,
 }) {
   const t = await smtpTransport(db);
-  if (!t) return false;
+  if (!t || t.error || !t.transporter) {
+    return { ok: false, error: (t && t.error)
+      || 'SMTP transport not available.' };
+  }
   const human = kind === 'forecast12'
     ? 'Your 12-Month Kundli Forecast'
     : 'Your Vedic Kundli Report';
@@ -452,15 +465,18 @@ async function emailReport({
 </td></tr></table>
 </body></html>`;
   try {
-    await t.transporter.sendMail({
+    const info = await t.transporter.sendMail({
       from: t.from, to: toEmail, subject, text, html,
       attachments: [
         { filename: pdfName, content: pdfBuf,
           contentType: 'application/pdf' },
       ],
     });
-    return true;
-  } catch (_) { return false; }
+    return { ok: true, messageId: info && info.messageId };
+  } catch (e) {
+    return { ok: false,
+      error: String((e && e.message) || e).slice(0, 500) };
+  }
 }
 
 // Public entry: handle a kundli PDF request and call res.json/.status
@@ -781,13 +797,18 @@ async function handleReport(req, res) {
   // sends, the template flips to gift-wording and labels the report
   // as a complimentary AstroSeer kundli.
   let emailed = false;
+  let emailError = null;
   if (userEmail) {
-    emailed = await emailReport({
+    const r = await emailReport({
       db, toEmail: userEmail, name: userName,
       kind, pdfBuf, pdfName: pdfFileName,
       complimentary: !!body.complimentary,
       senderNote: body.senderNote || '',
     });
+    if (r && r.ok) emailed = true;
+    else emailError = (r && r.error) || 'unknown email error';
+  } else {
+    emailError = 'no email on file for this user';
   }
 
   return res.status(200).json({
@@ -799,6 +820,7 @@ async function handleReport(req, res) {
     amount: chargedAmount,
     kind,
     emailed,
+    emailError,
     validUntil,
   });
 }
