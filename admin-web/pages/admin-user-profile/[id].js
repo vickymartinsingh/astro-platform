@@ -472,22 +472,34 @@ function EmailKundliButton({ k, u, report, onLoad }) {
       }
       clearTimeout(bumpT);
       if (j.emailed) {
-        const linkOnly = j.emailMode === 'link-only';
-        setProgress({ step: 'done',
-          label: linkOnly
-            ? `Email delivered to ${u.email} as a download link `
-              + '(SMTP rejected the attachment — usually a size '
-              + 'limit). Customer can grab the PDF from My Orders.'
-            : `Complimentary kundli PDF emailed to ${u.email}.`,
-          mode: j.emailMode || 'with-attachment',
-          firstAttemptError: j.emailFirstAttemptError || '',
+        const mode = j.emailMode || 'link-only';
+        let label;
+        if (mode === 'both') {
+          label = `Two emails delivered to ${u.email}: a download `
+            + 'link AND the PDF attached.';
+        } else if (mode === 'with-attachment') {
+          label = `Complimentary kundli PDF emailed to ${u.email}.`;
+        } else {
+          label = `Email delivered to ${u.email} as a download `
+            + 'link. The PDF attachment was rejected by SMTP '
+            + '(usually a size limit). Customer can download the '
+            + 'PDF from My Orders.';
+        }
+        setProgress({ step: 'done', label,
+          mode,
+          attachmentError: j.attachmentError || '',
+          linkOnlyError: j.linkOnlyError || '',
           messageId: j.messageId || '' });
       } else {
         setProgress({ step: 'failed',
-          label: 'PDF generated but the email send failed.',
+          label: 'Both email attempts failed.',
           error: j.emailError
-            || 'No reason returned by the relay.',
-          firstAttemptError: j.emailFirstAttemptError || '' });
+            || j.attachmentError
+            || j.linkOnlyError
+            || 'Relay did not return an error string — open '
+              + 'Vercel logs for the push-relay function.',
+          attachmentError: j.attachmentError || '',
+          linkOnlyError: j.linkOnlyError || '' });
       }
       setMsg({ text: '', kind: '' }); // inline msg replaced by popup
     } catch (e) {

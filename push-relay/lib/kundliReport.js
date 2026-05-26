@@ -486,21 +486,30 @@ async function emailReport({
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
   } catch (_) { /* audit is best-effort */ }
-  // First attempt: send with the PDF attached. If that fails for any
-  // reason (size limit, auth quirk, network), DO NOT give up — fall
-  // back to a link-only email so the customer always receives a
-  // deliverable they can open. The order doc already has the signed
-  // Storage URL, so the email body links to it directly.
+  // NEW STRATEGY: send the LINK-ONLY email FIRST as the guaranteed
+  // delivery (the same shape as the /admin-email test send, which
+  // the user has confirmed works). Then try the with-attachment
+  // email as a bonus second send. This way:
+  //   - Customer ALWAYS receives the email (link-only never fails
+  //     unless SMTP itself is broken — and the test send proves
+  //     it isn't).
+  //   - If the attachment send succeeds, customer gets two emails:
+  //     one with the link, one with the PDF attached. Two is fine;
+  //     deliverability >> elegance.
+  //   - If the attachment send fails, we still return ok:true
+  //     because the link-only email landed. The admin popup shows
+  //     mode:'link-only' + the attachment error so admin can fix
+  //     the SMTP size limit / policy without panicking.
   async function sendOnce(attachAttachment) {
     const cleanText = attachAttachment ? text
-      : `${text}\n\nDownload link (if the attachment is missing): `
+      : `${text}\n\nDownload your report any time: `
         + 'https://astroseer.in/orders';
     const cleanHtml = attachAttachment ? html
-      : html.replace('Download link', 'Download link')
-        + '<p style="margin:12px 0 0 0;font-size:11px;color:#777">'
-        + 'If your kundli PDF isn&apos;t attached, please '
-        + 'sign in to your AstroSeer account and download it '
-        + 'from <b>My Orders</b>.</p>';
+      : html + '<p style="margin:12px 0 0 0;font-size:11px;'
+        + 'color:#777">Tip: open '
+        + '<a href="https://astroseer.in/orders" style="color:'
+        + '#7F2020">My Orders</a> on AstroSeer to download the PDF '
+        + 'any time.</p>';
     const opts = {
       from: t.from, to: toEmail, subject, text: cleanText,
       html: cleanHtml,
@@ -512,48 +521,61 @@ async function emailReport({
     return t.transporter.sendMail(opts);
   }
 
+  // 1) Link-only email — the guaranteed delivery.
+  let linkOnlyInfo = null;
+  let linkOnlyError = null;
   try {
-    const info = await sendOnce(true);
-    try {
-      await auditRef.update({
-        status: 'sent',
-        deliveryMode: 'with-attachment',
-        messageId: (info && info.messageId) || '',
-        response: String((info && info.response) || '').slice(0, 200),
-      });
-    } catch (_) {}
-    return { ok: true, messageId: info && info.messageId,
-      mode: 'with-attachment' };
-  } catch (e1) {
-    const firstErr = String((e1 && e1.message) || e1).slice(0, 500);
-    // Retry without the attachment. Most SMTP rejections at this
-    // point are message-size-too-large or relay-side attachment
-    // policy — the link-only version usually goes through cleanly
-    // since the message body alone is <10 KB.
-    try {
-      const info2 = await sendOnce(false);
-      try {
-        await auditRef.update({
-          status: 'sent-link-only',
-          deliveryMode: 'link-only',
-          firstAttemptError: firstErr,
-          messageId: (info2 && info2.messageId) || '',
-          response: String((info2 && info2.response) || '').slice(0, 200),
-        });
-      } catch (_) {}
-      return { ok: true, mode: 'link-only',
-        messageId: info2 && info2.messageId,
-        firstAttemptError: firstErr };
-    } catch (e2) {
-      const errMsg = String((e2 && e2.message) || e2).slice(0, 500);
-      try {
-        await auditRef.update({ status: 'failed',
-          error: errMsg, firstAttemptError: firstErr });
-      } catch (_) {}
-      return { ok: false, error: errMsg,
-        firstAttemptError: firstErr };
-    }
+    linkOnlyInfo = await sendOnce(false);
+  } catch (e0) {
+    linkOnlyError = String((e0 && e0.message) || e0).slice(0, 500);
   }
+
+  // 2) Bonus with-attachment send.
+  let withAttachInfo = null;
+  let withAttachError = null;
+  try {
+    withAttachInfo = await sendOnce(true);
+  } catch (e1) {
+    withAttachError = String((e1 && e1.message) || e1).slice(0, 500);
+  }
+
+  const linkOnlyOk = !!linkOnlyInfo;
+  const withAttachOk = !!withAttachInfo;
+  const finalMode = withAttachOk
+    ? (linkOnlyOk ? 'both' : 'with-attachment')
+    : (linkOnlyOk ? 'link-only' : 'none');
+
+  try {
+    await auditRef.update({
+      status: linkOnlyOk || withAttachOk ? 'sent' : 'failed',
+      deliveryMode: finalMode,
+      linkOnlyMessageId: linkOnlyOk
+        ? (linkOnlyInfo.messageId || '') : '',
+      withAttachMessageId: withAttachOk
+        ? (withAttachInfo.messageId || '') : '',
+      linkOnlyError: linkOnlyError || null,
+      withAttachError: withAttachError || null,
+    });
+  } catch (_) {}
+
+  if (linkOnlyOk || withAttachOk) {
+    return {
+      ok: true,
+      mode: finalMode,
+      messageId: (withAttachInfo && withAttachInfo.messageId)
+        || (linkOnlyInfo && linkOnlyInfo.messageId) || '',
+      // Bubble up the attachment-attempt error even on success so
+      // admin sees why the PDF didn't land (SMTP size limit etc.).
+      attachmentError: withAttachOk ? null : withAttachError,
+      linkOnlyError: linkOnlyOk ? null : linkOnlyError,
+    };
+  }
+  return {
+    ok: false,
+    error: linkOnlyError || withAttachError || 'SMTP send failed.',
+    linkOnlyError,
+    attachmentError: withAttachError,
+  };
 }
 
 // Public entry: handle a kundli PDF request and call res.json/.status
@@ -876,7 +898,8 @@ async function handleReport(req, res) {
   let emailed = false;
   let emailMode = null;
   let emailError = null;
-  let emailFirstAttemptError = null;
+  let attachmentError = null;
+  let linkOnlyError = null;
   if (userEmail) {
     const r = await emailReport({
       db, toEmail: userEmail, name: userName,
@@ -886,13 +909,13 @@ async function handleReport(req, res) {
     });
     if (r && r.ok) {
       emailed = true;
-      emailMode = r.mode || 'with-attachment';
-      if (r.firstAttemptError) {
-        emailFirstAttemptError = r.firstAttemptError;
-      }
+      emailMode = r.mode || 'link-only';
+      attachmentError = r.attachmentError || null;
+      linkOnlyError = r.linkOnlyError || null;
     } else {
       emailError = (r && r.error) || 'unknown email error';
-      emailFirstAttemptError = (r && r.firstAttemptError) || null;
+      attachmentError = (r && r.attachmentError) || null;
+      linkOnlyError = (r && r.linkOnlyError) || null;
     }
   } else {
     emailError = 'no email on file for this user';
@@ -909,7 +932,8 @@ async function handleReport(req, res) {
     emailed,
     emailMode,
     emailError,
-    emailFirstAttemptError,
+    attachmentError,
+    linkOnlyError,
     validUntil,
   });
 }
