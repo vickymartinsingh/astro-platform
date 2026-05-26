@@ -156,13 +156,96 @@ export default function AdminEmail() {
               </span>
             </button>
             {open === m.id && (
-              <pre className="mt-2 whitespace-pre-wrap rounded-card
-                bg-bg-light p-3 text-xs">{m.body}</pre>
+              <EmailLogDetail m={m} />
             )}
           </div>
         ))}
       </div>
     </Layout>
+  );
+}
+
+// Full email detail: subject, to, kind, attachment name, raw text
+// body, rendered HTML preview, and the SMTP error / response from
+// the relay when applicable. Mirrors what a customer actually
+// received via SMTP so admin can audit before forwarding.
+function EmailLogDetail({ m }) {
+  const [view, setView] = useState(m.html ? 'html' : 'text');
+  const attachments = Array.isArray(m.attachments) ? m.attachments
+    : (m.attachment ? [m.attachment] : []);
+  return (
+    <div className="mt-2 rounded-card border border-gray-200 bg-white">
+      <div className="grid gap-1 border-b border-gray-100 p-3
+        text-[11px] sm:grid-cols-2">
+        <div><b>To:</b> {m.to || '·'}</div>
+        <div><b>Kind:</b> {m.kind || 'generic'}</div>
+        <div className="sm:col-span-2"><b>Subject:</b>{' '}
+          {m.subject || '·'}</div>
+        <div><b>Status:</b> {m.status || 'queued'}</div>
+        <div><b>Sent:</b> {m.ts
+          ? new Date(m.ts).toLocaleString() : '·'}</div>
+        {m.messageId && (
+          <div className="sm:col-span-2 break-all">
+            <b>Message-ID:</b> {m.messageId}</div>
+        )}
+        {m.response && (
+          <div className="sm:col-span-2 break-all">
+            <b>SMTP response:</b> {m.response}</div>
+        )}
+        {m.error && (
+          <div className="sm:col-span-2 break-all
+            rounded-card bg-danger/10 p-2 text-danger">
+            <b>Error:</b> {m.error}</div>
+        )}
+        {attachments.length > 0 && (
+          <div className="sm:col-span-2">
+            <b>Attachment(s):</b>{' '}
+            {attachments.map((a, i) => (
+              <span key={i} className="ml-1 rounded-full
+                bg-bg-light px-2 py-0.5 text-[10px]">
+                {a.filename || `file ${i + 1}`}
+                {a.contentType ? ` · ${a.contentType}` : ''}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+      {(m.body || m.html) && (
+        <div className="border-b border-gray-100 px-3 py-2">
+          <div className="flex gap-1">
+            {['html', 'text'].map((v) => (
+              <button key={v} type="button"
+                disabled={(v === 'html' && !m.html)
+                  || (v === 'text' && !m.body)}
+                onClick={() => setView(v)}
+                className={`rounded-full px-3 py-1 text-[10px]
+                  font-bold uppercase disabled:opacity-40
+                  ${view === v ? 'bg-primary text-white'
+                    : 'bg-bg-light text-sub-text'}`}>
+                {v === 'html' ? 'HTML preview' : 'Plain text'}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {view === 'html' && m.html && (
+        <iframe
+          title="email-html"
+          // eslint-disable-next-line react/no-danger
+          srcDoc={m.html}
+          className="h-[420px] w-full" />
+      )}
+      {view === 'text' && m.body && (
+        <pre className="whitespace-pre-wrap p-3 text-xs">{m.body}</pre>
+      )}
+      {!m.body && !m.html && (
+        <div className="p-3 text-xs text-sub-text">
+          (No body captured — the relay sent the email but did not
+          persist the rendered content. Future sends will store
+          subject + body + html + error here.)
+        </div>
+      )}
+    </div>
   );
 }
 

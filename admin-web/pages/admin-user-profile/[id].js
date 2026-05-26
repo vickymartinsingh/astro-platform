@@ -405,6 +405,16 @@ const Row = ({ k, v }) => (
 function EmailKundliButton({ k, u, report, onLoad }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState({ text: '', kind: '' });
+  // Progress modal state. step:
+  //   'starting'   -> request just fired, waiting on the relay
+  //   'generating' -> AstroSeer is rendering the PDF
+  //   'emailing'   -> PDF uploaded, SMTP send in progress
+  //   'done'       -> emailed:true, customer got the PDF
+  //   'failed'     -> something blew up; `error` has the details
+  // The relay returns a single JSON, so we drive 'starting' ->
+  // 'emailing' optimistically off a short timer and finalize when
+  // the response lands. The popup stays open until admin closes.
+  const [progress, setProgress] = useState(null);
   async function send() {
     if (!u || !u.email) {
       setMsg({ text: 'No email on file for this customer.',
@@ -418,6 +428,17 @@ function EmailKundliButton({ k, u, report, onLoad }) {
     }
     setMsg({ text: '', kind: '' });
     setBusy(true);
+    setProgress({ step: 'generating',
+      label: 'Generating the kundli PDF on AstroSeer…' });
+    // Optimistic stage bump: most kundli generations land in 8-15s;
+    // flip the label so admin sees movement even before the relay
+    // returns.
+    const bumpT = setTimeout(() => {
+      setProgress((p) => (p && p.step === 'generating'
+        ? { step: 'emailing',
+          label: 'PDF ready, attaching and emailing…' }
+        : p));
+    }, 8000);
     try {
       // Ask the relay to generate the free kundli PDF for this
       // profile + email it as a complimentary attachment. The relay
@@ -449,16 +470,26 @@ function EmailKundliButton({ k, u, report, onLoad }) {
         throw new Error(j.error
           || `Send failed (HTTP ${r.status}).`);
       }
-      const okMsg = j.emailed
-        ? `Complimentary kundli PDF emailed to ${u.email}`
-        : 'PDF generated but the email send failed.'
-          + (j.emailError ? ` Reason: ${j.emailError}` : '')
-          + ' Open /admin-email and verify the SMTP settings.';
-      setMsg({ text: okMsg, kind: j.emailed ? 'ok' : 'err' });
+      clearTimeout(bumpT);
+      if (j.emailed) {
+        setProgress({ step: 'done',
+          label: `Complimentary kundli PDF emailed to ${u.email}.`,
+          messageId: j.messageId || '' });
+      } else {
+        setProgress({ step: 'failed',
+          label: 'PDF generated but the email send failed.',
+          error: j.emailError
+            || 'No reason returned by the relay.' });
+      }
+      setMsg({ text: '', kind: '' }); // inline msg replaced by popup
     } catch (e) {
-      setMsg({ text: e.message || 'Send failed.', kind: 'err' });
+      clearTimeout(bumpT);
+      setProgress({ step: 'failed',
+        label: 'Send failed.',
+        error: e.message || 'Network or relay error.' });
     } finally { setBusy(false); }
   }
+  function closePopup() { setProgress(null); }
   return (
     <div className="flex flex-col items-end">
       <button onClick={send} disabled={busy}
@@ -473,6 +504,122 @@ function EmailKundliButton({ k, u, report, onLoad }) {
           {msg.text}
         </span>
       )}
+      {progress && (
+        <ComplimentaryProgressPopup p={progress}
+          email={(u && u.email) || ''}
+          onClose={closePopup}
+          onRetry={() => { setProgress(null); send(); }} />
+      )}
+    </div>
+  );
+}
+
+// Centered modal that walks through the stages of a complimentary
+// kundli send so the admin sees PROGRESS (not just a stuck
+// "Sending…" label). Surfaces the real SMTP error when the relay
+// returns one, and offers a Retry button for transient failures.
+function ComplimentaryProgressPopup({ p, email, onClose, onRetry }) {
+  const done = p.step === 'done';
+  const failed = p.step === 'failed';
+  const STAGES = [
+    ['generating', 'Generating PDF',
+      'AstroSeer is rendering the kundli'],
+    ['emailing', 'Sending email',
+      'Attaching PDF and dispatching over SMTP'],
+    ['done', 'Delivered',
+      `Customer received the email at ${email || 'their inbox'}`],
+  ];
+  const stageIdx = ['generating', 'emailing', 'done']
+    .indexOf(p.step);
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center
+      justify-center bg-black/40 px-3" role="dialog" aria-modal="true">
+      <div className="w-full max-w-md rounded-2xl bg-white p-5
+        shadow-xl">
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-bold text-dark-text">
+            Complimentary kundli send
+          </div>
+          {(done || failed) && (
+            <button type="button" onClick={onClose}
+              aria-label="Close"
+              className="rounded-full px-2 text-lg text-sub-text">
+              ×
+            </button>
+          )}
+        </div>
+
+        <div className="mt-3 space-y-2">
+          {STAGES.map(([key, title, sub], i) => {
+            const active = !failed && i === stageIdx;
+            const past = !failed && i < stageIdx;
+            const cls = failed && i === stageIdx
+              ? 'border-danger bg-danger/5 text-danger'
+              : active ? 'border-primary bg-primary/5 text-primary'
+                : past ? 'border-success bg-success/5 text-success'
+                  : 'border-gray-200 bg-gray-50 text-sub-text';
+            return (
+              <div key={key} className={`flex items-start gap-3
+                rounded-card border p-3 ${cls}`}>
+                <span className="grid h-6 w-6 shrink-0
+                  place-items-center rounded-full bg-white
+                  text-[11px] font-bold">
+                  {failed && i === stageIdx ? '!'
+                    : past || done ? '✓'
+                      : active ? '…' : i + 1}
+                </span>
+                <div className="min-w-0 text-[12px]">
+                  <div className="font-bold">{title}</div>
+                  <div className="opacity-80">{sub}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {failed && p.error && (
+          <div className="mt-3 rounded-card border border-danger
+            bg-danger/10 p-3 text-[12px] text-danger">
+            <div className="font-bold">Why it failed:</div>
+            <div className="mt-1 break-all">{p.error}</div>
+            <div className="mt-2 text-[11px]">
+              Open <b>/admin-email</b> to verify SMTP host / user /
+              password. The PDF was generated successfully and is
+              saved on the order — you can also re-trigger the
+              email after fixing the settings.
+            </div>
+          </div>
+        )}
+
+        {done && (
+          <div className="mt-3 rounded-card border border-success
+            bg-success/10 p-3 text-[12px] text-success">
+            <b>Sent successfully.</b>
+            {p.messageId && (
+              <div className="mt-1 break-all text-[11px]">
+                Message-ID: {p.messageId}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="mt-4 flex justify-end gap-2">
+          {failed && (
+            <button type="button" onClick={onRetry}
+              className="rounded-full bg-primary px-3 py-1.5
+                text-[12px] font-bold text-white">
+              Retry
+            </button>
+          )}
+          {(done || failed) && (
+            <button type="button" onClick={onClose}
+              className="rounded-full bg-bg-light px-3 py-1.5
+                text-[12px] font-bold text-sub-text">
+              Close
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

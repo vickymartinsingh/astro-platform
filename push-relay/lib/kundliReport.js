@@ -464,6 +464,28 @@ async function emailReport({
   </table>
 </td></tr></table>
 </body></html>`;
+  // Write an audit row to chats/{id} so /admin-email log can show
+  // exactly what was sent — subject, body, html preview, attachment
+  // metadata (name + size only, not the binary), final status.
+  const auditRef = db.collection('chats').doc();
+  try {
+    await auditRef.set({
+      isEmailDoc: true,
+      to: toEmail,
+      kind: complimentary
+        ? 'kundli_report_complimentary'
+        : 'kundli_report_ready',
+      subject,
+      body: text || '',
+      html: html || '',
+      attachments: [{ filename: pdfName,
+        contentType: 'application/pdf',
+        sizeBytes: (pdfBuf && pdfBuf.length) || 0 }],
+      status: 'sending',
+      ts: Date.now(),
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (_) { /* audit is best-effort */ }
   try {
     const info = await t.transporter.sendMail({
       from: t.from, to: toEmail, subject, text, html,
@@ -472,10 +494,20 @@ async function emailReport({
           contentType: 'application/pdf' },
       ],
     });
+    try {
+      await auditRef.update({
+        status: 'sent',
+        messageId: (info && info.messageId) || '',
+        response: String((info && info.response) || '').slice(0, 200),
+      });
+    } catch (_) {}
     return { ok: true, messageId: info && info.messageId };
   } catch (e) {
-    return { ok: false,
-      error: String((e && e.message) || e).slice(0, 500) };
+    const errMsg = String((e && e.message) || e).slice(0, 500);
+    try {
+      await auditRef.update({ status: 'failed', error: errMsg });
+    } catch (_) {}
+    return { ok: false, error: errMsg };
   }
 }
 

@@ -408,12 +408,27 @@ async function handleSend(req, res, db, body) {
   if (!subject) subject = 'AstroSeer update';
   if (!html && !text) text = '(empty)';
 
+  // Persist the rendered content so /admin-email can show admin
+  // exactly what landed in the customer's inbox (text + html +
+  // attachment metadata + final status). The actual binary content
+  // of the attachment is NOT stored — only the filename + mime so
+  // we don't bloat Firestore docs past the 1 MB limit.
+  const attachMeta = (body.attachment && body.attachment.contentBase64)
+    ? [{ filename: body.attachment.filename || 'attachment',
+      contentType: body.attachment.contentType
+        || 'application/octet-stream',
+      sizeBytes: Math.round(
+        body.attachment.contentBase64.length * 0.75) }]
+    : [];
   const auditRef = db.collection('chats').doc();
   await auditRef.set({
     isEmailDoc: true,
     to,
     kind: body.kind || 'generic',
     subject,
+    body: text || '',
+    html: html || '',
+    attachments: attachMeta,
     status: 'sending',
     ts: Date.now(),
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
