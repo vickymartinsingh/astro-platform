@@ -108,50 +108,226 @@ export function TimeField({ value, ampm, onChange, label = 'Time of birth' }) {
 // City autocomplete from the India list; if the typed city is unknown,
 // a state must be chosen so it can be added for future clients. Stored
 // as "City, State".
-export function CityField({ value, onChange, label = 'Place of birth' }) {
-  const known = useMemo(() => {
-    const map = new Map();
-    CITIES.forEach(([c, s]) => map.set(c.toLowerCase(), s));
-    return map;
-  }, []);
-  const [city, setCity] = useState((value || '').split(',')[0].trim());
-  const [state, setState] = useState((value || '').split(',')[1]?.trim() || '');
-  const matched = known.get(city.trim().toLowerCase());
-  const needState = city.trim() && !matched;
+// Country -> tz_offset in hours. India is always +5:30. For other
+// countries we use a representative national offset; users in a
+// state with a non-standard offset (e.g. parts of the US, Russia)
+// can still get a correct chart because the relay pulls the exact
+// tz from lat/lng on the server side as a fallback. Index covers
+// the countries our customer base actually birth-located in.
+const COUNTRY_TZ = {
+  India: 5.5, IN: 5.5,
+  Pakistan: 5, PK: 5,
+  Nepal: 5.75, NP: 5.75,
+  'Sri Lanka': 5.5, LK: 5.5,
+  Bangladesh: 6, BD: 6,
+  Bhutan: 6, BT: 6,
+  Malaysia: 8, MY: 8,
+  Singapore: 8, SG: 8,
+  'United Arab Emirates': 4, AE: 4,
+  Qatar: 3, QA: 3,
+  'Saudi Arabia': 3, SA: 3,
+  'United Kingdom': 0, GB: 0,
+  Ireland: 0, IE: 0,
+  Germany: 1, DE: 1,
+  France: 1, FR: 1,
+  Australia: 10, AU: 10,
+  'New Zealand': 12, NZ: 12,
+  'United States': -5, US: -5,
+  Canada: -5, CA: -5,
+};
 
-  function commit(c, s) {
-    const st = s ?? (known.get(c.trim().toLowerCase()) || state);
-    onChange(st ? `${c.trim()}, ${st}` : c.trim());
+// One global throttle so a fast typer never DDoSes Nominatim (the
+// free OSM endpoint asks for ≤1 req/sec per app).
+let _searchTimer = null;
+async function searchPlaces(q) {
+  if (!q || q.trim().length < 2) return [];
+  const url = 'https://nominatim.openstreetmap.org/search'
+    + `?q=${encodeURIComponent(q.trim())}`
+    + '&format=json&addressdetails=1&limit=8&accept-language=en';
+  try {
+    const r = await fetch(url, {
+      headers: {
+        // Nominatim ToS requires a UA identifying the app.
+        'Accept-Language': 'en',
+      },
+    });
+    if (!r.ok) return [];
+    const arr = await r.json();
+    if (!Array.isArray(arr)) return [];
+    return arr.map((it) => {
+      const a = it.address || {};
+      const city = a.city || a.town || a.village || a.hamlet
+        || a.municipality || a.county || it.name || '';
+      const state = a.state || a.state_district || a.region || '';
+      const country = a.country || '';
+      const countryCode = (a.country_code || '').toUpperCase();
+      const lat = Number(it.lat);
+      const lon = Number(it.lon);
+      return {
+        id: `${it.place_id}`,
+        label: [city, state, country].filter(Boolean).join(', '),
+        place: [city, state].filter(Boolean).join(', '),
+        city, state, country, countryCode,
+        lat: Number.isFinite(lat) ? lat : null,
+        lng: Number.isFinite(lon) ? lon : null,
+        tz: COUNTRY_TZ[country] ?? COUNTRY_TZ[countryCode] ?? 0,
+      };
+    }).filter((p) => p.lat && p.lng && p.label);
+  } catch (_) { return []; }
+}
+
+// CityField with live autocomplete from OpenStreetMap Nominatim.
+// Capturing lat / lng / tz at select time is critical: without
+// them the relay falls back to (0,0) and GMT+0 and AstroSeer
+// happily generates a chart for a point in the Atlantic ocean.
+//
+// API contract:
+//   value    can be a string ("Hyderabad, Telangana") for legacy
+//            profiles, OR an object { place, lat, lng, tz, country,
+//            state, city, countryCode } from a recent selection.
+//   onChange always called with the OBJECT shape so the parent can
+//            persist lat / lng / tz on the kundli profile doc.
+//            Parents that only want the string can pluck .place.
+export function CityField({
+  value, onChange, label = 'Place of birth',
+}) {
+  // Normalise incoming value into our internal shape.
+  const initial = (() => {
+    if (!value) return { place: '' };
+    if (typeof value === 'string') return { place: value };
+    return value;
+  })();
+  const [text, setText] = useState(initial.place || '');
+  const [picked, setPicked] = useState(initial.lat ? initial : null);
+  const [suggestions, setSuggestions] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const boxRef = useRef(null);
+
+  // Re-sync if parent updates externally (e.g. Edit kundli prefills).
+  useEffect(() => {
+    if (typeof value === 'string') {
+      setText(value || ''); setPicked(null);
+    } else if (value && value.place) {
+      setText(value.place);
+      if (value.lat && value.lng) setPicked(value);
+    }
+  }, [value]);
+
+  // Debounced search on each keystroke.
+  useEffect(() => {
+    if (picked && text === picked.place) return; // no-op after select
+    if (!text || text.trim().length < 2) { setSuggestions([]); return; }
+    if (_searchTimer) clearTimeout(_searchTimer);
+    setLoading(true);
+    _searchTimer = setTimeout(async () => {
+      const r = await searchPlaces(text);
+      setSuggestions(r); setLoading(false); setOpen(r.length > 0);
+    }, 300);
+    return () => { if (_searchTimer) clearTimeout(_searchTimer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text]);
+
+  // Close the suggestion popover on any outside click.
+  useEffect(() => {
+    function onDoc(e) {
+      if (boxRef.current && !boxRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+
+  function pick(s) {
+    setPicked(s);
+    setText(s.place);
+    setOpen(false);
+    setSuggestions([]);
+    onChange(s);
+  }
+  function clear() {
+    setPicked(null); setText('');
+    onChange({ place: '' });
   }
 
   return (
-    <div>
+    <div ref={boxRef} className="relative">
       <label className="text-sm text-sub-text">{label}</label>
-      <input className="input mt-1" list="india-cities"
-        placeholder="Start typing your city" value={city}
-        onChange={(e) => {
-          setCity(e.target.value);
-          const auto = known.get(e.target.value.trim().toLowerCase());
-          if (auto) setState(auto);
-          commit(e.target.value, auto || (needState ? state : undefined));
-        }} />
-      <datalist id="india-cities">
-        {CITIES.map(([c, s]) => (
-          <option key={`${c}-${s}`} value={c}>{c}, {s}</option>
-        ))}
-      </datalist>
-      {needState && (
-        <div className="mt-2">
-          <label className="text-xs text-warning">
-            New city. Please pick its state so we can add it.
-          </label>
-          <select className="input mt-1" value={state}
-            onChange={(e) => { setState(e.target.value);
-              commit(city, e.target.value); }}>
-            <option value="">Select state</option>
-            {INDIAN_STATES.map((s) => <option key={s}>{s}</option>)}
-          </select>
+      <div className="relative mt-1">
+        <input className="input pr-10"
+          placeholder="Type 2+ letters of your city (e.g. Hyd)"
+          value={text}
+          autoComplete="off"
+          onChange={(e) => {
+            setText(e.target.value);
+            // Typing again invalidates a previously locked selection.
+            if (picked) {
+              setPicked(null);
+              onChange({ place: e.target.value });
+            }
+          }}
+          onFocus={() => suggestions.length > 0 && setOpen(true)} />
+        {text && (
+          <button type="button" onClick={clear}
+            aria-label="Clear city"
+            className="absolute right-2 top-1/2 -translate-y-1/2
+              rounded-full px-2 py-0.5 text-sub-text
+              hover:text-dark-text">
+            ✕
+          </button>
+        )}
+      </div>
+
+      {/* Suggestion list. Click locks lat / lng / tz on the doc. */}
+      {open && suggestions.length > 0 && (
+        <ul className="absolute z-30 mt-1 max-h-72 w-full overflow-auto
+                       rounded-card border border-gray-200 bg-white
+                       shadow-lg">
+          {suggestions.map((s) => (
+            <li key={s.id}>
+              <button type="button" onClick={() => pick(s)}
+                className="block w-full px-3 py-2 text-left text-sm
+                           hover:bg-bg-light">
+                <div className="font-medium text-dark-text">
+                  {s.city || s.label}
+                </div>
+                <div className="text-[11px] text-sub-text">
+                  {[s.state, s.country].filter(Boolean).join(', ')}
+                </div>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {loading && !suggestions.length && text.length >= 2 && (
+        <p className="mt-1 text-[11px] text-sub-text">Searching…</p>
+      )}
+
+      {/* Read-only confirmation strip so the customer can SEE that
+          the right lat / lng / tz was captured. Removes the silent
+          "kundli shows 0,0" failure mode the user hit. */}
+      {picked && picked.lat && picked.lng && (
+        <div className="mt-2 rounded-card border border-primary/20
+                        bg-primary/5 p-2 text-[11px] leading-snug
+                        text-dark-text">
+          <div>
+            <b className="text-primary">Confirmed:</b> {picked.label}
+          </div>
+          <div className="text-sub-text">
+            Latitude {picked.lat.toFixed(4)}°,{' '}
+            Longitude {picked.lng.toFixed(4)}°,{' '}
+            Time zone GMT{picked.tz >= 0 ? '+' : ''}{picked.tz}
+          </div>
         </div>
+      )}
+
+      {!picked && text.trim().length >= 2 && !loading
+        && suggestions.length === 0 && (
+        <p className="mt-2 text-[11px] text-warning">
+          Pick a city from the list so we can lock the exact location
+          and time zone needed for accurate chart calculations.
+        </p>
       )}
     </div>
   );

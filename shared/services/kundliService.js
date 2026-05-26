@@ -150,13 +150,26 @@ export async function getProkeralaKundli(birth) {
   const url = kundliEndpoint();
   if (!url || !birth || !birth.dob) return null;
   try {
+    const body = {
+      dob: birth.dob, tob: birth.tob, ampm: birth.ampm,
+      place: birth.place,
+    };
+    // Forward locked lat / lng / tz when the profile has them so
+    // the relay skips its (sometimes flaky) geocoder + uses the
+    // exact Google/OSM-confirmed coordinates the user picked.
+    if (birth.lat != null && Number(birth.lat) !== 0) {
+      body.lat = Number(birth.lat);
+    }
+    if (birth.lng != null && Number(birth.lng) !== 0) {
+      body.lng = Number(birth.lng);
+    }
+    if (birth.tz != null && Number.isFinite(Number(birth.tz))) {
+      body.tz = Number(birth.tz);
+    }
     const r = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        dob: birth.dob, tob: birth.tob, ampm: birth.ampm,
-        place: birth.place,
-      }),
+      body: JSON.stringify(body),
     });
     if (!r.ok) return null;
     const j = await r.json();
@@ -611,6 +624,16 @@ export async function saveKundli(uid, data) {
     tob: data.tob || '',
     ampm: data.ampm || 'AM',
     place: data.place || '',
+    // Locked geo data captured from the CityField autocomplete.
+    // Without these the relay can't geocode reliably and the kundli
+    // ends up at coordinates 0,0 / GMT+0 (the bug the user hit).
+    lat: data.lat != null ? Number(data.lat) : null,
+    lng: data.lng != null ? Number(data.lng) : null,
+    tz: data.tz != null ? Number(data.tz) : null,
+    city: data.city || '',
+    state: data.state || '',
+    country: data.country || '',
+    countryCode: data.countryCode || '',
     zodiac: parseZodiac(data.dob),
     isDefault: !!data.isDefault,
     createdAt: serverTimestamp(),
@@ -642,6 +665,15 @@ export async function updateKundli(uid, kundliId, data) {
     tob: data.tob || '',
     ampm: data.ampm || 'AM',
     place: data.place || '',
+    // Locked geo (lat/lng/tz) — re-saved on every edit so a user
+    // who re-picks their city in the form gets the fresh values.
+    lat: data.lat != null ? Number(data.lat) : null,
+    lng: data.lng != null ? Number(data.lng) : null,
+    tz: data.tz != null ? Number(data.tz) : null,
+    city: data.city || '',
+    state: data.state || '',
+    country: data.country || '',
+    countryCode: data.countryCode || '',
     zodiac: parseZodiac(data.dob),
     isDefault: !!data.isDefault,
     updatedAt: serverTimestamp(),

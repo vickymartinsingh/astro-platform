@@ -6,8 +6,13 @@ import { SkeletonList } from '../components/Skeleton';
 import { useRequireClient } from '../lib/useAuth';
 import { DateField, TimeField, CityField } from '../components/BirthInputs';
 
+// Form shape. lat/lng/tz are captured at place-pick time so the
+// relay always has the right coordinates + timezone — fixes the
+// silent "kundli with coordinates 0,0 / GMT+0" failure mode.
 const EMPTY = { name: '', gender: '', dob: '', tob: '', ampm: 'AM',
-  place: '', isDefault: false };
+  place: '', lat: null, lng: null, tz: null,
+  country: '', state: '', city: '', countryCode: '',
+  isDefault: false };
 
 export default function Kundli() {
   const { user, profile, loading } = useRequireClient();
@@ -84,9 +89,18 @@ export default function Kundli() {
       tob: k.tob || '',
       ampm: k.ampm || 'AM',
       place: k.place || '',
+      // Carry locked location data across the edit if it exists.
+      // Without lat/lng the CityField shows just the text and the
+      // user has to re-pick from autocomplete to re-lock coords.
+      lat: k.lat != null ? Number(k.lat) : null,
+      lng: k.lng != null ? Number(k.lng) : null,
+      tz: k.tz != null ? Number(k.tz) : null,
+      country: k.country || '',
+      state: k.state || '',
+      city: k.city || '',
+      countryCode: k.countryCode || '',
       isDefault: !!k.isDefault,
     });
-    // Scroll up to the form so the user can see the prefilled fields.
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -131,8 +145,24 @@ export default function Kundli() {
           <TimeField value={form.tob} ampm={form.ampm}
             onChange={(tob, ampm) => setForm({ ...form, tob, ampm })} />
           <div className="sm:col-span-2">
-            <CityField value={form.place}
-              onChange={(place) => setForm({ ...form, place })} />
+            <CityField
+              value={form.lat ? {
+                place: form.place, lat: form.lat, lng: form.lng,
+                tz: form.tz, country: form.country, state: form.state,
+                city: form.city, countryCode: form.countryCode,
+                label: form.place,
+              } : form.place}
+              onChange={(loc) => setForm((f) => ({
+                ...f,
+                place: loc.place || '',
+                lat: loc.lat != null ? loc.lat : null,
+                lng: loc.lng != null ? loc.lng : null,
+                tz: loc.tz != null ? loc.tz : null,
+                country: loc.country || '',
+                state: loc.state || '',
+                city: loc.city || '',
+                countryCode: loc.countryCode || '',
+              }))} />
           </div>
         </div>
         <label className="flex items-center gap-2 text-sm">
