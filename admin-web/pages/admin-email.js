@@ -119,6 +119,12 @@ export default function AdminEmail() {
         </p>
       </div>
 
+      {/* Send a real test of any template through the relay's SMTP
+          so we can verify the polished kundli email + signature
+          actually deliver. Defaults to vickymartinsingh@gmail.com
+          so the most common test is one click. */}
+      <TestSendPanel />
+
       <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide
         text-sub-text">Email log ({emails.length})</h2>
       <div className="space-y-2">
@@ -157,5 +163,98 @@ export default function AdminEmail() {
         ))}
       </div>
     </Layout>
+  );
+}
+
+function TestSendPanel() {
+  const [to, setTo] = useState('vickymartinsingh@gmail.com');
+  const [kind, setKind] = useState('kundli_report_ready');
+  const [name, setName] = useState('Vicky Martin Singh');
+  const [profileName, setProfileName] = useState('Vicky Martin Singh');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState({ text: '', kind: '' });
+  async function send() {
+    setMsg({ text: '', kind: '' });
+    if (!/.+@.+\..+/.test(to)) {
+      setMsg({ text: 'Enter a valid email.', kind: 'err' }); return;
+    }
+    setBusy(true);
+    try {
+      const res = await emailService.sendEmail({
+        to,
+        kind,
+        vars: {
+          name,
+          profileName,
+          kindLabel: 'Free Vedic Kundli Report',
+          ordersUrl: 'https://astroseer.in/orders',
+        },
+      });
+      setMsg({
+        text: `Sent. messageId=${res.messageId || '(none)'}.`
+          + ' Check the inbox + Email Log below.',
+        kind: 'ok',
+      });
+    } catch (e) {
+      setMsg({ text: e.message || 'Send failed.', kind: 'err' });
+    } finally { setBusy(false); }
+  }
+  return (
+    <div className="surface mb-4 space-y-3 p-4">
+      <div className="font-semibold">Send a test email</div>
+      <p className="text-xs text-sub-text">
+        Pushes a real SMTP send through the relay using the
+        professional kundli template + signature. Useful to verify
+        the layout end-to-end before announcing a campaign or
+        approving an order resend.
+      </p>
+      <div className="grid gap-2 md:grid-cols-2">
+        <label className="block text-sm">
+          To
+          <input className="input mt-1" type="email" value={to}
+            onChange={(e) => setTo(e.target.value)} />
+        </label>
+        <label className="block text-sm">
+          Template
+          <select className="input mt-1" value={kind}
+            onChange={(e) => setKind(e.target.value)}>
+            <option value="kundli_report_ready">
+              Kundli report ready
+            </option>
+            <option value="kundli_report_resend">
+              Kundli report resend
+            </option>
+            <option value="astro_application_received">
+              Astrologer application received
+            </option>
+            <option value="astro_application_approved">
+              Astrologer approved
+            </option>
+            <option value="generic">Generic</option>
+          </select>
+        </label>
+        <label className="block text-sm">
+          Recipient name
+          <input className="input mt-1" value={name}
+            onChange={(e) => setName(e.target.value)} />
+        </label>
+        <label className="block text-sm">
+          Profile / chart name
+          <input className="input mt-1" value={profileName}
+            onChange={(e) => setProfileName(e.target.value)} />
+        </label>
+      </div>
+      <button onClick={send} disabled={busy}
+        className="btn-primary w-full">
+        {busy ? 'Sending…' : `Send test to ${to}`}
+      </button>
+      {msg.text && (
+        <div className={`rounded-card p-2 text-xs ${msg.kind === 'ok'
+          ? 'bg-success/10 text-success'
+          : 'bg-danger/10 text-danger'}`}>
+          {msg.text}
+        </div>
+      )}
+    </div>
   );
 }

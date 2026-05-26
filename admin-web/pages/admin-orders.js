@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { kundliService, userService, db } from '@astro/shared';
+import {
+  kundliService, userService, db, emailService, pushService,
+} from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
@@ -223,14 +225,19 @@ export default function AdminOrders() {
                       {o.amount > 0 ? `₹${o.amount}` : 'Free'}
                     </div>
                     {o.status === 'ready' && href && (
-                      <button type="button"
-                        onClick={() =>
-                          kundliService.downloadPdfFromUrl(href,
-                            o.pdfName || 'AstroSeer-Kundli.pdf')}
-                        className="mt-2 rounded-full bg-primary px-3
-                          py-1 text-[11px] font-bold text-white">
-                        Download PDF
-                      </button>
+                      <>
+                        <button type="button"
+                          onClick={() =>
+                            kundliService.downloadPdfFromUrl(href,
+                              o.pdfName || 'AstroSeer-Kundli.pdf')}
+                          className="mt-2 block rounded-full
+                            bg-primary px-3 py-1 text-[11px]
+                            font-bold text-white">
+                          Download PDF
+                        </button>
+                        <ResendButtons o={o} u={u}
+                          href={href} />
+                      </>
                     )}
                   </div>
                 </div>
@@ -240,6 +247,113 @@ export default function AdminOrders() {
         </div>
       )}
     </Layout>
+  );
+}
+
+// Resend the kundli to the customer via email (with the PDF
+// attached) or via push notification. The buttons sit next to the
+// Download PDF action and surface success/failure inline so the
+// admin can see whether the send actually completed.
+function ResendButtons({ o, u, href }) {
+  const [busy, setBusy] = useState('');
+  const [msg, setMsg] = useState({ text: '', kind: '' });
+  const KIND_LABEL = {
+    free: 'Free Vedic Kundli',
+    forecast12: '12-Month Vedic Forecast',
+    careerFinance: 'Career & Finance Report',
+    lifetime: 'Lifetime Vedic Report',
+  };
+  async function emailIt() {
+    if (!u || !u.email) {
+      setMsg({ text: 'No email on file for this customer.',
+        kind: 'err' });
+      return;
+    }
+    setBusy('email'); setMsg({ text: '', kind: '' });
+    try {
+      // Base64-encode inline PDF for the attachment.
+      let attachment = null;
+      if (o.pdfBase64) {
+        attachment = {
+          filename: o.pdfName || 'AstroSeer-Kundli.pdf',
+          contentBase64: o.pdfBase64,
+          contentType: 'application/pdf',
+        };
+      } else if (o.pdfUrl && o.pdfUrl !== 'inline') {
+        // Fetch the PDF then base64-encode. Keeps the email
+        // self-contained even if the URL expires later.
+        try {
+          const r = await fetch(o.pdfUrl);
+          const buf = await r.arrayBuffer();
+          const b64 = btoa(String.fromCharCode(
+            ...new Uint8Array(buf)));
+          attachment = {
+            filename: o.pdfName || 'AstroSeer-Kundli.pdf',
+            contentBase64: b64,
+            contentType: 'application/pdf',
+          };
+        } catch (_) { /* attachment-less is acceptable */ }
+      }
+      await emailService.sendEmail({
+        to: u.email,
+        kind: 'kundli_report_resend',
+        vars: {
+          name: u.name || 'there',
+          profileName: o.profileName || '',
+          kindLabel: KIND_LABEL[o.kind] || 'Vedic Kundli Report',
+          ordersUrl: 'https://astroseer.in/orders',
+        },
+        attachment,
+      });
+      setMsg({ text: `Emailed to ${u.email}`, kind: 'ok' });
+    } catch (e) {
+      setMsg({ text: e.message || 'Email send failed.',
+        kind: 'err' });
+    } finally { setBusy(''); }
+  }
+  async function pushIt() {
+    if (!u || !u.id) {
+      setMsg({ text: 'No user record.', kind: 'err' });
+      return;
+    }
+    setBusy('push'); setMsg({ text: '', kind: '' });
+    try {
+      await pushService.sendPushToUser({
+        userId: u.id,
+        notification: {
+          title: 'Your kundli report is ready',
+          body: `Tap to open ${o.profileName || 'your chart'} in My Orders.`,
+        },
+        data: { type: 'kundli_report', orderId: o.id, deeplink: '/orders' },
+      });
+      setMsg({ text: 'Push sent.', kind: 'ok' });
+    } catch (e) {
+      setMsg({ text: e.message || 'Push send failed.', kind: 'err' });
+    } finally { setBusy(''); }
+  }
+  return (
+    <div className="mt-2 flex flex-col items-end gap-1">
+      <button type="button" onClick={emailIt}
+        disabled={busy === 'email'}
+        className="rounded-full border border-primary bg-white
+          px-3 py-1 text-[11px] font-bold text-primary
+          disabled:opacity-50">
+        {busy === 'email' ? 'Sending…' : 'Resend via Email'}
+      </button>
+      <button type="button" onClick={pushIt}
+        disabled={busy === 'push'}
+        className="rounded-full border border-primary bg-white
+          px-3 py-1 text-[11px] font-bold text-primary
+          disabled:opacity-50">
+        {busy === 'push' ? 'Sending…' : 'Resend via Push'}
+      </button>
+      {msg.text && (
+        <div className={`text-[10px] font-bold ${msg.kind === 'ok'
+          ? 'text-success' : 'text-danger'}`}>
+          {msg.text}
+        </div>
+      )}
+    </div>
   );
 }
 

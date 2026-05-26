@@ -108,11 +108,162 @@ const T = {
       + 'evolve.\n\n'
       + '- AstroSeer Recruitment',
   }),
+  // Polished kundli report delivery email. Both auto-send (first
+  // generation) and admin "Resend via email" share this template.
+  // `v.attachmentName` is the PDF filename so the body can name it;
+  // the actual base64/PDF bytes are attached server-side in the relay
+  // when v.pdfBase64 / v.pdfUrl is present.
+  kundli_report_ready: (v) => {
+    const name = (v && v.name) || 'there';
+    const profileName = (v && v.profileName) || '';
+    const kindLabel = (v && v.kindLabel) || 'Vedic Kundli Report';
+    const ordersUrl = (v && v.ordersUrl) || 'https://astroseer.in/orders';
+    const subject = `Your ${kindLabel} is ready`
+      + (profileName ? ` — ${profileName}` : '');
+    const text = `Namaste ${name},\n\n`
+      + `Your ${kindLabel}${profileName
+        ? ` for ${profileName}` : ''} is ready and attached to `
+      + 'this email as a PDF.\n\n'
+      + 'Inside you will find:\n'
+      + '  • Birth, Avakhada and Panchang details\n'
+      + '  • Lagna chart and 16 divisional charts\n'
+      + '  • Planetary positions, nakshatras and dignities\n'
+      + '  • Full Vimshottari dasha tree and current periods\n'
+      + '  • Yogas, doshas and ascendant analysis\n\n'
+      + `You can also re-download or view this report from your `
+      + `Orders any time: ${ordersUrl}\n\n`
+      + 'If a particular life area calls for a deeper look, our '
+      + 'astrologers are one tap away on the AstroSeer app.\n\n'
+      + 'With blessings,\n'
+      + 'Team AstroSeer\n'
+      + 'support@astroseer.in · astroseer.in';
+    const html = renderHtmlEmail({
+      preheader: `Your ${kindLabel} is attached to this email.`,
+      heading: `Your ${kindLabel} is ready`,
+      lead: `Namaste ${escapeHtml(name)}, your `
+        + `${escapeHtml(kindLabel)}${profileName
+          ? ` for <b>${escapeHtml(profileName)}</b>` : ''} is ready `
+        + 'and attached to this email as a PDF.',
+      bullets: [
+        'Birth, Avakhada and Panchang details',
+        'Lagna chart and 16 divisional charts',
+        'Planetary positions, nakshatras and dignities',
+        'Full Vimshottari dasha tree and current periods',
+        'Yogas, doshas and ascendant analysis',
+      ],
+      ctaLabel: 'View in My Orders',
+      ctaUrl: ordersUrl,
+      footnote: 'If a particular life area calls for a deeper look, '
+        + 'our astrologers are one tap away on the AstroSeer app.',
+    });
+    return { subject, body: text, html };
+  },
+  // Same body as the ready template but the subject + opening line
+  // make it clear this is a re-send (so customer isn't confused into
+  // thinking they were charged twice).
+  kundli_report_resend: (v) => {
+    const base = T.kundli_report_ready(v);
+    return {
+      subject: `Re-sending: ${base.subject}`,
+      body: `Hi ${(v && v.name) || 'there'},\n\n`
+        + 'As requested, we are re-sending your kundli report. '
+        + 'No additional charge has been applied.\n\n'
+        + base.body,
+      html: base.html
+        .replace('Namaste',
+          'As requested, we are re-sending your kundli report '
+          + '(no additional charge has been applied).<br/><br/>Namaste'),
+    };
+  },
   generic: (v) => ({
     subject: v.subject || 'AstroSeer update',
     body: v.body || '',
+    html: v.html || '',
   }),
 };
+
+// Tiny helper that escapes any HTML-sensitive characters in user
+// supplied strings before we drop them into the template.
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Brand-safe HTML email skeleton with a polished AstroSeer signature
+// at the bottom. Inline styles only (most email clients strip
+// <style> blocks and external CSS). Keep the markup boring so
+// Gmail / Outlook / Apple Mail all render the same.
+export function renderHtmlEmail({
+  preheader = '', heading = '', lead = '', bullets = [],
+  ctaLabel = '', ctaUrl = '', footnote = '',
+}) {
+  const bulletHtml = bullets.length === 0 ? '' : (
+    '<ul style="margin:16px 0;padding-left:20px;color:#1A1A2E;'
+    + 'font-size:14px;line-height:1.65">'
+    + bullets.map((b) =>
+      `<li style="margin:4px 0">${escapeHtml(b)}</li>`).join('')
+    + '</ul>');
+  const ctaHtml = (!ctaLabel || !ctaUrl) ? '' : (
+    '<div style="margin:24px 0;text-align:center">'
+    + `<a href="${escapeHtml(ctaUrl)}" `
+    + 'style="display:inline-block;padding:12px 28px;border-radius:'
+    + '999px;background:#7F2020;color:#ffffff;text-decoration:none;'
+    + `font-weight:700;font-size:14px">${escapeHtml(ctaLabel)}</a>`
+    + '</div>');
+  return `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>${escapeHtml(heading || 'AstroSeer')}</title></head>
+<body style="margin:0;padding:0;background:#F5F1EA;
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,
+  Helvetica,Arial,sans-serif;color:#1A1A2E">
+<span style="display:none!important;visibility:hidden;opacity:0;
+  height:0;width:0;overflow:hidden">${escapeHtml(preheader)}</span>
+<table role="presentation" width="100%" cellpadding="0"
+  cellspacing="0" style="background:#F5F1EA"><tr><td align="center"
+  style="padding:24px 12px">
+  <table role="presentation" width="600"
+    style="max-width:600px;background:#ffffff;border-radius:16px;
+    overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.06)">
+  <tr><td style="background:linear-gradient(135deg,#7F2020,#A52A2A);
+    padding:28px 32px;color:#ffffff">
+    <div style="font-size:13px;letter-spacing:2px;text-transform:
+      uppercase;opacity:.85">AstroSeer</div>
+    <h1 style="margin:6px 0 0 0;font-size:22px;line-height:1.3">
+      ${escapeHtml(heading)}</h1>
+  </td></tr>
+  <tr><td style="padding:28px 32px">
+    <p style="margin:0;font-size:15px;line-height:1.6;color:#1A1A2E">
+      ${lead}
+    </p>
+    ${bulletHtml}
+    ${ctaHtml}
+    ${footnote ? `<p style="margin:16px 0 0 0;font-size:13px;`
+      + `line-height:1.6;color:#555">${escapeHtml(footnote)}</p>`
+      : ''}
+  </td></tr>
+  <tr><td style="border-top:1px solid #F0E9D9;padding:20px 32px;
+    background:#FBF7EE;font-size:12px;line-height:1.6;color:#4A4A55">
+    <div style="font-weight:700;color:#7F2020;font-size:13px;
+      margin-bottom:4px">Team AstroSeer</div>
+    <div>Vedic astrology, kundli, tarot &amp; consultations</div>
+    <div style="margin-top:8px">
+      <a href="https://astroseer.in"
+        style="color:#7F2020;text-decoration:none">astroseer.in</a>
+      &nbsp;·&nbsp;
+      <a href="mailto:support@astroseer.in"
+        style="color:#7F2020;text-decoration:none">support@astroseer.in</a>
+    </div>
+    <div style="margin-top:10px;color:#999">
+      You received this because you have an account or active order
+      with AstroSeer. To stop, reply with "unsubscribe".
+    </div>
+  </td></tr>
+  </table>
+</td></tr></table>
+</body></html>`;
+}
 
 export function renderTemplate(kind, vars = {}) {
   return (T[kind] || T.generic)(vars);
@@ -138,6 +289,38 @@ export async function queueEmail({
       createdAt: serverTimestamp(),
     });
   } catch (_) { /* ignore */ }
+}
+
+// Synchronous (best-effort) send via the relay's /api/sendEmail.
+// Uses the same SMTP config as /api/emailOtp. The relay also writes
+// an audit row into chats/{id} (kind, to, subject, status) so the
+// admin email log can show what was actually delivered vs. queued.
+//
+// Returns the relay's JSON ({ ok, messageId, ... }) or throws on
+// HTTP error / SMTP failure. Caller decides how to surface that.
+function sendEmailEndpoint() {
+  const push = (typeof process !== 'undefined' && process.env
+    && process.env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
+  return push ? push.replace(/\/sendPush\/?$/, '/sendEmail')
+    : 'https://astro-platform-push-relay.vercel.app/api/sendEmail';
+}
+export async function sendEmail({
+  to, kind, vars, attachment, subject, html, text,
+}) {
+  const body = { to, kind, vars };
+  if (subject) body.subject = subject;
+  if (html) body.html = html;
+  if (text) body.text = text;
+  if (attachment) body.attachment = attachment;
+  const r = await fetch(sendEmailEndpoint(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error
+    || `Email send failed (HTTP ${r.status}).`);
+  return j;
 }
 
 export function listenEmails(cb) {
