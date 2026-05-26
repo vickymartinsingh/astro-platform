@@ -158,74 +158,61 @@ async function callAstroSeerPdf({ base, key, body }) {
   return buf;
 }
 
+// Storage backend: Vercel Blob (free 1 GB + 100 GB bandwidth/month).
+// Picked over Firebase Storage because:
+//   - Firebase Storage now requires Blaze plan upgrade for new
+//     buckets on every Spark project. The user's project is on
+//     Spark, the console shows "To use Storage, upgrade your
+//     project's pricing plan" with an Upgrade button.
+//   - The relay already runs on Vercel, so the Blob store ships
+//     in the same dashboard — one less account to manage.
+//   - Vercel Blob auto-injects BLOB_READ_WRITE_TOKEN into every
+//     project linked to the store, so no manual env var setup
+//     beyond clicking Create + Connect.
+//   - put() returns a permanent public URL — no signed-URL IAM
+//     dance, no download-token query strings.
+//
+// Setup once (this is done in the Vercel dashboard, no code):
+//   1. Vercel dashboard -> Storage tab -> Create -> Blob.
+//   2. Connect the new store to the push-relay project.
+//   3. That auto-sets BLOB_READ_WRITE_TOKEN on the relay's env vars.
+// Until step 3 is done the upload throws a clear "BLOB_READ_WRITE_TOKEN
+// missing" error so the operator knows exactly what to do.
 async function uploadPdf(uid, kind, buf) {
-  const sa = (() => {
-    try { return JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}'); }
-    catch (_) { return {}; }
-  })();
-
-  // Try modern <project>.firebasestorage.app then legacy
-  // <project>.appspot.com. Some projects only have one of the two.
-  const ts = Date.now();
-  const name = `media/reports/${uid}/${ts}_${kind}.pdf`;
-  const candidates = [
-    bucketName(sa),
-    legacyBucketName(sa),
-  ].filter((v, i, a) => v && a.indexOf(v) === i);
-
-  // URL strategy: Firebase-style download tokens, NOT signed URLs.
-  // Why: getSignedUrl() needs the service account to have the IAM
-  // permission iam.serviceAccounts.signBlob (or the explicit
-  // "Service Account Token Creator" role on itself). Most relay
-  // service accounts are minted with only firebaseAdmin scopes and
-  // hit a cryptic "Cannot sign data without `client_email`" /
-  // "iam.serviceAccounts.signBlob is missing" error, which we saw
-  // surface as "Could not save the PDF" with no detail.
-  // Download tokens are simpler: write a random token into the
-  // file's firebaseStorageDownloadTokens metadata field, then
-  // construct a public download URL of the form
-  //   https://firebasestorage.googleapis.com/v0/b/{bucket}/o/{path}
-  //     ?alt=media&token={token}
-  // The token is mandatory in the URL so the file isn't accidentally
-  // public — but it works on any Firebase Storage bucket with no
-  // IAM dance.
-  const crypto = require('crypto');
-  const token = (crypto.randomUUID && crypto.randomUUID())
-    || crypto.randomBytes(16).toString('hex');
-
-  const tried = [];
-  let lastErr = null;
-  for (const bn of candidates) {
-    try {
-      const bucket = admin.storage().bucket(bn);
-      const file = bucket.file(name);
-      await file.save(buf, {
-        contentType: 'application/pdf',
-        metadata: {
-          cacheControl: 'public, max-age=31536000',
-          metadata: {
-            kind, uid, generatedAt: String(ts),
-            // THIS is what enables the download-token URL pattern.
-            // Firebase Storage rules ignore the token and let the
-            // request through whenever the token matches.
-            firebaseStorageDownloadTokens: token,
-          },
-        },
-        resumable: false,
-      });
-      const url = `https://firebasestorage.googleapis.com/v0/b/`
-        + `${encodeURIComponent(bn)}/o/`
-        + `${encodeURIComponent(name)}?alt=media&token=${token}`;
-      return { storagePath: name, bucketUsed: bn, url };
-    } catch (e) {
-      tried.push(`${bn}: ${(e && e.message) || 'unknown'}`);
-      lastErr = e;
-    }
+  if (!process.env.BLOB_READ_WRITE_TOKEN) {
+    throw new Error('BLOB_READ_WRITE_TOKEN missing on the relay. '
+      + 'Vercel dashboard -> Storage -> Create -> Blob, then Connect '
+      + 'to the push-relay project. The token auto-sets on first '
+      + 'connect.');
   }
-  // Verbose error so a future fail tells us what we tried.
-  throw new Error(`upload to Firebase Storage failed. `
-    + `Tried ${tried.length} bucket(s): ${tried.join(' | ')}`
-    + (lastErr && lastErr.code ? ` [code=${lastErr.code}]` : ''));
+  const { put } = require('@vercel/blob');
+  const ts = Date.now();
+  // randomSuffix:false so the path stays deterministic per
+  // (uid, kind, ts) — handy for debugging from the Blob dashboard.
+  const path = `reports/${uid}/${ts}_${kind}.pdf`;
+  try {
+    const blob = await put(path, buf, {
+      access: 'public',
+      contentType: 'application/pdf',
+      cacheControlMaxAge: 31536000,
+      addRandomSuffix: false,
+    });
+    // blob.url is a permanent CDN URL like
+    // https://<store-id>.public.blob.vercel-storage.com/reports/.../1234_free.pdf
+    // No signed URLs, no tokens, no expiry, no IAM.
+    return {
+      storagePath: blob.pathname || path,
+      bucketUsed: 'vercel-blob',
+      url: blob.url,
+    };
+  } catch (e) {
+    // Bubble the exact Vercel Blob error so a future failure
+    // (quota hit, token revoked, network) is diagnosable in the
+    // client toast — same pattern as the old multi-bucket loop.
+    throw new Error(`Vercel Blob upload failed: `
+      + `${(e && e.message) || 'unknown'}`
+      + (e && e.code ? ` [code=${e.code}]` : ''));
+  }
 }
 
 async function smtpTransport(db) {
