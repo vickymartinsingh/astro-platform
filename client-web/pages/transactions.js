@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import {
-  walletService, sessionService, astrologerService, db,
+  walletService, sessionService, astrologerService, db, kundliService,
 } from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
@@ -32,24 +32,46 @@ export default function Transactions() {
     (async () => {
       const txns = await walletService.getTransactions(user.uid);
       const out = await Promise.all(txns.map(async (t) => {
-        if ((t.reason === 'session' || t.reason === 'earning')
-            && t.referenceId) {
+        // Normalize sign: legacy kundli orders wrote `amount: price`
+        // (positive) with `type: 'debit'`. Anything tagged as a debit
+        // with a positive amount must be displayed (and downstream-
+        // computed) as negative.
+        const signed = (t.type === 'debit' && Number(t.amount) > 0)
+          ? { ...t, amount: -Math.abs(Number(t.amount)) }
+          : t;
+        if ((signed.reason === 'session' || signed.reason === 'earning')
+            && signed.referenceId) {
           try {
-            const s = await sessionService.getSession(t.referenceId);
+            const s = await sessionService.getSession(signed.referenceId);
             if (s) {
               const a = await astrologerService
                 .getAstrologer(s.astroId).catch(() => null);
-              return { ...t, s, astro: a };
+              return { ...signed, s, astro: a };
             }
           } catch (_) {}
         }
-        if (t.reason === 'recharge' && t.referenceId) {
+        if (signed.reason === 'recharge' && signed.referenceId) {
           try {
-            const p = await getDoc(doc(db, 'payments', t.referenceId));
-            if (p.exists()) return { ...t, pay: p.data() };
+            const p = await getDoc(doc(db, 'payments', signed.referenceId));
+            if (p.exists()) return { ...signed, pay: p.data() };
           } catch (_) {}
         }
-        return t;
+        // Kundli PDF orders: pull the matching order doc so we can
+        // render the profile name + a Download button right here
+        // (was previously only available on /orders, which made the
+        // user think "reports aren't showing" since the txn line
+        // was a dead end).
+        const isKundliOrder = signed.referenceId
+          && (signed.reason === 'kundli report'
+            || signed.reason === '12-month kundli forecast');
+        if (isKundliOrder) {
+          try {
+            const o = await getDoc(doc(db, 'users', user.uid,
+              'orders', signed.referenceId));
+            if (o.exists()) return { ...signed, order: o.data() };
+          } catch (_) {}
+        }
+        return signed;
       }));
       setRows(out);
     })();
@@ -62,6 +84,10 @@ export default function Transactions() {
       + `${t.astro?.name || 'Astrologer'}`;
     if (t.reason === 'recharge') return 'Wallet recharge';
     if (t.reason === 'gift card') return 'Gift card redeemed';
+    if (t.reason === '12-month kundli forecast') {
+      return '12-month kundli forecast';
+    }
+    if (t.reason === 'kundli report') return 'Kundli report';
     return String(t.reason || 'Transaction')
       .replace(/^\w/, (c) => c.toUpperCase());
   };
@@ -77,12 +103,16 @@ export default function Transactions() {
       ) : (
         <div className="space-y-2">
           {rows.map((t) => {
-            const clickable = (t.s && t.s.astroId) || t.pay;
+            const clickable = (t.s && t.s.astroId) || t.pay || t.order;
+            const goto = () => {
+              if (t.pay) router.push(`/invoice/${t.referenceId}`);
+              else if (t.s && t.s.astroId) {
+                router.push(`/chat/${t.s.astroId}?view=1`);
+              } else if (t.order) router.push('/orders');
+            };
             return (
               <div key={t.id}
-                onClick={clickable ? () => router.push(t.pay
-                  ? `/invoice/${t.referenceId}`
-                  : `/chat/${t.s.astroId}?view=1`) : undefined}
+                onClick={clickable ? goto : undefined}
                 className={`card flex w-full items-start justify-between
                   gap-3 text-left ${clickable ? 'cursor-pointer '
                   + 'hover:shadow-md' : ''}`}>
@@ -133,6 +163,52 @@ export default function Transactions() {
                       )}
                       <div className="font-semibold text-primary">
                         Tap for the tax invoice
+                      </div>
+                    </div>
+                  )}
+
+                  {t.order && (
+                    <div className="mt-1 space-y-0.5 text-xs
+                                    text-sub-text">
+                      {t.order.profileName && (
+                        <div>Profile: <b>{t.order.profileName}</b></div>
+                      )}
+                      {(t.order.profileDob || t.order.profilePlace) && (
+                        <div>
+                          {[t.order.profileDob, t.order.profileTob,
+                            t.order.profileAmpm].filter(Boolean).join(' ')}
+                          {t.order.profilePlace
+                            ? ` · ${t.order.profilePlace}` : ''}
+                        </div>
+                      )}
+                      <div>Status: <b className="capitalize">
+                        {t.order.status === 'ready' ? 'Ready'
+                          : t.order.status === 'paid_generating'
+                            || t.order.status === 'free_generating'
+                            ? 'Generating…'
+                            : (t.order.status || '·')}</b></div>
+                      {t.order.status === 'ready'
+                        && (t.order.pdfBase64
+                          || (t.order.pdfUrl
+                            && t.order.pdfUrl !== 'inline')) && (
+                        <button type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const href = t.order.pdfBase64
+                              ? `data:application/pdf;base64,`
+                                + `${t.order.pdfBase64}`
+                              : t.order.pdfUrl;
+                            kundliService.downloadPdfFromUrl(href,
+                              t.order.pdfName || 'AstroSeer-Kundli.pdf');
+                          }}
+                          className="mt-1 inline-block rounded-full
+                            bg-primary px-3 py-1 text-[11px]
+                            font-bold text-white">
+                          Download PDF
+                        </button>
+                      )}
+                      <div className="font-semibold text-primary">
+                        Tap to open My Orders
                       </div>
                     </div>
                   )}

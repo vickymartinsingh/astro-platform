@@ -509,10 +509,14 @@ async function handleReport(req, res) {
           profilePlace: profile.place || '',
           paidAt: admin.firestore.FieldValue.serverTimestamp(),
         });
-        // Ledger row so /transactions shows the debit.
+        // Ledger row so /transactions shows the debit. Amount is
+        // stored as a NEGATIVE number for debits (matches the
+        // session-end pattern in sessionService.endAndSettleClient);
+        // the transactions page colours by sign, so a positive
+        // value here would render as a credit.
         const txRef = db.collection('transactions').doc();
         tx.set(txRef, {
-          userId: uid, amount: price, type: 'debit',
+          userId: uid, amount: -price, type: 'debit',
           reason: kind === 'forecast12'
             ? '12-month kundli forecast'
             : 'kundli report',
