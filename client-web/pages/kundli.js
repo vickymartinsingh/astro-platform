@@ -13,6 +13,7 @@ export default function Kundli() {
   const { user, profile, loading } = useRequireClient();
   const [list, setList] = useState(null);
   const [form, setForm] = useState(EMPTY);
+  const [editingId, setEditingId] = useState(null); // null = create
   const [toolUrl, setToolUrl] = useState('');
   const [busy, setBusy] = useState(false);
   const [chart, setChart] = useState({});   // { [kundliId]: data|'loading'|'err' }
@@ -50,7 +51,16 @@ export default function Kundli() {
     e.preventDefault();
     setBusy(true);
     try {
-      await kundliService.saveKundli(user.uid, form);
+      if (editingId) {
+        await kundliService.updateKundli(user.uid, editingId, form);
+        // Clear the cached chart for this profile so the user sees
+        // fresh data the next time they tap View Full Kundli (the
+        // service already drops report+reportSig from Firestore when
+        // birth fields change).
+        setChart((c) => ({ ...c, [editingId]: undefined }));
+      } else {
+        await kundliService.saveKundli(user.uid, form);
+      }
       // If the customer picked their gender here (and it isn't already
       // on their account), also save it onto the user doc so it powers
       // the customer's avatar everywhere in the app.
@@ -60,8 +70,31 @@ export default function Kundli() {
       }
       setForm({ ...EMPTY, name: profile?.name || '',
         gender: profile?.gender || form.gender || '' });
+      setEditingId(null);
       await refresh();
     } finally { setBusy(false); }
+  }
+
+  function edit(k) {
+    setEditingId(k.id);
+    setForm({
+      name: k.name || '',
+      gender: k.gender || profile?.gender || '',
+      dob: k.dob || '',
+      tob: k.tob || '',
+      ampm: k.ampm || 'AM',
+      place: k.place || '',
+      isDefault: !!k.isDefault,
+    });
+    // Scroll up to the form so the user can see the prefilled fields.
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }
+  function cancelEdit() {
+    setEditingId(null);
+    setForm({ ...EMPTY, name: profile?.name || '',
+      gender: profile?.gender || '' });
   }
 
   async function makeDefault(id) {
@@ -108,9 +141,20 @@ export default function Kundli() {
               setForm({ ...form, isDefault: e.target.checked })} />
           Set as default profile (auto-shared at session start)
         </label>
-        <button className="btn-primary w-full" disabled={busy}>
-          {busy ? 'Saving…' : 'Save Kundli'}
-        </button>
+        <div className="flex gap-2">
+          <button className="btn-primary flex-1" disabled={busy}>
+            {busy
+              ? 'Saving…'
+              : editingId ? 'Save changes' : 'Save Kundli'}
+          </button>
+          {editingId && (
+            <button type="button" onClick={cancelEdit}
+              className="rounded-full border border-gray-300 px-4
+                py-2 text-sm font-semibold text-sub-text">
+              Cancel
+            </button>
+          )}
+        </div>
       </form>
 
       {toolUrl && (
@@ -147,6 +191,10 @@ export default function Kundli() {
                   className="font-semibold text-primary">
                   View full Kundli
                 </button>
+                <button onClick={() => edit(k)}
+                  className="font-semibold text-primary">
+                  Edit
+                </button>
                 {!k.isDefault && (
                   <button onClick={() => makeDefault(k.id)}
                     className="text-primary font-semibold">
@@ -159,13 +207,23 @@ export default function Kundli() {
               </div>
               {chart[k.id] === 'loading' && (
                 <div className="mt-2 text-sm text-sub-text">
-                  Generating kundli...
+                  Generating kundli…
                 </div>
               )}
               {chart[k.id] === 'err' && (
-                <div className="mt-2 text-sm text-danger">
-                  Kundli service not available yet. (Admin: set Prokerala
-                  keys on the relay.)
+                <div className="mt-2 flex flex-wrap items-center gap-2
+                                text-sm text-danger">
+                  <span>
+                    Could not load the chart right now. The kundli
+                    service may be waking up — please try again in a
+                    moment.
+                  </span>
+                  <button type="button"
+                    onClick={() => viewFull(k)}
+                    className="rounded-full border border-danger px-3
+                      py-1 text-xs font-bold text-danger">
+                    Retry
+                  </button>
                 </div>
               )}
               {chart[k.id] && typeof chart[k.id] === 'object' && (
@@ -377,9 +435,7 @@ function FullKundli({ r, kundli }) {
                 dangerouslySetInnerHTML={{ __html: r.charts.rasi }} />
             </div>
           ) : (
-            <div className="text-sm text-sub-text">
-              Chart image unavailable on the current Prokerala plan.
-            </div>
+            <HouseGrid r={r} title="Rasi (D1) — houses & planets" />
           )}
           {r.charts && r.charts.navamsa && (
             <div>
@@ -623,6 +679,54 @@ function DownloadPopup({ result, onClose }) {
           Close
         </button>
       </div>
+    </div>
+  );
+}
+
+// 12-house grid showing planets in each bhava + ascendant marker.
+// Used as a fallback when the provider didn't ship a rendered SVG
+// chart (AstroSeer's /api/kundli omits charts by design — they sit
+// on a separate /api/chart/render endpoint we'll wire later). Far
+// more useful than the old "Chart image unavailable on the current
+// Prokerala plan" placeholder, which read like a broken feature to
+// the user.
+function HouseGrid({ r, title }) {
+  const byHouse = {};
+  (r.planets || []).forEach((p) => {
+    const h = Number(p.house);
+    if (h >= 1 && h <= 12) {
+      (byHouse[h] = byHouse[h] || []).push(p.name);
+    }
+  });
+  const ascSign = r.ascendant && r.ascendant.sign;
+  return (
+    <div>
+      <div className="mb-2 text-sm font-bold text-primary">{title}</div>
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+        {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => {
+          const planets = byHouse[h] || [];
+          return (
+            <div key={h}
+              className={`rounded-card border p-2 text-center
+                ${h === 1
+                  ? 'border-primary/40 bg-primary/5'
+                  : 'border-gray-200 bg-white'}`}>
+              <div className="text-[10px] uppercase tracking-wide
+                              text-sub-text">
+                House {h}{h === 1 && ascSign ? ` · ${ascSign}` : ''}
+              </div>
+              <div className="mt-1 min-h-[36px] text-xs font-semibold
+                              text-dark-text">
+                {planets.length ? planets.join(', ') : '—'}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-2 text-[11px] text-sub-text">
+        House 1 holds the Ascendant (Lagna). Read planets in each
+        bhava with their lord + nakshatra (see Planets & Houses tab).
+      </p>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 // kundliService, blueprint 8.2 & 4.13
 import {
   doc, setDoc, updateDoc, deleteDoc, collection, query, where, getDocs,
-  serverTimestamp, writeBatch,
+  getDoc, serverTimestamp, writeBatch,
 } from 'firebase/firestore';
 import { db } from '../firebase.js';
 import { zodiacFromDOB } from '../theme.js';
@@ -562,6 +562,45 @@ export async function saveKundli(uid, data) {
   });
   if (data.isDefault) await setDefaultKundli(uid, ref.id);
   return ref.id;
+}
+
+// Update an existing kundli profile in place. Touching dob/tob/place
+// changes birthSig, so the cached report auto-invalidates on the
+// next View Full Kundli call and a fresh AstroSeer fetch lands —
+// no manual cache bust needed.
+export async function updateKundli(uid, kundliId, data) {
+  if (!kundliId) throw new Error('kundliId required');
+  const ref = doc(db, 'kundliProfiles', kundliId);
+  // Wipe the cached report when birth fields change so the next
+  // view re-fetches against the new values (saves the user from
+  // staring at stale planets).
+  const cur = await getDoc(ref);
+  const old = cur.exists() ? cur.data() : {};
+  const birthChanged = old.userId === uid
+    && (String(old.dob) !== String(data.dob)
+      || String(old.tob) !== String(data.tob)
+      || String(old.ampm) !== String(data.ampm)
+      || String(old.place) !== String(data.place));
+  const patch = {
+    name: data.name || '',
+    dob: data.dob || '',
+    tob: data.tob || '',
+    ampm: data.ampm || 'AM',
+    place: data.place || '',
+    zodiac: parseZodiac(data.dob),
+    isDefault: !!data.isDefault,
+    updatedAt: serverTimestamp(),
+  };
+  if (birthChanged) {
+    // Use deleteField() so the cached report goes away cleanly.
+    const { deleteField } = await import('firebase/firestore');
+    patch.report = deleteField();
+    patch.reportSig = deleteField();
+    patch.reportAt = deleteField();
+  }
+  await updateDoc(ref, patch);
+  if (data.isDefault) await setDefaultKundli(uid, kundliId);
+  return kundliId;
 }
 
 export async function getKundliProfiles(uid) {
