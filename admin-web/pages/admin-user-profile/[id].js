@@ -472,14 +472,22 @@ function EmailKundliButton({ k, u, report, onLoad }) {
       }
       clearTimeout(bumpT);
       if (j.emailed) {
+        const linkOnly = j.emailMode === 'link-only';
         setProgress({ step: 'done',
-          label: `Complimentary kundli PDF emailed to ${u.email}.`,
+          label: linkOnly
+            ? `Email delivered to ${u.email} as a download link `
+              + '(SMTP rejected the attachment — usually a size '
+              + 'limit). Customer can grab the PDF from My Orders.'
+            : `Complimentary kundli PDF emailed to ${u.email}.`,
+          mode: j.emailMode || 'with-attachment',
+          firstAttemptError: j.emailFirstAttemptError || '',
           messageId: j.messageId || '' });
       } else {
         setProgress({ step: 'failed',
           label: 'PDF generated but the email send failed.',
           error: j.emailError
-            || 'No reason returned by the relay.' });
+            || 'No reason returned by the relay.',
+          firstAttemptError: j.emailFirstAttemptError || '' });
       }
       setMsg({ text: '', kind: '' }); // inline msg replaced by popup
     } catch (e) {

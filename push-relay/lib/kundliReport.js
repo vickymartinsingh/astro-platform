@@ -486,28 +486,73 @@ async function emailReport({
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     });
   } catch (_) { /* audit is best-effort */ }
+  // First attempt: send with the PDF attached. If that fails for any
+  // reason (size limit, auth quirk, network), DO NOT give up — fall
+  // back to a link-only email so the customer always receives a
+  // deliverable they can open. The order doc already has the signed
+  // Storage URL, so the email body links to it directly.
+  async function sendOnce(attachAttachment) {
+    const cleanText = attachAttachment ? text
+      : `${text}\n\nDownload link (if the attachment is missing): `
+        + 'https://astroseer.in/orders';
+    const cleanHtml = attachAttachment ? html
+      : html.replace('Download link', 'Download link')
+        + '<p style="margin:12px 0 0 0;font-size:11px;color:#777">'
+        + 'If your kundli PDF isn&apos;t attached, please '
+        + 'sign in to your AstroSeer account and download it '
+        + 'from <b>My Orders</b>.</p>';
+    const opts = {
+      from: t.from, to: toEmail, subject, text: cleanText,
+      html: cleanHtml,
+    };
+    if (attachAttachment) {
+      opts.attachments = [{ filename: pdfName, content: pdfBuf,
+        contentType: 'application/pdf' }];
+    }
+    return t.transporter.sendMail(opts);
+  }
+
   try {
-    const info = await t.transporter.sendMail({
-      from: t.from, to: toEmail, subject, text, html,
-      attachments: [
-        { filename: pdfName, content: pdfBuf,
-          contentType: 'application/pdf' },
-      ],
-    });
+    const info = await sendOnce(true);
     try {
       await auditRef.update({
         status: 'sent',
+        deliveryMode: 'with-attachment',
         messageId: (info && info.messageId) || '',
         response: String((info && info.response) || '').slice(0, 200),
       });
     } catch (_) {}
-    return { ok: true, messageId: info && info.messageId };
-  } catch (e) {
-    const errMsg = String((e && e.message) || e).slice(0, 500);
+    return { ok: true, messageId: info && info.messageId,
+      mode: 'with-attachment' };
+  } catch (e1) {
+    const firstErr = String((e1 && e1.message) || e1).slice(0, 500);
+    // Retry without the attachment. Most SMTP rejections at this
+    // point are message-size-too-large or relay-side attachment
+    // policy — the link-only version usually goes through cleanly
+    // since the message body alone is <10 KB.
     try {
-      await auditRef.update({ status: 'failed', error: errMsg });
-    } catch (_) {}
-    return { ok: false, error: errMsg };
+      const info2 = await sendOnce(false);
+      try {
+        await auditRef.update({
+          status: 'sent-link-only',
+          deliveryMode: 'link-only',
+          firstAttemptError: firstErr,
+          messageId: (info2 && info2.messageId) || '',
+          response: String((info2 && info2.response) || '').slice(0, 200),
+        });
+      } catch (_) {}
+      return { ok: true, mode: 'link-only',
+        messageId: info2 && info2.messageId,
+        firstAttemptError: firstErr };
+    } catch (e2) {
+      const errMsg = String((e2 && e2.message) || e2).slice(0, 500);
+      try {
+        await auditRef.update({ status: 'failed',
+          error: errMsg, firstAttemptError: firstErr });
+      } catch (_) {}
+      return { ok: false, error: errMsg,
+        firstAttemptError: firstErr };
+    }
   }
 }
 
@@ -829,7 +874,9 @@ async function handleReport(req, res) {
   // sends, the template flips to gift-wording and labels the report
   // as a complimentary AstroSeer kundli.
   let emailed = false;
+  let emailMode = null;
   let emailError = null;
+  let emailFirstAttemptError = null;
   if (userEmail) {
     const r = await emailReport({
       db, toEmail: userEmail, name: userName,
@@ -837,8 +884,16 @@ async function handleReport(req, res) {
       complimentary: !!body.complimentary,
       senderNote: body.senderNote || '',
     });
-    if (r && r.ok) emailed = true;
-    else emailError = (r && r.error) || 'unknown email error';
+    if (r && r.ok) {
+      emailed = true;
+      emailMode = r.mode || 'with-attachment';
+      if (r.firstAttemptError) {
+        emailFirstAttemptError = r.firstAttemptError;
+      }
+    } else {
+      emailError = (r && r.error) || 'unknown email error';
+      emailFirstAttemptError = (r && r.firstAttemptError) || null;
+    }
   } else {
     emailError = 'no email on file for this user';
   }
@@ -852,7 +907,9 @@ async function handleReport(req, res) {
     amount: chargedAmount,
     kind,
     emailed,
+    emailMode,
     emailError,
+    emailFirstAttemptError,
     validUntil,
   });
 }
