@@ -54,14 +54,17 @@ const T = {
       + `${v.status} at ${new Date().toLocaleString()}.`,
   }),
   astro_application_received: (v) => ({
-    subject: `[AstroSeer] Application received - reference ${v.token}`,
+    subject: `[AstroSeer] Application received - token ${v.token}`,
     body: `Hi ${v.name || 'there'},\n\n`
       + 'Thank you for applying to join AstroSeer as an astrologer. '
       + 'We have received your application and our recruitment team '
       + 'will review it shortly.\n\n'
-      + `Your reference token: ${v.token}\n\n`
-      + 'You can resume your onboarding (KYC, bank details, '
-      + `declaration) at any time using this link:\n${v.onboardUrl}\n\n`
+      + `Your 6-digit tracking token: ${v.token}\n\n`
+      + 'Track your application status any time at:\n'
+      + `  ${v.trackingUrl}\n`
+      + '(Enter your registered email + this token.)\n\n'
+      + 'Resume your onboarding (KYC, bank details, declaration) '
+      + `at any time using this link:\n${v.onboardUrl}\n\n`
       + 'Next steps:\n'
       + '  1. Screening call by our recruitment team.\n'
       + '  2. KYC documents upload (PAN + Aadhaar).\n'

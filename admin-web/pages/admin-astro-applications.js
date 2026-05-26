@@ -132,18 +132,29 @@ export default function AdminAstroApplications() {
     if (!pwd) return;
     setBusy(true);
     try {
+      // Resolve "Referred by" userCode -> the referrer's uid so the
+      // session-end hook can pay out the bonus later.
+      const referrer = await applicationService
+        .resolveReferrer(a.id);
+      // Languages / skills may already be arrays (new form) or comma
+      // strings (legacy applications). Normalize.
+      const langs = Array.isArray(a.languages) ? a.languages
+        : String(a.languages || '').split(',').map((s) => s.trim())
+          .filter(Boolean);
+      const skills = Array.isArray(a.skills) ? a.skills
+        : String(a.skills || '').split(',').map((s) => s.trim())
+          .filter(Boolean);
       await adminService.createAstrologer({
         name: a.fullName, email: a.email, password: pwd,
         gender: a.gender || 'other',
-        experience: Number(a.experienceYears || 0),
-        skills: String(a.skills || '').split(',').map((s) => s.trim())
-          .filter(Boolean),
-        languages: String(a.languages || '').split(',').map((s) => s.trim())
-          .filter(Boolean),
+        experience: a.experienceYears || 0,
+        skills, languages,
         priceChat: Number(a.expectedRate) || 20,
         priceCall: Number(a.expectedRate) || 20,
         priceVideo: Number(a.expectedRate) * 2 || 40,
         bio: a.bio || '',
+        referredByCode: referrer ? referrer.referrerCode : '',
+        referredByUserId: referrer ? referrer.referrerUid : '',
       });
       await applicationService.updateApplicationStatus(a.id, 'approved',
         `Account created. Login: ${a.email} / ${pwd}`);

@@ -30,6 +30,10 @@ export default function AdminRefer() {
       refer_title: c.refer_title || '',
       refer_desc: c.refer_desc || '',
       refer_terms: c.refer_terms || '',
+      astro_to_astro_enabled: c.astro_to_astro_enabled !== false,
+      astro_to_astro_amount: Number(c.astro_to_astro_amount || 0),
+      astro_to_astro_min_minutes:
+        Number(c.astro_to_astro_min_minutes || 30),
     });
     flash('Refer & Earn saved - live in the app');
   }
@@ -90,6 +94,52 @@ export default function AdminRefer() {
         <button onClick={save} className="btn-primary w-full">
           Save Refer &amp; Earn
         </button>
+      </div>
+
+      <h2 className="mb-1 mt-6 text-lg font-bold">
+        Astrologer-refers-astrologer
+      </h2>
+      <p className="mb-3 text-sm text-sub-text">
+        When an active astrologer refers another astrologer via the
+        public recruitment form, the referrer earns a wallet bonus
+        after the new astrologer completes their first paid session
+        of at least the threshold minutes.
+      </p>
+      <div className="card space-y-3">
+        <label className="flex items-center justify-between text-sm">
+          <span className="font-semibold">Enable astrologer referral bonus</span>
+          <input type="checkbox"
+            checked={c.astro_to_astro_enabled !== false}
+            onChange={(e) =>
+              set('astro_to_astro_enabled', e.target.checked)} />
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block text-sm">
+            Bonus amount (Rs)
+            <input className="input mt-1" type="number" min={0}
+              value={c.astro_to_astro_amount == null
+                ? '' : c.astro_to_astro_amount}
+              onChange={(e) => set('astro_to_astro_amount',
+                e.target.value === '' ? '' : Number(e.target.value))}
+              placeholder="500" />
+          </label>
+          <label className="block text-sm">
+            Min paid session minutes
+            <input className="input mt-1" type="number" min={1}
+              value={c.astro_to_astro_min_minutes == null
+                ? '' : c.astro_to_astro_min_minutes}
+              onChange={(e) => set('astro_to_astro_min_minutes',
+                e.target.value === '' ? '' : Number(e.target.value))}
+              placeholder="30" />
+          </label>
+        </div>
+        <p className="text-[11px] text-sub-text">
+          Bonus is credited once per new astrologer, only after a
+          genuine paid call or chat of at least the minute threshold.
+          The applicant enters the referrer&apos;s 6-character code
+          in the &quot;Invitation / referral code&quot; field on the
+          public recruitment form.
+        </p>
       </div>
     </Layout>
   );

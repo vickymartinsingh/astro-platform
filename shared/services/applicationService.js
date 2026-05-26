@@ -20,10 +20,11 @@
 // using their reference token (no login required).
 import {
   doc, setDoc, getDoc, updateDoc, getDocs, query, where, orderBy,
-  collection, serverTimestamp, arrayUnion,
+  collection, serverTimestamp, arrayUnion, limit,
 } from 'firebase/firestore';
 import { db } from '../firebase.js';
 import { queueEmail } from './emailService.js';
+import { MAX_REJECTIONS_BEFORE_BLOCK } from '../astroProfile.js';
 
 // Ordered list of stages so the UI can render chips/progress bars and
 // so we can compute "what is the next stage after X" generically.
@@ -52,33 +53,116 @@ export function nextStage(s) {
   return STAGES[i + 1];
 }
 
-// Stable short token shown to the applicant in the success screen + the
-// email confirmation, so they have a reference if they ever need to
-// follow up with support OR resume onboarding via /astro-onboarding/.
+// 6-digit numeric tracking token shown in the success screen + email,
+// also used by /track-application to look up status. Numeric (instead
+// of the older 8-char base32) so a typical applicant can read it back
+// to a support agent over the phone without confusion.
 function shortToken() {
-  const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let s = '';
-  for (let i = 0; i < 8; i += 1) s += A[Math.floor(Math.random() * A.length)];
-  return s;
+  return String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0');
 }
 
 // Build the public onboarding URL emailed to the applicant. Falls back
 // to the customer site under astroseer.in if no env var is set.
-function onboardUrl(token) {
-  const base = (typeof process !== 'undefined' && process.env
+function publicBase() {
+  return ((typeof process !== 'undefined' && process.env
     && (process.env.NEXT_PUBLIC_ONBOARD_URL
       || process.env.NEXT_PUBLIC_CUSTOMER_URL))
-    || 'https://astroseer.in';
-  return `${base.replace(/\/$/, '')}/astro-onboarding/${token}`;
+    || 'https://astroseer.in').replace(/\/$/, '');
+}
+function onboardUrl(token) {
+  return `${publicBase()}/astro-onboarding/${token}`;
+}
+function trackingUrl() {
+  return `${publicBase()}/track-application`;
+}
+
+// Reusable lookup. Used by the public submit-guard (block active /
+// over-rejected applicants) AND by the tracking page.
+export async function findApplicationsByEmail(email) {
+  const e = String(email || '').trim().toLowerCase();
+  if (!e) return [];
+  try {
+    const snap = await getDocs(query(
+      collection(db, 'astroApplications'),
+      where('email', '==', e)));
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  } catch (_) { return []; }
+}
+
+// Block-list check before letting a new application through. Returns
+// { allowed, reason }:
+//   - allowed: false, reason: 'active' — that email already has an
+//     active astrologer login (we should never duplicate them).
+//   - allowed: false, reason: 'maxRejections' — they've been rejected
+//     six times; ask them to contact support instead of re-applying.
+//   - allowed: false, reason: 'inProgress' — they have a live
+//     application that isn't rejected; tracking link instead of a
+//     new submission.
+//   - allowed: true — fresh email or a previously rejected applicant
+//     under the cap.
+export async function canApply(email) {
+  const e = String(email || '').trim().toLowerCase();
+  if (!e) return { allowed: false, reason: 'invalidEmail' };
+  // 1) Active astrologer with this email already on the platform.
+  try {
+    const usrSnap = await getDocs(query(
+      collection(db, 'users'),
+      where('email', '==', e),
+      where('role', '==', 'astrologer'),
+      limit(1)));
+    if (!usrSnap.empty) {
+      return { allowed: false, reason: 'active' };
+    }
+  } catch (_) { /* if the composite index is missing, fall through */ }
+  // 2) Prior applications: too many rejections OR one still in flight.
+  const apps = await findApplicationsByEmail(e);
+  const rejected = apps.filter((a) => a.status === 'rejected').length;
+  if (rejected >= MAX_REJECTIONS_BEFORE_BLOCK) {
+    return { allowed: false, reason: 'maxRejections', rejected };
+  }
+  const live = apps.find((a) => a.status !== 'rejected'
+    && a.status !== 'approved');
+  if (live) {
+    return { allowed: false, reason: 'inProgress',
+      token: live.token, applicationId: live.id };
+  }
+  return { allowed: true,
+    priorRejections: rejected,
+    remaining: MAX_REJECTIONS_BEFORE_BLOCK - rejected };
 }
 
 // Submit a new application. Returns the new doc id + token. Also
 // queues a confirmation email to the applicant with their token + the
 // onboarding URL.
+//
+// Requires the email to already be OTP-verified (the public form
+// gates submit on a successful verifyEmailOtp). The relay flips the
+// emailVerified flag on the Firestore users doc, but for the public
+// form we don't have a uid yet — the OTP cooldown / used-flag on the
+// emailOtps doc is our proof, so we pass `emailVerified: true` only
+// when the caller has just verified.
 export async function submitApplication(data) {
+  const email = String(data.email || '').trim().toLowerCase();
+  if (!email) throw new Error('Email is required.');
+  // Gate: no duplicate active users, no >6 rejected.
+  const guard = await canApply(email);
+  if (!guard.allowed) {
+    const reasons = {
+      active: 'This email is already registered as an astrologer. '
+        + 'Please log in instead.',
+      inProgress: 'You already have an application in progress. '
+        + 'Use the tracking link to check its status.',
+      maxRejections: 'This email has reached the maximum number of '
+        + 'application attempts. Please contact support.',
+    };
+    const err = new Error(reasons[guard.reason]
+      || 'Application not allowed for this email.');
+    err.reason = guard.reason;
+    err.guard = guard;
+    throw err;
+  }
   const ref = doc(collection(db, 'astroApplications'));
   const token = shortToken();
-  const email = String(data.email || '').trim().toLowerCase();
   const fullName = String(data.fullName || '').trim();
   await setDoc(ref, {
     token,
@@ -88,13 +172,20 @@ export async function submitApplication(data) {
     gender: data.gender || 'other',
     dob: data.dob || '',
     city: data.city || '',
-    languages: data.languages || '',
-    skills: data.skills || '',
-    experienceYears: Number(data.experienceYears || 0),
+    cityMeta: data.cityMeta || null, // { lat, lng, country, state, ... }
+    languages: Array.isArray(data.languages)
+      ? data.languages : String(data.languages || '').split(',')
+        .map((s) => s.trim()).filter(Boolean),
+    skills: Array.isArray(data.skills)
+      ? data.skills : String(data.skills || '').split(',')
+        .map((s) => s.trim()).filter(Boolean),
+    experienceYears: data.experienceYears || '',
     bio: data.bio || '',
     why: data.why || '', // "Why are you joining AstroSeer?"
     expectedRate: Number(data.expectedRate || 0),
-    referredBy: data.referredBy || '',
+    referredBy: String(data.referredBy || '').trim().toUpperCase(),
+    emailVerified: !!data.emailVerified,
+    priorRejections: guard.priorRejections || 0,
     status: 'submitted',
     // Onboarding sub-state (filled in by the applicant via the
     // /astro-onboarding/[token] page once recruitment moves the
@@ -114,11 +205,16 @@ export async function submitApplication(data) {
       await queueEmail({
         to: email,
         kind: 'astro_application_received',
-        vars: { name: fullName, token, onboardUrl: onboardUrl(token) },
+        vars: {
+          name: fullName, token,
+          onboardUrl: onboardUrl(token),
+          trackingUrl: trackingUrl(),
+        },
       });
     }
   } catch (_) { /* never block submission on email queue */ }
-  return { id: ref.id, token, onboardUrl: onboardUrl(token) };
+  return { id: ref.id, token, onboardUrl: onboardUrl(token),
+    trackingUrl: trackingUrl() };
 }
 
 // Admin: list applications, newest first. Optional status filter
@@ -156,14 +252,39 @@ export async function getApplication(id) {
 // needing to log in.
 export async function getApplicationByToken(token) {
   if (!token) return null;
+  const t = String(token).trim();
+  // New tokens are 6-digit numeric; older legacy tokens were 8-char
+  // base32 — try both lookups.
   try {
     const snap = await getDocs(query(
       collection(db, 'astroApplications'),
-      where('token', '==', String(token).toUpperCase()),
+      where('token', '==', t),
     ));
-    const d = snap.docs[0];
+    let d = snap.docs[0];
+    if (!d) {
+      const snap2 = await getDocs(query(
+        collection(db, 'astroApplications'),
+        where('token', '==', t.toUpperCase()),
+      ));
+      d = snap2.docs[0];
+    }
     return d ? { id: d.id, ...d.data() } : null;
   } catch (_) { return null; }
+}
+
+// Tracking-page lookup: applicants enter their registered email +
+// 6-digit token and we return the latest matching application so they
+// can see where it is in the pipeline. Both fields must match — the
+// token alone would let anyone with a guessed number peek at someone
+// else's status, and the email alone wouldn't disambiguate re-applies.
+export async function trackApplication(email, token) {
+  const e = String(email || '').trim().toLowerCase();
+  const t = String(token || '').trim();
+  if (!e || !t) return null;
+  const apps = await findApplicationsByEmail(e);
+  const hit = apps.find((a) => String(a.token || '').trim() === t
+    || String(a.token || '').trim().toUpperCase() === t.toUpperCase());
+  return hit || null;
 }
 
 // Admin: set status (any stage including reviewing / interview / kyc /
@@ -219,6 +340,34 @@ export async function notifyApproved(id, password) {
     });
     return true;
   } catch (_) { return false; }
+}
+
+// Resolve the application's referredBy (a UPPER-CASE userCode the
+// applicant entered) to the referring astrologer's uid. Returns
+// { referrerUid, referrerName, referrerCode } or null if there's no
+// match. Used by createAstrologer at approval time to stamp the
+// referral onto the new astrologer's profile + create a pending
+// bonus that fires after their first 30-min paid session.
+export async function resolveReferrer(applicationId) {
+  const app = await getApplication(applicationId);
+  if (!app) return null;
+  const code = String(app.referredBy || '').trim().toUpperCase();
+  if (!code) return null;
+  try {
+    const snap = await getDocs(query(
+      collection(db, 'users'),
+      where('userCode', '==', code),
+      limit(1)));
+    if (snap.empty) return null;
+    const d = snap.docs[0];
+    const u = d.data() || {};
+    return {
+      referrerUid: d.id,
+      referrerName: u.name || '',
+      referrerCode: code,
+      referrerIsAstrologer: !!(u.isAstrologer || u.role === 'astrologer'),
+    };
+  } catch (_) { return null; }
 }
 
 export async function notifyRejected(id, note) {

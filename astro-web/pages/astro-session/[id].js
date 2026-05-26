@@ -157,6 +157,25 @@ export default function ActiveSession() {
     try { await sessionService.endAndSettleClient(id); } catch (_) {}
     try { await sessionService.collectAstrologerEarnings(user.uid); }
     catch (_) {}
+    // Referral bonus check — if this astrologer was referred by
+    // another astrologer at signup, and this session was their
+    // first paid 30-minute (admin-configurable) session, credit
+    // the referrer's wallet now. Idempotent server-side: the
+    // pending row flips to "paid" inside a transaction, so a
+    // duplicate end-session can't double-pay.
+    try {
+      const { referralService } = await import('@astro/shared');
+      const cost = Number(
+        (session && session.cost) || 0);
+      const dur = Number(
+        (session && session.duration) || 0);
+      // Only count genuine paid sessions (cost > 0); short / grace
+      // / free sessions don't qualify.
+      if (cost > 0 && dur > 0) {
+        await referralService.maybeCreditAstroReferral(
+          user.uid, dur / 60);
+      }
+    } catch (_) { /* never block the end-call UX on this */ }
     sessionService.endSession(id).catch(() => {});
     router.replace('/astro-dashboard');
   }

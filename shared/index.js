@@ -15,6 +15,10 @@ export {
 export { gunaMilan, signFromDOB } from './matching.js';
 export { CITIES, INDIAN_STATES } from './cities.js';
 export * as vimshottari from './vimshottari.js';
+export {
+  LANGUAGES, SKILLS, EXPERIENCE_BUCKETS, MAX_REJECTIONS_BEFORE_BLOCK,
+  DEFAULT_REFERRAL, resolveReferral,
+} from './astroProfile.js';
 
 export * as authService from './services/authService.js';
 export * as userService from './services/userService.js';
@@ -54,6 +58,7 @@ export * as tarotService from './services/tarotService.js';
 export * as hoursService from './services/hoursService.js';
 export * as recordService from './services/recordService.js';
 export * as emailService from './services/emailService.js';
+export * as referralService from './services/referralService.js';
 
 // Catalogue of paid + free PDF report types. Both client (buy
 // buttons, confirm popup, /orders labels) and the relay (price

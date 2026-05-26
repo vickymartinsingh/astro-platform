@@ -702,7 +702,27 @@ export async function createAstrologer(data) {
       })(data.name || email),
       wallet: 0, isOnline: false, isOnCall: false, isBlocked: false,
       hasSeenTour: true, status: 'active', createdAt: serverTimestamp(),
+      // Referral pointer copied from the approved application so the
+      // session-end hook can credit the referrer once the new
+      // astrologer completes their first 30-min paid session.
+      referredByCode: data.referredByCode || '',
+      referredByUserId: data.referredByUserId || '',
+      referralBonusPaid: false,
     });
+    // If the referrer is a real platform user, drop a pending-bonus
+    // row that the session-end hook in callService/chatService can
+    // pick up. settings/config.astro_to_astro_amount controls the
+    // payout amount + on/off switch.
+    if (data.referredByUserId) {
+      await setDoc(doc(db, 'astroReferralPending', uid), {
+        newAstrologerUid: uid,
+        newAstrologerEmail: email,
+        referrerUid: data.referredByUserId,
+        referrerCode: data.referredByCode || '',
+        createdAt: serverTimestamp(),
+        status: 'pending',  // -> 'paid' when bonus credits
+      }, { merge: true });
+    }
   } catch (err) {
     if (err.code !== 'auth/email-already-in-use') throw err;
     // Existing account (likely a client). Find its uid by email and
