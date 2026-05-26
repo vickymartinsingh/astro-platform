@@ -333,26 +333,124 @@ async function smtpTransport(db) {
   };
 }
 
-async function emailReport({ db, toEmail, name, kind, pdfBuf, pdfName }) {
+// Minimal HTML-escape for the email template.
+function _esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Email the freshly generated PDF to the customer. When the admin
+// sends the report from /admin-user-profile we set complimentary=true
+// so the template thanks them and labels the report as a gift; the
+// rest of the body is the same polished AstroSeer signature card
+// used everywhere else (matches shared/services/emailService.js).
+async function emailReport({
+  db, toEmail, name, kind, pdfBuf, pdfName,
+  complimentary, senderNote,
+}) {
   const t = await smtpTransport(db);
   if (!t) return false;
   const human = kind === 'forecast12'
     ? 'Your 12-Month Kundli Forecast'
     : 'Your Vedic Kundli Report';
-  const subject = `${human} from AstroSeer is ready`;
-  const text = `Hi ${name || 'there'},\n\n`
-    + `${human} is attached as a PDF. You can also re-download it `
-    + 'anytime from the Orders section in the AstroSeer app.\n\n'
-    + 'With blessings,\nAstroSeer Support';
-  const html = `<div style="font-family:Inter,Arial,sans-serif;`
-    + `max-width:520px;margin:auto;padding:24px;color:#1a1a2e">`
-    + `<h2 style="margin:0 0 14px 0;color:#7F2020">${human}</h2>`
-    + `<p style="margin:0 0 10px 0">Hi ${name || 'there'},</p>`
-    + `<p style="margin:0 0 10px 0">Your report is attached as a `
-    + `PDF. You can also re-download it from the Orders section `
-    + `in the AstroSeer app anytime.</p>`
-    + `<p style="margin:18px 0 0 0;font-size:12px;color:#777">`
-    + `With blessings,<br/>AstroSeer Support</p></div>`;
+  const subject = complimentary
+    ? `A complimentary kundli from AstroSeer — ${human}`
+    : `${human} from AstroSeer is ready`;
+  const opener = complimentary
+    ? `As a thank-you from the AstroSeer team, please find your `
+      + 'complimentary Vedic kundli attached to this email. There '
+      + 'is no charge for this report.'
+    : `${human} is attached to this email as a PDF.`;
+  const text = `Namaste ${name || 'there'},\n\n${opener}\n\n`
+    + 'Inside you will find:\n'
+    + '  * Birth, Avakhada and Panchang details\n'
+    + '  * Lagna chart and 16 divisional charts\n'
+    + '  * Planetary positions, nakshatras and dignities\n'
+    + '  * Full Vimshottari dasha tree and current periods\n'
+    + '  * Yogas, doshas and ascendant analysis\n\n'
+    + (senderNote ? `Note from the team:\n  ${senderNote}\n\n` : '')
+    + 'You can also re-download it any time from the Orders '
+    + 'section in the AstroSeer app: https://astroseer.in/orders\n\n'
+    + 'If a particular life area calls for a deeper look, our '
+    + 'astrologers are one tap away on the AstroSeer app.\n\n'
+    + 'With blessings,\nTeam AstroSeer\n'
+    + 'support@astroseer.in - astroseer.in';
+  const heading = complimentary
+    ? 'A complimentary kundli for you'
+    : `${human} is ready`;
+  const leadHtml = complimentary
+    ? `Namaste <b>${_esc(name || 'there')}</b>, as a thank-you `
+      + 'from the AstroSeer team, please find your complimentary '
+      + 'Vedic kundli attached to this email. <i>There is no '
+      + 'charge for this report.</i>'
+    : `Namaste <b>${_esc(name || 'there')}</b>, ${_esc(human)} is `
+      + 'ready and attached to this email as a PDF.';
+  const html = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>${_esc(heading)}</title></head>
+<body style="margin:0;padding:0;background:#F5F1EA;
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,
+  Helvetica,Arial,sans-serif;color:#1A1A2E">
+<table role="presentation" width="100%" cellpadding="0"
+  cellspacing="0" style="background:#F5F1EA"><tr><td align="center"
+  style="padding:24px 12px">
+  <table role="presentation" width="600"
+    style="max-width:600px;background:#ffffff;border-radius:16px;
+    overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,.06)">
+  <tr><td style="background:linear-gradient(135deg,#7F2020,#A52A2A);
+    padding:28px 32px;color:#ffffff">
+    <div style="font-size:13px;letter-spacing:2px;text-transform:
+      uppercase;opacity:.85">AstroSeer${
+  complimentary ? ' &middot; A gift for you' : ''}</div>
+    <h1 style="margin:6px 0 0 0;font-size:22px;line-height:1.3">
+      ${_esc(heading)}</h1>
+  </td></tr>
+  <tr><td style="padding:28px 32px">
+    <p style="margin:0;font-size:15px;line-height:1.6">${leadHtml}</p>
+    <ul style="margin:16px 0;padding-left:20px;font-size:14px;
+      line-height:1.65">
+      <li>Birth, Avakhada and Panchang details</li>
+      <li>Lagna chart and 16 divisional charts</li>
+      <li>Planetary positions, nakshatras and dignities</li>
+      <li>Full Vimshottari dasha tree and current periods</li>
+      <li>Yogas, doshas and ascendant analysis</li>
+    </ul>
+    ${senderNote ? `<div style="margin:14px 0;padding:12px 14px;
+      background:#FBF7EE;border-left:3px solid #7F2020;border-radius:
+      6px;font-size:13px;line-height:1.55"><b>Note from the team:</b>
+      <br/>${_esc(senderNote)}</div>` : ''}
+    <div style="margin:24px 0;text-align:center">
+      <a href="https://astroseer.in/orders"
+        style="display:inline-block;padding:12px 28px;border-radius:
+        999px;background:#7F2020;color:#ffffff;text-decoration:none;
+        font-weight:700;font-size:14px">View in My Orders</a>
+    </div>
+    <p style="margin:16px 0 0 0;font-size:13px;line-height:1.6;
+      color:#555">If a particular life area calls for a deeper
+      look, our astrologers are one tap away on the AstroSeer app.</p>
+  </td></tr>
+  <tr><td style="border-top:1px solid #F0E9D9;padding:20px 32px;
+    background:#FBF7EE;font-size:12px;line-height:1.6;color:#4A4A55">
+    <div style="font-weight:700;color:#7F2020;font-size:13px;
+      margin-bottom:4px">Team AstroSeer</div>
+    <div>Vedic astrology, kundli, tarot &amp; consultations</div>
+    <div style="margin-top:8px">
+      <a href="https://astroseer.in"
+        style="color:#7F2020;text-decoration:none">astroseer.in</a>
+      &nbsp;&middot;&nbsp;
+      <a href="mailto:support@astroseer.in"
+        style="color:#7F2020;text-decoration:none">support@astroseer.in</a>
+    </div>
+    <div style="margin-top:10px;color:#999">
+      You received this because you have an account or active order
+      with AstroSeer. To stop, reply with "unsubscribe".
+    </div>
+  </td></tr>
+  </table>
+</td></tr></table>
+</body></html>`;
   try {
     await t.transporter.sendMail({
       from: t.from, to: toEmail, subject, text, html,
@@ -677,11 +775,18 @@ async function handleReport(req, res) {
     userEmail = u.email || '';
     if (!userName) userName = u.name || '';
   } catch (_) { /* fine */ }
+  // `complimentary` + `senderNote` come from the admin "Email kundli"
+  // button; the customer-initiated path leaves them unset, so the
+  // email body reads as normal "your report is ready". When admin
+  // sends, the template flips to gift-wording and labels the report
+  // as a complimentary AstroSeer kundli.
   let emailed = false;
   if (userEmail) {
     emailed = await emailReport({
       db, toEmail: userEmail, name: userName,
       kind, pdfBuf, pdfName: pdfFileName,
+      complimentary: !!body.complimentary,
+      senderNote: body.senderNote || '',
     });
   }
 

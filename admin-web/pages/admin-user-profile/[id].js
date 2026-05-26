@@ -387,28 +387,51 @@ function EmailKundliButton({ k, u, report, onLoad }) {
         kind: 'err' });
       return;
     }
+    if (!k || !k.id || !k.userId) {
+      setMsg({ text: 'Cannot resolve this kundli profile.',
+        kind: 'err' });
+      return;
+    }
     setMsg({ text: '', kind: '' });
     setBusy(true);
     try {
-      // Send the polished kundli_report_resend template. The body
-      // links to /orders where the customer can re-download the
-      // saved PDF. (We don't attach the file inline because
-      // kundliService.downloadKundliReport renders via the browser
-      // print-to-PDF dialog, which can't be base64-captured.)
-      await emailService.sendEmail({
-        to: u.email,
-        kind: 'kundli_report_resend',
-        vars: {
-          name: u.name || 'there',
-          profileName: (k && k.name) || '',
-          kindLabel: 'Vedic Kundli Report',
-          ordersUrl: 'https://astroseer.in/orders',
-        },
+      // Ask the relay to generate the free kundli PDF for this
+      // profile + email it as a complimentary attachment. The relay
+      // already handles auth (uid must own the profile), AstroSeer
+      // tier-9 PDF generation, Firestore order record, AND SMTP
+      // send with the polished AstroSeer signature card. We pass
+      // complimentary:true so the email body reads as a gift, not a
+      // routine delivery.
+      const endpoint = (typeof process !== 'undefined'
+        && process.env && process.env.NEXT_PUBLIC_PUSH_ENDPOINT)
+        ? process.env.NEXT_PUBLIC_PUSH_ENDPOINT
+          .replace(/\/sendPush\/?$/, '/kundli')
+        : 'https://astro-platform-push-relay.vercel.app/api/kundli';
+      const r = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'report',
+          kind: 'free',
+          kundliProfileId: k.id,
+          uid: k.userId,
+          complimentary: true,
+          senderNote: 'Sent to you with our compliments by the '
+            + 'AstroSeer team.',
+        }),
       });
-      setMsg({ text: `Emailed to ${u.email}`, kind: 'ok' });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        throw new Error(j.error
+          || `Send failed (HTTP ${r.status}).`);
+      }
+      const okMsg = j.emailed
+        ? `Complimentary kundli PDF emailed to ${u.email}`
+        : 'PDF generated but the email send failed. Check '
+          + '/admin-email SMTP config.';
+      setMsg({ text: okMsg, kind: j.emailed ? 'ok' : 'err' });
     } catch (e) {
-      setMsg({ text: e.message || 'Email send failed.',
-        kind: 'err' });
+      setMsg({ text: e.message || 'Send failed.', kind: 'err' });
     } finally { setBusy(false); }
   }
   return (
@@ -417,7 +440,7 @@ function EmailKundliButton({ k, u, report, onLoad }) {
         className="rounded-full border border-primary bg-white
           px-3 py-1.5 text-xs font-bold text-primary
           disabled:opacity-50">
-        {busy ? 'Sending…' : 'Email kundli'}
+        {busy ? 'Sending…' : 'Email complimentary kundli'}
       </button>
       {msg.text && (
         <span className={`mt-1 text-[10px] font-bold ${msg.kind === 'ok'
