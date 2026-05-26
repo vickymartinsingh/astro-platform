@@ -21,7 +21,17 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let unsubProfile = null;
     let teardownPresence = null;
+    // iOS infinite-loading guard: in WKWebView under capacitor:// the
+    // Firebase Auth init can silently hang on IndexedDB persistence
+    // probing, the initial onAuthStateChanged callback never fires,
+    // and the whole app sits on skeletons forever. After 2.5s assume
+    // "no user yet" and unblock the UI; the real callback will still
+    // fire later if/when Firebase finishes init and flip user/profile.
+    const safety = setTimeout(() => {
+      try { setLoading(false); } catch (_) {}
+    }, 2500);
     const unsub = authService.watchAuth((u) => {
+      clearTimeout(safety);
       setUser(u);
       if (unsubProfile) { unsubProfile(); unsubProfile = null; }
       if (teardownPresence) { teardownPresence(); teardownPresence = null; }
@@ -31,7 +41,13 @@ export function AuthProvider({ children }) {
         userService.ensureUserDoc(u).catch(() => {});
         // Native apps only: register for lock-screen push (no-op on web).
         pushService.registerForPush(u.uid).catch(() => {});
+        // Profile listen has its OWN safety: don't block the UI for
+        // ever if the first Firestore snapshot is slow on iOS WKWebView.
+        const profSafety = setTimeout(() => {
+          try { setLoading(false); } catch (_) {}
+        }, 3000);
         unsubProfile = userService.listenUser(u.uid, (p) => {
+          clearTimeout(profSafety);
           setProfile(p);
           setLoading(false);
         });
@@ -41,6 +57,7 @@ export function AuthProvider({ children }) {
       }
     });
     return () => {
+      clearTimeout(safety);
       unsub && unsub();
       unsubProfile && unsubProfile();
       teardownPresence && teardownPresence();

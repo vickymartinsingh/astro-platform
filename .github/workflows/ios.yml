@@ -232,12 +232,15 @@ jobs:
           echo "::group::ios assets (icon + splash on theme bg)"
           # $APP/assets/{logo,splash,splash-dark}.png are committed
           # (produced by scripts/gen-assets.mjs from brand/logo.png).
-          # Force the dark theme bg #0F0A23 so the mark sits on-theme.
+          # Royal palette: dark maroon background #1A0F0F matches the
+          # pre-hydration boot cover in _document.js so the splash ->
+          # app handoff is seamless (no purple/indigo flash, no white
+          # flash). Strict brand rule: purple is prohibited everywhere.
           ( cd "$APP" && npx capacitor-assets generate --ios \
-              --iconBackgroundColor '#0F0A23' \
-              --iconBackgroundColorDark '#0F0A23' \
-              --splashBackgroundColor '#0F0A23' \
-              --splashBackgroundColorDark '#0F0A23' ) \
+              --iconBackgroundColor '#1A0F0F' \
+              --iconBackgroundColorDark '#1A0F0F' \
+              --splashBackgroundColor '#1A0F0F' \
+              --splashBackgroundColorDark '#1A0F0F' ) \
             || echo "asset gen skipped"
           echo "::endgroup::"
 

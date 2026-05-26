@@ -18,7 +18,16 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let unsubProfile = null;
     let teardownPresence = null;
+    // iOS WKWebView (capacitor:// scheme) sometimes fails to fire the
+    // initial onAuthStateChanged callback - the whole app then sits on
+    // skeletons forever. Force loading -> false after 2.5s so the UI
+    // can paint; the real callback still flips user/profile if it
+    // arrives later.
+    const safety = setTimeout(() => {
+      try { setLoading(false); } catch (_) {}
+    }, 2500);
     const unsub = authService.watchAuth((u) => {
+      clearTimeout(safety);
       setUser(u);
       if (unsubProfile) { unsubProfile(); unsubProfile = null; }
       if (teardownPresence) { teardownPresence(); teardownPresence = null; }
@@ -26,12 +35,17 @@ export function AuthProvider({ children }) {
         teardownPresence = presenceService.setupPresence(u.uid);
         userService.ensureUserDoc(u).catch(() => {});
         pushService.registerForPush(u.uid).catch(() => {});
+        const profSafety = setTimeout(() => {
+          try { setLoading(false); } catch (_) {}
+        }, 3000);
         unsubProfile = userService.listenUser(u.uid, (p) => {
+          clearTimeout(profSafety);
           setProfile(p); setLoading(false);
         });
       } else { setProfile(null); setLoading(false); }
     });
     return () => {
+      clearTimeout(safety);
       unsub && unsub();
       unsubProfile && unsubProfile();
       teardownPresence && teardownPresence();

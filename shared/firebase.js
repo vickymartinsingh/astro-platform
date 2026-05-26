@@ -61,15 +61,35 @@ try {
 //    falls back indexedDB -> localStorage -> in-memory instead of
 //    throwing auth/web-storage-unsupported at init.
 // Every init is wrapped so one failure can NEVER white-screen the app.
+// iOS Capacitor (capacitor:// custom scheme) -> IndexedDB probing can
+// hang forever inside Firebase Auth init, which means the initial
+// onAuthStateChanged callback never fires and the WHOLE APP sits on
+// loading skeletons until the user kills it. Detect that environment
+// up front and prefer in-memory persistence so init never blocks.
+// Result: signed-in state is lost across cold starts on iOS, which is
+// a small price vs an unusable infinite-loading app.
+function isCapacitorIOS() {
+  try {
+    if (typeof window === 'undefined') return false;
+    const C = window.Capacitor;
+    if (!C || typeof C.isNativePlatform !== 'function') return false;
+    if (!C.isNativePlatform()) return false;
+    const p = (typeof C.getPlatform === 'function' && C.getPlatform()) || '';
+    return String(p).toLowerCase() === 'ios';
+  } catch (_) { return false; }
+}
 function initAuth() {
   if (!app) return undefined;
+  const persistence = isCapacitorIOS()
+    ? [inMemoryPersistence]
+    : [
+      indexedDBLocalPersistence,
+      browserLocalPersistence,
+      inMemoryPersistence,
+    ];
   try {
     return initializeAuth(app, {
-      persistence: [
-        indexedDBLocalPersistence,
-        browserLocalPersistence,
-        inMemoryPersistence,
-      ],
+      persistence,
       // REQUIRED for signInWithPopup / signInWithRedirect. Unlike
       // getAuth(), initializeAuth() does NOT bundle the resolver, so
       // Google sign-in throws auth/argument-error without this.
