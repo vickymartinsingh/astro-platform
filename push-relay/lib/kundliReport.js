@@ -158,61 +158,75 @@ async function callAstroSeerPdf({ base, key, body }) {
   return buf;
 }
 
-// Storage backend: Vercel Blob (free 1 GB + 100 GB bandwidth/month).
-// Picked over Firebase Storage because:
-//   - Firebase Storage now requires Blaze plan upgrade for new
-//     buckets on every Spark project. The user's project is on
-//     Spark, the console shows "To use Storage, upgrade your
-//     project's pricing plan" with an Upgrade button.
-//   - The relay already runs on Vercel, so the Blob store ships
-//     in the same dashboard — one less account to manage.
-//   - Vercel Blob auto-injects BLOB_READ_WRITE_TOKEN into every
-//     project linked to the store, so no manual env var setup
-//     beyond clicking Create + Connect.
-//   - put() returns a permanent public URL — no signed-URL IAM
-//     dance, no download-token query strings.
+// Storage backend (tiered, ZERO setup required):
 //
-// Setup once (this is done in the Vercel dashboard, no code):
-//   1. Vercel dashboard -> Storage tab -> Create -> Blob.
-//   2. Connect the new store to the push-relay project.
-//   3. That auto-sets BLOB_READ_WRITE_TOKEN on the relay's env vars.
-// Until step 3 is done the upload throws a clear "BLOB_READ_WRITE_TOKEN
-// missing" error so the operator knows exactly what to do.
+//   1. Vercel Blob - used IF BLOB_READ_WRITE_TOKEN is set on the
+//      relay. Best path: permanent CDN URL, no Firestore read on
+//      re-download. Only kicks in if the operator has actually
+//      created + connected a Blob store in the Vercel dashboard.
+//
+//   2. Firestore inline base64 (default fallback) - used otherwise.
+//      Writes the PDF base64 onto users/{uid}/orders/{id}.pdfBase64
+//      and returns a `data:application/pdf;base64,...` URL the
+//      browser can download immediately. Works on Spark (free)
+//      with zero external setup. Firestore allows 1 MB per doc;
+//      AstroSeer PDFs are ~60 KB (~80 KB base64) so we have ~12x
+//      headroom. The /orders page re-builds the data URL from the
+//      same pdfBase64 field on re-download.
+//
+// Caller gets back { url, storagePath, bucketUsed } as before so
+// the rest of handleReport doesn't change. inline === true on the
+// return value tells the caller to also write pdfBase64 onto the
+// order doc.
 async function uploadPdf(uid, kind, buf) {
-  if (!process.env.BLOB_READ_WRITE_TOKEN) {
-    throw new Error('BLOB_READ_WRITE_TOKEN missing on the relay. '
-      + 'Vercel dashboard -> Storage -> Create -> Blob, then Connect '
-      + 'to the push-relay project. The token auto-sets on first '
-      + 'connect.');
+  if (process.env.BLOB_READ_WRITE_TOKEN) {
+    try {
+      const { put } = require('@vercel/blob');
+      const ts = Date.now();
+      const path = `reports/${uid}/${ts}_${kind}.pdf`;
+      const blob = await put(path, buf, {
+        access: 'public',
+        contentType: 'application/pdf',
+        cacheControlMaxAge: 31536000,
+        addRandomSuffix: false,
+      });
+      return {
+        storagePath: blob.pathname || path,
+        bucketUsed: 'vercel-blob',
+        url: blob.url,
+        inline: false,
+      };
+    } catch (e) {
+      // Don't fail the whole report on a Blob blip - fall through
+      // to the inline path so the user always gets their PDF.
+      // eslint-disable-next-line no-console
+      console.warn('Vercel Blob upload failed, falling back to '
+        + 'inline Firestore storage:', (e && e.message) || e);
+    }
   }
-  const { put } = require('@vercel/blob');
-  const ts = Date.now();
-  // randomSuffix:false so the path stays deterministic per
-  // (uid, kind, ts) — handy for debugging from the Blob dashboard.
-  const path = `reports/${uid}/${ts}_${kind}.pdf`;
-  try {
-    const blob = await put(path, buf, {
-      access: 'public',
-      contentType: 'application/pdf',
-      cacheControlMaxAge: 31536000,
-      addRandomSuffix: false,
-    });
-    // blob.url is a permanent CDN URL like
-    // https://<store-id>.public.blob.vercel-storage.com/reports/.../1234_free.pdf
-    // No signed URLs, no tokens, no expiry, no IAM.
-    return {
-      storagePath: blob.pathname || path,
-      bucketUsed: 'vercel-blob',
-      url: blob.url,
-    };
-  } catch (e) {
-    // Bubble the exact Vercel Blob error so a future failure
-    // (quota hit, token revoked, network) is diagnosable in the
-    // client toast — same pattern as the old multi-bucket loop.
-    throw new Error(`Vercel Blob upload failed: `
-      + `${(e && e.message) || 'unknown'}`
-      + (e && e.code ? ` [code=${e.code}]` : ''));
+  // Fallback: encode the PDF bytes as base64 and return a data
+  // URL the browser can download directly. The base64 string is
+  // ALSO written onto the order doc by the caller so /orders can
+  // re-build the same data URL forever without a relay call.
+  const b64 = Buffer.from(buf).toString('base64');
+  const dataUrl = `data:application/pdf;base64,${b64}`;
+  if (b64.length > 950 * 1024) {
+    // Firestore caps a doc at 1 MB. Leave headroom for the other
+    // order fields. If a future AstroSeer tier produces a bigger
+    // PDF, the operator will have to set up Blob (above) or we
+    // chunk across multiple docs.
+    throw new Error('PDF is too large to store inline '
+      + `(${(b64.length / 1024).toFixed(0)} KB base64). Set `
+      + 'BLOB_READ_WRITE_TOKEN on the relay to enable Vercel Blob '
+      + 'storage instead.');
   }
+  return {
+    storagePath: `inline:${uid}:${Date.now()}_${kind}`,
+    bucketUsed: 'firestore-inline',
+    url: dataUrl,
+    inline: true,
+    pdfBase64: b64,
+  };
 }
 
 async function smtpTransport(db) {
@@ -347,10 +361,17 @@ async function handleReport(req, res) {
         return bt - at;
       })[0];
     if (ready) {
+      // For inline-storage orders the actual pdfUrl on the doc is
+      // a short marker ("inline"). The real bytes are on
+      // pdfBase64 — rebuild the data URL here so the client gets
+      // a clickable download with no extra round-trip.
+      const realUrl = ready.pdfBase64
+        ? `data:application/pdf;base64,${ready.pdfBase64}`
+        : ready.pdfUrl;
       return res.status(200).json({
         ok: true,
         orderId: ready.id,
-        pdfUrl: ready.pdfUrl,
+        pdfUrl: realUrl,
         pdfName: ready.pdfName || 'AstroSeer-Kundli.pdf',
         sizeBytes: ready.sizeBytes || 0,
         amount: 0, // never bill twice for the same chart
@@ -543,19 +564,34 @@ async function handleReport(req, res) {
     ? '12-Month-Forecast' : 'Kundli'}-${profile.name
     || uid.slice(0, 6)}.pdf`;
 
-  // 6. Order doc → final state. Email the PDF in parallel (best-effort).
+  // 6. Order doc → final state. Email the PDF in parallel
+  //    (best-effort). When the storage backend is inline (no Blob
+  //    token set), the actual PDF bytes are kept on the order doc
+  //    as base64 so /orders re-downloads can re-build the same
+  //    data: URL without a relay call. Cache lookup also serves
+  //    from this field on the next View Full Kundli click.
   const validUntil = kind === 'forecast12'
     ? new Date(new Date().setMonth(new Date().getMonth() + 12)).toISOString()
     : null;
-  await orderRef.update({
+  const orderPatch = {
     status: 'ready',
-    pdfUrl: uploaded.url,
+    // For inline storage, store a SHORT marker on pdfUrl (the real
+    // bytes live on pdfBase64). For Vercel Blob, store the actual
+    // CDN URL. This stops the doc from carrying a redundant ~80 KB
+    // copy of the base64 (~80 KB pdfUrl + ~80 KB pdfBase64 was
+    // pushing toward the 1 MB Firestore limit).
+    pdfUrl: uploaded.inline ? 'inline' : uploaded.url,
     storagePath: uploaded.storagePath,
+    bucketUsed: uploaded.bucketUsed || '',
     pdfName: pdfFileName,
     sizeBytes: pdfBuf.length,
     validUntil,
     deliveredAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
+  };
+  if (uploaded.inline && uploaded.pdfBase64) {
+    orderPatch.pdfBase64 = uploaded.pdfBase64;
+  }
+  await orderRef.update(orderPatch);
 
   // Get the user's email for the SMTP send.
   let userEmail = '';

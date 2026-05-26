@@ -102,13 +102,28 @@ export default function Orders() {
                     {s.text}
                   </span>
                 </div>
-                {o.pdfUrl && o.status === 'ready' && (
-                  <a href={o.pdfUrl} target="_blank" rel="noreferrer"
-                    className="mt-2 inline-block rounded-full bg-primary
-                      px-3 py-1.5 text-xs font-bold text-white">
-                    Download
-                  </a>
-                )}
+                {o.status === 'ready' && (() => {
+                  // Inline-stored orders carry only a short marker on
+                  // pdfUrl ("inline") and the real bytes on
+                  // pdfBase64 — we rebuild a data URL on the fly so
+                  // re-download from /orders never hits the relay
+                  // and works on the user's current Firebase plan
+                  // (no Storage / Blob needed).
+                  const href = o.pdfBase64
+                    ? `data:application/pdf;base64,${o.pdfBase64}`
+                    : (o.pdfUrl && o.pdfUrl !== 'inline' ? o.pdfUrl : '');
+                  if (!href) return null;
+                  return (
+                    <a href={href}
+                      target="_blank" rel="noreferrer"
+                      download={o.pdfName || 'AstroSeer-Kundli.pdf'}
+                      className="mt-2 inline-block rounded-full
+                        bg-primary px-3 py-1.5 text-xs font-bold
+                        text-white">
+                      Download
+                    </a>
+                  );
+                })()}
                 {o.validUntil && (
                   <div className="mt-1 text-[11px] text-sub-text">
                     Forecast valid until{' '}
