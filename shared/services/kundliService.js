@@ -65,11 +65,19 @@ export async function requestReport({ uid, kundliProfileId, kind }) {
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) {
-    const err = new Error(j.error || `Report failed (HTTP ${r.status}).`);
+    // Surface the relay's `detail` field too so the UI can show
+    // the real upload error (bucket missing, IAM permission etc)
+    // instead of the generic "Could not save the PDF" toast that
+    // told the user nothing actionable.
+    const msg = j.detail
+      ? `${j.error || 'Report failed'}: ${j.detail}`
+      : j.error || `Report failed (HTTP ${r.status}).`;
+    const err = new Error(msg);
     err.code = j.wallet != null ? 'insufficient_wallet' : 'report_error';
     err.wallet = j.wallet;
     err.price = j.price;
     err.refunded = j.refunded;
+    err.detail = j.detail || '';
     throw err;
   }
   return j; // { ok, orderId, pdfUrl, pdfName, amount, kind, emailed }

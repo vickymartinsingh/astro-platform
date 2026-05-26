@@ -163,13 +163,9 @@ async function uploadPdf(uid, kind, buf) {
     try { return JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}'); }
     catch (_) { return {}; }
   })();
-  // Try the modern <project>.firebasestorage.app bucket name first,
-  // then fall back to legacy <project>.appspot.com if that 404s.
-  // Some Firebase projects (especially older ones) only have the
-  // legacy bucket. Doing both removes the "Could not save the PDF"
-  // class of errors when init was done elsewhere without the right
-  // storageBucket. Whichever works wins on the next call (we don't
-  // cache the choice because cold starts re-evaluate).
+
+  // Try modern <project>.firebasestorage.app then legacy
+  // <project>.appspot.com. Some projects only have one of the two.
   const ts = Date.now();
   const name = `media/reports/${uid}/${ts}_${kind}.pdf`;
   const candidates = [
@@ -177,6 +173,27 @@ async function uploadPdf(uid, kind, buf) {
     legacyBucketName(sa),
   ].filter((v, i, a) => v && a.indexOf(v) === i);
 
+  // URL strategy: Firebase-style download tokens, NOT signed URLs.
+  // Why: getSignedUrl() needs the service account to have the IAM
+  // permission iam.serviceAccounts.signBlob (or the explicit
+  // "Service Account Token Creator" role on itself). Most relay
+  // service accounts are minted with only firebaseAdmin scopes and
+  // hit a cryptic "Cannot sign data without `client_email`" /
+  // "iam.serviceAccounts.signBlob is missing" error, which we saw
+  // surface as "Could not save the PDF" with no detail.
+  // Download tokens are simpler: write a random token into the
+  // file's firebaseStorageDownloadTokens metadata field, then
+  // construct a public download URL of the form
+  //   https://firebasestorage.googleapis.com/v0/b/{bucket}/o/{path}
+  //     ?alt=media&token={token}
+  // The token is mandatory in the URL so the file isn't accidentally
+  // public — but it works on any Firebase Storage bucket with no
+  // IAM dance.
+  const crypto = require('crypto');
+  const token = (crypto.randomUUID && crypto.randomUUID())
+    || crypto.randomBytes(16).toString('hex');
+
+  const tried = [];
   let lastErr = null;
   for (const bn of candidates) {
     try {
@@ -186,24 +203,29 @@ async function uploadPdf(uid, kind, buf) {
         contentType: 'application/pdf',
         metadata: {
           cacheControl: 'public, max-age=31536000',
-          metadata: { kind, uid, generatedAt: String(ts) },
+          metadata: {
+            kind, uid, generatedAt: String(ts),
+            // THIS is what enables the download-token URL pattern.
+            // Firebase Storage rules ignore the token and let the
+            // request through whenever the token matches.
+            firebaseStorageDownloadTokens: token,
+          },
         },
         resumable: false,
       });
-      const [signedUrl] = await file.getSignedUrl({
-        action: 'read',
-        expires: Date.now() + 1000 * 60 * 60 * 24 * 365 * 100,
-      });
-      return { storagePath: name, bucketUsed: bn, url: signedUrl };
+      const url = `https://firebasestorage.googleapis.com/v0/b/`
+        + `${encodeURIComponent(bn)}/o/`
+        + `${encodeURIComponent(name)}?alt=media&token=${token}`;
+      return { storagePath: name, bucketUsed: bn, url };
     } catch (e) {
+      tried.push(`${bn}: ${(e && e.message) || 'unknown'}`);
       lastErr = e;
-      // Try the next bucket name; common failures here are
-      // "bucket does not exist" (404) and "permission denied".
     }
   }
-  throw new Error(`upload to Firebase Storage failed: `
-    + `${(lastErr && lastErr.message) || 'unknown'} `
-    + `(tried: ${candidates.join(', ')})`);
+  // Verbose error so a future fail tells us what we tried.
+  throw new Error(`upload to Firebase Storage failed. `
+    + `Tried ${tried.length} bucket(s): ${tried.join(' | ')}`
+    + (lastErr && lastErr.code ? ` [code=${lastErr.code}]` : ''));
 }
 
 async function smtpTransport(db) {
