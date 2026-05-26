@@ -68,15 +68,32 @@ export default function Orders() {
             const s = statusLabel(o);
             const at = o.paidAt && o.paidAt.toDate
               ? o.paidAt.toDate() : null;
+            // Profile snapshot lets the user tell which chart each
+            // PDF belongs to without an extra Firestore read.
+            // Falls back to the kundliProfileId tail if a legacy
+            // order doc didn't carry the snapshot.
+            const who = o.profileName
+              || (o.kundliProfileId
+                ? `Profile ${String(o.kundliProfileId).slice(0, 6)}`
+                : '');
+            const birthLine = [o.profileDob, o.profileTob, o.profileAmpm]
+              .filter(Boolean).join(' ');
             return (
               <div key={o.id} className="card">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="font-semibold">{pretty(o.kind)}</div>
+                    {who && (
+                      <div className="text-xs font-medium text-dark-text">
+                        {who}
+                        {o.profilePlace ? `, ${o.profilePlace}` : ''}
+                      </div>
+                    )}
                     <div className="text-xs text-sub-text">
+                      {birthLine ? `${birthLine} · ` : ''}
                       {at ? at.toLocaleDateString('en-GB', {
                         day: '2-digit', month: 'short', year: 'numeric',
-                      }) : '·'}
+                      }) : ''}
                       {o.amount > 0 ? ` · ₹${o.amount}` : ' · free'}
                     </div>
                   </div>
@@ -89,7 +106,7 @@ export default function Orders() {
                   <a href={o.pdfUrl} target="_blank" rel="noreferrer"
                     className="mt-2 inline-block rounded-full bg-primary
                       px-3 py-1.5 text-xs font-bold text-white">
-                    ⬇ Download
+                    Download
                   </a>
                 )}
                 {o.validUntil && (

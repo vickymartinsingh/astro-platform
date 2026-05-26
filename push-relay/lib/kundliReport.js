@@ -295,6 +295,68 @@ async function handleReport(req, res) {
     return res.status(400).json({ error: 'profile missing birth data' });
   }
 
+  // birthSig — same shape the shared client kundliService uses. Two
+  // profiles with the same DOB / TOB / AM-PM / place collapse into
+  // one signature; any minor edit to those four fields changes it.
+  // We stamp this on every order doc so a later "cached order
+  // lookup" matches only when the birth data is byte-for-byte
+  // identical to what generated the existing PDF.
+  function birthSig(p) {
+    return [p.dob, p.tob, p.ampm, p.place]
+      .map((x) => String(x || '').trim().toLowerCase()).join('|');
+  }
+  const sig = birthSig(profile);
+
+  // 1b. Hot path: if an order with this exact (kind, profileId,
+  //     birthSig) is already 'ready', return that PDF immediately.
+  //     No AstroSeer call, no Storage upload, no wallet deduction
+  //     for paid kinds (the user already paid for THIS chart). Edit
+  //     the profile and the sig changes, so we regenerate — exactly
+  //     what the user asked for ("even a minor change must force a
+  //     regenerate").
+  //
+  // Query intentionally only uses two equality filters and no
+  // orderBy() so Firestore does NOT need a composite index. The
+  // orders subcollection is per-user, almost always under 20 docs,
+  // so client-side filtering + pick-most-recent is cheap.
+  try {
+    const cached = await db.collection('users').doc(uid)
+      .collection('orders')
+      .where('birthSig', '==', sig)
+      .where('kind', '==', kind)
+      .get();
+    const ready = cached.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((o) => o.status === 'ready'
+        && o.kundliProfileId === profileId
+        && o.pdfUrl)
+      .sort((a, b) => {
+        const at = (a.deliveredAt && a.deliveredAt.toMillis
+          && a.deliveredAt.toMillis()) || 0;
+        const bt = (b.deliveredAt && b.deliveredAt.toMillis
+          && b.deliveredAt.toMillis()) || 0;
+        return bt - at;
+      })[0];
+    if (ready) {
+      return res.status(200).json({
+        ok: true,
+        orderId: ready.id,
+        pdfUrl: ready.pdfUrl,
+        pdfName: ready.pdfName || 'AstroSeer-Kundli.pdf',
+        sizeBytes: ready.sizeBytes || 0,
+        amount: 0, // never bill twice for the same chart
+        kind,
+        emailed: false, // was emailed once at original generate
+        validUntil: ready.validUntil || null,
+        cached: true,
+      });
+    }
+  } catch (_) {
+    // Never block PDF delivery on a cache-lookup failure — fall
+    // through to fresh generation. The original-flow refund/email
+    // guarantees still apply.
+  }
+
   // 2. Resolve price + check we have AstroSeer creds.
   const price = await getReportPrice(db, kind);
   const { base, key } = await getAstroSeerCreds(db);
@@ -321,6 +383,14 @@ async function handleReport(req, res) {
         tx.set(orderRef, {
           kind, kundliProfileId: profileId, amount: price,
           status: 'paid_generating',
+          // birthSig is the cache key; profile snapshot makes
+          // /orders rows human-readable without an extra join.
+          birthSig: sig,
+          profileName: profile.name || '',
+          profileDob: profile.dob || '',
+          profileTob: profile.tob || '',
+          profileAmpm: profile.ampm || '',
+          profilePlace: profile.place || '',
           paidAt: admin.firestore.FieldValue.serverTimestamp(),
         });
         // Ledger row so /transactions shows the debit.
@@ -348,6 +418,12 @@ async function handleReport(req, res) {
     await orderRef.set({
       kind, kundliProfileId: profileId, amount: 0,
       status: 'free_generating',
+      birthSig: sig,
+      profileName: profile.name || '',
+      profileDob: profile.dob || '',
+      profileTob: profile.tob || '',
+      profileAmpm: profile.ampm || '',
+      profilePlace: profile.place || '',
       paidAt: admin.firestore.FieldValue.serverTimestamp(),
     });
   }
