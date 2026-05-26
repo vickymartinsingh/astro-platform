@@ -14,6 +14,7 @@ export {
 } from './tarot.js';
 export { gunaMilan, signFromDOB } from './matching.js';
 export { CITIES, INDIAN_STATES } from './cities.js';
+export * as vimshottari from './vimshottari.js';
 
 export * as authService from './services/authService.js';
 export * as userService from './services/userService.js';

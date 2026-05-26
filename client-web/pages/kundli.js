@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { kundliService, userService, db } from '@astro/shared';
+import { kundliService, userService, db, vimshottari } from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { SkeletonList } from '../components/Skeleton';
@@ -771,10 +771,11 @@ function DashaTab({ r }) {
   const [sub, setSub] = useState('current');
   return (
     <div className="mt-3 space-y-3">
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         {[
           ['current', 'Current periods'],
-          ['table', 'Full Vimshottari (200 years)'],
+          ['drilldown', '4-level drilldown'],
+          ['table', 'Full Vimshottari (120 years)'],
           ['tree', 'Interactive tree'],
         ].map(([k, l]) => (
           <button key={k} type="button" onClick={() => setSub(k)}
@@ -787,6 +788,9 @@ function DashaTab({ r }) {
       </div>
       {sub === 'current' && (
         <CurrentDashaCard cd={r.currentDasha} />
+      )}
+      {sub === 'drilldown' && (
+        <DashaDrilldown dasha={r.dasha || []} />
       )}
       {sub === 'table' && (
         <Sec title="Vimshottari Maha Dasha (full lifetime, 120 years)">
@@ -842,6 +846,201 @@ function DashaTab({ r }) {
           </div>
         </Sec>
       )}
+    </div>
+  );
+}
+
+// ---------- 4-level interactive drilldown ----------------------
+// AstroTalk-style: click a Mahadasha to see its 9 Antardashas,
+// click an Antardasha to see its 9 Pratyantars, click a Pratyantar
+// to see its 9 Sookshmas. "LEVEL UP" button climbs back. The Maha
+// level comes straight from r.dasha; the deeper levels are computed
+// with proportional Vimshottari math (no extra API calls).
+const LEVEL_LABELS = [
+  'Mahadasha', 'Antardasha', 'Pratyantardasha', 'Sookshmadasha',
+];
+
+function DashaDrilldown({ dasha }) {
+  // path = chain of selections, one per level above the one we're
+  // currently viewing. path[0] = chosen Maha, path[1] = chosen
+  // Antar, path[2] = chosen Pratyantar. Length 0 = looking at the
+  // list of 9 Mahas. Length 3 = looking at 9 Sookshmas (deepest).
+  const [path, setPath] = useState([]);
+  const nowMs = Date.now();
+
+  // Normalize the maha list once: { lord, startMs, endMs }.
+  const mahas = (dasha || [])
+    .map((d) => {
+      const startMs = vimshottari.toMs(d.start);
+      const endMs = vimshottari.toMs(d.end);
+      const lord = vimshottari.normalizeLord(d.planet) || d.planet;
+      if (!lord || !Number.isFinite(startMs)
+          || !Number.isFinite(endMs)) return null;
+      return { lord, startMs, endMs };
+    })
+    .filter(Boolean);
+
+  if (!mahas.length) {
+    return (
+      <div className="rounded-card bg-white p-4 text-sm text-sub-text">
+        Dasha data unavailable for this profile yet. Re-open the
+        kundli to fetch from the provider.
+      </div>
+    );
+  }
+
+  // Walk the path. At each level the "current" list is the children
+  // of the selected node from the prior level.
+  let current = mahas;
+  for (let i = 0; i < path.length; i += 1) {
+    const node = current[path[i]];
+    if (!node) { current = []; break; }
+    current = vimshottari.subPeriods(node);
+  }
+  const depth = path.length; // 0 = Maha, 3 = Sookshma
+  const canDrill = depth < 3;
+
+  // Build the breadcrumb of selected lords (with short labels).
+  const crumbs = [];
+  let cursor = mahas;
+  for (let i = 0; i < path.length; i += 1) {
+    const sel = cursor[path[i]];
+    if (!sel) break;
+    crumbs.push(sel);
+    cursor = vimshottari.subPeriods(sel);
+  }
+
+  const curIdx = vimshottari.findCurrent(current, nowMs);
+
+  return (
+    <div className="space-y-3">
+      {/* Stepper: 4 chips showing the 4 levels, with the
+          currently-viewed level highlighted + breadcrumb of
+          chosen lords underneath. */}
+      <div className="rounded-card border border-primary/20
+                      bg-white p-3">
+        <div className="grid grid-cols-4 gap-1.5">
+          {LEVEL_LABELS.map((label, i) => {
+            const active = i === depth;
+            const visited = i < depth;
+            const sel = crumbs[i];
+            return (
+              <button key={label} type="button"
+                disabled={i > depth}
+                onClick={() => setPath(path.slice(0, i))}
+                className={`rounded-card px-2 py-1.5 text-left
+                  text-[10px] font-bold transition
+                  ${active
+                    ? 'bg-primary text-white shadow'
+                    : visited
+                      ? 'bg-primary/10 text-primary'
+                      : 'bg-gray-100 text-sub-text opacity-60'}`}>
+                <div className="uppercase tracking-wide">
+                  {`L${i + 1}`}
+                </div>
+                <div className="mt-0.5 truncate">{label}</div>
+                {sel && (
+                  <div className="mt-0.5 text-[9px] opacity-80">
+                    {vimshottari.SHORT[sel.lord] || sel.lord}
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        {crumbs.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5
+                          text-[10px] text-sub-text">
+            <span className="font-semibold">Path:</span>
+            {crumbs.map((c, i) => (
+              <span key={i} className="rounded-full bg-primary/10
+                px-2 py-0.5 font-bold text-primary">
+                {vimshottari.SHORT[c.lord] || c.lord}
+                {i < crumbs.length - 1 && (
+                  <span className="ml-1 opacity-50">›</span>
+                )}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Level Up button — visible whenever we're below level 1. */}
+      {depth > 0 && (
+        <button type="button"
+          onClick={() => setPath(path.slice(0, -1))}
+          className="flex items-center gap-1.5 rounded-full
+            border border-primary bg-white px-3 py-1
+            text-[11px] font-bold text-primary
+            hover:bg-primary hover:text-white">
+          <span>↑</span> LEVEL UP
+        </button>
+      )}
+
+      {/* List of 9 children at the current level. Click any
+          row to drill one level deeper (unless we're at the
+          deepest level — Sookshma — already). */}
+      <div className="rounded-card bg-white p-2">
+        <div className="mb-1 px-2 text-[11px] font-bold
+          uppercase tracking-wide text-sub-text">
+          {LEVEL_LABELS[depth]}
+          {' · '}
+          {current.length} periods
+          {canDrill && ' · tap a row to drill deeper'}
+        </div>
+        <div className="space-y-1">
+          {current.map((c, i) => {
+            const isCur = i === curIdx;
+            return (
+              <button key={i} type="button"
+                disabled={!canDrill}
+                onClick={() => canDrill
+                  && setPath([...path, i])}
+                className={`flex w-full items-center
+                  justify-between gap-2 rounded-card px-3 py-2
+                  text-left text-[12px] transition
+                  ${isCur
+                    ? 'bg-primary/10 font-bold text-primary'
+                    : 'bg-gray-50 hover:bg-primary/5'}
+                  ${canDrill ? 'cursor-pointer' : 'cursor-default'}`}>
+                <span className="flex items-center gap-2">
+                  <span className={`inline-flex h-6 w-9
+                    items-center justify-center rounded-full
+                    text-[10px] font-extrabold
+                    ${isCur
+                      ? 'bg-primary text-white'
+                      : 'bg-white text-primary'}`}>
+                    {vimshottari.SHORT[c.lord] || c.lord}
+                  </span>
+                  <span>{c.lord}</span>
+                  {isCur && (
+                    <span className="rounded-full bg-accent
+                      px-2 py-0.5 text-[9px] font-bold text-white">
+                      now
+                    </span>
+                  )}
+                </span>
+                <span className="flex items-center gap-2
+                  text-[10.5px] text-sub-text">
+                  <span>{vimshottari.fmtDate(c.startMs)}</span>
+                  <span className="opacity-50">→</span>
+                  <span>{vimshottari.fmtDate(c.endMs)}</span>
+                  {canDrill && (
+                    <span className={`ml-1 ${isCur
+                      ? 'text-primary' : 'text-sub-text'}`}>›</span>
+                  )}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {!canDrill && (
+          <p className="mt-2 px-2 text-[10px] text-sub-text">
+            You're at the deepest level (Sookshma).
+            Use LEVEL UP to climb back.
+          </p>
+        )}
+      </div>
     </div>
   );
 }
