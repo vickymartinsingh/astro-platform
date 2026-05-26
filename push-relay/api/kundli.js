@@ -484,9 +484,12 @@ async function runAstroSeer(creds, p, lat, lng) {
   function extractDashaArray(d) {
     if (!d) return [];
     if (Array.isArray(d)) return d;
-    // AstroSeer /api/dasha returns an object — common keys to try.
-    const keys = ['vimshottari', 'periods', 'mahadasha', 'maha_dasha',
-      'dasha', 'data', 'result', 'list'];
+    // AstroSeer /api/dasha returns an object. v1.0.0 used
+    // `vimshottari`; v1.1.0 renamed it to `vimshottari_mahadasha`.
+    // We accept both plus every alias we have seen across other
+    // adapters so a future rename is one entry away from working.
+    const keys = ['vimshottari_mahadasha', 'vimshottari', 'periods',
+      'mahadasha', 'maha_dasha', 'dasha', 'data', 'result', 'list'];
     for (const k of keys) {
       if (Array.isArray(d[k])) return d[k];
       if (d[k] && Array.isArray(d[k].periods)) return d[k].periods;

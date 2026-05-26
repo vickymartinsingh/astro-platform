@@ -595,8 +595,18 @@ export async function getFullKundli(profile) {
     // Detect the legacy buggy-shape cache (nakshatra still an object
     // from a pre-fix relay) and force a refetch so the user doesn't
     // stay stuck on the cached crash.
-    const stale = profile.report.nakshatra
-      && typeof profile.report.nakshatra === 'object';
+    // A cached report is "stale" when:
+    //   1. nakshatra is still the old object shape (pre-flatten bug)
+    //   2. ascendant.sign is missing — happens when AstroSeer 401'd
+    //      during the original generate and we cached a near-empty
+    //      payload. Now that the relay falls back to unauth on 401,
+    //      a re-fetch will populate everything.
+    //   3. planets[] is empty — same root cause as (2).
+    // Any of the three forces a fresh fetch.
+    const rep = profile.report || {};
+    const stale = (rep.nakshatra && typeof rep.nakshatra === 'object')
+      || !(rep.ascendant && rep.ascendant.sign)
+      || !(Array.isArray(rep.planets) && rep.planets.length > 0);
     if (!stale) {
       return { ...normaliseReport(profile.report), cached: true };
     }
