@@ -104,7 +104,50 @@ export async function findUserByEmail(email) {
 }
 
 export async function setOnline(uid) {
-  await updateDoc(doc(db, 'users', uid), { isOnline: true });
+  // Pull a public-IP best-effort. ipify is free, cacheable, no key.
+  // If the fetch fails (offline / blocked), we just skip the field.
+  let ip = '';
+  try {
+    if (typeof fetch !== 'undefined') {
+      const r = await fetch('https://api.ipify.org?format=json',
+        { cache: 'no-store' });
+      if (r.ok) {
+        const j = await r.json().catch(() => ({}));
+        if (j && j.ip) ip = String(j.ip).slice(0, 64);
+      }
+    }
+  } catch (_) { /* no-op */ }
+  const ua = (typeof navigator !== 'undefined' && navigator.userAgent)
+    ? String(navigator.userAgent).slice(0, 240) : '';
+  const lang = (typeof navigator !== 'undefined' && navigator.language)
+    ? String(navigator.language).slice(0, 16) : '';
+  const platform = (typeof navigator !== 'undefined'
+    && navigator.platform) ? String(navigator.platform).slice(0, 64) : '';
+  const screen = (typeof window !== 'undefined' && window.screen)
+    ? `${window.screen.width}x${window.screen.height}` : '';
+  await updateDoc(doc(db, 'users', uid), {
+    isOnline: true,
+    lastSeenAt: serverTimestamp(),
+    lastIp: ip || null,
+    lastUserAgent: ua || null,
+    lastLanguage: lang || null,
+    lastPlatform: platform || null,
+    lastScreen: screen || null,
+  });
+  // Also append to a per-user session history so admin can audit
+  // every login + device combination over time. Soft-cap: we
+  // append one row per setOnline call (typically one per session),
+  // which is bounded by usage.
+  try {
+    const { addDoc, collection: col } = await import('firebase/firestore');
+    await addDoc(col(db, 'users', uid, 'sessions'), {
+      at: serverTimestamp(),
+      ip: ip || null,
+      ua: ua || null,
+      platform: platform || null,
+      screen: screen || null,
+    });
+  } catch (_) { /* never block presence on history append */ }
 }
 
 // User-initiated account deletion request (Google Play requires this).

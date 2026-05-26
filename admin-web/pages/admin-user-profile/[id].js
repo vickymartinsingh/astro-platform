@@ -176,8 +176,12 @@ export default function AdminUserProfile() {
         <Row k="Birth place" v={u.placeOfBirth || u.place || '-'} />
         <Row k="Language" v={u.language || '-'} />
         <Row k="Referral" v={u.referralCode || u.referredBy || '-'} />
-        <Row k="Last seen" v={fmt(u.lastSeen || u.updatedAt)} />
+        <Row k="Last seen"
+          v={fmt(u.lastSeenAt || u.lastSeen || u.updatedAt)} />
       </div>
+
+      {/* DEVICE + LOGIN SESSIONS (real-time IP + UA + history). */}
+      <DeviceSessionsPanel uid={id} u={u} />
 
       {/* KUNDLI PROFILES */}
       <div className="surface mt-4 p-3">
@@ -360,6 +364,85 @@ const Row = ({ k, v }) => (
     <span className="flex-1 font-semibold">{v}</span>
   </div>
 );
+
+// Device + login-session panel. Reads users/{uid} for the latest
+// device fingerprint (live since setOnline stamps it on every
+// connect) and the users/{uid}/sessions subcollection for history.
+function DeviceSessionsPanel({ uid, u }) {
+  const [hist, setHist] = useState([]);
+  useEffect(() => {
+    if (!uid) return;
+    (async () => {
+      try {
+        const snap = await getDocs(query(
+          collection(db, 'users', uid, 'sessions'),
+          orderBy('at', 'desc'),
+          limit(20)));
+        setHist(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      } catch (_) {
+        try {
+          const snap2 = await getDocs(query(
+            collection(db, 'users', uid, 'sessions'),
+            limit(20)));
+          setHist(snap2.docs.map((d) => ({ id: d.id, ...d.data() }))
+            .sort((a, b) => ((b.at?.toMillis?.() || 0)
+              - (a.at?.toMillis?.() || 0))));
+        } catch (_2) { /* sessions collection may not exist yet */ }
+      }
+    })();
+  }, [uid]);
+  return (
+    <div className="surface mt-4 p-4">
+      <h2 className="mb-2 text-sm font-bold uppercase tracking-wide
+        text-sub-text">Device &amp; login history</h2>
+      <Row k="Last IP" v={u.lastIp || '-'} />
+      <Row k="Last user agent"
+        v={(u.lastUserAgent || '-').slice(0, 120)
+          + ((u.lastUserAgent || '').length > 120 ? '…' : '')} />
+      <Row k="Platform" v={u.lastPlatform || '-'} />
+      <Row k="Screen" v={u.lastScreen || '-'} />
+      <Row k="Language" v={u.lastLanguage || '-'} />
+      <Row k="Last seen" v={fmt(u.lastSeenAt || u.lastSeen)} />
+      <div className="mt-3">
+        <div className="mb-1 text-[11px] font-bold uppercase
+          tracking-wide text-sub-text">
+          Login history ({hist.length})
+        </div>
+        {hist.length === 0 ? (
+          <div className="text-xs text-sub-text">
+            No login history recorded yet (sessions are stamped on
+            every connect once the user opens the app after this
+            change is live).
+          </div>
+        ) : (
+          <table className="w-full text-[11px]">
+            <thead className="text-left text-sub-text">
+              <tr>
+                <th className="py-1 pr-3">When</th>
+                <th className="py-1 pr-3">IP</th>
+                <th className="py-1 pr-3">Platform</th>
+                <th className="py-1">User agent</th>
+              </tr>
+            </thead>
+            <tbody>
+              {hist.map((h) => (
+                <tr key={h.id} className="border-t border-white">
+                  <td className="py-1 pr-3 font-mono">{fmt(h.at)}</td>
+                  <td className="py-1 pr-3 font-mono">{h.ip || '·'}</td>
+                  <td className="py-1 pr-3">{h.platform || '·'}</td>
+                  <td className="py-1">
+                    {(h.ua || '-').slice(0, 80)}
+                    {(h.ua || '').length > 80 ? '…' : ''}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  );
+}
 
 // Compact in-page summary of a generated kundli (full detail is in the
 // downloadable PDF). Shows the key Vedic markers + personality snippet.

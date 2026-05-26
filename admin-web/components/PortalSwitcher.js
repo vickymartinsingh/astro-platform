@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import { isAdminUser } from '@astro/shared';
 import { useAuth } from '../lib/useAuth';
@@ -7,11 +7,27 @@ import {
 } from '../lib/portal';
 import PortalEditRail from './PortalEditRail';
 
-// Always-on floating control that lets an admin VIEW the whole product
-// as any portal (developer / support / client / astrologer) without
-// logging into each one. For client/astrologer it embeds the live site
-// full-screen; the only admin chrome left is this switcher, so you
-// always know you're viewing it "via Admin".
+// Floating portal switcher — small icon-only chip by default, expands
+// to a panel on click, AND is draggable anywhere on the screen. The
+// position is persisted in localStorage so it stays where you put it
+// across page loads.
+const POS_KEY = 'admin_portal_switcher_pos';
+
+function loadPos() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(POS_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw);
+    if (typeof p.x === 'number' && typeof p.y === 'number') return p;
+  } catch (_) {}
+  return null;
+}
+function savePos(p) {
+  try { localStorage.setItem(POS_KEY, JSON.stringify(p)); }
+  catch (_) {}
+}
+
 export default function PortalSwitcher() {
   const { user, profile } = useAuth();
   const router = useRouter();
@@ -20,9 +36,71 @@ export default function PortalSwitcher() {
   const [editUrls, setEditUrls] = useState(false);
   const [urls, setUrls] = useState(getPortalUrls());
   const [frameKey, setFrameKey] = useState(0);
+  // Position: defaults to bottom-right; loaded from localStorage so the
+  // admin's last placement sticks.
+  const [pos, setPos] = useState(null);
+  const dragRef = useRef({ down: false, sx: 0, sy: 0, ox: 0, oy: 0,
+    moved: false });
 
-  // Only the owner/admin gets the cross-portal switcher.
+  useEffect(() => {
+    // Default: bottom-right with 14px safe-area inset. We resolve to
+    // an absolute x/y so dragging works from anywhere.
+    const saved = loadPos();
+    if (saved) { setPos(saved); return; }
+    if (typeof window !== 'undefined') {
+      setPos({
+        x: Math.max(14, window.innerWidth - 64),
+        y: Math.max(14, window.innerHeight - 64),
+      });
+    }
+  }, []);
+
+  // Drag handlers — used on the small chip handle, NOT the panel body
+  // (so clicks on portal options still register).
+  function onDown(e) {
+    const point = e.touches ? e.touches[0] : e;
+    dragRef.current = {
+      down: true, sx: point.clientX, sy: point.clientY,
+      ox: pos.x, oy: pos.y, moved: false,
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('mouseup', onUp);
+    window.addEventListener('touchend', onUp);
+  }
+  function onMove(e) {
+    if (!dragRef.current.down) return;
+    if (e.preventDefault && e.cancelable) {
+      try { e.preventDefault(); } catch (_) {}
+    }
+    const point = e.touches ? e.touches[0] : e;
+    const dx = point.clientX - dragRef.current.sx;
+    const dy = point.clientY - dragRef.current.sy;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      dragRef.current.moved = true;
+    }
+    const w = window.innerWidth; const h = window.innerHeight;
+    const nx = Math.min(Math.max(8, dragRef.current.ox + dx), w - 56);
+    const ny = Math.min(Math.max(8, dragRef.current.oy + dy), h - 56);
+    setPos({ x: nx, y: ny });
+  }
+  function onUp() {
+    const wasDrag = dragRef.current.moved;
+    dragRef.current.down = false;
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('touchmove', onMove);
+    window.removeEventListener('mouseup', onUp);
+    window.removeEventListener('touchend', onUp);
+    if (wasDrag) {
+      savePos(pos);
+    } else {
+      // True click: toggle the panel.
+      setOpen((o) => !o);
+    }
+  }
+
   if (!isAdminUser(profile, user && user.email)) return null;
+  if (!pos) return null;
 
   const isFrame = IFRAME_PORTALS.includes(portal);
   const frameUrl = isFrame ? urls[portal] : '';
@@ -32,25 +110,14 @@ export default function PortalSwitcher() {
     setPortal(id);
     setOpen(false);
     setEditUrls(false);
-    // For non-iframe internal portals, jump to the right landing page
-    // so the admin lands on a useful screen instead of whatever they
-    // were just on. (iframe portals - client/astrologer - render the
-    // live site in-place, so no navigation needed.)
     try {
       if (id === 'hr') router.push('/admin-hr-dashboard');
       else if (id === 'developer') router.push('/admin-builder');
       else if (id === 'support') router.push('/admin-support');
       else if (id === 'admin') router.push('/admin-dashboard');
-    } catch (_) { /* ignore */ }
+    } catch (_) {}
   };
-  const saveUrls = () => {
-    setPortalUrls(urls);
-    setEditUrls(false);
-  };
-
-  // Append the admin-edit unlock flag so the destination portal reveals
-  // its in-page editor only when arriving via this switcher (never on
-  // a direct login by anyone, even an admin account).
+  const saveUrls = () => { setPortalUrls(urls); setEditUrls(false); };
   const withAdminEdit = (u) => {
     if (!u) return u;
     try {
@@ -62,9 +129,25 @@ export default function PortalSwitcher() {
     }
   };
 
+  // Decide whether the open panel goes ABOVE or BELOW the chip, based
+  // on which half of the viewport the chip lives in. Same for left
+  // vs right alignment.
+  const panelAbove = typeof window !== 'undefined'
+    && pos.y > window.innerHeight / 2;
+  const panelLeft = typeof window !== 'undefined'
+    && pos.x > window.innerWidth / 2;
+  const panelStyle = {
+    position: 'absolute',
+    [panelAbove ? 'bottom' : 'top']: 48,
+    [panelLeft ? 'right' : 'left']: 0,
+    width: 248,
+    background: '#fff', color: '#1A1A2E',
+    borderRadius: 14, boxShadow: '0 12px 40px rgba(0,0,0,.35)',
+    overflow: 'hidden', border: '1px solid #e5e7eb',
+  };
+
   return (
     <>
-      {/* Full-screen live portal embed (client / astrologer). */}
       {isFrame && (
         <div style={{
           position: 'fixed', inset: 0, zIndex: 2147483600,
@@ -72,10 +155,6 @@ export default function PortalSwitcher() {
         }}>
           {frameUrl ? (
             <>
-              {/* Login / payments redirect to Google /
-                  astrology-2092d.firebaseapp.com, which a browser
-                  blocks inside a cross-origin embed (security) - so
-                  use the real site/app to test those. */}
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 10,
                 padding: '6px 12px', background: '#1f1147',
@@ -85,7 +164,8 @@ export default function PortalSwitcher() {
                   Preview only - Google login &amp; payments don’t run
                   inside an embed. Use the real site to sign in.
                 </span>
-                <a href={withAdminEdit(frameUrl)} target="_blank" rel="noreferrer"
+                <a href={withAdminEdit(frameUrl)} target="_blank"
+                  rel="noreferrer"
                   style={{
                     background: 'linear-gradient(135deg,#B45309,#D4A12A)',
                     color: '#fff', padding: '5px 12px', borderRadius: 999,
@@ -95,8 +175,7 @@ export default function PortalSwitcher() {
               </div>
               <iframe
                 key={`${portal}-${frameUrl}-${frameKey}`}
-                src={frameUrl}
-                title={cur.label}
+                src={frameUrl} title={cur.label}
                 style={{ width: '100%', height: 'calc(100% - 33px)',
                   border: 0 }}
                 allow="camera; microphone; clipboard-read;
@@ -115,24 +194,17 @@ export default function PortalSwitcher() {
           onPublished={() => setFrameKey((k) => k + 1)} />
       )}
 
-      {/* The switcher itself - above everything, incl. the iframe. */}
       <div style={{
-        position: 'fixed', right: 14,
-        bottom: 'calc(env(safe-area-inset-bottom, 0px) + 14px)',
+        position: 'fixed', left: pos.x, top: pos.y,
         zIndex: 2147483630, fontFamily: 'Inter, system-ui, sans-serif',
       }}>
         {open && (
-          <div style={{
-            marginBottom: 8, width: 248,
-            background: '#fff', color: '#1A1A2E',
-            borderRadius: 14, boxShadow: '0 12px 40px rgba(0,0,0,.35)',
-            overflow: 'hidden', border: '1px solid #e5e7eb',
-          }}>
+          <div style={panelStyle}>
             <div style={{
               padding: '10px 14px', fontSize: 12, fontWeight: 700,
-              background: '#1f1147', color: '#fff',
+              background: '#7F2020', color: '#fff',
             }}>
-              Viewing via Admin - pick a portal
+              Viewing via Admin · pick a portal
             </div>
             {PORTALS.map((p) => (
               <button key={p.id} onClick={() => choose(p.id)}
@@ -140,21 +212,20 @@ export default function PortalSwitcher() {
                   display: 'flex', alignItems: 'center', gap: 10,
                   width: '100%', padding: '11px 14px', border: 0,
                   borderTop: '1px solid #f1f1f4', cursor: 'pointer',
-                  background: p.id === portal ? '#EEF1FB' : '#fff',
+                  background: p.id === portal ? '#FBF1F1' : '#fff',
                   fontWeight: p.id === portal ? 700 : 500,
                   fontSize: 14, textAlign: 'left',
                 }}>
                 <span style={{ fontSize: 16 }}>{p.icon}</span>
                 <span style={{ flex: 1 }}>{p.label}</span>
                 {p.id === portal && (
-                  <span style={{ color: '#6C2BD9', fontSize: 12 }}>●</span>
+                  <span style={{ color: '#7F2020', fontSize: 12 }}>●</span>
                 )}
               </button>
             ))}
             <button
               onClick={() => {
-                setPortal('admin');
-                setOpen(false);
+                setPortal('admin'); setOpen(false);
                 router.push('/admin-dev2');
               }}
               style={{
@@ -173,7 +244,7 @@ export default function PortalSwitcher() {
             }}>
               {!editUrls ? (
                 <button onClick={() => setEditUrls(true)} style={{
-                  border: 0, background: 'none', color: '#6C2BD9',
+                  border: 0, background: 'none', color: '#7F2020',
                   fontSize: 12, cursor: 'pointer', padding: 0,
                 }}>Edit portal URLs</button>
               ) : (
@@ -181,13 +252,11 @@ export default function PortalSwitcher() {
                   <input value={urls.client}
                     onChange={(e) => setUrls(
                       { ...urls, client: e.target.value })}
-                    placeholder="Client URL"
-                    style={inp} />
+                    placeholder="Client URL" style={inp} />
                   <input value={urls.astrologer}
                     onChange={(e) => setUrls(
                       { ...urls, astrologer: e.target.value })}
-                    placeholder="Astrologer URL"
-                    style={inp} />
+                    placeholder="Astrologer URL" style={inp} />
                   <div style={{ display: 'flex', gap: 6 }}>
                     <button onClick={saveUrls} style={btnP}>Save</button>
                     {isFrame && frameUrl && (
@@ -203,18 +272,26 @@ export default function PortalSwitcher() {
             </div>
           </div>
         )}
-        <button onClick={() => setOpen(!open)} style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          padding: '10px 16px', borderRadius: 999, border: 0,
-          cursor: 'pointer', color: '#fff', fontWeight: 700,
-          fontSize: 13, boxShadow: '0 8px 24px rgba(0,0,0,.35)',
-          background: portal === 'admin'
-            ? 'linear-gradient(135deg,#6C2BD9,#8B5CF6)'
-            : 'linear-gradient(135deg,#B45309,#D4A12A)',
-        }}>
-          <span style={{ fontSize: 15 }}>{cur.icon}</span>
-          <span>Via Admin · {cur.label}</span>
-          <span style={{ opacity: 0.8 }}>{open ? '▾' : '▴'}</span>
+
+        {/* Tiny draggable chip — icon-only, 40px round. Click to expand,
+            hold + drag to move. Tooltip on hover. */}
+        <button
+          onMouseDown={onDown}
+          onTouchStart={onDown}
+          title={`Via Admin · ${cur.label} · drag to move`}
+          style={{
+            width: 40, height: 40, borderRadius: 999, border: 0,
+            cursor: 'grab', color: '#fff', fontWeight: 700,
+            fontSize: 18, lineHeight: 1,
+            boxShadow: '0 6px 18px rgba(0,0,0,.32)',
+            background: portal === 'admin'
+              ? 'linear-gradient(135deg,#7F2020,#A52A2A)'
+              : 'linear-gradient(135deg,#B45309,#D4A12A)',
+            display: 'flex', alignItems: 'center',
+            justifyContent: 'center', touchAction: 'none',
+            userSelect: 'none',
+          }}>
+          {cur.icon}
         </button>
       </div>
     </>
@@ -227,11 +304,11 @@ const inp = {
 };
 const btnP = {
   flex: 1, padding: '6px 8px', fontSize: 12, fontWeight: 700,
-  color: '#fff', background: '#6C2BD9', border: 0, borderRadius: 8,
+  color: '#fff', background: '#7F2020', border: 0, borderRadius: 8,
   cursor: 'pointer',
 };
 const btnS = {
   flex: 1, padding: '6px 8px', fontSize: 12, fontWeight: 700,
-  color: '#6C2BD9', background: '#EEF1FB', border: 0, borderRadius: 8,
+  color: '#7F2020', background: '#FBF1F1', border: 0, borderRadius: 8,
   cursor: 'pointer',
 };

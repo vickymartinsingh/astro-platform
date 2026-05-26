@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { db, adminService } from '@astro/shared';
+import { db, adminService, REPORT_TYPES } from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
@@ -26,6 +26,17 @@ export default function AdminSettings() {
 
   async function save() {
     setMsg('');
+    // Pricing fields for every report type from shared/reportTypes.js
+    // are written into kundli_<id>_price so resolvePrice() picks them
+    // up at runtime on both client + relay.
+    const reportPrices = {};
+    REPORT_TYPES.forEach((t) => {
+      const key = `kundli_${t.id}_price`;
+      const v = cfg[key];
+      if (v !== '' && v != null && Number.isFinite(Number(v))) {
+        reportPrices[key] = Number(v);
+      }
+    });
     await adminService.updateSettings('config', {
       platformName: cfg.platformName,
       commission_percent: Number(cfg.commission_percent),
@@ -40,6 +51,7 @@ export default function AdminSettings() {
       referral_referee_bonus: Number(cfg.referral_referee_bonus || 0),
       logo: cfg.logo || '',
       favicon: cfg.favicon || '',
+      ...reportPrices,
     });
     setMsg('Settings saved.');
     flash('Settings saved');
@@ -190,6 +202,36 @@ export default function AdminSettings() {
               onChange={(e) => setCfg({ ...cfg, [k]: e.target.value })} />
           </div>
         ))}
+      </div>
+
+      {/* Kundli report pricing — every report defined in
+          shared/reportTypes.js gets a price field. Blank = revert
+          to defaultPrice. Free reports stay free. */}
+      <h2 className="mt-6 mb-2 text-lg font-bold">Kundli report pricing</h2>
+      <p className="mb-2 text-xs text-sub-text">
+        Per-report price (₹). Read live by the customer buy button
+        and by the relay's wallet deduction. Leave blank to fall
+        back to the default below.
+      </p>
+      <div className="surface space-y-3 p-4">
+        {REPORT_TYPES.map((t) => {
+          const key = `kundli_${t.id}_price`;
+          return (
+            <div key={t.id}>
+              <label className="text-sm text-sub-text">
+                {t.name}
+                <span className="ml-2 text-[10px] text-sub-text">
+                  default ₹{t.defaultPrice}
+                </span>
+              </label>
+              <input className="input" type="number" min={0}
+                placeholder={String(t.defaultPrice)}
+                value={cfg[key] ?? ''}
+                onChange={(e) =>
+                  setCfg({ ...cfg, [key]: e.target.value })} />
+            </div>
+          );
+        })}
         <button onClick={save} className="btn-grad w-full justify-center">
           Save Settings
         </button>

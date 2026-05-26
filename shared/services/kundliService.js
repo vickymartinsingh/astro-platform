@@ -83,6 +83,44 @@ export async function requestReport({ uid, kundliProfileId, kind }) {
   return j; // { ok, orderId, pdfUrl, pdfName, amount, kind, emailed }
 }
 
+// Admin: list every PDF order across every customer. Uses a
+// collection-group query on the per-user `orders` subcollections so
+// nothing is missed. Returns most-recent first. The doc id is
+// included plus userId pulled from the parent path so the admin
+// UI can drill into the customer profile.
+export async function listAllOrdersAdmin({ limit: lim = 500 } = {}) {
+  const {
+    collectionGroup, query, orderBy, limit, getDocs,
+  } = await import('firebase/firestore');
+  try {
+    const q = query(
+      collectionGroup(db, 'orders'),
+      orderBy('paidAt', 'desc'),
+      limit(lim));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => {
+      const p = d.ref.parent.parent;
+      return {
+        id: d.id, userId: p ? p.id : '',
+        ...d.data(),
+      };
+    });
+  } catch (_) {
+    // Fallback (composite index missing): unsorted, capped.
+    try {
+      const q2 = query(collectionGroup(db, 'orders'), limit(lim));
+      const snap = await getDocs(q2);
+      return snap.docs.map((d) => {
+        const p = d.ref.parent.parent;
+        return { id: d.id, userId: p ? p.id : '', ...d.data() };
+      }).sort((a, b) => (
+        ((b.paidAt && b.paidAt.toMillis && b.paidAt.toMillis()) || 0)
+        - ((a.paidAt && a.paidAt.toMillis && a.paidAt.toMillis()) || 0)
+      ));
+    } catch (_2) { return []; }
+  }
+}
+
 // List the user's PDF orders (paid + free), most recent first.
 // Used by /orders and the Orders tab on /kundli.
 export async function listOrders(uid) {
