@@ -1,0 +1,108 @@
+import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { kundliService } from '@astro/shared';
+import Layout from '../components/Layout';
+import { useRequireClient } from '../lib/useAuth';
+
+// Orders = every PDF report (free + paid) the user has bought.
+// Re-download is just an <a href> to the long-lived signed Firebase
+// Storage URL stored on each order doc; we never re-hit the relay
+// for repeats, so this page is essentially free.
+//
+// Mirrors the data the /kundli "Orders" tab will read once #69 lands.
+export default function Orders() {
+  const { user, loading } = useRequireClient();
+  const [rows, setRows] = useState(null);
+
+  useEffect(() => {
+    if (!user) return;
+    kundliService.listOrders(user.uid)
+      .then(setRows)
+      .catch(() => setRows([]));
+  }, [user]);
+
+  if (loading || rows == null) {
+    return <Layout><div className="card">Loading…</div></Layout>;
+  }
+
+  function pretty(kind) {
+    if (kind === 'forecast12') return '12-Month Forecast';
+    if (kind === 'free') return 'Vedic Kundli (250+ pages)';
+    return kind || 'Report';
+  }
+  function statusLabel(o) {
+    switch (o.status) {
+      case 'ready': return { text: 'Ready', cls: 'bg-success/10 text-success' };
+      case 'paid_generating':
+      case 'free_generating':
+        return { text: 'Generating…', cls: 'bg-warning/10 text-warning' };
+      case 'failed':
+      case 'failed_refunded':
+        return { text: o.status === 'failed_refunded'
+          ? 'Failed (refunded)' : 'Failed',
+          cls: 'bg-danger/10 text-danger' };
+      default: return { text: o.status || '—',
+        cls: 'bg-bg-light text-sub-text' };
+    }
+  }
+
+  return (
+    <Layout>
+      <h1 className="mb-1 text-xl font-bold">My Orders</h1>
+      <p className="mb-3 text-sm text-sub-text">
+        Every PDF report you bought. One click re-downloads the same
+        file from the cloud — no charge, no waiting.
+      </p>
+      {rows.length === 0 ? (
+        <div className="card text-center text-sub-text">
+          <div className="text-sm">No orders yet.</div>
+          <Link href="/kundli"
+            className="mt-2 inline-block rounded-full bg-primary
+              px-4 py-1.5 text-xs font-bold text-white">
+            Generate your kundli
+          </Link>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {rows.map((o) => {
+            const s = statusLabel(o);
+            const at = o.paidAt && o.paidAt.toDate
+              ? o.paidAt.toDate() : null;
+            return (
+              <div key={o.id} className="card">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-semibold">{pretty(o.kind)}</div>
+                    <div className="text-xs text-sub-text">
+                      {at ? at.toLocaleDateString('en-GB', {
+                        day: '2-digit', month: 'short', year: 'numeric',
+                      }) : '—'}
+                      {o.amount > 0 ? ` · ₹${o.amount}` : ' · free'}
+                    </div>
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2 py-0.5
+                      text-[10px] font-bold ${s.cls}`}>
+                    {s.text}
+                  </span>
+                </div>
+                {o.pdfUrl && o.status === 'ready' && (
+                  <a href={o.pdfUrl} target="_blank" rel="noreferrer"
+                    className="mt-2 inline-block rounded-full bg-primary
+                      px-3 py-1.5 text-xs font-bold text-white">
+                    ⬇ Download
+                  </a>
+                )}
+                {o.validUntil && (
+                  <div className="mt-1 text-[11px] text-sub-text">
+                    Forecast valid until{' '}
+                    {String(o.validUntil).slice(0, 10)}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Layout>
+  );
+}

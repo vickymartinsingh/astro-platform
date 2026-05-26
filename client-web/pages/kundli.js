@@ -322,12 +322,7 @@ function FullKundli({ r, kundli }) {
           {r.cached ? 'Saved report' : 'Newly generated'}
         </span>
       </div>
-      <button
-        onClick={() => kundliService.downloadKundliReport(kundli || {}, r)}
-        className="mt-2 rounded-full bg-primary px-3 py-1.5 text-xs
-          font-bold text-white">
-        ⬇ Download full report (PDF), free
-      </button>
+      <ReportButtons kundli={kundli} />
 
       <div className="mt-2 flex flex-wrap gap-1">
         {TABS.map(([k, label]) => (
@@ -500,6 +495,134 @@ function FullKundli({ r, kundli }) {
           </Sec>
         </div>
       )}
+    </div>
+  );
+}
+
+// ---- Report CTAs (free + paid) ------------------------------------
+// Two buttons that sit inside the FullKundli card:
+//   1. Free 250+ page Vedic kundli — server-side PDF, emailed,
+//      downloadable immediately + later from /orders.
+//   2. Paid 12-month forecast — price comes from Firestore
+//      settings/config.kundli_report_price (default 50, set by
+//      admin). Wallet-deducted server-side inside a Firestore
+//      transaction; insufficient balance pops a "Top up wallet"
+//      link instead of failing silently.
+// On success the user sees an immediate Download popup with the
+// signed Firebase Storage URL — same one stored on users/{uid}/
+// orders/{id} for unlimited re-download.
+function ReportButtons({ kundli }) {
+  const [busy, setBusy] = useState('');
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+  const [price, setPrice] = useState(50);
+  useEffect(() => {
+    (async () => {
+      try {
+        const s = await getDoc(doc(db, 'settings', 'config'));
+        const p = Number(
+          (s.exists() && s.data().kundli_report_price) || 0);
+        if (p > 0) setPrice(p);
+      } catch (_) { /* keep default */ }
+    })();
+  }, []);
+  async function buy(kind) {
+    setError(null); setBusy(kind); setResult(null);
+    try {
+      const uid = kundli && kundli.userId;
+      if (!uid || !kundli.id) {
+        throw new Error('Save a kundli profile first.');
+      }
+      const out = await kundliService.requestReport({
+        uid, kundliProfileId: kundli.id, kind,
+      });
+      setResult(out);
+    } catch (e) {
+      setError(e);
+    } finally { setBusy(''); }
+  }
+  return (
+    <div className="mt-2 space-y-2">
+      <div className="flex flex-wrap gap-2">
+        <button type="button" onClick={() => buy('free')}
+          disabled={!!busy}
+          className="rounded-full bg-primary px-3 py-1.5 text-xs
+            font-bold text-white disabled:opacity-60">
+          {busy === 'free'
+            ? 'Preparing…'
+            : '⬇ Free 250+ page Kundli (PDF)'}
+        </button>
+        <button type="button" onClick={() => buy('forecast12')}
+          disabled={!!busy}
+          className="rounded-full bg-accent px-3 py-1.5 text-xs
+            font-bold text-white disabled:opacity-60">
+          {busy === 'forecast12'
+            ? 'Charging wallet…'
+            : `12-Month Forecast · ₹${price} from wallet`}
+        </button>
+      </div>
+      {error && (
+        <div className="rounded-card bg-danger/10 p-2 text-xs text-danger">
+          {error.code === 'insufficient_wallet' ? (
+            <>
+              Wallet balance ₹{error.wallet || 0} is not enough for
+              ₹{error.price || price}.{' '}
+              <a href="/wallet" className="font-bold underline">
+                Add money to wallet
+              </a>
+            </>
+          ) : (
+            <>
+              Could not generate the report: {error.message}
+              {error.refunded ? ' (wallet refunded automatically)' : ''}
+            </>
+          )}
+        </div>
+      )}
+      {result && result.ok && (
+        <DownloadPopup result={result}
+          onClose={() => setResult(null)} />
+      )}
+    </div>
+  );
+}
+
+// Themed download popup. Shows the moment the relay returns the
+// signed URL. Single primary CTA + hint that the same PDF is also
+// in their email + the Orders section for later.
+function DownloadPopup({ result, onClose }) {
+  return (
+    <div className="fixed inset-0 z-[2147483647] flex items-center
+                    justify-center bg-black/60 p-4">
+      <div className="w-full max-w-sm rounded-2xl bg-white p-5
+                      text-center shadow-2xl">
+        <div className="text-3xl">🎉</div>
+        <div className="mt-2 text-lg font-bold text-primary">
+          {result.kind === 'forecast12'
+            ? '12-month forecast is ready'
+            : 'Your Vedic kundli is ready'}
+        </div>
+        <div className="mt-1 text-xs text-sub-text">
+          {result.amount > 0
+            ? `₹${result.amount} deducted from wallet. `
+            : ''}
+          {result.emailed ? 'Also sent to your email. ' : ''}
+          Saved in Orders for unlimited re-download.
+        </div>
+        <a href={result.pdfUrl} target="_blank" rel="noreferrer"
+          className="mt-4 block rounded-full bg-primary py-2.5
+            text-sm font-bold text-white">
+          ⬇ Download PDF now
+        </a>
+        <a href="/orders"
+          className="mt-2 block text-xs font-semibold text-primary">
+          View all my orders →
+        </a>
+        <button type="button" onClick={onClose}
+          className="mt-2 block w-full text-xs text-sub-text">
+          Close
+        </button>
+      </div>
     </div>
   );
 }

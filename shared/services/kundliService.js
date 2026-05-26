@@ -40,6 +40,64 @@ function kundliEndpoint() {
   return 'https://astro-platform-push-relay.vercel.app/api/kundli';
 }
 
+// Endpoint for the paid + free PDF report. Same relay, different
+// route. Same fallback logic as kundliEndpoint() above.
+function reportEndpoint() {
+  const push = (typeof process !== 'undefined' && process.env
+    && process.env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
+  if (push) return push.replace(/\/sendPush\/?$/, '/kundliReport');
+  return 'https://astro-platform-push-relay.vercel.app/api/kundliReport';
+}
+
+// Request a PDF report (free or paid 12-month forecast). On success
+// the server has already:
+//   - charged the user's wallet (paid kinds; reverted on any
+//     downstream failure so we never bill for a missing PDF)
+//   - uploaded the PDF to Firebase Storage and minted a long-lived
+//     signed URL
+//   - written users/{uid}/orders/{orderId} so /orders has the
+//     re-download link forever
+//   - emailed the PDF as an attachment to the user
+// The caller is expected to show an immediate "Download now" CTA
+// using the returned pdfUrl. Throws Error(msg) on 4xx/5xx so the
+// caller can surface a clear toast (insufficient wallet etc).
+export async function requestReport({ uid, kundliProfileId, kind }) {
+  const url = reportEndpoint();
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      uid, kundliProfileId, kind: kind || 'free',
+    }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const err = new Error(j.error || `Report failed (HTTP ${r.status}).`);
+    err.code = j.wallet != null ? 'insufficient_wallet' : 'report_error';
+    err.wallet = j.wallet;
+    err.price = j.price;
+    err.refunded = j.refunded;
+    throw err;
+  }
+  return j; // { ok, orderId, pdfUrl, pdfName, amount, kind, emailed }
+}
+
+// List the user's PDF orders (paid + free), most recent first.
+// Used by /orders and the Orders tab on /kundli.
+export async function listOrders(uid) {
+  if (!uid) return [];
+  const { collection, query, orderBy, getDocs } = await import(
+    'firebase/firestore');
+  try {
+    const q = query(
+      collection(db, 'users', uid, 'orders'),
+      orderBy('paidAt', 'desc'),
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  } catch (_) { return []; }
+}
+
 export async function getProkeralaKundli(birth) {
   const url = kundliEndpoint();
   if (!url || !birth || !birth.dob) return null;
