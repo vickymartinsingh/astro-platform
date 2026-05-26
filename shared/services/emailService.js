@@ -291,23 +291,27 @@ export async function queueEmail({
   } catch (_) { /* ignore */ }
 }
 
-// Synchronous (best-effort) send via the relay's /api/sendEmail.
-// Uses the same SMTP config as /api/emailOtp. The relay also writes
-// an audit row into chats/{id} (kind, to, subject, status) so the
-// admin email log can show what was actually delivered vs. queued.
+// Best-effort generic send via the relay. We piggy-back on the same
+// /api/emailOtp endpoint (using action: 'send') instead of a separate
+// /api/sendEmail route, because Vercel Hobby caps the project at 12
+// serverless functions. The relay also writes an audit row into
+// chats/{id} (kind, to, subject, status) so the admin email log can
+// show what was actually delivered vs. queued.
 //
 // Returns the relay's JSON ({ ok, messageId, ... }) or throws on
 // HTTP error / SMTP failure. Caller decides how to surface that.
 function sendEmailEndpoint() {
   const push = (typeof process !== 'undefined' && process.env
     && process.env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
-  return push ? push.replace(/\/sendPush\/?$/, '/sendEmail')
-    : 'https://astro-platform-push-relay.vercel.app/api/sendEmail';
+  // Same endpoint as the OTP request/verify path. The action field
+  // routes the call inside the handler.
+  return push ? push.replace(/\/sendPush\/?$/, '/emailOtp')
+    : 'https://astro-platform-push-relay.vercel.app/api/emailOtp';
 }
 export async function sendEmail({
   to, kind, vars, attachment, subject, html, text,
 }) {
-  const body = { to, kind, vars };
+  const body = { action: 'send', to, kind, vars };
   if (subject) body.subject = subject;
   if (html) body.html = html;
   if (text) body.text = text;
