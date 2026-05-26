@@ -36,11 +36,24 @@ function init() {
   if (admin.apps.length) return;
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
   if (!raw) throw new Error('FIREBASE_SERVICE_ACCOUNT not set');
+  const sa = JSON.parse(raw);
   admin.initializeApp({
-    credential: admin.credential.cert(JSON.parse(raw)),
-    storageBucket: (JSON.parse(raw).project_id || 'astrology-2092d')
-      + '.firebasestorage.app',
+    credential: admin.credential.cert(sa),
+    storageBucket: bucketName(sa),
   });
+}
+
+// Resolve the Firebase Storage bucket name. Source-of-truth order:
+// explicit FIREBASE_STORAGE_BUCKET env on Vercel, then the new
+// "<project>.firebasestorage.app" format (current default for
+// projects created in 2024+), then the legacy "<project>.appspot.com"
+// — we try both, the upload that succeeds wins.
+function bucketName(sa) {
+  return process.env.FIREBASE_STORAGE_BUCKET
+    || `${(sa && sa.project_id) || 'astrology-2092d'}.firebasestorage.app`;
+}
+function legacyBucketName(sa) {
+  return `${(sa && sa.project_id) || 'astrology-2092d'}.appspot.com`;
 }
 
 const FREE_TIER = 9;
@@ -146,26 +159,51 @@ async function callAstroSeerPdf({ base, key, body }) {
 }
 
 async function uploadPdf(uid, kind, buf) {
-  const bucket = admin.storage().bucket();
+  const sa = (() => {
+    try { return JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}'); }
+    catch (_) { return {}; }
+  })();
+  // Try the modern <project>.firebasestorage.app bucket name first,
+  // then fall back to legacy <project>.appspot.com if that 404s.
+  // Some Firebase projects (especially older ones) only have the
+  // legacy bucket. Doing both removes the "Could not save the PDF"
+  // class of errors when init was done elsewhere without the right
+  // storageBucket. Whichever works wins on the next call (we don't
+  // cache the choice because cold starts re-evaluate).
   const ts = Date.now();
   const name = `media/reports/${uid}/${ts}_${kind}.pdf`;
-  const file = bucket.file(name);
-  await file.save(buf, {
-    contentType: 'application/pdf',
-    metadata: {
-      cacheControl: 'public, max-age=31536000',
-      metadata: { kind, uid, generatedAt: String(ts) },
-    },
-    resumable: false,
-  });
-  // 100-year signed URL — effectively permanent. Stored on the
-  // order doc so re-download from /orders is a single click that
-  // doesn't re-burn the relay.
-  const [signedUrl] = await file.getSignedUrl({
-    action: 'read',
-    expires: Date.now() + 1000 * 60 * 60 * 24 * 365 * 100,
-  });
-  return { storagePath: name, url: signedUrl };
+  const candidates = [
+    bucketName(sa),
+    legacyBucketName(sa),
+  ].filter((v, i, a) => v && a.indexOf(v) === i);
+
+  let lastErr = null;
+  for (const bn of candidates) {
+    try {
+      const bucket = admin.storage().bucket(bn);
+      const file = bucket.file(name);
+      await file.save(buf, {
+        contentType: 'application/pdf',
+        metadata: {
+          cacheControl: 'public, max-age=31536000',
+          metadata: { kind, uid, generatedAt: String(ts) },
+        },
+        resumable: false,
+      });
+      const [signedUrl] = await file.getSignedUrl({
+        action: 'read',
+        expires: Date.now() + 1000 * 60 * 60 * 24 * 365 * 100,
+      });
+      return { storagePath: name, bucketUsed: bn, url: signedUrl };
+    } catch (e) {
+      lastErr = e;
+      // Try the next bucket name; common failures here are
+      // "bucket does not exist" (404) and "permission denied".
+    }
+  }
+  throw new Error(`upload to Firebase Storage failed: `
+    + `${(lastErr && lastErr.message) || 'unknown'} `
+    + `(tried: ${candidates.join(', ')})`);
 }
 
 async function smtpTransport(db) {

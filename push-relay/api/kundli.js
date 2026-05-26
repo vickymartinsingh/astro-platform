@@ -15,8 +15,19 @@ function initAdmin() {
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
   if (!raw) return false;
   try {
-    admin.initializeApp({ credential: admin.credential.cert(
-      JSON.parse(raw)) });
+    const sa = JSON.parse(raw);
+    // ALSO set storageBucket here — the lazy require of
+    // lib/kundliReport.js below uploads PDFs to Firebase Storage
+    // and admin.storage().bucket() throws "Bucket name not
+    // specified" if no bucket was given at init. Initialising once
+    // with the right bucket name means whichever code path runs
+    // first wins, and the report path no longer fails with
+    // "Could not save the PDF" on Vercel cold starts.
+    admin.initializeApp({
+      credential: admin.credential.cert(sa),
+      storageBucket: process.env.FIREBASE_STORAGE_BUCKET
+        || `${sa.project_id}.firebasestorage.app`,
+    });
     return true;
   } catch (_) { return false; }
 }
