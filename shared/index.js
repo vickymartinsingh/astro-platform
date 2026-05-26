@@ -53,3 +53,11 @@ export * as tarotService from './services/tarotService.js';
 export * as hoursService from './services/hoursService.js';
 export * as recordService from './services/recordService.js';
 export * as emailService from './services/emailService.js';
+
+// Catalogue of paid + free PDF report types. Both client (buy
+// buttons, confirm popup, /orders labels) and the relay (price
+// + AstroSeer tier + section list per type) read from here so
+// adding a new product type is one file change.
+export {
+  REPORT_TYPES, reportType, resolvePrice,
+} from './reportTypes.js';

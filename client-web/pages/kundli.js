@@ -569,66 +569,34 @@ function FullKundli({ r, kundli }) {
 // orders/{id} for unlimited re-download.
 // Table of contents shown in the confirm popup so the customer
 // knows exactly what they're getting before we deduct any money
-// (paid kind) or kick off any processing (free kind). Kept in code
-// so a future copy edit is one commit, not a database write.
-const REPORT_TOC = {
-  free: {
-    title: 'Free 250+ Page Vedic Kundli',
-    badge: 'No charge',
-    sections: [
-      'Birth chart (D1 Rasi) with planet positions in degrees, '
-        + 'minutes and seconds',
-      '16 divisional charts (Navamsa, Dasamsa, Chaturthamsa and more)',
-      'Nakshatra detail with pada, lord, yoni, gana and nadi',
-      'Full Vimshottari dasha tree with Maha, Antar and Pratyantar '
-        + 'periods',
-      'Planetary aspects, dignities and friendship table',
-      'Yogas (Mahapurusha, Raj, Gajakesari and others)',
-      'Doshas (Mangal, Kalsarp, Sade Sati where present)',
-      'Avkahada Chakra, Ghatak and Favourable Points',
-      'Panchang at birth (Tithi, Yoga, Karana, Nakshatra)',
-      'PDF emailed to you and saved in Orders for re-download',
-    ],
-    tat: 'Usually ready in under 60 seconds.',
-    confirmCta: 'Yes, generate the report',
-  },
-  forecast12: {
-    title: '12-Month Vedic Forecast',
-    badge: '', // injected with the live price
-    sections: [
-      'Personalised monthly outlook for the next 12 months',
-      'Maha, Antar and Pratyantar dasha for every month',
-      'Career, finance and business indications month by month',
-      'Love, relationships and marriage timing windows',
-      'Health and wellbeing watch-outs',
-      'Travel and relocation opportunities',
-      'Important transits (Saturn, Jupiter, Rahu and Ketu)',
-      'Remedies with lucky days, colours and mantras per month',
-      'PDF emailed to you and saved in Orders for re-download',
-    ],
-    tat: 'Usually ready in under 60 seconds. Wallet is debited only '
-      + 'after the PDF is delivered. If generation fails, your '
-      + 'wallet is refunded automatically.',
-    confirmCta: 'Yes, proceed to payment',
-  },
-};
+// (paid kind) or kick off any processing (free kind).
+// Sections + names live in shared/reportTypes.js so client + relay
+// stay in sync (one place to add a new product).
+import { REPORT_TYPES, reportType, resolvePrice } from '@astro/shared';
 
 function ReportButtons({ kundli }) {
   const [busy, setBusy] = useState('');
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
-  const [price, setPrice] = useState(50);
-  // Holds the kind the user clicked + the live price; non-null means
-  // the confirm popup is open. Cleared on No / on Yes-and-start.
+  // Per-report-type prices. Loaded from settings/config once.
+  const [prices, setPrices] = useState(() => {
+    const out = {};
+    REPORT_TYPES.forEach((t) => { out[t.id] = t.defaultPrice; });
+    return out;
+  });
+  // Holds the kind the user clicked. Non-null = confirm popup open.
   const [pending, setPending] = useState(null);
   useEffect(() => {
     (async () => {
       try {
         const s = await getDoc(doc(db, 'settings', 'config'));
-        const p = Number(
-          (s.exists() && s.data().kundli_report_price) || 0);
-        if (p > 0) setPrice(p);
-      } catch (_) { /* keep default */ }
+        const cfg = (s.exists() && s.data()) || {};
+        const next = {};
+        REPORT_TYPES.forEach((t) => {
+          next[t.id] = resolvePrice(t.id, cfg);
+        });
+        setPrices(next);
+      } catch (_) { /* keep defaults */ }
     })();
   }, []);
   async function buy(kind) {
@@ -649,27 +617,32 @@ function ReportButtons({ kundli }) {
   // Show confirm popup; only on Yes does buy() actually fire.
   function ask(kind) {
     setError(null); setResult(null);
-    setPending({ kind, price });
+    setPending({ kind, price: prices[kind] || 0 });
   }
+  // Build a per-type button. Free uses primary maroon; paid types
+  // use accent + show the live price.
+  const renderButton = (t) => {
+    const price = prices[t.id] || 0;
+    const isPaid = price > 0;
+    const isBusy = busy === t.id;
+    const busyLabel = t.id === 'free' ? 'Preparing…' : 'Charging wallet…';
+    const label = isPaid
+      ? `${t.shortName} · ₹${price} from wallet`
+      : t.shortName;
+    return (
+      <button key={t.id} type="button" onClick={() => ask(t.id)}
+        disabled={!!busy}
+        className={`rounded-full px-3 py-1.5 text-xs font-bold
+          text-white disabled:opacity-60 ${isPaid
+            ? 'bg-accent' : 'bg-primary'}`}>
+        {isBusy ? busyLabel : label}
+      </button>
+    );
+  };
   return (
     <div className="mt-2 space-y-2">
       <div className="flex flex-wrap gap-2">
-        <button type="button" onClick={() => ask('free')}
-          disabled={!!busy}
-          className="rounded-full bg-primary px-3 py-1.5 text-xs
-            font-bold text-white disabled:opacity-60">
-          {busy === 'free'
-            ? 'Preparing…'
-            : 'Free 250+ page Kundli (PDF)'}
-        </button>
-        <button type="button" onClick={() => ask('forecast12')}
-          disabled={!!busy}
-          className="rounded-full bg-accent px-3 py-1.5 text-xs
-            font-bold text-white disabled:opacity-60">
-          {busy === 'forecast12'
-            ? 'Charging wallet…'
-            : `12-Month Forecast · ₹${price} from wallet`}
-        </button>
+        {REPORT_TYPES.map(renderButton)}
       </div>
       {error && (
         <div className="rounded-card bg-danger/10 p-2 text-xs text-danger">
@@ -691,7 +664,18 @@ function ReportButtons({ kundli }) {
       )}
       {pending && (
         <ConfirmReportPopup
-          spec={REPORT_TOC[pending.kind]}
+          spec={(() => {
+            const t = reportType(pending.kind);
+            if (!t) return null;
+            return {
+              title: t.name,
+              badge: t.defaultPrice === 0 ? 'No charge' : '',
+              sections: t.sections,
+              tat: t.tat,
+              confirmCta: t.confirmCta,
+              summary: t.summary,
+            };
+          })()}
           price={pending.price}
           kind={pending.kind}
           onCancel={() => setPending(null)}
@@ -740,6 +724,11 @@ function ConfirmReportPopup({ spec, price, kind, onCancel, onConfirm }) {
               {isPaid ? `₹${price} from wallet` : spec.badge}
             </span>
           </div>
+          {spec.summary && (
+            <p className="mt-2 text-[13px] leading-snug text-dark-text">
+              {spec.summary}
+            </p>
+          )}
           <p className="mt-2 text-xs font-medium uppercase
                         tracking-wide text-sub-text">
             What is included in your PDF

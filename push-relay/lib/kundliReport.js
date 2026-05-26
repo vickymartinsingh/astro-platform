@@ -93,14 +93,67 @@ async function getAstroSeerCreds(db) {
   } catch (_) { return resolveAstroSeer({}); }
 }
 
+// Default prices for each report kind. Admin overrides via
+// settings/config.kundli_<kind>_price (and the legacy
+// settings/config.kundli_report_price still maps to forecast12
+// for backwards compatibility).
+const DEFAULT_PRICES = {
+  free: 0,
+  forecast12: 50,
+  careerFinance: 99,
+  lifetime: 299,
+};
 async function getReportPrice(db, kind) {
   if (kind === 'free') return 0;
+  const baseDefault = DEFAULT_PRICES[kind] != null
+    ? DEFAULT_PRICES[kind] : DEFAULT_FORECAST_PRICE;
   try {
     const s = await db.collection('settings').doc('config').get();
     const d = s.exists ? (s.data() || {}) : {};
-    const v = Number(d.kundli_report_price);
-    return Number.isFinite(v) && v > 0 ? v : DEFAULT_FORECAST_PRICE;
-  } catch (_) { return DEFAULT_FORECAST_PRICE; }
+    // Per-type override.
+    const perType = Number(d[`kundli_${kind}_price`]);
+    if (Number.isFinite(perType) && perType >= 0) return perType;
+    // Legacy global override (forecast12 only, for the original
+    // single-product world).
+    if (kind === 'forecast12') {
+      const legacy = Number(d.kundli_report_price);
+      if (Number.isFinite(legacy) && legacy >= 0) return legacy;
+    }
+    return baseDefault;
+  } catch (_) { return baseDefault; }
+}
+
+// What we send AstroSeer for each report kind. All four pull the
+// top tier (most pages). forecast12 adds months + start_month so
+// the API knows to bake the next 12 monthly forecasts.
+function astroSeerBody(kind, p, lat, lng, profile) {
+  const tz = 5.5; // IST default; future: per-profile
+  const body = {
+    year: p.y, month: p.m, day: p.d, hour: p.hh, minute: p.mm,
+    tz_offset: tz,
+    latitude: Number(lat) || null,
+    longitude: Number(lng) || null,
+    place: profile.place || '',
+    name: profile.name || '',
+    tier: FREE_TIER,
+    branding: {
+      app: 'AstroSeer',
+      accent: '#7F2020',
+      logo_url: 'https://astroseer.in/logo.png',
+    },
+  };
+  if (kind === 'forecast12') {
+    body.months = 12;
+    body.start_month = new Date().toISOString().slice(0, 7);
+  } else if (kind === 'careerFinance') {
+    body.focus = ['career', 'finance'];
+    body.years = 5;
+  } else if (kind === 'lifetime') {
+    body.focus = ['lifetime'];
+    body.years = 120;
+    body.include_yogini = true;
+  }
+  return body;
 }
 
 // Open-Meteo geocoding (no key, no quota for the volume we run at).
@@ -295,7 +348,12 @@ async function handleReport(req, res) {
   }
   const db = admin.firestore();
   const body = readBody(req);
-  const kind = body.kind === 'forecast12' ? 'forecast12' : 'free';
+  // Validate the report kind against the known catalogue. Unknown
+  // kinds collapse to 'free' so a stale client never accidentally
+  // bills the user.
+  const KNOWN_KINDS = new Set(
+    ['free', 'forecast12', 'careerFinance', 'lifetime']);
+  const kind = KNOWN_KINDS.has(body.kind) ? body.kind : 'free';
   const profileId = String(body.kundliProfileId || '').trim();
   const uid = String(body.uid || '').trim();
   if (!profileId || !uid) {
@@ -471,7 +529,6 @@ async function handleReport(req, res) {
   // PDF still ships a valid chart rather than failing the whole
   // request.
   const p = parseDob(profile.dob, profile.tob, profile.ampm);
-  const tz = 5.5; // IST default; future: pluck from profile.tz
   let lat = Number(profile.lat) || 0;
   let lng = Number(profile.lng) || 0;
   if (!lat || !lng) {
@@ -482,21 +539,7 @@ async function handleReport(req, res) {
     // Last-ditch default so an empty place doesn't kill the request.
     lat = 19.076; lng = 72.8777;
   }
-  const reqBody = {
-    year: p.y, month: p.m, day: p.d, hour: p.hh, minute: p.mm,
-    tz_offset: tz,
-    latitude: lat,
-    longitude: lng,
-    place: profile.place || '',
-    name: profile.name || '',
-    tier: FREE_TIER,
-    branding: { app: 'AstroSeer', accent: '#7F2020',
-      logo_url: 'https://astroseer.in/logo.png' },
-  };
-  if (kind === 'forecast12') {
-    reqBody.months = 12;
-    reqBody.start_month = new Date().toISOString().slice(0, 7); // YYYY-MM
-  }
+  const reqBody = astroSeerBody(kind, p, lat, lng, profile);
 
   // 5. Generate + upload + email. If ANY step throws after the
   //    wallet was charged, reverse the charge so we never bill the
