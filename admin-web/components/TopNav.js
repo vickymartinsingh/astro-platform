@@ -33,6 +33,7 @@ const GROUPS = [
     ['/admin-hours', 'Astrologer Hours'],
   ]],
   ['Finance', [
+    ['/admin-orders', 'Kundli Orders'],
     ['/admin-transactions', 'Transactions'],
     ['/admin-payouts', 'Payouts'],
     ['/admin-payments', 'Payment Gateways'],
@@ -130,6 +131,10 @@ const HR_GROUPS = [
     ['/admin-users', 'Users'],
     ['/admin-team', 'Team Access'],
   ]],
+  ['Orders', [
+    ['/admin-orders', 'Kundli Orders'],
+    ['/admin-transactions', 'Transactions'],
+  ]],
   ['Compliance', [
     ['/admin-audit', 'Audit Log'],
     ['/admin-archive', 'Archive & Restore'],
@@ -145,7 +150,9 @@ const SUPPORT_GROUPS = [
     ['/admin-reviews', 'Customer Reviews'],
     ['/admin-disputes', 'Disputes'],
   ]],
-  ['Lookup', [
+  ['Orders & Lookup', [
+    ['/admin-orders', 'Kundli Orders'],
+    ['/admin-transactions', 'Transactions'],
     ['/admin-users', 'Users'],
     ['/admin-astrologers', 'Astrologers'],
     ['/admin-astro-applications', 'Astrologer Applications'],
