@@ -240,8 +240,11 @@ export default function Kundli() {
       {mode === 'pick' && list != null && list.length > 0 && (
         <KundliPickerModal
           list={list}
-          canClose={!!selectedId}
-          onClose={() => setMode('view')}
+          // Close ALWAYS works now. If the user has a selected
+          // profile we drop back to its view; otherwise we land
+          // on a neutral "Choose a kundli" header with the
+          // "Choose another kundli" button available to reopen.
+          onClose={() => setMode(selectedId ? 'view' : 'add')}
           onPick={pickProfile}
           onAddNew={() => {
             setEditingId(null);
@@ -396,12 +399,14 @@ export default function Kundli() {
 }
 
 // Brand banner header used at the top of every boxed section.
-// Maroon strip with bold centred white text — matches the
-// AstroSeer platform palette (was yellow in the AstroTalk
-// reference; the customer asked for our colours only).
+// Inline brand-gradient (purple) — never yellow, even if a stale
+// Tailwind purge / CDN cache strips bg-primary.
 function Banner({ title, sub }) {
   return (
-    <div className="mt-3 rounded-card bg-primary py-2 text-center">
+    <div className="mt-3 rounded-card py-2 text-center"
+      style={{
+        background: 'linear-gradient(135deg, #6C2BD9, #8B5CF6)',
+      }}>
       <div className="text-sm font-bold text-white">{title}</div>
       {sub && (
         <div className="mt-0.5 text-[11px] font-semibold text-white/80">
@@ -441,25 +446,28 @@ function txt(v) {
 // scrollable for power users with many saved profiles. The "Add
 // new" CTA at the bottom is the only entry point to the form so
 // the picker is the single source of truth for kundli switching.
-function KundliPickerModal({ list, onPick, onAddNew, onClose,
-  canClose }) {
+function KundliPickerModal({ list, onPick, onAddNew, onClose }) {
   return (
     <div
-      onClick={canClose && onClose
+      onClick={onClose
         ? (e) => { if (e.target === e.currentTarget) onClose(); }
         : undefined}
       className="fixed inset-0 z-[60] flex items-end justify-center
         bg-black/50 px-3 py-4 sm:items-center"
       role="dialog" aria-modal="true">
       <div className="w-full max-w-md overflow-hidden rounded-2xl
-        bg-white shadow-2xl">
+        border-2 border-primary bg-white shadow-2xl"
+        style={{ boxShadow: '0 20px 50px rgba(108,43,217,.25)' }}>
         {/* Brand header — maroon gradient strip with title +
-            saved-count chip + close button. Mirrors the email + chat
-            chrome so the modal feels like part of the AstroSeer
-            brand, not a generic Tailwind dialog. */}
+            saved-count chip + close button. The close button is
+            ALWAYS shown (was previously gated behind a "canClose"
+            prop that hid it on first-load — that's the wrong
+            default; the user must always be able to dismiss). */}
         <div className="flex items-center justify-between gap-2
-          bg-gradient-to-br from-primary to-accent px-4 py-3
-          text-white">
+          px-4 py-3 text-white"
+          style={{
+            background: 'linear-gradient(135deg, #6C2BD9, #8B5CF6)',
+          }}>
           <div>
             <div className="text-[10px] uppercase tracking-[0.2em]
               opacity-80">AstroSeer</div>
@@ -472,12 +480,12 @@ function KundliPickerModal({ list, onPick, onAddNew, onClose,
               text-[10px] font-bold">
               {list.length} saved
             </span>
-            {canClose && onClose && (
+            {onClose && (
               <button type="button" onClick={onClose}
                 aria-label="Close"
-                className="grid h-7 w-7 place-items-center
-                  rounded-full bg-white/15 text-base font-bold
-                  hover:bg-white/25">
+                className="grid h-8 w-8 place-items-center
+                  rounded-full bg-white text-lg font-bold
+                  text-primary shadow-sm hover:bg-bg-light">
                 ×
               </button>
             )}
@@ -528,13 +536,17 @@ function KundliPickerModal({ list, onPick, onAddNew, onClose,
           ))}
         </div>
 
-        {/* CTA footer. Maroon outlined button so it doesn't yell
-            yellow at the user, but still reads as an action. */}
+        {/* CTA footer. Inline brand-gradient (#6C2BD9 -> #8B5CF6)
+            so even a stale Tailwind purge / CDN cache can never
+            ship this as yellow. */}
         <div className="border-t border-gray-100 p-3">
           <button type="button" onClick={onAddNew}
-            className="w-full rounded-full bg-primary py-2.5 text-sm
-              font-bold text-white shadow-sm
-              hover:opacity-90">
+            className="w-full rounded-full py-2.5 text-sm
+              font-bold text-white shadow-sm hover:opacity-90"
+            style={{
+              background:
+                'linear-gradient(135deg, #6C2BD9, #8B5CF6)',
+            }}>
             + Add new kundli
           </button>
         </div>
@@ -552,11 +564,14 @@ function Sec({ title, children }) {
   );
 }
 
-// "Connect with an Astrologer..." CTA strip. Brand maroon
-// background, white instruction text, two white pill buttons.
+// "Connect with an Astrologer..." CTA strip. Inline brand
+// gradient so it never falls back to a yellow Tailwind class.
 function TalkChatCTA() {
   return (
-    <div className="mt-4 rounded-card bg-primary p-3 text-center">
+    <div className="mt-4 rounded-card p-3 text-center"
+      style={{
+        background: 'linear-gradient(135deg, #6C2BD9, #8B5CF6)',
+      }}>
       <div className="mb-2 text-[12px] font-semibold text-white">
         Connect with an Astrologer on Call or Chat for more
         personalised detailed predictions.
@@ -969,8 +984,10 @@ function YBox({ title, rows }) {
   return (
     <div className="overflow-hidden rounded-card border border-gray-200
       bg-white">
-      <div className="bg-primary py-2 text-center text-sm
-        font-bold text-white">
+      <div className="py-2 text-center text-sm font-bold text-white"
+        style={{
+          background: 'linear-gradient(135deg, #6C2BD9, #8B5CF6)',
+        }}>
         {title}
       </div>
       <div className="divide-y divide-gray-100">
