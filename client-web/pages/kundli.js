@@ -92,6 +92,23 @@ export default function Kundli() {
 
   async function save(e) {
     e.preventDefault();
+    // Hard gate: lat/lng/tz are MANDATORY. Without them AstroSeer
+    // generates a kundli for (0,0) GMT+0 which is wrong on every
+    // axis. The CityField captures these on selection from the
+    // dropdown — if any are missing, the user typed a city but
+    // never picked from the suggestions.
+    const lat = form.lat != null ? Number(form.lat) : null;
+    const lng = form.lng != null ? Number(form.lng) : null;
+    const tz = form.tz != null ? Number(form.tz) : null;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)
+        || !Number.isFinite(tz)) {
+      // eslint-disable-next-line no-alert
+      window.alert('Please pick the city from the suggestions list '
+        + 'so we can lock the latitude, longitude and timezone — '
+        + 'these are mandatory for an accurate kundli. Start typing '
+        + 'the city again and choose from the dropdown.');
+      return;
+    }
     setBusy(true);
     try {
       if (editingId) {
@@ -199,8 +216,9 @@ export default function Kundli() {
             can swap to a different saved profile without scrolling. */}
         {mode === 'view' && (
           <button type="button" onClick={openPicker}
-            className="rounded-full bg-[#FFD63A] px-4 py-1.5
-              text-[12px] font-bold text-dark-text shadow-sm">
+            className="rounded-full bg-primary px-4 py-1.5
+              text-[12px] font-bold text-white shadow-sm
+              hover:opacity-90">
             Choose another kundli
           </button>
         )}
@@ -214,10 +232,16 @@ export default function Kundli() {
       </div>
 
       {/* Picker modal — the entry point of every /kundli visit when
-          the user has at least one saved profile. */}
+          the user has at least one saved profile. Close button is
+          only enabled if the user already has a profile selected
+          (so they can dismiss back to that view); on first load
+          with no selection there's no usable page behind the modal
+          and closing would land them on a blank screen. */}
       {mode === 'pick' && list != null && list.length > 0 && (
         <KundliPickerModal
           list={list}
+          canClose={!!selectedId}
+          onClose={() => setMode('view')}
           onPick={pickProfile}
           onAddNew={() => {
             setEditingId(null);
@@ -371,15 +395,16 @@ export default function Kundli() {
   );
 }
 
-// AstroTalk-style yellow banner header used at the top of every
-// boxed section. Matches the reference screenshots:
-// rounded-edge yellow strip with bold centred dark text.
+// Brand banner header used at the top of every boxed section.
+// Maroon strip with bold centred white text — matches the
+// AstroSeer platform palette (was yellow in the AstroTalk
+// reference; the customer asked for our colours only).
 function Banner({ title, sub }) {
   return (
-    <div className="mt-3 rounded-card bg-[#FFD63A] py-2 text-center">
-      <div className="text-sm font-bold text-dark-text">{title}</div>
+    <div className="mt-3 rounded-card bg-primary py-2 text-center">
+      <div className="text-sm font-bold text-white">{title}</div>
       {sub && (
-        <div className="mt-0.5 text-[11px] font-semibold text-dark-text/80">
+        <div className="mt-0.5 text-[11px] font-semibold text-white/80">
           {sub}
         </div>
       )}
@@ -411,56 +436,108 @@ function txt(v) {
 // existing tabs (transits / yogas / doshas etc) that haven't been
 // restyled yet.
 // Picker modal — shown on /kundli load when the user has at least
-// one saved profile. Lists every saved kundli with name + DOB +
-// place; tap one to render only that profile via pickProfile(),
-// or tap "Add new" to swap to the form. No saved profile renders
-// until the user makes a choice here — so /kundli never silently
-// shows someone else's chart on first load.
-function KundliPickerModal({ list, onPick, onAddNew }) {
+// one saved profile. Brand maroon header strip, polished cards,
+// dismissable via × button OR clicking outside the panel. List is
+// scrollable for power users with many saved profiles. The "Add
+// new" CTA at the bottom is the only entry point to the form so
+// the picker is the single source of truth for kundli switching.
+function KundliPickerModal({ list, onPick, onAddNew, onClose,
+  canClose }) {
   return (
-    <div className="fixed inset-0 z-[60] flex items-end
-      justify-center bg-black/40 px-3 py-4 sm:items-center"
+    <div
+      onClick={canClose && onClose
+        ? (e) => { if (e.target === e.currentTarget) onClose(); }
+        : undefined}
+      className="fixed inset-0 z-[60] flex items-end justify-center
+        bg-black/50 px-3 py-4 sm:items-center"
       role="dialog" aria-modal="true">
-      <div className="w-full max-w-md rounded-2xl bg-white p-4
-        shadow-xl">
-        <div className="mb-2 flex items-center justify-between">
-          <div className="text-sm font-bold text-dark-text">
-            Choose a kundli to open
+      <div className="w-full max-w-md overflow-hidden rounded-2xl
+        bg-white shadow-2xl">
+        {/* Brand header — maroon gradient strip with title +
+            saved-count chip + close button. Mirrors the email + chat
+            chrome so the modal feels like part of the AstroSeer
+            brand, not a generic Tailwind dialog. */}
+        <div className="flex items-center justify-between gap-2
+          bg-gradient-to-br from-primary to-accent px-4 py-3
+          text-white">
+          <div>
+            <div className="text-[10px] uppercase tracking-[0.2em]
+              opacity-80">AstroSeer</div>
+            <div className="text-base font-bold">
+              Choose a kundli to open
+            </div>
           </div>
-          <span className="text-[10px] text-sub-text">
-            {list.length} saved
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-white/15 px-2 py-0.5
+              text-[10px] font-bold">
+              {list.length} saved
+            </span>
+            {canClose && onClose && (
+              <button type="button" onClick={onClose}
+                aria-label="Close"
+                className="grid h-7 w-7 place-items-center
+                  rounded-full bg-white/15 text-base font-bold
+                  hover:bg-white/25">
+                ×
+              </button>
+            )}
+          </div>
         </div>
-        <div className="max-h-[55vh] space-y-2 overflow-y-auto">
+
+        {/* Saved profiles list. Maroon left border on the default
+            profile + a quiet "DEFAULT" chip flag it. Hover state
+            uses brand maroon outline so it reads as a primary CTA
+            even before click. */}
+        <div className="max-h-[55vh] space-y-2 overflow-y-auto p-3">
           {list.map((k) => (
             <button key={k.id} type="button"
               onClick={() => onPick(k)}
-              className="block w-full rounded-card border
-                border-gray-200 bg-bg-light p-3 text-left
-                hover:border-primary hover:bg-white">
-              <div className="flex items-center justify-between">
+              className={`block w-full rounded-card border bg-white
+                p-3 text-left transition hover:border-primary
+                hover:shadow-md ${k.isDefault
+                  ? 'border-primary/40 border-l-4 border-l-primary'
+                  : 'border-gray-200'}`}>
+              <div className="flex items-center justify-between gap-2">
                 <div className="font-bold text-dark-text">
                   {k.name || '(unnamed)'}
                 </div>
                 {k.isDefault && (
                   <span className="rounded-full bg-primary/10
-                    px-2 py-0.5 text-[10px] font-bold text-primary">
+                    px-2 py-0.5 text-[10px] font-bold uppercase
+                    tracking-wider text-primary">
                     Default
                   </span>
                 )}
               </div>
-              <div className="mt-0.5 text-[11px] text-sub-text">
-                {k.dob}{k.tob ? ` · ${k.tob} ${k.ampm || ''}` : ''}
-                {k.place ? ` · ${k.place}` : ''}
+              <div className="mt-1 flex flex-wrap items-center gap-1
+                text-[11px] text-sub-text">
+                {k.dob && (
+                  <span className="rounded-full bg-bg-light px-2
+                    py-0.5">{k.dob}</span>
+                )}
+                {k.tob && (
+                  <span className="rounded-full bg-bg-light px-2
+                    py-0.5">{k.tob} {k.ampm || ''}</span>
+                )}
+                {k.place && (
+                  <span className="truncate rounded-full bg-bg-light
+                    px-2 py-0.5">{k.place}</span>
+                )}
               </div>
             </button>
           ))}
         </div>
-        <button type="button" onClick={onAddNew}
-          className="mt-3 w-full rounded-full bg-[#FFD63A] py-2
-            text-sm font-bold text-dark-text shadow-sm">
-          + Add new kundli
-        </button>
+
+        {/* CTA footer. Maroon outlined button so it doesn't yell
+            yellow at the user, but still reads as an action. */}
+        <div className="border-t border-gray-100 p-3">
+          <button type="button" onClick={onAddNew}
+            className="w-full rounded-full bg-primary py-2.5 text-sm
+              font-bold text-white shadow-sm
+              hover:opacity-90">
+            + Add new kundli
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -475,26 +552,25 @@ function Sec({ title, children }) {
   );
 }
 
-// "Connect with an Astrologer..." CTA strip the AstroTalk reference
-// drops between sections. Two pill buttons -> Astrologer list, with
-// the call mode pre-selected.
+// "Connect with an Astrologer..." CTA strip. Brand maroon
+// background, white instruction text, two white pill buttons.
 function TalkChatCTA() {
   return (
-    <div className="mt-4 rounded-card bg-[#FFD63A] p-3 text-center">
-      <div className="mb-2 text-[12px] font-semibold text-dark-text">
+    <div className="mt-4 rounded-card bg-primary p-3 text-center">
+      <div className="mb-2 text-[12px] font-semibold text-white">
         Connect with an Astrologer on Call or Chat for more
         personalised detailed predictions.
       </div>
       <div className="flex flex-wrap items-center justify-center gap-2">
         <Link href="/astrologers?mode=call"
           className="inline-flex items-center gap-1.5 rounded-full
-            bg-white px-4 py-1.5 text-xs font-bold text-dark-text
+            bg-white px-4 py-1.5 text-xs font-bold text-primary
             shadow-sm">
           <span>📞</span> Talk to Astrologer
         </Link>
         <Link href="/astrologers?mode=chat"
           className="inline-flex items-center gap-1.5 rounded-full
-            bg-white px-4 py-1.5 text-xs font-bold text-dark-text
+            bg-white px-4 py-1.5 text-xs font-bold text-primary
             shadow-sm">
           <span>💬</span> Chat with Astrologer
         </Link>
@@ -515,12 +591,12 @@ function DownloadBanner({ kundli, full }) {
         bg-gradient-to-r from-[#0F0A23] to-[#1A1245] p-4 text-left
         text-white shadow">
       <div className="grid h-12 w-12 shrink-0 place-items-center
-        rounded-full bg-[#FFD63A]/15 text-2xl">📜</div>
+        rounded-full bg-primary/15 text-2xl">📜</div>
       <div className="flex-1">
         <div className="text-sm font-bold">
           Download &amp; share your kundli report
         </div>
-        <span className="mt-1 inline-block rounded-full bg-[#FFD63A]
+        <span className="mt-1 inline-block rounded-full bg-primary
           px-3 py-1 text-[11px] font-bold text-dark-text">
           Download Kundli PDF
         </span>
@@ -532,23 +608,65 @@ function DownloadBanner({ kundli, full }) {
 // Collapsible Maha-dasha row with nested Antar -> Pratyantar.
 // Current period (any level) is always expanded + highlighted; the
 // rest collapse so the list of 9 mahas stays scannable.
-function DashaRow({ d }) {
+// Generic per-house indication. Combined with the dasha lord's
+// karakatva, this powers the per-period "Likely areas" text in
+// DashaRow / AntarRow when the admin toggle is on.
+const HOUSE_THEMES = {
+  1: 'self, body, vitality, identity',
+  2: 'wealth, family, speech, savings',
+  3: 'siblings, courage, short trips, communication',
+  4: 'home, mother, comfort, real estate',
+  5: 'children, romance, learning, creativity',
+  6: 'work, debts, health, competition',
+  7: 'marriage, partnerships, business deals',
+  8: 'transformation, occult, joint finances',
+  9: 'fortune, dharma, long trips, mentors',
+  10: 'career, status, public reputation',
+  11: 'gains, network, elder siblings, ambitions',
+  12: 'foreign lands, retreat, expenses, moksha',
+};
+const PLANET_KARAKA = {
+  Sun: 'authority, government, father, vitality',
+  Moon: 'mind, mother, emotions, public',
+  Mars: 'energy, courage, property, siblings',
+  Mercury: 'communication, study, business, skill',
+  Jupiter: 'wisdom, finances, teachers, children',
+  Venus: 'love, comfort, art, partners, beauty',
+  Saturn: 'discipline, work, longevity, structure',
+  Rahu: 'foreign, technology, sudden gains, obsession',
+  Ketu: 'detachment, spirituality, research, losses',
+};
+function dashaInsight(lord, planetsArr) {
+  const planet = (planetsArr || []).find((p) =>
+    String(p.name || '').toLowerCase()
+      === String(lord || '').toLowerCase());
+  const house = planet && Number(planet.house);
+  const k = PLANET_KARAKA[lord] || '';
+  const h = house >= 1 && house <= 12 ? HOUSE_THEMES[house] : '';
+  if (!k && !h) return '';
+  if (k && h) {
+    return `${lord} (${k}) sits in house ${house} (${h}). The period `
+      + `activates these areas — expect themes here to surface.`;
+  }
+  return k || `House ${house}: ${h}.`;
+}
+
+function DashaRow({ d, planets, showInsight }) {
   const [open, setOpen] = useState(!!d.current);
   const has = (d.antardasha || []).length > 0;
+  const insight = showInsight ? dashaInsight(d.planet, planets) : '';
   return (
     <div className={`rounded-card border p-2 text-xs ${d.current
       ? 'border-primary/40 bg-primary/5'
       : 'border-gray-200 bg-white'}`}>
       <button type="button"
-        onClick={() => has && setOpen((o) => !o)}
+        onClick={() => setOpen((o) => !o)}
         className="flex w-full items-center justify-between gap-2
                     text-left">
         <span className={`flex items-center gap-2 font-semibold
           ${d.current ? 'text-primary' : ''}`}>
-          {has && (
-            <span className={`inline-block w-3 text-center
-                transition-transform ${open ? 'rotate-90' : ''}`}>›</span>
-          )}
+          <span className={`inline-block w-3 text-center
+              transition-transform ${open ? 'rotate-90' : ''}`}>›</span>
           {d.planet}
           {d.current && (
             <span className="rounded-full bg-primary px-2 py-0.5
@@ -562,34 +680,44 @@ function DashaRow({ d }) {
           {String(d.end || '').slice(0, 10)}
         </span>
       </button>
-      {has && open && (
-        <div className="mt-2 space-y-1 border-t border-gray-200 pt-2">
-          {d.antardasha.map((a, j) => (
-            <AntarRow key={j} a={a} parentCurrent={!!d.current} />
-          ))}
+      {open && (
+        <div className="mt-2 space-y-2 border-t border-gray-200 pt-2">
+          {insight && (
+            <div className="rounded-card bg-bg-light p-2 text-[11px]
+              leading-relaxed text-dark-text">
+              <b className="text-primary">Likely areas:</b>{' '}
+              {insight}
+            </div>
+          )}
+          {has ? d.antardasha.map((a, j) => (
+            <AntarRow key={j} a={a} parentCurrent={!!d.current}
+              planets={planets} showInsight={showInsight} />
+          )) : (
+            <div className="text-[11px] text-sub-text">
+              No antardasha breakdown returned by the provider.
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-function AntarRow({ a, parentCurrent }) {
+function AntarRow({ a, parentCurrent, planets, showInsight }) {
   const [open, setOpen] = useState(!!a.current);
   const has = (a.pratyantardasha || []).length > 0;
+  const insight = showInsight ? dashaInsight(a.planet, planets) : '';
   return (
     <div className={`rounded p-1.5 text-[11px] ${a.current
       ? 'bg-primary/10 font-semibold text-primary'
       : parentCurrent ? '' : 'text-sub-text'}`}>
       <button type="button"
-        onClick={() => has && setOpen((o) => !o)}
+        onClick={() => setOpen((o) => !o)}
         className="flex w-full items-center justify-between gap-2
                     text-left">
         <span className="flex items-center gap-1.5">
-          {has && (
-            <span className={`inline-block w-2.5 text-center
-                transition-transform ${open ? 'rotate-90' : ''}`}>›</span>
-          )}
-          {!has && <span className="inline-block w-2.5" />}
+          <span className={`inline-block w-2.5 text-center
+              transition-transform ${open ? 'rotate-90' : ''}`}>›</span>
           {a.planet}
           {a.current && (
             <span className="rounded-full bg-primary px-1.5 py-0.5
@@ -603,10 +731,16 @@ function AntarRow({ a, parentCurrent }) {
           {String(a.end || '').slice(0, 10)}
         </span>
       </button>
-      {has && open && (
-        <div className="mt-1 space-y-0.5 border-t border-primary/10 pt-1
+      {open && (
+        <div className="mt-1 space-y-1 border-t border-primary/10 pt-1
                          pl-4">
-          {a.pratyantardasha.map((p, k) => (
+          {insight && (
+            <div className="rounded bg-white p-1.5 text-[10.5px]
+              leading-relaxed text-dark-text">
+              <b className="text-primary">Sub-period:</b> {insight}
+            </div>
+          )}
+          {has ? a.pratyantardasha.map((p, k) => (
             <div key={k}
               className={`flex justify-between ${p.current
                 ? 'font-bold text-accent' : 'text-sub-text'}`}>
@@ -616,7 +750,11 @@ function AntarRow({ a, parentCurrent }) {
                 {String(p.end || '').slice(0, 10)}
               </span>
             </div>
-          ))}
+          )) : (
+            <div className="text-[10.5px] text-sub-text">
+              No pratyantar breakdown for this antardasha.
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -628,6 +766,23 @@ function FullKundli({ r, kundli }) {
   const n = r.narrative || {};
   const lucky = n.lucky || {};
   const raw = r.raw || {};
+  // Admin can hide the per-period "Likely areas" insight text via
+  // settings/features.dasha_predictions_enabled. Default = on. We
+  // stamp the resolved value onto r._showDashaInsight so the deeply-
+  // nested DashaRow / AntarRow components don't need to thread an
+  // extra prop manually.
+  const [showInsight, setShowInsight] = useState(true);
+  useEffect(() => {
+    (async () => {
+      try {
+        const s = await getDoc(doc(db, 'settings', 'features'));
+        const v = s.exists() && s.data().dasha_predictions_enabled;
+        if (v === false) setShowInsight(false);
+      } catch (_) { /* keep default */ }
+    })();
+  }, []);
+  // eslint-disable-next-line no-param-reassign
+  r._showDashaInsight = showInsight;
   // Read user's preferred chart style. Stored on users/{uid}.
   // .chartStyle: 'north' | 'south'. Default = north.
   const [chartStyle, setChartStyle] = useState('north');
@@ -692,7 +847,7 @@ function FullKundli({ r, kundli }) {
           <button key={k} type="button" onClick={() => setTab(k)}
             className={`shrink-0 rounded-card px-3 py-1.5
               text-[12px] font-bold transition ${activeTab === k
-                ? 'bg-[#FFD63A] text-dark-text shadow-sm'
+                ? 'bg-primary text-white shadow-sm'
                 : 'text-sub-text hover:text-dark-text'}`}>
             {label}
           </button>
@@ -814,8 +969,8 @@ function YBox({ title, rows }) {
   return (
     <div className="overflow-hidden rounded-card border border-gray-200
       bg-white">
-      <div className="bg-[#FFD63A] py-2 text-center text-sm
-        font-bold text-dark-text">
+      <div className="bg-primary py-2 text-center text-sm
+        font-bold text-white">
         {title}
       </div>
       <div className="divide-y divide-gray-100">
@@ -844,13 +999,13 @@ function KundliMainTab({ r, raw, kundli,
             onClick={() => onChangeStyle(s)}
             className={`rounded-full px-3 py-1 text-[11px] font-bold
               ${chartStyle === s
-                ? 'bg-[#FFD63A] text-dark-text'
+                ? 'bg-primary text-white'
                 : 'bg-white text-sub-text'}`}>
             {s === 'north' ? 'North Indian' : 'South Indian'}
           </button>
         ))}
       </div>
-      <div className="mt-3 rounded-card bg-[#FFF7E0] p-3">
+      <div className="mt-3 rounded-card bg-bg-light p-3">
         {chartStyle === 'north'
           ? <NorthChart r={r} />
           : <SouthChart r={r} />}
@@ -859,7 +1014,7 @@ function KundliMainTab({ r, raw, kundli,
       <Banner title="Planets" />
       <div className="mt-2 overflow-x-auto rounded-card bg-white p-2">
         <table className="w-full text-[11px]">
-          <thead className="bg-[#FFF7E0] text-left text-dark-text">
+          <thead className="bg-bg-light text-left text-dark-text">
             <tr>
               <th className="px-2 py-1.5">Planet</th>
               <th className="px-2 py-1.5">Sign</th>
@@ -917,7 +1072,7 @@ function KpTab({ r, raw }) {
   return (
     <>
       <Banner title="Bhav Chalit Chart" />
-      <div className="mt-3 rounded-card bg-[#FFF7E0] p-3">
+      <div className="mt-3 rounded-card bg-bg-light p-3">
         <NorthChart r={r} />
       </div>
 
@@ -950,7 +1105,7 @@ function KpTab({ r, raw }) {
       <Banner title="Planets" />
       <div className="mt-2 overflow-x-auto rounded-card bg-white p-2">
         <table className="w-full text-[11px]">
-          <thead className="bg-[#FFF7E0] text-left text-dark-text">
+          <thead className="bg-bg-light text-left text-dark-text">
             <tr>
               <th className="px-2 py-1.5">Planet</th>
               <th className="px-2 py-1.5">Cusp</th>
@@ -983,7 +1138,7 @@ function KpTab({ r, raw }) {
       <Banner title="Cusps" />
       <div className="mt-2 overflow-x-auto rounded-card bg-white p-2">
         <table className="w-full text-[11px]">
-          <thead className="bg-[#FFF7E0] text-left text-dark-text">
+          <thead className="bg-bg-light text-left text-dark-text">
             <tr>
               <th className="px-2 py-1.5">Cusp</th>
               <th className="px-2 py-1.5">Degree</th>
@@ -1049,7 +1204,7 @@ function AshtakvargaTab({ r, raw }) {
       <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3">
         {ENTRIES.map(([key, label]) => (
           <div key={key}
-            className="rounded-card bg-[#FFF7E0] p-2 text-center">
+            className="rounded-card bg-bg-light p-2 text-center">
             <div className="mb-1 text-[12px] font-bold text-dark-text">
               {label}
             </div>
@@ -1138,7 +1293,7 @@ function ChartsGridTab({ r, raw, chartStyle }) {
             : { planets: r.planets || [], ascendant: r.ascendant };
           return (
             <div key={key}
-              className="rounded-card bg-[#FFF7E0] p-2 text-center">
+              className="rounded-card bg-bg-light p-2 text-center">
               <div className="text-[12px] font-bold text-dark-text">
                 {name}
               </div>
@@ -1163,7 +1318,7 @@ function FreeReportTab({ r, n, lucky, kundli }) {
       <Banner title="Free Report" />
       <Banner title="Ascendant Report" />
       {a.sign && (
-        <div className="mt-3 rounded-card bg-[#FFF7E0] p-3 text-sm">
+        <div className="mt-3 rounded-card bg-bg-light p-3 text-sm">
           <b>Description.</b> Ascendant is one of the most sought
           concepts in astrology when it comes to predicting the minute
           events in your life. At the time of birth, the sign that
@@ -1608,7 +1763,11 @@ function DashaTab({ r }) {
             {(r.dasha || []).length === 0 && (
               <div className="text-sub-text">No dasha data.</div>
             )}
-            {(r.dasha || []).map((d, i) => (<DashaRow key={i} d={d} />))}
+            {(r.dasha || []).map((d, i) => (
+              <DashaRow key={i} d={d}
+                planets={r.planets || []}
+                showInsight={r._showDashaInsight !== false} />
+            ))}
           </div>
         </Sec>
       )}
@@ -1708,7 +1867,7 @@ function DashaDrilldown({ dasha }) {
                   disabled:cursor-default">
                 <span className={`grid h-7 w-7 place-items-center
                   rounded-full text-[12px] font-bold transition
-                  ${active ? 'bg-[#FFD63A] text-dark-text shadow'
+                  ${active ? 'bg-primary text-white shadow'
                     : visited ? 'bg-success text-white'
                       : 'bg-gray-100 text-sub-text'}`}>
                   {i + 1}
@@ -1733,7 +1892,7 @@ function DashaDrilldown({ dasha }) {
             text-[10px] text-sub-text">
             <span className="font-semibold">Path:</span>
             {crumbs.map((c, i) => (
-              <span key={i} className="rounded-full bg-[#FFF7E0]
+              <span key={i} className="rounded-full bg-bg-light
                 px-2 py-0.5 font-bold text-dark-text">
                 {vimshottari.SHORT[c.lord] || c.lord}
                 {i < crumbs.length - 1 && (
@@ -1752,9 +1911,9 @@ function DashaDrilldown({ dasha }) {
       {depth > 0 && (
         <button type="button"
           onClick={() => setPath(path.slice(0, -1))}
-          className="mx-auto block rounded-full bg-[#FFD63A] px-6
+          className="mx-auto block rounded-full bg-primary px-6
             py-1.5 text-[11px] font-bold uppercase tracking-wider
-            text-dark-text shadow-sm">
+            text-white shadow-sm hover:opacity-90">
           LEVEL UP
         </button>
       )}

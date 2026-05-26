@@ -21,6 +21,9 @@ const TOGGLES = [
   ['enable_tour', 'Guided Tour'],
   ['free_chat_enabled', 'Free Chat'],
   ['free_call_enabled', 'Free Call'],
+  // --- Kundli viewer behaviour ---
+  ['dasha_predictions_enabled',
+    'Show per-dasha "Likely areas" insight under each Vimshottari period'],
   // --- Reports / monetisation ---
   // Master kill-switch for the paid + free PDF reports. When OFF the
   // /kundli buy buttons hide and the relay refuses /api/kundli/report.
