@@ -284,6 +284,26 @@ function Banner({ title, sub }) {
   );
 }
 
+// AstroSeer / AstroTalk-style providers sometimes return rich
+// objects for fields the UI expects to be scalars (e.g. nakshatra
+// arrives as `{ name, lord, number, pada }`, sign_lord arrives as
+// `{ name, vedic_name }`). Rendering an object directly is the
+// classic React error #31. txt() coerces any of these into the
+// best human-readable string before they hit JSX.
+function txt(v) {
+  if (v == null || v === '') return '';
+  if (typeof v === 'string' || typeof v === 'number'
+    || typeof v === 'boolean') return String(v);
+  if (Array.isArray(v)) {
+    return v.map(txt).filter(Boolean).join(', ');
+  }
+  if (typeof v === 'object') {
+    return String(v.name || v.title || v.label || v.vedic_name
+      || v.value || v.id || v.lord || '');
+  }
+  return '';
+}
+
 // Legacy small-header section used inside cards; left as-is for the
 // existing tabs (transits / yogas / doshas etc) that haven't been
 // restyled yet.
@@ -570,47 +590,50 @@ function BasicTab({ r, raw, kundli }) {
   const tobStr = kundli?.tob
     ? `${kundli.tob} ${kundli.ampm || ''}`.trim()
     : (basic.time || '·');
+  // Every row value goes through txt() so provider-returned objects
+  // (e.g. r.nakshatra = { name, lord, number, pada }) never reach
+  // React as a child — that's React error #31.
   const birthRows = [
-    ['Name', kundli?.name || basic.name || '·'],
-    ['Date', dobStr],
-    ['Time', tobStr],
-    ['Place', placeStr || '·'],
+    ['Name', txt(kundli?.name || basic.name) || '·'],
+    ['Date', txt(dobStr) || '·'],
+    ['Time', txt(tobStr) || '·'],
+    ['Place', txt(placeStr) || '·'],
     ['Latitude', kundli?.lat != null ? Number(kundli.lat).toFixed(2)
-      : basic.latitude || '·'],
+      : txt(basic.latitude) || '·'],
     ['Longitude', kundli?.lng != null ? Number(kundli.lng).toFixed(2)
-      : basic.longitude || '·'],
-    ['Timezone', tz || basic.timezone || '·'],
-    ['Sunrise', basic.sunrise || p.sunrise || '·'],
-    ['Sunset', basic.sunset || p.sunset || '·'],
-    ['Ayanamsha', basic.ayanamsha || raw?.ayanamsha || '·'],
+      : txt(basic.longitude) || '·'],
+    ['Timezone', txt(tz || basic.timezone) || '·'],
+    ['Sunrise', txt(basic.sunrise || p.sunrise) || '·'],
+    ['Sunset', txt(basic.sunset || p.sunset) || '·'],
+    ['Ayanamsha', txt(basic.ayanamsha || raw?.ayanamsha) || '·'],
   ];
   // Avakhada — pull from raw.avakhada if AstroSeer returns it,
   // fall back to derived values from the existing fields so the
   // table is never empty.
   const av = raw?.avakhada || raw?.avakhada_details || {};
   const avakhadaRows = [
-    ['Varna', av.varna || '·'],
-    ['Vashya', av.vashya || '·'],
-    ['Yoni', av.yoni || '·'],
-    ['Gan', av.gan || av.gana || '·'],
-    ['Nadi', av.nadi || '·'],
-    ['Sign', av.sign || moon.sign || r.chandra_rasi || '·'],
-    ['Sign Lord', av.sign_lord || moon.sign_lord || '·'],
+    ['Varna', txt(av.varna) || '·'],
+    ['Vashya', txt(av.vashya) || '·'],
+    ['Yoni', txt(av.yoni) || '·'],
+    ['Gan', txt(av.gan || av.gana) || '·'],
+    ['Nadi', txt(av.nadi) || '·'],
+    ['Sign', txt(av.sign || moon.sign || r.chandra_rasi) || '·'],
+    ['Sign Lord', txt(av.sign_lord || moon.sign_lord) || '·'],
     ['Nakshatra-Charan',
-      av.nakshatra_charan || moon.pada || r.nakshatra || '·'],
-    ['Yog', av.yog || p.yoga || '·'],
-    ['Karan', av.karan || p.karana || '·'],
-    ['Tithi', av.tithi || p.tithi || '·'],
-    ['Yunja', av.yunja || '·'],
-    ['Tatva', av.tatva || '·'],
-    ['Name alphabet', av.name_alphabet || av.syllable || '·'],
-    ['Paya', av.paya || '·'],
+      txt(av.nakshatra_charan || moon.pada || r.nakshatra) || '·'],
+    ['Yog', txt(av.yog || p.yoga) || '·'],
+    ['Karan', txt(av.karan || p.karana) || '·'],
+    ['Tithi', txt(av.tithi || p.tithi) || '·'],
+    ['Yunja', txt(av.yunja) || '·'],
+    ['Tatva', txt(av.tatva) || '·'],
+    ['Name alphabet', txt(av.name_alphabet || av.syllable) || '·'],
+    ['Paya', txt(av.paya) || '·'],
   ];
   const panchangRows = [
-    ['Tithi', p.tithi || '·'],
-    ['Karan', p.karana || '·'],
-    ['Yog', p.yoga || '·'],
-    ['Nakshatra', p.nakshatra || r.nakshatra || '·'],
+    ['Tithi', txt(p.tithi) || '·'],
+    ['Karan', txt(p.karana) || '·'],
+    ['Yog', txt(p.yoga) || '·'],
+    ['Nakshatra', txt(p.nakshatra || r.nakshatra) || '·'],
   ];
   return (
     <>
@@ -694,25 +717,29 @@ function KundliMainTab({ r, raw, kundli,
           </thead>
           <tbody>
             {(r.planets || []).map((p) => (
-              <tr key={p.name} className="border-t border-gray-100">
-                <td className="px-2 py-1 font-semibold">{p.name}</td>
-                <td className="px-2 py-1">{p.sign || '·'}</td>
-                <td className="px-2 py-1">{p.sign_lord || '·'}</td>
-                <td className="px-2 py-1">{p.nakshatra || '·'}</td>
-                <td className="px-2 py-1">{p.nakshatra_lord || '·'}</td>
-                <td className="px-2 py-1">{p.degree || '·'}</td>
+              <tr key={txt(p.name)}
+                className="border-t border-gray-100">
+                <td className="px-2 py-1 font-semibold">{txt(p.name)}</td>
+                <td className="px-2 py-1">{txt(p.sign) || '·'}</td>
+                <td className="px-2 py-1">{txt(p.sign_lord) || '·'}</td>
+                <td className="px-2 py-1">{txt(p.nakshatra) || '·'}</td>
+                <td className="px-2 py-1">
+                  {txt(p.nakshatra_lord) || '·'}</td>
+                <td className="px-2 py-1">{txt(p.degree) || '·'}</td>
                 <td className="px-2 py-1">
                   {p.retrograde ? 'Retro' : 'Direct'}
                 </td>
                 <td className="px-2 py-1">
                   {p.combust ? 'Yes' : 'No'}
                 </td>
-                <td className="px-2 py-1">{p.avastha || '·'}</td>
+                <td className="px-2 py-1">{txt(p.avastha) || '·'}</td>
                 <td className="px-2 py-1">{p.house ?? '·'}</td>
-                <td className={`px-2 py-1 ${p.dignity === 'Debilitated'
-                  ? 'text-danger'
-                  : p.dignity === 'Exalted' ? 'text-success' : ''}`}>
-                  {p.dignity || p.status || '·'}
+                <td className={`px-2 py-1 ${
+                  txt(p.dignity) === 'Debilitated'
+                    ? 'text-danger'
+                    : txt(p.dignity) === 'Exalted'
+                      ? 'text-success' : ''}`}>
+                  {txt(p.dignity) || txt(p.status) || '·'}
                 </td>
               </tr>
             ))}
@@ -745,7 +772,7 @@ function KpTab({ r, raw }) {
             <div className="text-[11px] font-bold uppercase
               tracking-wide text-sub-text">{k}</div>
             <div className="mt-1 font-bold text-dark-text">
-              {(v && (v.name || v)) || '·'}
+              {txt(v) || '·'}
             </div>
           </div>
         ))}
@@ -753,11 +780,11 @@ function KpTab({ r, raw }) {
       <div className="mt-2 grid grid-cols-2 gap-2 text-[12px]">
         <div className="rounded-card bg-white p-2">
           <span className="font-bold text-dark-text">Day Lord:</span>{' '}
-          {ruling.day_lord || '·'}
+          {txt(ruling.day_lord) || '·'}
         </div>
         <div className="rounded-card bg-white p-2">
           <span className="font-bold text-dark-text">Asc:</span>{' '}
-          {(r.ascendant && r.ascendant.sign) || '·'}
+          {txt(r.ascendant && r.ascendant.sign) || '·'}
         </div>
       </div>
 
@@ -776,14 +803,18 @@ function KpTab({ r, raw }) {
           </thead>
           <tbody>
             {(r.planets || []).map((p) => (
-              <tr key={p.name} className="border-t border-gray-100">
-                <td className="px-2 py-1 font-semibold">{p.name}</td>
-                <td className="px-2 py-1">{p.cusp ?? p.house ?? '·'}</td>
-                <td className="px-2 py-1">{p.sign || '·'}</td>
-                <td className="px-2 py-1">{p.sign_lord || '·'}</td>
-                <td className="px-2 py-1">{p.nakshatra_lord
-                  || p.star_lord || '·'}</td>
-                <td className="px-2 py-1">{p.sub_lord || '·'}</td>
+              <tr key={txt(p.name)}
+                className="border-t border-gray-100">
+                <td className="px-2 py-1 font-semibold">{txt(p.name)}</td>
+                <td className="px-2 py-1">
+                  {p.cusp ?? p.house ?? '·'}
+                </td>
+                <td className="px-2 py-1">{txt(p.sign) || '·'}</td>
+                <td className="px-2 py-1">{txt(p.sign_lord) || '·'}</td>
+                <td className="px-2 py-1">
+                  {txt(p.nakshatra_lord || p.star_lord) || '·'}
+                </td>
+                <td className="px-2 py-1">{txt(p.sub_lord) || '·'}</td>
               </tr>
             ))}
           </tbody>
@@ -810,11 +841,11 @@ function KpTab({ r, raw }) {
               }))).map((c, i) => (
               <tr key={i} className="border-t border-gray-100">
                 <td className="px-2 py-1">{c.cusp || (i + 1)}</td>
-                <td className="px-2 py-1">{c.degree || '·'}</td>
-                <td className="px-2 py-1">{c.sign || '·'}</td>
-                <td className="px-2 py-1">{c.sign_lord || '·'}</td>
-                <td className="px-2 py-1">{c.star_lord || '·'}</td>
-                <td className="px-2 py-1">{c.sub_lord || '·'}</td>
+                <td className="px-2 py-1">{txt(c.degree) || '·'}</td>
+                <td className="px-2 py-1">{txt(c.sign) || '·'}</td>
+                <td className="px-2 py-1">{txt(c.sign_lord) || '·'}</td>
+                <td className="px-2 py-1">{txt(c.star_lord) || '·'}</td>
+                <td className="px-2 py-1">{txt(c.sub_lord) || '·'}</td>
               </tr>
             ))}
           </tbody>
@@ -967,7 +998,7 @@ function ChartsGridTab({ r, raw, chartStyle }) {
 // ---------- Tab: Free Report (Ascendant report sections) -----------
 function FreeReportTab({ r, n, lucky, kundli }) {
   const a = r.ascendant || {};
-  const sign = a.sign || r.chandra_rasi || '·';
+  const sign = txt(a.sign || r.chandra_rasi) || '·';
   return (
     <>
       <Banner title="Free Report" />
@@ -1035,19 +1066,19 @@ function OverviewTab({ r, n, lucky }) {
       <div className="mt-3 grid grid-cols-2 gap-2 text-sm
                       sm:grid-cols-4">
         <Stat label="Ascendant"
-          value={a.sign}
-          sub={a.degree_display || a.degree} />
+          value={txt(a.sign)}
+          sub={txt(a.degree_display || a.degree)} />
         <Stat label="Nakshatra"
-          value={r.nakshatra}
+          value={txt(r.nakshatra)}
           sub={a.pada ? `Pada ${a.pada}` : ''} />
-        <Stat label="Moon sign" value={r.chandra_rasi} />
-        <Stat label="Sun sign" value={r.soorya_rasi} />
+        <Stat label="Moon sign" value={txt(r.chandra_rasi)} />
+        <Stat label="Sun sign" value={txt(r.soorya_rasi)} />
         {a.lord && (
-          <Stat label="Lagna lord" value={a.lord} />)}
+          <Stat label="Lagna lord" value={txt(a.lord)} />)}
         {a.nakshatra_lord && (
-          <Stat label="Nakshatra lord" value={a.nakshatra_lord} />)}
-        {a.element && <Stat label="Element" value={a.element} />}
-        {a.modality && <Stat label="Modality" value={a.modality} />}
+          <Stat label="Nakshatra lord" value={txt(a.nakshatra_lord)} />)}
+        {a.element && <Stat label="Element" value={txt(a.element)} />}
+        {a.modality && <Stat label="Modality" value={txt(a.modality)} />}
       </div>
       {n.personality && <Sec title="Personality">{n.personality}</Sec>}
       {n.career && <Sec title="Career">{n.career}</Sec>}
@@ -1298,17 +1329,17 @@ function PlanetsTab({ r }) {
             </thead>
             <tbody>
               {(r.planets || []).map((p) => (
-                <tr key={p.name} className="border-t border-white">
-                  <td className="py-1 pr-3 font-semibold">{p.name}</td>
-                  <td className="py-1 pr-3">{p.sign || '·'}</td>
+                <tr key={txt(p.name)} className="border-t border-white">
+                  <td className="py-1 pr-3 font-semibold">{txt(p.name)}</td>
+                  <td className="py-1 pr-3">{txt(p.sign) || '·'}</td>
                   <td className="py-1 pr-3">{p.house ?? '·'}</td>
-                  <td className="py-1 pr-3">{p.degree ?? '·'}</td>
-                  <td className="py-1 pr-3">{p.nakshatra || '·'}</td>
+                  <td className="py-1 pr-3">{txt(p.degree) || '·'}</td>
+                  <td className="py-1 pr-3">{txt(p.nakshatra) || '·'}</td>
                   <td className="py-1 pr-3">{p.pada ?? '·'}</td>
-                  <td className={`py-1 pr-3 ${p.dignity
-                    === 'Debilitated' ? 'text-danger'
-                    : p.dignity === 'Exalted' ? 'text-success'
-                      : ''}`}>{p.dignity || '·'}</td>
+                  <td className={`py-1 pr-3 ${
+                    txt(p.dignity) === 'Debilitated' ? 'text-danger'
+                      : txt(p.dignity) === 'Exalted' ? 'text-success'
+                        : ''}`}>{txt(p.dignity) || '·'}</td>
                   <td className="py-1">
                     {[p.retrograde ? 'R' : '',
                       p.combust ? 'C' : ''].filter(Boolean).join(' ')
@@ -1331,8 +1362,8 @@ function PlanetsTab({ r }) {
               </div>
               <div className="mt-0.5 text-xs font-semibold
                               text-dark-text">
-                {(byHouse[h] || []).map((p) => p.name).join(', ')
-                  || '·'}
+                {(byHouse[h] || []).map((p) => txt(p.name))
+                  .filter(Boolean).join(', ') || '·'}
               </div>
             </div>
           ))}
