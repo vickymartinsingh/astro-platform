@@ -128,6 +128,95 @@ export default function AdminFeatures() {
           Save Navigation
         </button>
       </div>
+
+      {/* Kundli UI variant: primary (current production UI) or
+          secondary (test-only AstroTalk-style build). The customer
+          /kundli page reads settings/features.kundli_ui_variant
+          live, so flipping this here switches everyone instantly.
+          Either side can be deleted with explicit confirmation so
+          the inactive variant stops touching builds / Firestore. */}
+      <h2 className="mb-2 mt-6 text-lg font-bold">Kundli UI variant</h2>
+      <p className="mb-2 text-xs text-sub-text">
+        Pick which customer kundli interface is served at /kundli.
+        Primary is the live production UI. Secondary is a parallel
+        test build (not yet ready); keep it on Primary until you
+        sign off on the secondary in a staging session.
+      </p>
+      <div className="card space-y-3">
+        {[
+          ['primary',
+            'Primary (current, production)',
+            'The 7-tab AstroTalk-style kundli viewer you see today. '
+              + 'Use this for everyone — safe.'],
+          ['secondary',
+            'Secondary (test only, do NOT promote)',
+            'Parallel build for A/B testing. Will not be present '
+              + 'unless explicitly built. Keep OFF in production.'],
+        ].map(([v, label, sub]) => {
+          const cur = f.kundli_ui_variant || 'primary';
+          const sel = cur === v;
+          return (
+            <label key={v} className={`flex cursor-pointer
+              items-start gap-2 rounded-card p-2
+              ${sel ? 'bg-primary/10' : 'bg-bg-light'}`}>
+              <input type="radio" name="kundli_ui_variant"
+                checked={sel}
+                onChange={() => setF({ ...f, kundli_ui_variant: v })} />
+              <span className="block">
+                <span className="block text-sm font-bold">{label}</span>
+                <span className="block text-[11px] text-sub-text">
+                  {sub}
+                </span>
+              </span>
+            </label>
+          );
+        })}
+        <div className="rounded-card border border-warning/40
+          bg-warning/5 p-3 text-[11px] text-warning">
+          <b>Danger:</b> the buttons below delete the chosen variant&apos;s
+          build flag. The customer /kundli page will fall back to
+          the remaining variant. Use only if you&apos;re sure.
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button"
+            onClick={async () => {
+              if (!window.confirm(
+                'Delete the PRIMARY (current) build flag? '
+                + 'The page will fall back to the secondary variant.'
+                + ' Type Yes to proceed.')) return;
+              const next = { ...f,
+                kundli_ui_variant_primary_disabled: true };
+              setF(next);
+              await adminService.updateSettings('features', next);
+              flash('Primary variant disabled');
+            }}
+            className="rounded-full border border-danger
+              px-3 py-1.5 text-xs font-bold text-danger
+              hover:bg-danger/10">
+            Delete primary
+          </button>
+          <button type="button"
+            onClick={async () => {
+              if (!window.confirm(
+                'Delete the SECONDARY (test) build flag? '
+                + 'The page will use the primary variant only.')) return;
+              const next = { ...f,
+                kundli_ui_variant_secondary_disabled: true,
+                kundli_ui_variant: 'primary' };
+              setF(next);
+              await adminService.updateSettings('features', next);
+              flash('Secondary variant disabled');
+            }}
+            className="rounded-full border border-danger
+              px-3 py-1.5 text-xs font-bold text-danger
+              hover:bg-danger/10">
+            Delete secondary
+          </button>
+        </div>
+        <button onClick={save} className="btn-primary mt-2 w-full">
+          Save variant
+        </button>
+      </div>
     </Layout>
   );
 }

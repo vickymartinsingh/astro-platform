@@ -23,6 +23,17 @@ export default function Kundli() {
   const [toolUrl, setToolUrl] = useState('');
   const [busy, setBusy] = useState(false);
   const [chart, setChart] = useState({});   // { [kundliId]: data|'loading'|'err' }
+  // One-profile-at-a-time UX: when /kundli loads we no longer dump
+  // every saved profile into the page. Instead a picker modal opens
+  // first and the user chooses (or adds new). After that, only the
+  // chosen profile is rendered; "Choose another kundli" reopens the
+  // picker. mode:
+  //   'pick'  -> picker modal visible (default on first load when >0
+  //              profiles exist)
+  //   'view'  -> showing the picked profile + its full kundli
+  //   'add'   -> showing the add/edit form (new or editing existing)
+  const [mode, setMode] = useState('pick');
+  const [selectedId, setSelectedId] = useState(null);
 
   async function viewFull(k) {
     setChart((c) => ({ ...c, [k.id]: 'loading' }));
@@ -33,14 +44,29 @@ export default function Kundli() {
   async function refresh() {
     const l = await kundliService.getKundliProfiles(user.uid);
     setList(l);
-    // By default, show the saved full report of the default profile
-    // (cached - no API call unless dob / time / place changed).
+    // Pre-cache the default profile's chart in the background so a
+    // subsequent pick is instant. The picker modal still opens on
+    // first load — we never auto-render a profile without consent.
     const def = l.find((k) => k.isDefault) || l[0];
     if (def) {
-      setChart((c) => (c[def.id] ? c : { ...c, [def.id]: 'loading' }));
-      const data = await kundliService.getFullKundli(def);
-      setChart((c) => ({ ...c, [def.id]: data || 'err' }));
+      setChart((c) => (c[def.id] ? c
+        : { ...c, [def.id]: 'loading' }));
+      kundliService.getFullKundli(def).then((data) => {
+        setChart((c) => ({ ...c, [def.id]: data || 'err' }));
+      });
     }
+  }
+
+  // Open the picker modal (no profile rendered).
+  function openPicker() {
+    setMode('pick');
+    setSelectedId(null);
+  }
+  // Show ONLY the chosen profile + its full kundli.
+  function pickProfile(k) {
+    setSelectedId(k.id);
+    setMode('view');
+    if (!chart[k.id] || chart[k.id] === 'err') viewFull(k);
   }
 
   useEffect(() => {
@@ -52,6 +78,17 @@ export default function Kundli() {
       setToolUrl(s.exists() ? (s.data().kundliToolUrl || '') : ''));
     // eslint-disable-next-line
   }, [user, profile]);
+
+  // Once the saved-profile list resolves, decide which UX to show:
+  //   no profiles -> straight to the add form
+  //   profiles + nothing chosen yet -> picker stays open
+  // We do this in an effect (not inside render) so React stays
+  // happy and the picker doesn't flash for empty lists.
+  useEffect(() => {
+    if (list && list.length === 0 && mode === 'pick') {
+      setMode('add');
+    }
+  }, [list, mode]);
 
   async function save(e) {
     e.preventDefault();
@@ -76,13 +113,33 @@ export default function Kundli() {
       }
       setForm({ ...EMPTY, name: profile?.name || '',
         gender: profile?.gender || form.gender || '' });
+      const wasEditing = editingId;
       setEditingId(null);
       await refresh();
+      // After saving from the add form, jump straight to the
+      // single-profile view of the new (or edited) kundli so the
+      // user doesn't land on an empty page. We re-fetch the list
+      // and pick the matching record by name + dob since the
+      // newly-created doc id isn't returned to us here.
+      try {
+        const l = await kundliService.getKundliProfiles(user.uid);
+        const just = wasEditing
+          ? l.find((x) => x.id === wasEditing)
+          : l.find((x) => x.name === form.name && x.dob === form.dob);
+        if (just) {
+          setSelectedId(just.id);
+          setMode('view');
+          viewFull(just);
+        } else {
+          setMode('pick');
+        }
+      } catch (_) { setMode('pick'); }
     } finally { setBusy(false); }
   }
 
   function edit(k) {
     setEditingId(k.id);
+    setMode('add');
     setForm({
       name: k.name || '',
       gender: k.gender || profile?.gender || '',
@@ -110,6 +167,7 @@ export default function Kundli() {
     setEditingId(null);
     setForm({ ...EMPTY, name: profile?.name || '',
       gender: profile?.gender || '' });
+    setMode(list && list.length > 0 ? 'pick' : 'add');
   }
 
   async function makeDefault(id) {
@@ -123,10 +181,57 @@ export default function Kundli() {
 
   if (loading) return <Layout><SkeletonList /></Layout>;
 
+  // Pick the currently-displayed kundli (only rendered in 'view'
+  // mode). Drives the FullKundli + the "Choose another" header.
+  const selected = (list || []).find((k) => k.id === selectedId);
+
   return (
     <Layout>
-      <h1 className="mb-3 text-xl font-bold">Kundli Profiles</h1>
+      <div className="mb-3 flex flex-wrap items-center justify-between
+        gap-2">
+        <h1 className="text-xl font-bold">
+          {mode === 'add'
+            ? (editingId ? 'Edit kundli' : 'Add new kundli')
+            : mode === 'view' ? 'Kundli'
+              : 'Kundli Profiles'}
+        </h1>
+        {/* Top-of-page action: jump back to the picker so the user
+            can swap to a different saved profile without scrolling. */}
+        {mode === 'view' && (
+          <button type="button" onClick={openPicker}
+            className="rounded-full bg-[#FFD63A] px-4 py-1.5
+              text-[12px] font-bold text-dark-text shadow-sm">
+            Choose another kundli
+          </button>
+        )}
+        {mode === 'add' && list && list.length > 0 && (
+          <button type="button" onClick={openPicker}
+            className="rounded-full bg-bg-light px-4 py-1.5
+              text-[12px] font-bold text-sub-text">
+            Cancel
+          </button>
+        )}
+      </div>
 
+      {/* Picker modal — the entry point of every /kundli visit when
+          the user has at least one saved profile. */}
+      {mode === 'pick' && list != null && list.length > 0 && (
+        <KundliPickerModal
+          list={list}
+          onPick={pickProfile}
+          onAddNew={() => {
+            setEditingId(null);
+            setForm({ ...EMPTY, name: profile?.name || '',
+              gender: profile?.gender || '' });
+            setMode('add');
+          }} />
+      )}
+
+      {/* If the user has zero profiles yet, send them straight to
+          the add form so /kundli isn't an empty modal. The effect
+          below switches mode out of 'pick' when list arrives empty. */}
+
+      {mode === 'add' && (
       <form onSubmit={save} className="card mb-4 space-y-3">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr,150px]">
           <input className="input" placeholder="Name" value={form.name}
@@ -187,81 +292,79 @@ export default function Kundli() {
           )}
         </div>
       </form>
-
-      {toolUrl && (
-        <a href={toolUrl} target="_blank" rel="noreferrer"
-          className="btn-ghost mb-4 inline-block">
-          Open Kundli Chart Tool ↗
-        </a>
       )}
 
-      {list == null ? (
-        <SkeletonList count={2} />
-      ) : list.length === 0 ? (
-        <div className="card text-sub-text">No profiles saved yet.</div>
-      ) : (
+      {/* Single-profile view. Renders ONLY the selected kundli; no
+          other saved profile is visible until the user reopens the
+          picker via "Choose another kundli". */}
+      {mode === 'view' && selected && (
         <div className="space-y-2">
-          {list.map((k) => (
-            <div key={k.id} className="card">
-              <div className="flex items-center justify-between">
-                <div className="font-semibold">
-                  {k.name}{' '}
-                  {k.isDefault && (
-                    <span className="badge bg-bg-light text-primary">
-                      Default
-                    </span>
-                  )}
-                </div>
-                <span className="text-gold text-sm">{k.zodiac}</span>
-              </div>
-              <div className="mt-1 text-sm text-sub-text">
-                {k.dob} · {k.tob} {k.ampm} · {k.place}
-              </div>
-              <div className="mt-2 flex flex-wrap gap-3 text-sm">
-                <button onClick={() => viewFull(k)}
-                  className="font-semibold text-primary">
-                  View full Kundli
-                </button>
-                <button onClick={() => edit(k)}
-                  className="font-semibold text-primary">
-                  Edit
-                </button>
-                {!k.isDefault && (
-                  <button onClick={() => makeDefault(k.id)}
-                    className="text-primary font-semibold">
-                    Make default
-                  </button>
-                )}
-                <button onClick={() => remove(k.id)} className="text-danger">
-                  Delete
-                </button>
-              </div>
-              {chart[k.id] === 'loading' && (
-                <div className="mt-2 text-sm text-sub-text">
-                  Generating kundli…
-                </div>
-              )}
-              {chart[k.id] === 'err' && (
-                <div className="mt-2 flex flex-wrap items-center gap-2
-                                text-sm text-danger">
-                  <span>
-                    Could not load the chart right now. The kundli
-                    service may be waking up. Please try again in a
-                    moment.
+          <div key={selected.id} className="card">
+            <div className="flex items-center justify-between">
+              <div className="font-semibold">
+                {selected.name}{' '}
+                {selected.isDefault && (
+                  <span className="badge bg-bg-light text-primary">
+                    Default
                   </span>
-                  <button type="button"
-                    onClick={() => viewFull(k)}
-                    className="rounded-full border border-danger px-3
-                      py-1 text-xs font-bold text-danger">
-                    Retry
-                  </button>
-                </div>
-              )}
-              {chart[k.id] && typeof chart[k.id] === 'object' && (
-                <FullKundli r={chart[k.id]} kundli={k} />
-              )}
+                )}
+              </div>
+              {/* Was `k.zodiac` (sun sign by DOB). Per product:
+                  zodiac sign belongs only on /horoscope; on the
+                  kundli card we leave the chip blank and let the
+                  Overview tab inside FullKundli show Moon + Sun
+                  signs in their proper place. */}
             </div>
-          ))}
+            <div className="mt-1 text-sm text-sub-text">
+              {selected.dob} · {selected.tob} {selected.ampm} ·{' '}
+              {selected.place}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-3 text-sm">
+              <button onClick={() => viewFull(selected)}
+                className="font-semibold text-primary">
+                Refresh kundli
+              </button>
+              <button onClick={() => edit(selected)}
+                className="font-semibold text-primary">
+                Edit
+              </button>
+              {!selected.isDefault && (
+                <button onClick={() => makeDefault(selected.id)}
+                  className="text-primary font-semibold">
+                  Make default
+                </button>
+              )}
+              <button onClick={() => remove(selected.id)}
+                className="text-danger">
+                Delete
+              </button>
+            </div>
+            {chart[selected.id] === 'loading' && (
+              <div className="mt-2 text-sm text-sub-text">
+                Generating kundli…
+              </div>
+            )}
+            {chart[selected.id] === 'err' && (
+              <div className="mt-2 flex flex-wrap items-center gap-2
+                              text-sm text-danger">
+                <span>
+                  Could not load the chart right now. The kundli
+                  service may be waking up. Please try again in a
+                  moment.
+                </span>
+                <button type="button"
+                  onClick={() => viewFull(selected)}
+                  className="rounded-full border border-danger px-3
+                    py-1 text-xs font-bold text-danger">
+                  Retry
+                </button>
+              </div>
+            )}
+            {chart[selected.id]
+              && typeof chart[selected.id] === 'object' && (
+              <FullKundli r={chart[selected.id]} kundli={selected} />
+            )}
+          </div>
         </div>
       )}
     </Layout>
@@ -307,6 +410,62 @@ function txt(v) {
 // Legacy small-header section used inside cards; left as-is for the
 // existing tabs (transits / yogas / doshas etc) that haven't been
 // restyled yet.
+// Picker modal — shown on /kundli load when the user has at least
+// one saved profile. Lists every saved kundli with name + DOB +
+// place; tap one to render only that profile via pickProfile(),
+// or tap "Add new" to swap to the form. No saved profile renders
+// until the user makes a choice here — so /kundli never silently
+// shows someone else's chart on first load.
+function KundliPickerModal({ list, onPick, onAddNew }) {
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end
+      justify-center bg-black/40 px-3 py-4 sm:items-center"
+      role="dialog" aria-modal="true">
+      <div className="w-full max-w-md rounded-2xl bg-white p-4
+        shadow-xl">
+        <div className="mb-2 flex items-center justify-between">
+          <div className="text-sm font-bold text-dark-text">
+            Choose a kundli to open
+          </div>
+          <span className="text-[10px] text-sub-text">
+            {list.length} saved
+          </span>
+        </div>
+        <div className="max-h-[55vh] space-y-2 overflow-y-auto">
+          {list.map((k) => (
+            <button key={k.id} type="button"
+              onClick={() => onPick(k)}
+              className="block w-full rounded-card border
+                border-gray-200 bg-bg-light p-3 text-left
+                hover:border-primary hover:bg-white">
+              <div className="flex items-center justify-between">
+                <div className="font-bold text-dark-text">
+                  {k.name || '(unnamed)'}
+                </div>
+                {k.isDefault && (
+                  <span className="rounded-full bg-primary/10
+                    px-2 py-0.5 text-[10px] font-bold text-primary">
+                    Default
+                  </span>
+                )}
+              </div>
+              <div className="mt-0.5 text-[11px] text-sub-text">
+                {k.dob}{k.tob ? ` · ${k.tob} ${k.ampm || ''}` : ''}
+                {k.place ? ` · ${k.place}` : ''}
+              </div>
+            </button>
+          ))}
+        </div>
+        <button type="button" onClick={onAddNew}
+          className="mt-3 w-full rounded-full bg-[#FFD63A] py-2
+            text-sm font-bold text-dark-text shadow-sm">
+          + Add new kundli
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function Sec({ title, children }) {
   return (
     <div className="mt-3">
