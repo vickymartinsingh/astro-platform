@@ -105,23 +105,24 @@ export default function Orders() {
                 {o.status === 'ready' && (() => {
                   // Inline-stored orders carry only a short marker on
                   // pdfUrl ("inline") and the real bytes on
-                  // pdfBase64 — we rebuild a data URL on the fly so
-                  // re-download from /orders never hits the relay
-                  // and works on the user's current Firebase plan
-                  // (no Storage / Blob needed).
+                  // pdfBase64 — we rebuild a data URL on the fly,
+                  // then download it via Blob so Chrome's
+                  // data-URL-navigation block (since 2021) does
+                  // not turn the click into an about:blank tab.
                   const href = o.pdfBase64
                     ? `data:application/pdf;base64,${o.pdfBase64}`
                     : (o.pdfUrl && o.pdfUrl !== 'inline' ? o.pdfUrl : '');
                   if (!href) return null;
                   return (
-                    <a href={href}
-                      target="_blank" rel="noreferrer"
-                      download={o.pdfName || 'AstroSeer-Kundli.pdf'}
+                    <button type="button"
+                      onClick={() => kundliService.downloadPdfFromUrl(
+                        href,
+                        o.pdfName || 'AstroSeer-Kundli.pdf')}
                       className="mt-2 inline-block rounded-full
                         bg-primary px-3 py-1.5 text-xs font-bold
                         text-white">
                       Download
-                    </a>
+                    </button>
                   );
                 })()}
                 {o.validUntil && (

@@ -833,12 +833,15 @@ function DownloadPopup({ result, onClose }) {
             Saved in Orders for unlimited re-download.
           </p>
 
-          <a href={result.pdfUrl} target="_blank" rel="noreferrer"
-            className="mt-4 block rounded-full bg-primary py-2.5
-              text-sm font-bold text-white shadow-sm transition
-              hover:brightness-95">
+          <button type="button"
+            onClick={() => kundliService.downloadPdfFromUrl(
+              result.pdfUrl,
+              result.pdfName || 'AstroSeer-Kundli.pdf')}
+            className="mt-4 block w-full rounded-full bg-primary
+              py-2.5 text-sm font-bold text-white shadow-sm
+              transition hover:brightness-95">
             Download PDF now
-          </a>
+          </button>
           <a href="/orders"
             className="mt-2 block text-xs font-semibold text-primary
                        hover:underline">

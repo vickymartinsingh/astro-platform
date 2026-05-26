@@ -99,6 +99,53 @@ export async function listOrders(uid) {
   } catch (_) { return []; }
 }
 
+// Programmatic PDF download that handles BOTH:
+//   - data: URLs (inline-stored PDFs) — Chrome blocks navigation to
+//     large data: URLs since 2021; clicking the link opens
+//     about:blank with no download. Convert to a Blob first.
+//   - http(s) URLs (Vercel Blob, Firebase Storage etc.) — direct
+//     anchor click with download attribute.
+// Either way the user sees a real "saving file" prompt with the
+// right filename, not a blank tab.
+export function downloadPdfFromUrl(url, filename) {
+  if (typeof window === 'undefined' || !url) return false;
+  let href = url;
+  let isBlob = false;
+  try {
+    if (typeof url === 'string' && url.startsWith('data:')) {
+      const commaIdx = url.indexOf(',');
+      const meta = url.slice(5, commaIdx); // "application/pdf;base64"
+      const mime = (meta.split(';')[0] || 'application/pdf').trim();
+      const b64 = url.slice(commaIdx + 1);
+      const binary = atob(b64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      const blob = new Blob([bytes], { type: mime });
+      href = URL.createObjectURL(blob);
+      isBlob = true;
+    }
+    const a = document.createElement('a');
+    a.href = href;
+    a.download = filename || 'AstroSeer-Kundli.pdf';
+    // Some browsers won't trigger the download unless the anchor
+    // is actually attached to the DOM first.
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      try { document.body.removeChild(a); } catch (_) { /* ignore */ }
+      if (isBlob) {
+        try { URL.revokeObjectURL(href); } catch (_) { /* ignore */ }
+      }
+    }, 250);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 export async function getProkeralaKundli(birth) {
   const url = kundliEndpoint();
   if (!url || !birth || !birth.dob) return null;
