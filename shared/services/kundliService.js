@@ -40,15 +40,6 @@ function kundliEndpoint() {
   return 'https://astro-platform-push-relay.vercel.app/api/kundli';
 }
 
-// Endpoint for the paid + free PDF report. Same relay, different
-// route. Same fallback logic as kundliEndpoint() above.
-function reportEndpoint() {
-  const push = (typeof process !== 'undefined' && process.env
-    && process.env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
-  if (push) return push.replace(/\/sendPush\/?$/, '/kundliReport');
-  return 'https://astro-platform-push-relay.vercel.app/api/kundliReport';
-}
-
 // Request a PDF report (free or paid 12-month forecast). On success
 // the server has already:
 //   - charged the user's wallet (paid kinds; reverted on any
@@ -58,15 +49,17 @@ function reportEndpoint() {
 //   - written users/{uid}/orders/{orderId} so /orders has the
 //     re-download link forever
 //   - emailed the PDF as an attachment to the user
-// The caller is expected to show an immediate "Download now" CTA
-// using the returned pdfUrl. Throws Error(msg) on 4xx/5xx so the
-// caller can surface a clear toast (insufficient wallet etc).
+// Routes through the same /api/kundli endpoint with action:'report'
+// so the relay stays under Vercel Hobby's 12-function limit.
+// Throws Error(msg) on 4xx/5xx so the caller can surface a clear
+// toast (insufficient wallet etc).
 export async function requestReport({ uid, kundliProfileId, kind }) {
-  const url = reportEndpoint();
+  const url = kundliEndpoint();
   const r = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
+      action: 'report',
       uid, kundliProfileId, kind: kind || 'free',
     }),
   });

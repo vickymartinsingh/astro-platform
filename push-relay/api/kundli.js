@@ -610,10 +610,20 @@ async function runAstroSeer(creds, p, lat, lng) {
   };
 }
 
+// Lazy require so the kundliReport module + its nodemailer/firebase-
+// admin pulls don't load on a plain kundli JSON call (saves ~80 ms
+// of cold-start when no PDF is being generated).
+let _reportMod;
+function reportMod() {
+  if (!_reportMod) _reportMod = require('../lib/kundliReport');
+  return _reportMod;
+}
+
 module.exports = async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers',
+    'Content-Type, Authorization');
   if (req.method === 'OPTIONS') return res.status(204).end();
 
   const src = req.method === 'POST'
@@ -622,6 +632,16 @@ module.exports = async (req, res) => {
             catch (_) { return {}; } })()
         : (req.body || {}))
     : (req.query || {});
+
+  // PDF report action — folded under /api/kundli so the relay stays
+  // at 12 serverless functions (Vercel Hobby cap). Caller sends
+  //   POST /api/kundli with body { action:'report', kind, uid,
+  //                                kundliProfileId }
+  // and gets back the same { ok, pdfUrl, orderId, ... } payload the
+  // old /api/kundliReport returned.
+  if (src.action === 'report' && req.method === 'POST') {
+    return reportMod().handleReport(req, res);
+  }
 
   // GET ?probe=1 -> just report which provider would be used and
   // whether the relay can read Firestore. Lets admin verify the chain

@@ -201,15 +201,11 @@ async function emailReport({ db, toEmail, name, kind, pdfBuf, pdfName }) {
   } catch (_) { return false; }
 }
 
-module.exports = async (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  if (req.method === 'OPTIONS') return res.status(204).end();
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'POST only' });
-  }
-
+// Public entry: handle a kundli PDF request and call res.json/.status
+// itself. Invoked from api/kundli.js when body.action === 'report'
+// (we keep ONE serverless function for the kundli surface to stay
+// under Vercel Hobby's 12-function limit).
+async function handleReport(req, res) {
   try { init(); } catch (e) {
     return res.status(503).json({
       error: String((e && e.message) || e) });
@@ -426,4 +422,6 @@ module.exports = async (req, res) => {
     emailed,
     validUntil,
   });
-};
+}
+
+module.exports = { handleReport };
