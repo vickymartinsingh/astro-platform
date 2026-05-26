@@ -397,14 +397,29 @@ async function runAstroSeer(creds, p, lat, lng) {
     latitude: lat,
     longitude: lng,
   };
+  // Auto-recover from a stale / rotated key. AstroSeer accepts
+  // unauthenticated requests in their current public-API mode but
+  // 401s when a header IS sent and the key is invalid. So: try
+  // WITH the key first; on 401, retry WITHOUT the key. End-users
+  // never see the rotation; the operator gets a heads-up via
+  // /api/kundli?probe=1 to update the key when they have time.
   const headers = { 'Content-Type': 'application/json' };
   if (key) headers['X-API-Key'] = key;
+  const headersNoAuth = { 'Content-Type': 'application/json' };
   const baseUrl = base.replace(/\/+$/, '');
-  const post = (path) => fetch(`${baseUrl}${path}`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-  });
+  async function postWithFallback(path) {
+    const r = await fetch(`${baseUrl}${path}`, {
+      method: 'POST', headers, body: JSON.stringify(body),
+    });
+    if (r.status !== 401 || !key) return r;
+    // Stale key path: same call again without the X-API-Key header.
+    return fetch(`${baseUrl}${path}`, {
+      method: 'POST', headers: headersNoAuth, body: JSON.stringify(body),
+    });
+  }
+  const post = (path) => postWithFallback(path).catch((e) => ({
+    ok: false, _err: e,
+  }));
   // Fan out the kundli + dasha calls in parallel so the user gets
   // EVERY chart section (lagna, planets, dasha tree) from a single
   // /api/kundli request to our relay. Dasha is fetched as a separate

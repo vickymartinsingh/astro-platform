@@ -127,12 +127,27 @@ async function getReportPrice(db, kind) {
 // top tier (most pages). forecast12 adds months + start_month so
 // the API knows to bake the next 12 monthly forecasts.
 function astroSeerBody(kind, p, lat, lng, profile) {
-  const tz = 5.5; // IST default; future: per-profile
+  // tz: prefer the value locked on the profile at city-select time.
+  // Falls back to India IST (5.5) only if the profile carried no
+  // timezone — that lines up with our customer base today and is
+  // safer than GMT+0 which would silently corrupt every chart.
+  const profileTz = Number(profile && profile.tz);
+  const tz = Number.isFinite(profileTz) ? profileTz : 5.5;
+  // 0 is a "missing" sentinel here even though it's a valid
+  // coordinate — there is no birth in the middle of the Atlantic.
+  // Without this guard the report ends up at (0, 0) GMT+0 (the
+  // user-reported bug).
+  const latNum = Number(lat);
+  const lngNum = Number(lng);
+  const safeLat = (Number.isFinite(latNum) && latNum !== 0)
+    ? latNum : null;
+  const safeLng = (Number.isFinite(lngNum) && lngNum !== 0)
+    ? lngNum : null;
   const body = {
     year: p.y, month: p.m, day: p.d, hour: p.hh, minute: p.mm,
     tz_offset: tz,
-    latitude: Number(lat) || null,
-    longitude: Number(lng) || null,
+    latitude: safeLat,
+    longitude: safeLng,
     place: profile.place || '',
     name: profile.name || '',
     tier: FREE_TIER,
@@ -196,11 +211,24 @@ function parseDob(dob, tob, ampm) {
 // AstroSeer's /api/report/pdf returns the PDF bytes directly. We
 // stream them straight to Storage so the relay's memory stays low.
 async function callAstroSeerPdf({ base, key, body }) {
-  const headers = { 'Content-Type': 'application/json' };
-  if (key) headers['X-API-Key'] = key;
-  const r = await fetch(`${base}/api/report/pdf`, {
-    method: 'POST', headers, body: JSON.stringify(body),
+  // Same stale-key recovery as the kundli JSON path: try WITH the
+  // key first, retry WITHOUT on 401. AstroSeer rejects an invalid
+  // key but accepts unauthenticated calls.
+  const url = `${base}/api/report/pdf`;
+  const payload = JSON.stringify(body);
+  const withKey = {
+    'Content-Type': 'application/json',
+    ...(key ? { 'X-API-Key': key } : {}),
+  };
+  const noKey = { 'Content-Type': 'application/json' };
+  let r = await fetch(url, {
+    method: 'POST', headers: withKey, body: payload,
   });
+  if (r.status === 401 && key) {
+    r = await fetch(url, {
+      method: 'POST', headers: noKey, body: payload,
+    });
+  }
   if (!r.ok) {
     const t = await r.text().catch(() => '');
     throw new Error(`AstroSeer report/pdf ${r.status}: `
