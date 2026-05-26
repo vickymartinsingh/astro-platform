@@ -120,3 +120,30 @@ export async function getAuditByUser(uid, lim = 100) {
     return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
   } catch (_) { return []; }
 }
+
+// Date-bounded audit query used by the admin activity-history viewer.
+// `fromMs` / `toMs` are JS epoch milliseconds. Either side can be null
+// for an open-ended range. Returns at most `lim` events newest-first.
+export async function getAuditByUserBetween(uid, fromMs, toMs,
+  lim = 1000) {
+  if (!uid) return [];
+  try {
+    // Pull the latest `lim` events for the user, then filter
+    // client-side by date. This avoids a composite index across
+    // (uid, createdAt) and keeps the rules check trivial.
+    const snap = await getDocs(query(
+      collection(db, 'audits'),
+      where('uid', '==', uid),
+      orderBy('createdAt', 'desc'),
+      limit(lim),
+    ));
+    const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    return rows.filter((r) => {
+      const ms = (r.createdAt && r.createdAt.toMillis
+        && r.createdAt.toMillis()) || (r.ts || 0);
+      if (fromMs && ms < fromMs) return false;
+      if (toMs && ms > toMs) return false;
+      return true;
+    });
+  } catch (_) { return []; }
+}

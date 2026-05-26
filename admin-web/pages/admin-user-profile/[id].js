@@ -10,6 +10,7 @@ import {
 import Layout from '../../components/Layout';
 import ResetAccountPanel from '../../components/ResetAccountPanel';
 import ComplianceActivity from '../../components/ComplianceActivity';
+import ActivityHistory from '../../components/ActivityHistory';
 import { useRequireAdmin } from '../../lib/useAuth';
 
 const { sessionRefNo } = sessionService;
@@ -183,6 +184,9 @@ export default function AdminUserProfile() {
 
       {/* DEVICE + LOGIN SESSIONS (real-time IP + UA + history). */}
       <DeviceSessionsPanel uid={id} u={u} />
+
+      {/* Aggregated activity history with date filter + PDF export. */}
+      <ActivityHistory uid={id} user={u} />
 
       {/* KUNDLI PROFILES */}
       <div className="surface mt-4 p-3">

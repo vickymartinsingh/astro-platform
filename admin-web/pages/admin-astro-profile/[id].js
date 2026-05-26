@@ -6,6 +6,7 @@ import {
 import Layout from '../../components/Layout';
 import ResetAccountPanel from '../../components/ResetAccountPanel';
 import ComplianceActivity from '../../components/ComplianceActivity';
+import ActivityHistory from '../../components/ActivityHistory';
 import { useRequireAdmin } from '../../lib/useAuth';
 
 const { sessionRefNo } = sessionService;
@@ -253,6 +254,9 @@ export default function AdminAstroProfile() {
 
       {/* COMPLIANCE: admin-only device + IP + activity log */}
       <ComplianceActivity uid={id} profile={astro} />
+
+      {/* Activity history with date filter + PDF export. */}
+      <ActivityHistory uid={id} user={astro} />
 
       {/* DANGER ZONE: reset astrologer account */}
       <ResetAccountPanel uid={id} role="astrologer"
