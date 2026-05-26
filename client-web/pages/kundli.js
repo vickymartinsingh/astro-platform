@@ -567,11 +567,58 @@ function FullKundli({ r, kundli }) {
 // On success the user sees an immediate Download popup with the
 // signed Firebase Storage URL — same one stored on users/{uid}/
 // orders/{id} for unlimited re-download.
+// Table of contents shown in the confirm popup so the customer
+// knows exactly what they're getting before we deduct any money
+// (paid kind) or kick off any processing (free kind). Kept in code
+// so a future copy edit is one commit, not a database write.
+const REPORT_TOC = {
+  free: {
+    title: 'Free 250+ Page Vedic Kundli',
+    badge: 'No charge',
+    sections: [
+      ['🏠', 'Birth chart (D1 Rasi) with planet positions in DMS'],
+      ['🪐', '16 divisional charts — Navamsa, Dasamsa, Chaturthamsa, …'],
+      ['🌑', 'Nakshatra detail with pada, lord, yoni, gana, nadi'],
+      ['📊', 'Vimshottari Maha → Antar → Pratyantar dasha tree'],
+      ['🪐', 'Planetary aspects, dignities, friendship table'],
+      ['🕉️', 'Yogas (Mahapurusha, Raj, Gajakesari, …)'],
+      ['⚠️', 'Doshas — Mangal, Kalsarp, Sade Sati (if present)'],
+      ['🧮', 'Avkahada Chakra, Ghatak, Favourable Points'],
+      ['📅', 'Panchang — Tithi, Yoga, Karana, Nakshatra at birth'],
+      ['📩', 'PDF emailed to you + saved in Orders for re-download'],
+    ],
+    tat: 'Usually ready in under 60 seconds.',
+    confirmCta: 'Yes, generate the report',
+  },
+  forecast12: {
+    title: '12-Month Vedic Forecast',
+    badge: '', // injected with the live price
+    sections: [
+      ['📅', 'Personalised monthly outlook — 12 months ahead'],
+      ['🪐', 'Maha + Antar + Pratyantar dasha for every month'],
+      ['💼', 'Career, finance, business indications month by month'],
+      ['❤️', 'Love + relationships + marriage timing windows'],
+      ['🩺', 'Health & wellbeing watch-outs'],
+      ['🌍', 'Travel + relocation opportunities'],
+      ['🔮', 'Important transits (Saturn, Jupiter, Rahu/Ketu)'],
+      ['🪔', 'Remedies + lucky days, colours, mantras per month'],
+      ['📩', 'PDF emailed to you + saved in Orders for re-download'],
+    ],
+    tat: 'Usually ready in under 60 seconds. '
+      + 'Wallet is debited only after the PDF is delivered — if '
+      + 'generation fails, your wallet is refunded automatically.',
+    confirmCta: 'Yes, proceed to payment',
+  },
+};
+
 function ReportButtons({ kundli }) {
   const [busy, setBusy] = useState('');
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [price, setPrice] = useState(50);
+  // Holds the kind the user clicked + the live price; non-null means
+  // the confirm popup is open. Cleared on No / on Yes-and-start.
+  const [pending, setPending] = useState(null);
   useEffect(() => {
     (async () => {
       try {
@@ -597,10 +644,15 @@ function ReportButtons({ kundli }) {
       setError(e);
     } finally { setBusy(''); }
   }
+  // Show confirm popup; only on Yes does buy() actually fire.
+  function ask(kind) {
+    setError(null); setResult(null);
+    setPending({ kind, price });
+  }
   return (
     <div className="mt-2 space-y-2">
       <div className="flex flex-wrap gap-2">
-        <button type="button" onClick={() => buy('free')}
+        <button type="button" onClick={() => ask('free')}
           disabled={!!busy}
           className="rounded-full bg-primary px-3 py-1.5 text-xs
             font-bold text-white disabled:opacity-60">
@@ -608,7 +660,7 @@ function ReportButtons({ kundli }) {
             ? 'Preparing…'
             : '⬇ Free 250+ page Kundli (PDF)'}
         </button>
-        <button type="button" onClick={() => buy('forecast12')}
+        <button type="button" onClick={() => ask('forecast12')}
           disabled={!!busy}
           className="rounded-full bg-accent px-3 py-1.5 text-xs
             font-bold text-white disabled:opacity-60">
@@ -635,10 +687,80 @@ function ReportButtons({ kundli }) {
           )}
         </div>
       )}
+      {pending && (
+        <ConfirmReportPopup
+          spec={REPORT_TOC[pending.kind]}
+          price={pending.price}
+          kind={pending.kind}
+          onCancel={() => setPending(null)}
+          onConfirm={() => {
+            const k = pending.kind;
+            setPending(null);
+            buy(k);
+          }}
+        />
+      )}
       {result && result.ok && (
         <DownloadPopup result={result}
           onClose={() => setResult(null)} />
       )}
+    </div>
+  );
+}
+
+// Pre-purchase confirm popup. Lists every section the report will
+// contain + the expected delivery time + the price (for paid kinds).
+// Two CTAs, Cancel on the left and the action on the right so the
+// user has a real "are you sure?" beat before any wallet deduction.
+function ConfirmReportPopup({ spec, price, kind, onCancel, onConfirm }) {
+  if (!spec) return null;
+  const isPaid = kind === 'forecast12';
+  return (
+    <div className="fixed inset-0 z-[2147483647] flex items-center
+                    justify-center bg-black/60 p-4">
+      <div className="w-full max-w-md rounded-2xl bg-white p-5
+                      shadow-2xl">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="text-lg font-bold text-primary">
+            {spec.title}
+          </h2>
+          <span className={`shrink-0 rounded-full px-2 py-0.5
+              text-[11px] font-bold ${isPaid
+                ? 'bg-accent/15 text-accent'
+                : 'bg-success/15 text-success'}`}>
+            {isPaid ? `₹${price} from wallet` : spec.badge}
+          </span>
+        </div>
+        <p className="mt-1 text-xs text-sub-text">
+          What you will get in your PDF:
+        </p>
+        <ul className="mt-2 max-h-64 space-y-1 overflow-auto
+                       rounded-card bg-bg-light p-3 text-sm">
+          {spec.sections.map(([icon, text]) => (
+            <li key={text} className="flex items-start gap-2">
+              <span className="shrink-0">{icon}</span>
+              <span>{text}</span>
+            </li>
+          ))}
+        </ul>
+        <div className="mt-3 rounded-card border border-primary/30
+                        bg-primary/5 p-2 text-[11px] text-dark-text">
+          <b className="text-primary">Delivery:</b> {spec.tat}
+        </div>
+        <div className="mt-4 flex gap-2">
+          <button type="button" onClick={onCancel}
+            className="flex-1 rounded-full border border-gray-300
+              bg-white py-2.5 text-sm font-bold text-dark-text">
+            No
+          </button>
+          <button type="button" onClick={onConfirm}
+            className={`flex-1 rounded-full py-2.5 text-sm
+              font-bold text-white ${isPaid
+                ? 'bg-accent' : 'bg-primary'}`}>
+            {spec.confirmCta}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -90,6 +90,28 @@ async function getReportPrice(db, kind) {
   } catch (_) { return DEFAULT_FORECAST_PRICE; }
 }
 
+// Open-Meteo geocoding (no key, no quota for the volume we run at).
+// Mirrors the geocode() in api/kundli.js. Used as a fallback when
+// the kundliProfiles doc only has a `place` string with no
+// pre-resolved lat/lng — most user-saved profiles are that shape
+// because the BirthInputs CityField only writes the text label.
+// AstroSeer's /api/report/pdf insists on numeric latitude+longitude
+// and 422's otherwise (this was the actual cause of the "Report
+// generation failed" toast users were seeing on saved profiles).
+async function geocode(place) {
+  if (!place) return null;
+  try {
+    const url = 'https://geocoding-api.open-meteo.com/v1/search'
+      + `?name=${encodeURIComponent(place)}&count=1&language=en`;
+    const r = await fetch(url);
+    if (!r.ok) return null;
+    const j = await r.json();
+    const hit = j && j.results && j.results[0];
+    if (hit) return { lat: hit.latitude, lng: hit.longitude };
+  } catch (_) { /* ignore */ }
+  return null;
+}
+
 function parseDob(dob, tob, ampm) {
   const parts = String(dob || '').trim().split(/[-/]/).map(
     (n) => parseInt(n, 10));
@@ -296,13 +318,31 @@ async function handleReport(req, res) {
   //    as /api/kundli plus a `tier` (9 = the deepest one). For the
   //    forecast we pass `months: 12` so the API knows to bake the
   //    next 12 monthly transit + dasha forecasts into the PDF.
+  //
+  // Resolve lat/lng: profiles created by the BirthInputs CityField
+  // only carry a `place` string label — no numeric coords. AstroSeer
+  // 422's on null lat/lng, so we geocode the place text via the
+  // same Open-Meteo lookup api/kundli.js uses. If that ALSO fails
+  // we fall back to Mumbai (Vedic apps' default reference) so the
+  // PDF still ships a valid chart rather than failing the whole
+  // request.
   const p = parseDob(profile.dob, profile.tob, profile.ampm);
   const tz = 5.5; // IST default; future: pluck from profile.tz
+  let lat = Number(profile.lat) || 0;
+  let lng = Number(profile.lng) || 0;
+  if (!lat || !lng) {
+    const g = await geocode(profile.place || '');
+    if (g) { lat = g.lat; lng = g.lng; }
+  }
+  if (!lat || !lng) {
+    // Last-ditch default so an empty place doesn't kill the request.
+    lat = 19.076; lng = 72.8777;
+  }
   const reqBody = {
     year: p.y, month: p.m, day: p.d, hour: p.hh, minute: p.mm,
     tz_offset: tz,
-    latitude: Number(profile.lat) || null,
-    longitude: Number(profile.lng) || null,
+    latitude: lat,
+    longitude: lng,
     place: profile.place || '',
     name: profile.name || '',
     tier: FREE_TIER,
