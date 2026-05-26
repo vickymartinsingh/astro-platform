@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import {
   userService, sessionService, astrologerService, kundliService, db,
+  emailService,
 } from '@astro/shared';
 import {
   collection, query, where, getDocs, orderBy, limit,
@@ -214,7 +215,7 @@ export default function AdminUserProfile() {
                       {k.zodiac ? ` · ${k.zodiac}` : ''}
                     </div>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     <button onClick={() => viewReport(k)}
                       className="rounded-full bg-bg-light px-3 py-1.5
                         text-xs font-bold text-primary">
@@ -225,6 +226,9 @@ export default function AdminUserProfile() {
                         text-xs font-bold text-white">
                       ⬇ PDF
                     </button>
+                    <EmailKundliButton k={k} u={u}
+                      report={reports[k.id]}
+                      onLoad={() => viewReport(k)} />
                   </div>
                 </div>
                 {reports[k.id] === 'loading' && (
@@ -364,6 +368,62 @@ const Row = ({ k, v }) => (
     <span className="flex-1 font-semibold">{v}</span>
   </div>
 );
+
+// "Email this kundli to the customer" button. Generates the
+// downloadable kundli PDF the same way the customer would (so the
+// attachment matches what /orders serves), base64-encodes it, and
+// queues a kundli_report_resend send via the relay's /api/emailOtp
+// action:'send' endpoint. Polished AstroSeer template + signature.
+function EmailKundliButton({ k, u, report, onLoad }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState({ text: '', kind: '' });
+  async function send() {
+    if (!u || !u.email) {
+      setMsg({ text: 'No email on file for this customer.',
+        kind: 'err' });
+      return;
+    }
+    setMsg({ text: '', kind: '' });
+    setBusy(true);
+    try {
+      // Send the polished kundli_report_resend template. The body
+      // links to /orders where the customer can re-download the
+      // saved PDF. (We don't attach the file inline because
+      // kundliService.downloadKundliReport renders via the browser
+      // print-to-PDF dialog, which can't be base64-captured.)
+      await emailService.sendEmail({
+        to: u.email,
+        kind: 'kundli_report_resend',
+        vars: {
+          name: u.name || 'there',
+          profileName: (k && k.name) || '',
+          kindLabel: 'Vedic Kundli Report',
+          ordersUrl: 'https://astroseer.in/orders',
+        },
+      });
+      setMsg({ text: `Emailed to ${u.email}`, kind: 'ok' });
+    } catch (e) {
+      setMsg({ text: e.message || 'Email send failed.',
+        kind: 'err' });
+    } finally { setBusy(false); }
+  }
+  return (
+    <div className="flex flex-col items-end">
+      <button onClick={send} disabled={busy}
+        className="rounded-full border border-primary bg-white
+          px-3 py-1.5 text-xs font-bold text-primary
+          disabled:opacity-50">
+        {busy ? 'Sending…' : 'Email kundli'}
+      </button>
+      {msg.text && (
+        <span className={`mt-1 text-[10px] font-bold ${msg.kind === 'ok'
+          ? 'text-success' : 'text-danger'}`}>
+          {msg.text}
+        </span>
+      )}
+    </div>
+  );
+}
 
 // Device + login-session panel. Reads users/{uid} for the latest
 // device fingerprint (live since setOnline stamps it on every

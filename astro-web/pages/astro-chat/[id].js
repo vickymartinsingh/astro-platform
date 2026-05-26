@@ -309,8 +309,8 @@ export default function AstroChat() {
           })}
         </div>
         {otherTyping && (
-          <div className="px-4 pb-1 text-xs font-semibold text-primary">
-            Client is typing...
+          <div className="px-4 pb-2">
+            <AstroTypingBubble who="Client" />
           </div>
         )}
         <div className="flex items-center gap-2 bg-white p-3">
@@ -371,6 +371,39 @@ export default function AstroChat() {
           </div>
         )}
       </main>
+    </div>
+  );
+}
+
+// WhatsApp / Meta-style typing bubble. Three dots bounce out of
+// phase inside a chat bubble. Used by the astrologer chat page so
+// the astrologer sees the customer compose in real time.
+function AstroTypingBubble({ who }) {
+  return (
+    <div className="inline-flex items-center gap-2 rounded-2xl
+      rounded-bl-md bg-white px-3 py-2 shadow-sm">
+      <span className="text-[12px] text-sub-text">
+        <b className="text-dark-text">{who}</b> is typing
+      </span>
+      <span className="flex items-center gap-0.5">
+        <span className="atb-dot" />
+        <span className="atb-dot" style={{ animationDelay: '120ms' }} />
+        <span className="atb-dot" style={{ animationDelay: '240ms' }} />
+      </span>
+      <style jsx>{`
+        :global(.atb-dot) {
+          width: 6px;
+          height: 6px;
+          border-radius: 999px;
+          background: #6c2bd9;
+          display: inline-block;
+          animation: atb-bounce 1s infinite ease-in-out;
+        }
+        @keyframes atb-bounce {
+          0%, 80%, 100% { transform: translateY(0); opacity: 0.45; }
+          40% { transform: translateY(-4px); opacity: 1; }
+        }
+      `}</style>
     </div>
   );
 }

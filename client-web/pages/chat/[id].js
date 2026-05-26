@@ -541,6 +541,15 @@ export default function ChatScreen() {
             </div>
           );
         })}
+
+        {/* WhatsApp / Meta / Amazon style typing bubble — three
+            bouncing dots inside a chat bubble on the astrologer's
+            (left) side, prefixed with their name so the customer
+            knows it isn't them. */}
+        {otherTyping && !isView && (
+          <TypingBubble who={astro.name || 'Astrologer'}
+            avatar={astro.profileImage} />
+        )}
       </div>
 
       {!atBottom && (
@@ -730,5 +739,49 @@ function Overlay({ children }) {
         {children}
       </div>
     </Layout>
+  );
+}
+
+// WhatsApp-style typing indicator. Shown at the bottom of the message
+// list when the astrologer (or AI auto-responder writing in their
+// name) is currently composing. Three dots bounce out of phase via
+// inline @keyframes so we don't have to touch Tailwind config.
+function TypingBubble({ who, avatar }) {
+  return (
+    <div className="mb-1.5 flex items-end gap-2">
+      {avatar && (
+        <img src={avatar} alt=""
+          className="h-7 w-7 rounded-full object-cover" />
+      )}
+      <div className="rounded-2xl rounded-bl-md bg-white px-3 py-2
+        shadow-sm">
+        <div className="flex items-center gap-2 text-[12px]
+          text-sub-text">
+          <span className="font-semibold text-dark-text">
+            {who}
+          </span>
+          <span>is typing</span>
+          <span className="ml-1 flex items-center gap-0.5">
+            <span className="typing-dot" />
+            <span className="typing-dot" style={{ animationDelay: '120ms' }} />
+            <span className="typing-dot" style={{ animationDelay: '240ms' }} />
+          </span>
+        </div>
+      </div>
+      <style jsx>{`
+        :global(.typing-dot) {
+          width: 6px;
+          height: 6px;
+          border-radius: 999px;
+          background: #6c2bd9;
+          display: inline-block;
+          animation: typing-bounce 1s infinite ease-in-out;
+        }
+        @keyframes typing-bounce {
+          0%, 80%, 100% { transform: translateY(0); opacity: 0.45; }
+          40% { transform: translateY(-4px); opacity: 1; }
+        }
+      `}</style>
+    </div>
   );
 }
