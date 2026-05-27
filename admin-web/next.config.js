@@ -12,4 +12,5 @@ const nextConfig = {
   ...(process.env.CAPACITOR === 'true'
     ? { output: 'export', trailingSlash: true } : {}),
 };
+// Deploy marker: 2026-05-27 — force Vercel rebuild after webhook miss on c41c9d2.
 module.exports = nextConfig;
