@@ -141,11 +141,9 @@ export default function Discover() {
             includes and the price.
           </p>
         </div>
-        <Link href="/wallet"
-          className="rounded-full bg-primary px-4 py-1.5 text-xs
-            font-bold text-white">
-          Wallet ₹{Number(wallet || 0).toFixed(0)}
-        </Link>
+        {/* Wallet pill removed per user request - it duplicated the
+            Wallet icon already present in the top nav and added
+            visual noise to the Discover header. */}
       </div>
 
       <div className="mb-3 flex flex-wrap gap-1.5">
