@@ -931,9 +931,17 @@ async function handleReport(req, res) {
   const { base, key } = await getAstroSeerCreds(db);
 
   // 3. For paid kinds: atomic wallet deduct + order placeholder.
+  //
+  // REGENERATE EXCEPTION: when body.regenerate is true (admin
+  // Regenerate button, or any retry), we are NOT selling a new
+  // report - the customer already paid for this chart in a prior
+  // order. Skip the wallet deduct entirely and just create a new
+  // order doc with amount:0. Without this, every Regenerate click
+  // would re-charge the wallet ₹299, which is what the user just
+  // reported as a bug.
   let orderRef = db.collection('users').doc(uid).collection('orders').doc();
   let chargedAmount = 0;
-  if (price > 0) {
+  if (price > 0 && !body.regenerate) {
     const userRef = db.collection('users').doc(uid);
     try {
       await db.runTransaction(async (tx) => {
@@ -980,12 +988,48 @@ async function handleReport(req, res) {
       chargedAmount = price;
     } catch (e) {
       if (e.code === 'insufficient_wallet') {
+        // Log the insufficient-wallet attempt to the AstroSeer
+        // Activity feed BEFORE returning 402, so the failure
+        // shows up in the central admin view too (it used to be
+        // invisible because we returned early).
+        try {
+          const uSnap = await db.collection('users').doc(uid).get();
+          const u = (uSnap.exists ? uSnap.data() : null) || {};
+          logAstroSeerEvent({
+            creds: { baseUrl: base },
+            orderId: orderRef.id,
+            status: 'failed',
+            kind,
+            userName: u.name || '',
+            userEmail: u.email || '',
+            userId: uid,
+            amount: price,
+            error: `Insufficient wallet (₹${e.wallet} < ₹${price})`,
+          });
+        } catch (_) { /* swallow */ }
         return res.status(402).json({
           error: 'Insufficient wallet balance.',
           wallet: e.wallet, price: e.price });
       }
       throw e;
     }
+  } else if (price > 0 && body.regenerate) {
+    // Regenerate of a paid order: create a new order doc with
+    // amount:0 (since the customer was already charged on the
+    // original order) so /orders shows it as a free retry instead
+    // of pretending they paid twice.
+    await orderRef.set({
+      kind, kundliProfileId: profileId, amount: 0,
+      status: 'paid_generating',
+      birthSig: sig,
+      profileName: profile.name || '',
+      profileDob: profile.dob || '',
+      profileTob: profile.tob || '',
+      profileAmpm: profile.ampm || '',
+      profilePlace: profile.place || '',
+      paidAt: admin.firestore.FieldValue.serverTimestamp(),
+      regeneratedFrom: body.fromOrderId || '',
+    });
   } else {
     // Free kind: still write an order doc for the user's history.
     await orderRef.set({
