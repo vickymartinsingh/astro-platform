@@ -42,13 +42,14 @@ export default function Document() {
             switches, update the d={...} block and redeploy. */}
         <script
           dangerouslySetInnerHTML={{
+            // KEEP IN LOCKSTEP with astro-web/styles/globals.css.
             __html: '(function(){var r=document.documentElement.style;'
               + 'var d={"--c-primary":"127 32 32",'
-              + '"--c-bglight":"247 239 227","--grad-a":"#7F2020",'
-              + '"--grad-b":"#F59E0B","--c-accent":"245 158 11",'
-              + '"--c-success":"132 153 79","--c-warning":"230 126 34",'
+              + '"--c-bglight":"251 247 238","--grad-a":"#D4A12A",'
+              + '"--grad-b":"#7F2020","--c-accent":"180 83 9",'
+              + '"--c-success":"90 110 50","--c-warning":"212 161 42",'
               + '"--c-danger":"192 57 43","--c-verify":"127 32 32",'
-              + '"--c-tarot":"#2E361B","--c-tarot2":"#84994F"};'
+              + '"--c-tarot":"#2A1408","--c-tarot2":"#4A2410"};'
               + 'for(var k in d){r.setProperty(k,d[k]);}'
               + "try{var c=window.localStorage.getItem('appThemeVars2');"
               + 'if(c){var v=JSON.parse(c);for(var k2 in v){'

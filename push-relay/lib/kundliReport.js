@@ -667,6 +667,81 @@ async function handleReport(req, res) {
       const realUrl = ready.pdfBase64
         ? `data:application/pdf;base64,${ready.pdfBase64}`
         : ready.pdfUrl;
+
+      // If the caller explicitly asked to email this cached order
+      // (admin "Email complimentary kundli", or the user clicking
+      // "Resend by email"), DO email it. Previously this branch
+      // returned emailed:false unconditionally, which made the
+      // admin progress popup say "Both email attempts failed - relay
+      // did not return an error string" even though the PDF was
+      // perfectly fine; nothing actually tried to send it.
+      let cEmailed = false;
+      let cEmailMode = null;
+      let cEmailError = null;
+      let cAttachmentError = null;
+      let cLinkOnlyError = null;
+      const wantsEmail = !!body.email || !!body.complimentary
+        || !!body.resend;
+      if (wantsEmail) {
+        // Decode the PDF back into a Buffer for the SMTP attachment.
+        let pdfBuf = null;
+        if (ready.pdfBase64) {
+          try { pdfBuf = Buffer.from(ready.pdfBase64, 'base64'); }
+          catch (_) { pdfBuf = null; }
+        }
+        // Look up the user's email + name (same query the fresh-
+        // generate path uses lower down).
+        let userEmail = '';
+        let userName = profile.name || '';
+        try {
+          const uSnap = await db.collection('users').doc(uid).get();
+          const u = uSnap.data() || {};
+          userEmail = u.email || '';
+          if (!userName) userName = u.name || '';
+        } catch (_) { /* fine */ }
+        if (!userEmail) {
+          cEmailError = 'no email on file for this user';
+        } else if (!pdfBuf) {
+          // PDF lives in Vercel Blob (external CDN), not inline -
+          // we cannot easily refetch the bytes here without an HTTP
+          // GET. Send the link-only flavour so the user still
+          // receives an email and can download from the URL.
+          const r = await emailReport({
+            db, toEmail: userEmail, name: userName,
+            kind, pdfBuf: Buffer.alloc(0), pdfName: ready.pdfName
+              || 'AstroSeer-Kundli.pdf',
+            complimentary: !!body.complimentary,
+            senderNote: body.senderNote || '',
+          });
+          if (r && r.ok) {
+            cEmailed = true; cEmailMode = r.mode || 'link-only';
+            cAttachmentError = r.attachmentError || null;
+            cLinkOnlyError = r.linkOnlyError || null;
+          } else {
+            cEmailError = (r && r.error) || 'email send failed';
+            cAttachmentError = (r && r.attachmentError) || null;
+            cLinkOnlyError = (r && r.linkOnlyError) || null;
+          }
+        } else {
+          const r = await emailReport({
+            db, toEmail: userEmail, name: userName,
+            kind, pdfBuf, pdfName: ready.pdfName
+              || 'AstroSeer-Kundli.pdf',
+            complimentary: !!body.complimentary,
+            senderNote: body.senderNote || '',
+          });
+          if (r && r.ok) {
+            cEmailed = true; cEmailMode = r.mode || 'link-only';
+            cAttachmentError = r.attachmentError || null;
+            cLinkOnlyError = r.linkOnlyError || null;
+          } else {
+            cEmailError = (r && r.error) || 'email send failed';
+            cAttachmentError = (r && r.attachmentError) || null;
+            cLinkOnlyError = (r && r.linkOnlyError) || null;
+          }
+        }
+      }
+
       return res.status(200).json({
         ok: true,
         orderId: ready.id,
@@ -675,7 +750,11 @@ async function handleReport(req, res) {
         sizeBytes: ready.sizeBytes || 0,
         amount: 0, // never bill twice for the same chart
         kind,
-        emailed: false, // was emailed once at original generate
+        emailed: cEmailed,
+        emailMode: cEmailMode,
+        emailError: cEmailError,
+        attachmentError: cAttachmentError,
+        linkOnlyError: cLinkOnlyError,
         validUntil: ready.validUntil || null,
         cached: true,
       });

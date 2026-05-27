@@ -156,8 +156,10 @@ export default function LiveView() {
           }}>
           {feed.map((c) => {
             const ch = (c.name || '?').trim().charAt(0).toUpperCase();
-            const cols = ['#F59E0B', '#EC4899', '#8B5CF6', '#10B981',
-              '#3B82F6', '#EF4444'];
+            // Royal palette only - maroon, amber, olive, rust, deep,
+            // accent. No purple, pink, sky-blue or generic orange.
+            const cols = ['#7F2020', '#D4A12A', '#5A6E32', '#B45309',
+              '#2A1408', '#1A1A2E'];
             const bg = cols[(c.name || 'x').charCodeAt(0) % cols.length];
             return (
               <div key={c.id} className="flex items-start gap-2">

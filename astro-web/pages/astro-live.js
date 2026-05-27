@@ -333,7 +333,7 @@ export default function AstroLive() {
                   </span>
                   {c.team && <Tick green />}
                   {(c.code || c.uid) && (
-                    <span className="text-[#F59E0B]">
+                    <span className="text-[#D4A12A]">
                       {' '}({c.code || String(c.uid).slice(0, 7)})
                     </span>
                   )}
