@@ -14,7 +14,7 @@
 //      Hard rule from user: "kundli of each person should be allocated
 //      to one user only". Cross-user reads here = bug.
 //   2. Wallet deduct (paid only) atomically with order doc creation.
-//   3. Generate PDF via AstroSeer /api/report/pdf (tier 9 for free,
+//   3. Generate PDF via AstroSeer /api/kundli/pdf (tier 9 for free,
 //      tier 9 + monthly=12 for forecast).
 //   4. Upload PDF to Firebase Storage at
 //        media/reports/{uid}/{ts}_{kind}.pdf
@@ -143,11 +143,23 @@ function astroSeerBody(kind, p, lat, lng, profile) {
     ? latNum : null;
   const safeLng = (Number.isFinite(lngNum) && lngNum !== 0)
     ? lngNum : null;
-  const body = {
+  // POST /api/kundli/pdf body shape per the AstroSeer API spec
+  // (docs/ASTROSEER_API_AGENT_PROMPT.md line 625-627):
+  //   { birth: {...}, kind: 'free'|'forecast12'|... }
+  // We also send the flat fields at the top level so an older API
+  // build that hasn't migrated to the wrapped shape still works.
+  // (Plus name + place + tier + branding kept flat for back-compat
+  // with the existing AstroSeer implementation.)
+  const birth = {
     year: p.y, month: p.m, day: p.d, hour: p.hh, minute: p.mm,
     tz_offset: tz,
     latitude: safeLat,
     longitude: safeLng,
+  };
+  const body = {
+    ...birth,
+    birth,
+    kind,
     place: profile.place || '',
     name: profile.name || '',
     tier: FREE_TIER,
@@ -176,7 +188,7 @@ function astroSeerBody(kind, p, lat, lng, profile) {
 // the kundliProfiles doc only has a `place` string with no
 // pre-resolved lat/lng - most user-saved profiles are that shape
 // because the BirthInputs CityField only writes the text label.
-// AstroSeer's /api/report/pdf insists on numeric latitude+longitude
+// AstroSeer's /api/kundli/pdf insists on numeric latitude+longitude
 // and 422's otherwise (this was the actual cause of the "Report
 // generation failed" toast users were seeing on saved profiles).
 async function geocode(place) {
@@ -208,19 +220,53 @@ function parseDob(dob, tob, ampm) {
   return { y, m, d, hh, mm };
 }
 
-// AstroSeer's /api/report/pdf returns the PDF bytes directly. We
+// AstroSeer's /api/kundli/pdf returns the PDF bytes directly. We
 // stream them straight to Storage so the relay's memory stays low.
 async function callAstroSeerPdf({ base, key, body }) {
   // Same stale-key recovery as the kundli JSON path: try WITH the
   // key first, retry WITHOUT on 401. AstroSeer rejects an invalid
   // key but accepts unauthenticated calls.
   //
-  // Hard 50s timeout (Vercel function cap is 60s) - AstroSeer on
+  // Hard 55s timeout (Vercel function cap is 60s) - AstroSeer on
   // Render free tier cold-starts in ~30s, so we give it room while
   // still aborting before Vercel kills us with a 504. Without this
   // the browser sees "Failed to fetch" with no JSON body (because
   // Vercel terminates the function mid-response).
-  const url = `${base}/api/report/pdf`;
+  //
+  // Pre-flight wake-up: ping /health with a 25s timeout BEFORE the
+  // real PDF call. On Render free tier this absorbs the dyno
+  // cold-start without burning our PDF generation budget. /health
+  // is a tiny endpoint so it wakes the dyno and returns fast once
+  // the dyno is alive. If /health itself fails or times out, we
+  // surface a clean "AstroSeer offline" error instead of waiting
+  // another 55s for /api/kundli/pdf to also time out.
+  try {
+    const hac = new AbortController();
+    const htid = setTimeout(() => hac.abort(), 25000);
+    try {
+      const hr = await fetch(`${base}/health`, {
+        method: 'GET',
+        headers: key ? { 'X-API-Key': key } : {},
+        signal: hac.signal,
+      });
+      if (!hr.ok && hr.status !== 401) {
+        throw new Error(`AstroSeer /health ${hr.status} - the API `
+          + 'is reachable but reports unhealthy. Check the Render '
+          + 'service logs.');
+      }
+    } finally { clearTimeout(htid); }
+  } catch (e) {
+    if (e && e.name === 'AbortError') {
+      throw new Error('AstroSeer API is offline (Render free dyno '
+        + 'failed to wake in 25s). Visit '
+        + `${base}/admin/dashboard once to spin it up, then retry.`);
+    }
+    // Re-throw non-abort errors with the same shape the PDF call
+    // would have produced so the caller's catch path is identical.
+    throw new Error(`AstroSeer /health unreachable: `
+      + `${(e && e.message) || e}`);
+  }
+  const url = `${base}/api/kundli/pdf`;
   const payload = JSON.stringify(body);
   const withKey = {
     'Content-Type': 'application/json',
@@ -229,7 +275,11 @@ async function callAstroSeerPdf({ base, key, body }) {
   const noKey = { 'Content-Type': 'application/json' };
   const doFetch = async (headers) => {
     const ac = new AbortController();
-    const tid = setTimeout(() => ac.abort(), 50000);
+    // 55s: leaves 5s headroom under Vercel's 60s function cap so we
+    // abort cleanly and return a JSON error before Vercel kills the
+    // process (which would strip CORS headers and surface as
+    // "Failed to fetch" in the browser).
+    const tid = setTimeout(() => ac.abort(), 55000);
     try {
       return await fetch(url, {
         method: 'POST', headers, body: payload, signal: ac.signal,
