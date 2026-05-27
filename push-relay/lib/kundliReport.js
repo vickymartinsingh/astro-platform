@@ -854,8 +854,11 @@ async function handleReport(req, res) {
   }
 
   // 1c. Stuck-order sweeper. Any *_generating order from this user
-  //     older than 90s is now considered failed - the relay's
-  //     previous run timed out before the PDF landed. Mark it
+  //     older than 5 minutes is considered failed - the relay's
+  //     previous run timed out before the PDF landed. (Threshold
+  //     extended from 90s to 300s on 2026-05-27 to accommodate
+  //     long premium reports like full_life / consolidated_premium
+  //     which legitimately take 60-90s on Render free tier.) Mark it
   //     failed_timeout AND refund the wallet (paid kinds only) so
   //     the customer is not stuck with a debit + the admin Order
   //     Management list does not show "Generating..." indefinitely.
@@ -874,7 +877,7 @@ async function handleReport(req, res) {
       const o = d.data() || {};
       const paidMs = (o.paidAt && o.paidAt.toMillis
         && o.paidAt.toMillis()) || 0;
-      if (!paidMs || (now - paidMs) < 90 * 1000) return;
+      if (!paidMs || (now - paidMs) < 300 * 1000) return;
       const refundAmount = Number(o.amount || 0);
       writes.push((async () => {
         if (refundAmount > 0) {
@@ -1088,14 +1091,101 @@ async function handleReport(req, res) {
     // Last-ditch default so an empty place doesn't kill the request.
     lat = 19.076; lng = 72.8777;
   }
-  const reqBody = astroSeerBody(kind, p, lat, lng, profile);
 
-  // 5. Generate + upload + email. If ANY step throws after the
-  //    wallet was charged, reverse the charge so we never bill the
-  //    user for a missing PDF.
-  let pdfBuf;
+  // ASYNC GENERATION (2026-05-27 AstroSeer spec): kick off PDF
+  // generation on AstroSeer via POST /api/orders/log with full birth
+  // params. The endpoint stores the order AND immediately begins
+  // background PDF generation, returning in <100ms. The customer
+  // then polls /api/orders/{id}/status (via our reportStatus action).
+  //
+  // This replaces the old synchronous POST /api/kundli/pdf that
+  // blocked the relay function for 60-80s on long reports and
+  // tripped the 90s timeout for full_life / consolidated_premium /
+  // lifetime kinds.
+  const profileTz = Number(profile.tz);
+  const tzOffset = Number.isFinite(profileTz) ? profileTz : 5.5;
+  // Fetch user record once for email + name to enrich the log payload
+  // (helps the AstroSeer admin Activity feed show real customer info).
+  let userEmail = '';
+  let userName = profile.name || '';
   try {
-    pdfBuf = await callAstroSeerPdf({ base, key, body: reqBody });
+    const uSnap = await db.collection('users').doc(uid).get();
+    const u = uSnap.data() || {};
+    userEmail = u.email || '';
+    if (!userName) userName = u.name || '';
+  } catch (_) { /* fine */ }
+
+  // Map our internal kind -> AstroSeer report_type enum.
+  const REPORT_TYPE = {
+    free: 'basic',
+    forecast12: 'yearly',
+    careerFinance: 'career',
+    lifetime: 'full_life',
+  };
+
+  try {
+    const startAc = new AbortController();
+    const startTid = setTimeout(() => startAc.abort(), 15000);
+    const startBody = {
+      order_id: orderRef.id,
+      status: 'generating',
+      report_type: REPORT_TYPE[kind] || 'basic',
+      customer_name: userName,
+      customer_email: userEmail,
+      customer_uid: uid,
+      amount: chargedAmount || 0,
+      place: profile.place || '',
+      birth_summary: birthSummaryFromProfile(profile),
+      // Birth params - AstroSeer needs these to generate without a
+      // separate kundli call.
+      birth_year: p.y,
+      birth_month: p.m,
+      birth_day: p.d,
+      birth_hour: p.hh,
+      birth_minute: p.mm,
+      birth_second: 0,
+      tz_offset: tzOffset,
+      latitude: lat,
+      longitude: lng,
+    };
+    let startResp;
+    try {
+      startResp = await fetch(`${base}/api/orders/log`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(startBody),
+        signal: startAc.signal,
+      });
+    } finally { clearTimeout(startTid); }
+    if (!startResp || !startResp.ok) {
+      const t = startResp ? await startResp.text().catch(() => '') : '';
+      throw new Error(`AstroSeer /api/orders/log returned `
+        + `${startResp ? startResp.status : 'no response'}: `
+        + `${t.slice(0, 200)}`);
+    }
+    const startJson = await startResp.json().catch(() => ({}));
+    // Persist the AstroSeer-side job reference + async flag so the
+    // poll handler can verify it kicked off.
+    await orderRef.update({
+      astroseerJobRef: startJson.job_ref
+        || `ord_${orderRef.id}`,
+      asyncGenerationStarted: !!startJson.async_generation_started,
+      asyncStartedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    // Return IMMEDIATELY to the customer. They will poll the
+    // reportStatus action every 5s until status flips to 'ready'.
+    return res.status(200).json({
+      ok: true,
+      orderId: orderRef.id,
+      status: 'generating',
+      asyncGenerationStarted: !!startJson.async_generation_started,
+      // The next two are what the customer UI should poll/fetch.
+      pollAction: 'reportStatus',
+      pdfAction: 'reportPdf',
+      amount: chargedAmount,
+      kind,
+    });
   } catch (e) {
     if (chargedAmount > 0) {
       try {
@@ -1141,62 +1231,237 @@ async function handleReport(req, res) {
       refunded: chargedAmount > 0,
     });
   }
+}
+
+// ====================================================================
+// ASYNC POLLING HANDLERS - the customer UI calls these every 5s after
+// the initial handleReport returns status:'generating'. They proxy to
+// AstroSeer's new /api/orders/{id}/status + /api/orders/{id}/pdf
+// endpoints, cache the PDF in Firestore (so /orders re-downloads keep
+// working forever), and run the email + sweeper logic when status
+// first flips to 'sent'.
+// ====================================================================
+
+// Quick helper: extract base URL the same way handleReport does.
+async function resolveAstroSeerBase(db) {
+  const { base } = await getAstroSeerCreds(db);
+  return base || 'https://astroseer-api.onrender.com';
+}
+
+// Pull the user's email + name (best-effort) for the email-on-ready
+// flow inside the status poller.
+async function loadUserContact(db, uid) {
+  try {
+    const uSnap = await db.collection('users').doc(uid).get();
+    const u = (uSnap.exists ? uSnap.data() : null) || {};
+    return { email: u.email || '', name: u.name || '' };
+  } catch (_) { return { email: '', name: '' }; }
+}
+
+async function handleReportStatus(req, res) {
+  try { init(); } catch (e) {
+    return res.status(503).json({
+      error: String((e && e.message) || e) });
+  }
+  const db = admin.firestore();
+  const body = readBody(req);
+  const orderIdRaw = body.orderId || body.order_id || '';
+  const uid = String(body.uid || '').trim();
+  const orderId = String(orderIdRaw || '').trim();
+  if (!orderId || !uid) {
+    return res.status(400).json({ error: 'orderId and uid required' });
+  }
+
+  // Read our Firestore order doc to know the kind + current state.
+  const orderRef = db.collection('users').doc(uid)
+    .collection('orders').doc(orderId);
+  const oSnap = await orderRef.get();
+  if (!oSnap.exists) {
+    return res.status(404).json({ error: 'order not found' });
+  }
+  const o = oSnap.data() || {};
+  const kind = o.kind || 'free';
+
+  // If we already cached the PDF, return ready immediately - no
+  // need to bother AstroSeer.
+  if (o.status === 'ready' && (o.pdfUrl || o.pdfBase64)) {
+    return res.status(200).json({
+      ok: true,
+      orderId,
+      status: 'ready',
+      pdfUrl: o.pdfBase64
+        ? `data:application/pdf;base64,${o.pdfBase64}`
+        : o.pdfUrl,
+      pdfName: o.pdfName || 'AstroSeer-Kundli.pdf',
+      sizeBytes: o.sizeBytes || 0,
+      kind,
+    });
+  }
+  if (o.status === 'failed' || o.status === 'failed_refunded') {
+    return res.status(200).json({
+      ok: false,
+      orderId,
+      status: o.status,
+      error: o.failReason || 'Generation failed.',
+      refunded: o.status === 'failed_refunded',
+      kind,
+    });
+  }
+
+  // Poll AstroSeer.
+  const base = await resolveAstroSeerBase(db);
+  let astroStatus = null;
+  try {
+    const ac = new AbortController();
+    const tid = setTimeout(() => ac.abort(), 10000);
+    let r;
+    try {
+      r = await fetch(`${base}/api/orders/${encodeURIComponent(orderId)}`
+        + `/status`, { method: 'GET', signal: ac.signal });
+    } finally { clearTimeout(tid); }
+    if (!r.ok) {
+      const t = await r.text().catch(() => '');
+      return res.status(200).json({
+        ok: true,
+        orderId,
+        status: 'generating',
+        astroseerStatusCode: r.status,
+        warning: `AstroSeer status check returned ${r.status}: `
+          + `${t.slice(0, 200)}`,
+        kind,
+      });
+    }
+    astroStatus = await r.json().catch(() => ({}));
+  } catch (e) {
+    // Network blip. Keep showing 'generating' to the customer so
+    // they don't see a fake failure.
+    return res.status(200).json({
+      ok: true,
+      orderId,
+      status: 'generating',
+      warning: `Status check transient error: `
+        + `${(e && e.message) || e}`,
+      kind,
+    });
+  }
+
+  const remoteStatus = String(astroStatus.status || 'generating');
+
+  // Still generating. Reflect any retry_count / resumed_at to the
+  // UI so a long premium report can show "Resumed (retry 2)" copy.
+  if (remoteStatus === 'generating') {
+    return res.status(200).json({
+      ok: true,
+      orderId,
+      status: 'generating',
+      retryCount: astroStatus.retry_count || 0,
+      resumedAt: astroStatus.resumed_at || null,
+      createdAt: astroStatus.created_at || null,
+      kind,
+    });
+  }
+
+  if (remoteStatus === 'failed') {
+    // Atomic refund if this was a paid order that hadn't been
+    // marked failed_refunded yet.
+    const chargedAmount = Number(o.amount || 0);
+    try {
+      if (chargedAmount > 0 && o.status !== 'failed_refunded') {
+        await db.runTransaction(async (tx) => {
+          const uRef = db.collection('users').doc(uid);
+          const uSnap = await tx.get(uRef);
+          const w = Number((uSnap.data() || {}).wallet || 0);
+          tx.update(uRef, {
+            wallet: w + chargedAmount,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+          tx.update(orderRef, {
+            status: 'failed_refunded',
+            failedAt: admin.firestore.FieldValue.serverTimestamp(),
+            failReason: astroStatus.error || 'AstroSeer reported failed.',
+          });
+          const txRef = db.collection('transactions').doc();
+          tx.set(txRef, {
+            userId: uid, amount: chargedAmount, type: 'credit',
+            reason: 'Kundli report refund (generation failed)',
+            referenceId: orderId,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        });
+      } else if (o.status !== 'failed') {
+        await orderRef.update({
+          status: 'failed',
+          failedAt: admin.firestore.FieldValue.serverTimestamp(),
+          failReason: astroStatus.error || 'AstroSeer reported failed.',
+        });
+      }
+    } catch (_) { /* refund retry is next poll's job */ }
+    return res.status(200).json({
+      ok: false,
+      orderId,
+      status: chargedAmount > 0 ? 'failed_refunded' : 'failed',
+      error: astroStatus.error || 'Generation failed.',
+      refunded: chargedAmount > 0,
+      kind,
+    });
+  }
+
+  // remoteStatus === 'sent' (or any other ready-marker). Fetch the
+  // PDF bytes, upload to our storage, update Firestore, email the
+  // user. After this, every subsequent poll returns 'ready'
+  // instantly from the early-exit at the top.
+  let pdfBuf;
+  try {
+    const ac = new AbortController();
+    const tid = setTimeout(() => ac.abort(), 50000);
+    let r;
+    try {
+      r = await fetch(`${base}/api/orders/${encodeURIComponent(orderId)}`
+        + `/pdf`, { method: 'GET', signal: ac.signal });
+    } finally { clearTimeout(tid); }
+    if (!r.ok) {
+      const t = await r.text().catch(() => '');
+      throw new Error(`AstroSeer PDF fetch ${r.status}: `
+        + `${t.slice(0, 200)}`);
+    }
+    pdfBuf = Buffer.from(await r.arrayBuffer());
+    if (!pdfBuf.length) throw new Error('Empty PDF from AstroSeer');
+  } catch (e) {
+    // PDF fetch failed even though AstroSeer says sent. Return
+    // generating-with-warning so the client keeps polling and we
+    // try again on the next tick.
+    return res.status(200).json({
+      ok: true,
+      orderId,
+      status: 'generating',
+      warning: `PDF fetch retry pending: ${(e && e.message) || e}`,
+      kind,
+    });
+  }
 
   let uploaded;
   try {
     uploaded = await uploadPdf(uid, kind, pdfBuf);
   } catch (e) {
-    // Same refund-on-failure path.
-    if (chargedAmount > 0) {
-      try {
-        await db.runTransaction(async (tx) => {
-          const uRef = db.collection('users').doc(uid);
-          const uSnap = await tx.get(uRef);
-          const w = Number((uSnap.data() || {}).wallet || 0);
-          tx.update(uRef, { wallet: w + chargedAmount });
-          tx.update(orderRef, { status: 'failed_refunded',
-            failReason: 'storage upload failed' });
-        });
-      } catch (_) { /* ignore */ }
-    }
-    // Central Activity feed - failure event for the storage path.
-    try {
-      logAstroSeerEvent({
-        creds: { baseUrl: base },
-        orderId: orderRef.id,
-        status: 'failed',
-        kind,
-        userId: uid,
-        error: `Storage upload failed: ${(e && e.message) || e}`,
-      });
-    } catch (_) { /* swallow */ }
-    return res.status(502).json({
-      error: 'Could not save the PDF',
-      detail: String((e && e.message) || e),
-      refunded: chargedAmount > 0,
+    return res.status(200).json({
+      ok: true,
+      orderId,
+      status: 'generating',
+      warning: `Storage upload retry pending: `
+        + `${(e && e.message) || e}`,
+      kind,
     });
   }
 
   const pdfFileName = `AstroSeer-${kind === 'forecast12'
-    ? '12-Month-Forecast' : 'Kundli'}-${profile.name
+    ? '12-Month-Forecast' : 'Kundli'}-${o.profileName
     || uid.slice(0, 6)}.pdf`;
-
-  // 6. Order doc → final state. Email the PDF in parallel
-  //    (best-effort). When the storage backend is inline (no Blob
-  //    token set), the actual PDF bytes are kept on the order doc
-  //    as base64 so /orders re-downloads can re-build the same
-  //    data: URL without a relay call. Cache lookup also serves
-  //    from this field on the next View Full Kundli click.
   const validUntil = kind === 'forecast12'
-    ? new Date(new Date().setMonth(new Date().getMonth() + 12)).toISOString()
+    ? new Date(new Date().setMonth(new Date().getMonth() + 12))
+        .toISOString()
     : null;
   const orderPatch = {
     status: 'ready',
-    // For inline storage, store a SHORT marker on pdfUrl (the real
-    // bytes live on pdfBase64). For Vercel Blob, store the actual
-    // CDN URL. This stops the doc from carrying a redundant ~80 KB
-    // copy of the base64 (~80 KB pdfUrl + ~80 KB pdfBase64 was
-    // pushing toward the 1 MB Firestore limit).
     pdfUrl: uploaded.inline ? 'inline' : uploaded.url,
     storagePath: uploaded.storagePath,
     bucketUsed: uploaded.bucketUsed || '',
@@ -1210,15 +1475,13 @@ async function handleReport(req, res) {
   }
   await orderRef.update(orderPatch);
 
-  // AstroSeer central Activity feed: lifecycle event 2/3 - "sent"
-  // (the AstroSeer feed has no separate "generated" + "sent" rows
-  // for our flow; PDF generation and order delivery happen in the
-  // same relay call, so we collapse to "sent" once the bytes are
-  // both stored and the order doc has the pdfUrl).
+  // AstroSeer central Activity feed: mark sent on our side (the
+  // ASCENDANT API already shows 'sent', but this keeps the feed
+  // accurate if our relay was added/removed mid-flow).
   try {
     logAstroSeerEvent({
       creds: { baseUrl: base },
-      orderId: orderRef.id,
+      orderId,
       status: 'sent',
       kind,
       userId: uid,
@@ -1226,61 +1489,90 @@ async function handleReport(req, res) {
     });
   } catch (_) { /* swallow */ }
 
-  // Get the user's email for the SMTP send.
-  let userEmail = '';
-  let userName = profile.name || '';
-  try {
-    const uSnap = await db.collection('users').doc(uid).get();
-    const u = uSnap.data() || {};
-    userEmail = u.email || '';
-    if (!userName) userName = u.name || '';
-  } catch (_) { /* fine */ }
-  // `complimentary` + `senderNote` come from the admin "Email kundli"
-  // button; the customer-initiated path leaves them unset, so the
-  // email body reads as normal "your report is ready". When admin
-  // sends, the template flips to gift-wording and labels the report
-  // as a complimentary AstroSeer kundli.
-  let emailed = false;
-  let emailMode = null;
-  let emailError = null;
-  let attachmentError = null;
-  let linkOnlyError = null;
+  // Email the PDF (best-effort, async).
+  const { email: userEmail, name: userName } = await loadUserContact(
+    db, uid);
   if (userEmail) {
-    const r = await emailReport({
-      db, toEmail: userEmail, name: userName,
+    emailReport({
+      db, toEmail: userEmail, name: userName || o.profileName,
       kind, pdfBuf, pdfName: pdfFileName,
       complimentary: !!body.complimentary,
       senderNote: body.senderNote || '',
-    });
-    if (r && r.ok) {
-      emailed = true;
-      emailMode = r.mode || 'link-only';
-      attachmentError = r.attachmentError || null;
-      linkOnlyError = r.linkOnlyError || null;
-    } else {
-      emailError = (r && r.error) || 'unknown email error';
-      attachmentError = (r && r.attachmentError) || null;
-      linkOnlyError = (r && r.linkOnlyError) || null;
-    }
-  } else {
-    emailError = 'no email on file for this user';
+    }).catch(() => { /* swallow - email is not the critical path */ });
   }
+
+  const finalUrl = uploaded.inline && uploaded.pdfBase64
+    ? `data:application/pdf;base64,${uploaded.pdfBase64}`
+    : uploaded.url;
 
   return res.status(200).json({
     ok: true,
-    orderId: orderRef.id,
-    pdfUrl: uploaded.url,
+    orderId,
+    status: 'ready',
+    pdfUrl: finalUrl,
     pdfName: pdfFileName,
     sizeBytes: pdfBuf.length,
-    amount: chargedAmount,
-    kind,
-    emailed,
-    emailMode,
-    emailError,
-    attachmentError,
-    linkOnlyError,
     validUntil,
+    kind,
   });
 }
 
-module.exports = { handleReport };
+// Direct PDF stream. The customer can call this once status:'ready'
+// to fetch the bytes again without going through Firestore (useful
+// for very large reports that bust the 1MB Firestore doc limit -
+// when Vercel Blob is configured, the PDF lives there forever and
+// the client just hits the public CDN URL directly).
+async function handleReportPdf(req, res) {
+  try { init(); } catch (e) {
+    return res.status(503).json({
+      error: String((e && e.message) || e) });
+  }
+  const db = admin.firestore();
+  const body = readBody(req);
+  const orderId = String(body.orderId || body.order_id || '').trim();
+  const uid = String(body.uid || '').trim();
+  if (!orderId || !uid) {
+    return res.status(400).json({ error: 'orderId and uid required' });
+  }
+  const orderRef = db.collection('users').doc(uid)
+    .collection('orders').doc(orderId);
+  const oSnap = await orderRef.get();
+  if (!oSnap.exists) {
+    return res.status(404).json({ error: 'order not found' });
+  }
+  const o = oSnap.data() || {};
+  // Already cached? Return URL.
+  if (o.status === 'ready') {
+    return res.status(200).json({
+      ok: true, orderId, status: 'ready',
+      pdfUrl: o.pdfBase64
+        ? `data:application/pdf;base64,${o.pdfBase64}`
+        : o.pdfUrl,
+      pdfName: o.pdfName || 'AstroSeer-Kundli.pdf',
+    });
+  }
+  // Else trigger the status flow which will fetch + cache.
+  return handleReportStatus(req, res);
+}
+
+// Pre-warm the Render free dyno. Customer hits this on /kundli page
+// load so the dyno is awake by the time they actually click Buy.
+// Fire-and-forget; no body to return except ok.
+async function handleWake(req, res) {
+  const base = process.env.ASTROSEER_API_URL
+    || 'https://astroseer-api.onrender.com';
+  try {
+    const ac = new AbortController();
+    setTimeout(() => ac.abort(), 5000);
+    fetch(`${base}/wake`, { method: 'GET', signal: ac.signal })
+      .catch(() => { /* swallow */ });
+  } catch (_) { /* swallow */ }
+  return res.status(200).json({ ok: true, woke: base + '/wake' });
+}
+
+module.exports = {
+  handleReport,
+  handleReportStatus,
+  handleReportPdf,
+  handleWake,
+};

@@ -53,6 +53,65 @@ function kundliEndpoint() {
 // so the relay stays under Vercel Hobby's 12-function limit.
 // Throws Error(msg) on 4xx/5xx so the caller can surface a clear
 // toast (insufficient wallet etc).
+// Pre-warm the AstroSeer Render dyno. Customer should call this on
+// the /kundli page so the dyno is hot by the time they click Buy /
+// Generate. Fire-and-forget - never blocks the UI.
+export async function wakeAstroSeer() {
+  try {
+    const url = kundliEndpoint();
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'wake' }),
+      keepalive: true,
+    });
+  } catch (_) { /* swallow */ }
+}
+
+// Poll the relay's reportStatus action. The relay handles the
+// AstroSeer round-trip, the PDF upload to storage on first 'sent',
+// and the email. Returns the same shape regardless of where the
+// flow is in its lifecycle:
+//   { ok, orderId, status: 'generating'|'ready'|'failed'|'failed_refunded',
+//     pdfUrl, pdfName, retryCount, warning, error, refunded }
+export async function getReportStatus({ uid, orderId }) {
+  const url = kundliEndpoint();
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'reportStatus', uid, orderId }),
+  });
+  return r.json().catch(() => ({ ok: false, status: 'failed',
+    error: 'Status check returned no JSON.' }));
+}
+
+// Poll until the order is ready / failed, or the timeout elapses.
+// onTick gets every intermediate status so the UI can show
+// "Generating... retry 2" / "Resuming..." etc.
+//
+// Default: poll every 5s, max 60 polls (5 minutes total).
+export async function pollReportUntilReady({ uid, orderId,
+  onTick, intervalMs = 5000, maxAttempts = 60 } = {}) {
+  for (let i = 0; i < maxAttempts; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    const s = await getReportStatus({ uid, orderId });
+    if (typeof onTick === 'function') {
+      try { onTick(s, i + 1, maxAttempts); } catch (_) { /* */ }
+    }
+    if (s && (s.status === 'ready' || s.status === 'failed'
+      || s.status === 'failed_refunded')) {
+      return s;
+    }
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((rs) => setTimeout(rs, intervalMs));
+  }
+  return { ok: false, orderId, status: 'pending',
+    timedOut: true,
+    error: 'Your report is taking longer than usual. It will keep '
+      + 'generating in the background; check back in a few minutes '
+      + 'or watch your email.' };
+}
+
 export async function requestReport({
   uid, kundliProfileId, kind, complimentary, senderNote, regenerate,
 }) {

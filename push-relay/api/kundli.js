@@ -672,6 +672,29 @@ module.exports = async (req, res) => {
     return reportMod().handleReport(req, res);
   }
 
+  // Async PDF generation pattern (the AstroSeer team shipped a new
+  // /api/orders/{id}/status + /api/orders/{id}/pdf flow on
+  // 2026-05-27 to fix the >90s timeout for full_life /
+  // consolidated_premium reports). Three new actions:
+  //
+  //   action:'reportStatus' { orderId } -> poll AstroSeer status
+  //                                       and sync to Firestore.
+  //   action:'reportPdf'    { orderId } -> stream PDF bytes back
+  //                                       from AstroSeer + cache.
+  //   action:'wake'                     -> pre-warm the Render dyno
+  //                                       (fire-and-forget /wake).
+  //
+  // See push-relay/lib/kundliReport.js for the handlers.
+  if (src.action === 'reportStatus' && req.method === 'POST') {
+    return reportMod().handleReportStatus(req, res);
+  }
+  if (src.action === 'reportPdf' && req.method === 'POST') {
+    return reportMod().handleReportPdf(req, res);
+  }
+  if (src.action === 'wake') {
+    return reportMod().handleWake(req, res);
+  }
+
   // GET ?probe=1 -> just report which provider would be used and
   // whether the relay can read Firestore. Lets admin verify the chain
   // without computing a kundli (no API quota used).

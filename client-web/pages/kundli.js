@@ -3340,27 +3340,59 @@ function ApiPdfHero({ kundli }) {
   const [result, setResult] = useState(null);
   const [viewing, setViewing] = useState(false);
   const [err, setErr] = useState('');
+  // Live progress message during the 5-min async polling window.
+  const [progress, setProgress] = useState('');
+
+  // Pre-warm the AstroSeer Render dyno on mount so the customer's
+  // click goes against a hot dyno (5-15s) instead of a cold one
+  // (30-60s).
+  useEffect(() => { kundliService.wakeAstroSeer(); }, []);
 
   async function open() {
     if (!kundli || !kundli.id || !kundli.userId) {
       setErr('Save a kundli profile first.'); return;
     }
-    setErr(''); setBusy(true);
+    setErr(''); setBusy(true); setProgress('Starting generation...');
     try {
-      const out = await kundliService.requestReport({
+      const initial = await kundliService.requestReport({
         uid: kundli.userId,
         kundliProfileId: kundli.id,
         kind: 'free',
       });
-      if (!out || !out.ok || !out.pdfUrl) {
-        throw new Error((out && out.error)
-          || 'Could not load the PDF.');
+      // If the relay returned a fully-ready response (cached order),
+      // skip polling entirely.
+      if (initial && initial.ok && initial.pdfUrl) {
+        setResult(initial); setViewing(true); return;
       }
-      setResult(out);
-      setViewing(true);
+      if (!initial || !initial.orderId) {
+        throw new Error((initial && initial.error)
+          || 'Could not start generation.');
+      }
+      // Async flow: poll every 5s for up to 5 minutes.
+      setProgress('Generating your kundli PDF (typically 30-60 sec)...');
+      const ready = await kundliService.pollReportUntilReady({
+        uid: kundli.userId,
+        orderId: initial.orderId,
+        onTick: (s, i) => {
+          if (s.status === 'ready') {
+            setProgress('Finalising PDF...');
+          } else if (s.retryCount) {
+            setProgress(`Generating (retry ${s.retryCount})... `
+              + `attempt ${i}`);
+          } else {
+            setProgress(`Generating (${i * 5}s elapsed)...`);
+          }
+        },
+      });
+      if (!ready || !ready.ok || ready.status !== 'ready'
+        || !ready.pdfUrl) {
+        throw new Error(ready && (ready.error || ready.warning)
+          || 'Generation did not complete.');
+      }
+      setResult(ready); setViewing(true);
     } catch (e) {
-      setErr(e.message || 'Could not load the PDF.');
-    } finally { setBusy(false); }
+      setErr((e && e.message) || 'Could not load the PDF.');
+    } finally { setBusy(false); setProgress(''); }
   }
 
   function downloadNow() {
@@ -3396,6 +3428,12 @@ function ApiPdfHero({ kundli }) {
           Download PDF
         </button>
       </div>
+      {progress && busy && (
+        <div className="mt-2 rounded-card bg-bg-light px-3 py-2
+          text-[11px] text-primary">
+          {progress}
+        </div>
+      )}
       {err && (
         <div className="mt-2 rounded-card bg-danger/10 px-3 py-2
           text-[11px] text-danger">
@@ -3536,19 +3574,53 @@ function PremiumReportsTab({ kundli }) {
     })();
   }, []);
 
+  // Async-with-polling: kick off generation, then poll the status
+  // every 5s for up to 5 minutes. Long premium reports (lifetime,
+  // careerFinance) take 60-90s on Render free tier, well past the
+  // old 90s synchronous timeout.
+  const [progress, setProgress] = useState('');
   async function buy(kind) {
-    setError(null); setBusy(kind); setResult(null);
+    setError(null); setBusy(kind); setResult(null); setProgress('');
     try {
       if (!kundli || !kundli.id || !kundli.userId) {
         throw new Error('Save a kundli profile first.');
       }
-      const out = await kundliService.requestReport({
+      const initial = await kundliService.requestReport({
         uid: kundli.userId, kundliProfileId: kundli.id, kind,
       });
-      setResult(out);
+      if (initial && initial.ok && initial.pdfUrl) {
+        setResult(initial); return;
+      }
+      if (!initial || !initial.orderId) {
+        throw new Error((initial && initial.error)
+          || 'Could not start generation.');
+      }
+      setProgress('Charging wallet, starting generation...');
+      const ready = await kundliService.pollReportUntilReady({
+        uid: kundli.userId,
+        orderId: initial.orderId,
+        onTick: (s, i) => {
+          if (s.status === 'ready') setProgress('Finalising PDF...');
+          else if (s.retryCount) {
+            setProgress(`Generating (retry ${s.retryCount}, `
+              + `${i * 5}s elapsed)`);
+          } else setProgress(`Generating (${i * 5}s elapsed)...`);
+        },
+      });
+      if (!ready || !ready.ok || ready.status !== 'ready') {
+        const e2 = new Error(ready && (ready.error || ready.warning)
+          || 'Generation did not complete.');
+        e2.refunded = !!(ready && ready.refunded);
+        throw e2;
+      }
+      setResult(ready);
     } catch (e) { setError(e); }
-    finally { setBusy(''); }
+    finally { setBusy(''); setProgress(''); }
   }
+
+  // Pre-warm the AstroSeer dyno so the user's click goes against a
+  // hot dyno instead of a cold one.
+  useEffect(() => { kundliService.wakeAstroSeer(); }, []);
 
   // Paid reports only (free already lives at the top of the Free
   // Report tab).
@@ -3612,6 +3684,13 @@ function PremiumReportsTab({ kundli }) {
           );
         })}
       </div>
+
+      {progress && busy && (
+        <div className="mt-3 rounded-card bg-bg-light p-3 text-xs
+          text-primary">
+          {progress}
+        </div>
+      )}
 
       {error && (
         <div className="mt-3 rounded-card bg-danger/10 p-3 text-xs
