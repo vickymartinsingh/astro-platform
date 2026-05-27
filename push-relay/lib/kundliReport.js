@@ -1341,13 +1341,21 @@ async function handleReportStatus(req, res) {
     } finally { clearTimeout(tid); }
     if (!r.ok) {
       const t = await r.text().catch(() => '');
+      // 404 from /api/orders/{id}/status during the first ~5s is
+      // normal - the AstroSeer side hasn't finished writing the
+      // job record yet. Return generating so client keeps polling.
       return res.status(200).json({
         ok: true,
         orderId,
         status: 'generating',
         astroseerStatusCode: r.status,
-        warning: `AstroSeer status check returned ${r.status}: `
-          + `${t.slice(0, 200)}`,
+        // Only show the warning to the UI when it's NOT the
+        // expected 404 race; otherwise the customer sees a scary
+        // message during normal startup.
+        warning: r.status === 404
+          ? null
+          : `AstroSeer status check returned ${r.status}: `
+            + `${t.slice(0, 200)}`,
         kind,
       });
     }

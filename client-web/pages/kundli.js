@@ -3352,7 +3352,15 @@ function ApiPdfHero({ kundli }) {
     if (!kundli || !kundli.id || !kundli.userId) {
       setErr('Save a kundli profile first.'); return;
     }
-    setErr(''); setBusy(true); setProgress('Starting generation...');
+    setErr(''); setBusy(true);
+    // Live elapsed-time counter so the customer sees the request
+    // is in progress even during the ~30s cold-start window before
+    // polling kicks in. Stops when busy flips back to false.
+    const startMs = Date.now();
+    const tick = () => setProgress(`Generating your kundli PDF... `
+      + `(${Math.round((Date.now() - startMs) / 1000)}s)`);
+    tick();
+    const tickInterval = setInterval(tick, 1000);
     try {
       const initial = await kundliService.requestReport({
         uid: kundli.userId,
@@ -3368,20 +3376,20 @@ function ApiPdfHero({ kundli }) {
         throw new Error((initial && initial.error)
           || 'Could not start generation.');
       }
-      // Async flow: poll every 5s for up to 5 minutes.
-      setProgress('Generating your kundli PDF (typically 30-60 sec)...');
+      // Async flow: poll every 5s for up to 5 minutes. The
+      // elapsed-time tick keeps updating in the background.
       const ready = await kundliService.pollReportUntilReady({
         uid: kundli.userId,
         orderId: initial.orderId,
-        onTick: (s, i) => {
-          if (s.status === 'ready') {
+        onTick: (s) => {
+          if (s && s.status === 'ready') {
+            clearInterval(tickInterval);
             setProgress('Finalising PDF...');
-          } else if (s.retryCount) {
-            setProgress(`Generating (retry ${s.retryCount})... `
-              + `attempt ${i}`);
-          } else {
-            setProgress(`Generating (${i * 5}s elapsed)...`);
+          } else if (s && s.retryCount) {
+            setProgress(`Generating PDF (retry ${s.retryCount}, `
+              + `${Math.round((Date.now() - startMs) / 1000)}s)...`);
           }
+          // Else - default ticker keeps showing elapsed seconds.
         },
       });
       if (!ready || !ready.ok || ready.status !== 'ready'
@@ -3392,7 +3400,10 @@ function ApiPdfHero({ kundli }) {
       setResult(ready); setViewing(true);
     } catch (e) {
       setErr((e && e.message) || 'Could not load the PDF.');
-    } finally { setBusy(false); setProgress(''); }
+    } finally {
+      clearInterval(tickInterval);
+      setBusy(false); setProgress('');
+    }
   }
 
   function downloadNow() {
