@@ -1123,40 +1123,60 @@ async function handleReport(req, res) {
     lifetime: 'full_life',
   };
 
-  try {
-    const startAc = new AbortController();
-    const startTid = setTimeout(() => startAc.abort(), 15000);
-    const startBody = {
-      order_id: orderRef.id,
-      status: 'generating',
-      report_type: REPORT_TYPE[kind] || 'basic',
-      customer_name: userName,
-      customer_email: userEmail,
-      customer_uid: uid,
-      amount: chargedAmount || 0,
-      place: profile.place || '',
-      birth_summary: birthSummaryFromProfile(profile),
-      // Birth params - AstroSeer needs these to generate without a
-      // separate kundli call.
-      birth_year: p.y,
-      birth_month: p.m,
-      birth_day: p.d,
-      birth_hour: p.hh,
-      birth_minute: p.mm,
-      birth_second: 0,
-      tz_offset: tzOffset,
-      latitude: lat,
-      longitude: lng,
-    };
-    let startResp;
+  const startBody = {
+    order_id: orderRef.id,
+    status: 'generating',
+    report_type: REPORT_TYPE[kind] || 'basic',
+    customer_name: userName,
+    customer_email: userEmail,
+    customer_uid: uid,
+    amount: chargedAmount || 0,
+    place: profile.place || '',
+    birth_summary: birthSummaryFromProfile(profile),
+    // Birth params - AstroSeer needs these to generate without a
+    // separate kundli call.
+    birth_year: p.y,
+    birth_month: p.m,
+    birth_day: p.d,
+    birth_hour: p.hh,
+    birth_minute: p.mm,
+    birth_second: 0,
+    tz_offset: tzOffset,
+    latitude: lat,
+    longitude: lng,
+  };
+  // Two-pass POST to /api/orders/log so a cold Render dyno (30-40s
+  // wake-up) does not abort our request and refund the customer for
+  // nothing. First pass: 45s timeout - covers a cold wake-up plus
+  // the endpoint's own work. Second pass (only if first aborted):
+  // 20s - dyno is now warm, this is the retry path.
+  async function postOrdersLog(timeoutMs) {
+    const ac = new AbortController();
+    const tid = setTimeout(() => ac.abort(), timeoutMs);
     try {
-      startResp = await fetch(`${base}/api/orders/log`, {
+      return await fetch(`${base}/api/orders/log`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(startBody),
-        signal: startAc.signal,
+        signal: ac.signal,
       });
-    } finally { clearTimeout(startTid); }
+    } finally { clearTimeout(tid); }
+  }
+  try {
+    let startResp;
+    try {
+      startResp = await postOrdersLog(45000);
+    } catch (e) {
+      // Only retry on abort (dyno cold). For other errors
+      // (DNS, TLS) the retry would just fail the same way.
+      if (!e || e.name !== 'AbortError') throw e;
+      try { startResp = await postOrdersLog(20000); }
+      catch (e2) {
+        throw new Error('AstroSeer /api/orders/log unreachable after '
+          + 'two attempts. The Render dyno may be offline; visit '
+          + `${base}/admin/dashboard to check.`);
+      }
+    }
     if (!startResp || !startResp.ok) {
       const t = startResp ? await startResp.text().catch(() => '') : '';
       throw new Error(`AstroSeer /api/orders/log returned `
