@@ -93,19 +93,82 @@ export default function AdminUserProfile() {
   }, [loading, id]);
 
   async function viewReport(k) {
+    // (Legacy) Fetch the JSON kundli + render the lightweight
+    // KundliSummary inline below the row. Kept so the in-page
+    // panel still shows the standard summary; the user-requested
+    // "open the API-generated PDF" lives behind the NEW "View PDF"
+    // button (handleViewApiPdf) below, which opens the same
+    // PdfViewerPopup the customer sees.
     setReports((c) => ({ ...c, [k.id]: 'loading' }));
     try {
       const data = await kundliService.getFullKundli(k);
       setReports((c) => ({ ...c, [k.id]: data || 'err' }));
     } catch (_) { setReports((c) => ({ ...c, [k.id]: 'err' })); }
   }
-  async function downloadReport(k) {
-    let data = reports[k.id];
-    if (!data || typeof data !== 'object') {
-      data = await kundliService.getFullKundli(k).catch(() => null);
-      if (data) setReports((c) => ({ ...c, [k.id]: data }));
+
+  // NEW: ALL three admin buttons (View PDF / Download PDF /
+  // Regenerate) now go through kundliService.requestReport - the
+  // SAME relay path the customer dashboard uses. That guarantees
+  // admin and customer see byte-for-byte identical PDF content.
+  // Per user request: "i am clicking it must show the generated
+  // by the API because that is as per my need".
+  const [pdfState, setPdfState] = useState({});   // { [k.id]: 'loading'|result|error-string }
+  const [viewer, setViewer] = useState(null);     // { url, name } | null
+  async function fetchApiPdf(k, { force = false } = {}) {
+    if (!k || !k.id || !k.userId) return null;
+    setPdfState((c) => ({ ...c, [k.id]: 'loading' }));
+    try {
+      const out = await kundliService.requestReport({
+        uid: k.userId,
+        kundliProfileId: k.id,
+        kind: 'free',
+        regenerate: !!force,
+      });
+      if (!out || !out.ok || !out.pdfUrl) {
+        const msg = (out && out.error) || 'PDF unavailable.';
+        setPdfState((c) => ({ ...c, [k.id]: msg }));
+        return null;
+      }
+      setPdfState((c) => ({ ...c, [k.id]: out }));
+      return out;
+    } catch (e) {
+      setPdfState((c) => ({ ...c, [k.id]: (e && e.message)
+        || 'PDF request failed.' }));
+      return null;
     }
-    kundliService.downloadKundliReport(k, data || {});
+  }
+  async function handleViewApiPdf(k) {
+    const cached = pdfState[k.id];
+    let result = (cached && typeof cached === 'object'
+      && cached.pdfUrl) ? cached : null;
+    if (!result) result = await fetchApiPdf(k);
+    if (result && result.pdfUrl) {
+      setViewer({ url: result.pdfUrl,
+        name: result.pdfName || 'AstroSeer-Kundli.pdf' });
+    }
+  }
+  async function downloadReport(k) {
+    // PDF download: pull the API-generated PDF (same one the
+    // customer sees) and route through downloadPdfFromUrl, which
+    // handles data: URLs + Capacitor native shells.
+    const cached = pdfState[k.id];
+    let result = (cached && typeof cached === 'object'
+      && cached.pdfUrl) ? cached : null;
+    if (!result) result = await fetchApiPdf(k);
+    if (result && result.pdfUrl) {
+      kundliService.downloadPdfFromUrl(result.pdfUrl,
+        result.pdfName || 'AstroSeer-Kundli.pdf');
+    }
+  }
+  async function regenerateReport(k) {
+    // Same path with regenerate:true so the relay rebuilds the PDF
+    // and the cached order is replaced. Admin can refresh content
+    // without manually clearing the cache.
+    const result = await fetchApiPdf(k, { force: true });
+    if (result && result.pdfUrl) {
+      setViewer({ url: result.pdfUrl,
+        name: result.pdfName || 'AstroSeer-Kundli.pdf' });
+    }
   }
 
   // We still mount the full page when the users/{uid} doc no longer
@@ -244,21 +307,53 @@ export default function AdminUserProfile() {
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-2">
+                    {/* "View" - the in-page JSON summary panel
+                        (legacy quick read) */}
                     <button onClick={() => viewReport(k)}
                       className="rounded-full bg-bg-light px-3 py-1.5
                         text-xs font-bold text-primary">
                       View
                     </button>
+                    {/* NEW: opens the SAME API-generated PDF the
+                        customer sees, inside the same popup viewer
+                        used on /kundli (close + download + open-in
+                        -browser). */}
+                    <button onClick={() => handleViewApiPdf(k)}
+                      disabled={pdfState[k.id] === 'loading'}
+                      className="rounded-full border border-primary
+                        bg-white px-3 py-1.5 text-xs font-bold
+                        text-primary disabled:opacity-60">
+                      {pdfState[k.id] === 'loading'
+                        ? 'Loading PDF...' : 'View PDF'}
+                    </button>
                     <button onClick={() => downloadReport(k)}
+                      disabled={pdfState[k.id] === 'loading'}
                       className="rounded-full bg-primary px-3 py-1.5
-                        text-xs font-bold text-white">
-                      ⬇ PDF
+                        text-xs font-bold text-white disabled:opacity-60">
+                      Download PDF
+                    </button>
+                    {/* Force-regenerate. Calls the relay with
+                        regenerate:true so the cached order is
+                        replaced - admin uses this when underlying
+                        chart data changes. */}
+                    <button onClick={() => regenerateReport(k)}
+                      disabled={pdfState[k.id] === 'loading'}
+                      className="rounded-full border border-accent
+                        bg-white px-3 py-1.5 text-xs font-bold
+                        text-accent disabled:opacity-60">
+                      Regenerate
                     </button>
                     <EmailKundliButton k={k} u={u}
                       report={reports[k.id]}
                       onLoad={() => viewReport(k)} />
                   </div>
                 </div>
+                {typeof pdfState[k.id] === 'string'
+                  && pdfState[k.id] !== 'loading' && (
+                  <div className="mt-1 text-[11px] text-danger">
+                    {pdfState[k.id]}
+                  </div>
+                )}
                 {reports[k.id] === 'loading' && (
                   <div className="mt-2 text-xs text-sub-text">
                     Generating kundli…
@@ -380,7 +475,60 @@ export default function AdminUserProfile() {
         role={(u.role === 'astrologer') ? 'astrologer' : 'client'}
         name={u.name || u.email}
         onDone={() => router.reload()} />
+
+      {/* Full-screen PDF viewer overlay, opens when admin clicks
+          View PDF / Regenerate. Same component shape used in the
+          customer kundli tab (kept local here to avoid dragging
+          client-web into admin-web). */}
+      {viewer && (
+        <AdminPdfViewerPopup url={viewer.url} name={viewer.name}
+          onClose={() => setViewer(null)} />
+      )}
     </Layout>
+  );
+}
+
+// Local PdfViewerPopup so admin and customer show the SAME viewer
+// surface (close + download + open-in-browser + iframe). Keep in
+// sync with client-web/pages/kundli.js -> PdfViewerPopup.
+function AdminPdfViewerPopup({ url, name, onClose }) {
+  function download() {
+    kundliService.downloadPdfFromUrl(url,
+      name || 'AstroSeer-Kundli.pdf');
+  }
+  function openExternal() {
+    try { window.open(url, '_blank'); } catch (_) { /* */ }
+  }
+  return (
+    <div className="fixed inset-0 z-[2147483647] flex flex-col
+      bg-black/80">
+      <div className="flex items-center justify-between gap-2
+        bg-primary px-3 py-2 text-white">
+        <div className="min-w-0 flex-1 truncate text-sm font-bold">
+          {name || 'Kundli PDF'}
+        </div>
+        <button type="button" onClick={download}
+          className="rounded-full bg-white/20 px-3 py-1 text-[11px]
+            font-bold hover:bg-white/30">
+          Download
+        </button>
+        <button type="button" onClick={openExternal}
+          className="rounded-full bg-white/20 px-3 py-1 text-[11px]
+            font-bold hover:bg-white/30">
+          Open in browser
+        </button>
+        <button type="button" onClick={onClose} aria-label="Close"
+          className="ml-1 grid h-8 w-8 place-items-center rounded-full
+            bg-white/20 text-base font-bold hover:bg-white/30">
+          ×
+        </button>
+      </div>
+      <div className="flex-1 bg-white">
+        <iframe src={url} title={name || 'Kundli PDF'}
+          className="h-full w-full border-0"
+          style={{ minHeight: '60vh' }} />
+      </div>
+    </div>
   );
 }
 

@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
-import { userService, authService, ZODIAC } from '@astro/shared';
+import { userService, authService, ZODIAC,
+  kundliService } from '@astro/shared';
 import Layout from '../components/Layout';
 import Avatar from '../components/Avatar';
 import ZodiacGlyph from '../components/ZodiacGlyph';
@@ -20,6 +21,7 @@ import { confirmModal } from '../components/ConfirmModal';
 const VIEWS = {
   HOME: '', INFO: 'info', PASSWORD: 'password', LANG: 'language',
   REFER: 'refer', LEGAL: 'legal', VERSION: 'version',
+  ORDERS: 'orders',
 };
 
 export default function Profile() {
@@ -50,6 +52,19 @@ export default function Profile() {
       setGender(profile.gender || '');
     }
   }, [profile]);
+
+  // Order history (kundli reports + paid reports). Lazy-fetched the
+  // first time the row is opened, then cached on state.
+  const [orders, setOrders] = useState(null);
+  const [ordersBusy, setOrdersBusy] = useState(false);
+  useEffect(() => {
+    if (view !== VIEWS.ORDERS || !user || orders != null) return;
+    setOrdersBusy(true);
+    kundliService.listOrders(user.uid)
+      .then((rows) => setOrders(Array.isArray(rows) ? rows : []))
+      .catch(() => setOrders([]))
+      .finally(() => setOrdersBusy(false));
+  }, [view, user, orders]);
 
   async function changePw() {
     setPwMsg('');
@@ -218,6 +233,114 @@ export default function Profile() {
 
       {/* DASHBOARD: clickable rows that expand inline */}
       <div className="card mt-3 divide-y divide-gray-100 p-0">
+        {/* Orders row - kundli + paid reports the customer has bought.
+            Inline list with direct Download links, plus a deep link to
+            the full /orders page. Added per user request: "order
+            information should show in the profile as well of the
+            customer". */}
+        <Row open={view === VIEWS.ORDERS}
+          onClick={() => setView(view === VIEWS.ORDERS
+            ? VIEWS.HOME : VIEWS.ORDERS)}
+          icon="📦" label="My orders"
+          sub={orders == null
+            ? 'Kundli PDFs and premium reports you have purchased'
+            : `${orders.length} order${orders.length === 1 ? '' : 's'}`}>
+          <div className="space-y-2">
+            {ordersBusy && (
+              <div className="text-xs text-sub-text">
+                Loading orders...
+              </div>
+            )}
+            {!ordersBusy && orders && orders.length === 0 && (
+              <div className="rounded-card bg-bg-light px-3 py-3
+                text-xs text-sub-text">
+                You have not placed any kundli or premium report
+                orders yet. Generate a free kundli or browse premium
+                reports from{' '}
+                <Link href="/kundli"
+                  className="font-bold text-primary underline">
+                  the Kundli page
+                </Link>.
+              </div>
+            )}
+            {!ordersBusy && orders && orders.length > 0 && (
+              <>
+                {orders.slice(0, 10).map((o) => {
+                  const isFree = !o.amount || o.amount === 0;
+                  const ready = o.status === 'ready' && (o.pdfUrl
+                    || o.pdfBase64);
+                  const realUrl = o.pdfBase64
+                    ? `data:application/pdf;base64,${o.pdfBase64}`
+                    : o.pdfUrl;
+                  const when = o.deliveredAt && o.deliveredAt.toDate
+                    ? o.deliveredAt.toDate()
+                    : (o.paidAt && o.paidAt.toDate
+                      ? o.paidAt.toDate() : null);
+                  return (
+                    <div key={o.id} className="rounded-card border
+                      border-gray-100 bg-white px-3 py-2">
+                      <div className="flex items-start justify-between
+                        gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-[13px]
+                            font-semibold text-dark-text">
+                            {o.kind === 'forecast12'
+                              ? '12-Month Vedic Forecast'
+                              : o.kind === 'careerFinance'
+                                ? 'Career and Finance Deep Dive'
+                                : o.kind === 'lifetime'
+                                  ? 'Lifetime Vedic Report'
+                                  : 'Free Vedic Kundli PDF'}
+                          </div>
+                          <div className="mt-0.5 text-[11px]
+                            text-sub-text">
+                            {o.profileName ? `${o.profileName} · ` : ''}
+                            {when ? when.toLocaleDateString() : ''}
+                            {!isFree && ` · ₹${o.amount}`}
+                          </div>
+                        </div>
+                        <span className={`shrink-0 rounded-full px-2
+                          py-0.5 text-[10px] font-bold ${ready
+                            ? 'bg-success/15 text-success'
+                            : 'bg-warning/15 text-warning'}`}>
+                          {ready ? 'Ready'
+                            : (o.status || 'processing')}
+                        </span>
+                      </div>
+                      {ready && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <button type="button"
+                            onClick={() => kundliService
+                              .downloadPdfFromUrl(realUrl,
+                                o.pdfName || 'AstroSeer-Kundli.pdf')}
+                            className="rounded-full bg-primary px-3
+                              py-1 text-[11px] font-bold text-white">
+                            Download PDF
+                          </button>
+                          <Link href="/orders"
+                            className="rounded-full border
+                              border-primary px-3 py-1 text-[11px]
+                              font-bold text-primary">
+                            View in Orders
+                          </Link>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {orders.length > 10 && (
+                  <Link href="/orders"
+                    className="block rounded-card bg-bg-light px-3
+                      py-2 text-center text-xs font-semibold
+                      text-primary">
+                    View all {orders.length} orders
+                  </Link>
+                )}
+              </>
+            )}
+          </div>
+        </Row>
+
         <Row open={view === VIEWS.INFO}
           onClick={() => setView(view === VIEWS.INFO
             ? VIEWS.HOME : VIEWS.INFO)}
