@@ -31,6 +31,9 @@
 // blueprint - never overcharge).
 const admin = require('firebase-admin');
 const nodemailer = require('nodemailer');
+const {
+  logAstroSeerEvent, birthSummaryFromProfile,
+} = require('./astroseerLog');
 
 function init() {
   if (admin.apps.length) return;
@@ -906,6 +909,18 @@ async function handleReport(req, res) {
             failReason: 'Generation timed out (>90s).',
           }).catch(() => {});
         }
+        // Mirror the failure to the AstroSeer central Activity
+        // feed so admin sees the same red rows there too.
+        try {
+          logAstroSeerEvent({
+            orderId: d.id,
+            status: 'failed',
+            kind: o.kind,
+            userId: uid,
+            error: 'Generation timed out (>90s)'
+              + (refundAmount > 0 ? '; auto-refunded.' : '.'),
+          });
+        } catch (_) { /* swallow */ }
       })());
     });
     if (writes.length) await Promise.all(writes);
@@ -986,6 +1001,26 @@ async function handleReport(req, res) {
     });
   }
 
+  // AstroSeer central Activity feed: lifecycle event 1/3 -
+  // "generating". Fire-and-forget so it never blocks the PDF
+  // generation if the central log endpoint is slow / down.
+  try {
+    const uSnap = await db.collection('users').doc(uid).get();
+    const u = (uSnap.exists ? uSnap.data() : null) || {};
+    logAstroSeerEvent({
+      creds: { baseUrl: base },
+      orderId: orderRef.id,
+      status: 'generating',
+      kind,
+      userName: u.name || '',
+      userEmail: u.email || '',
+      userId: uid,
+      amount: chargedAmount || 0,
+      birthSummary: birthSummaryFromProfile(profile),
+      place: profile.place || '',
+    });
+  } catch (_) { /* never let logging break the flow */ }
+
   // 4. Build AstroSeer report body. They take the same birth fields
   //    as /api/kundli plus a `tier` (9 = the deepest one). For the
   //    forecast we pass `months: 12` so the API knows to bake the
@@ -1042,6 +1077,20 @@ async function handleReport(req, res) {
       await orderRef.update({ status: 'failed',
         failReason: String((e && e.message) || e) }).catch(() => {});
     }
+    // AstroSeer central Activity feed: lifecycle event 3/3 -
+    // "failed" with the relay-side error so admin at the AstroSeer
+    // dashboard sees the same red row our own Order Management
+    // page surfaces.
+    try {
+      logAstroSeerEvent({
+        creds: { baseUrl: base },
+        orderId: orderRef.id,
+        status: 'failed',
+        kind,
+        userId: uid,
+        error: (e && e.message) || String(e),
+      });
+    } catch (_) { /* swallow */ }
     return res.status(502).json({
       error: 'Report generation failed',
       detail: String((e && e.message) || e),
@@ -1066,6 +1115,17 @@ async function handleReport(req, res) {
         });
       } catch (_) { /* ignore */ }
     }
+    // Central Activity feed - failure event for the storage path.
+    try {
+      logAstroSeerEvent({
+        creds: { baseUrl: base },
+        orderId: orderRef.id,
+        status: 'failed',
+        kind,
+        userId: uid,
+        error: `Storage upload failed: ${(e && e.message) || e}`,
+      });
+    } catch (_) { /* swallow */ }
     return res.status(502).json({
       error: 'Could not save the PDF',
       detail: String((e && e.message) || e),
@@ -1105,6 +1165,22 @@ async function handleReport(req, res) {
     orderPatch.pdfBase64 = uploaded.pdfBase64;
   }
   await orderRef.update(orderPatch);
+
+  // AstroSeer central Activity feed: lifecycle event 2/3 - "sent"
+  // (the AstroSeer feed has no separate "generated" + "sent" rows
+  // for our flow; PDF generation and order delivery happen in the
+  // same relay call, so we collapse to "sent" once the bytes are
+  // both stored and the order doc has the pdfUrl).
+  try {
+    logAstroSeerEvent({
+      creds: { baseUrl: base },
+      orderId: orderRef.id,
+      status: 'sent',
+      kind,
+      userId: uid,
+      bytesOut: pdfBuf.length,
+    });
+  } catch (_) { /* swallow */ }
 
   // Get the user's email for the SMTP send.
   let userEmail = '';
