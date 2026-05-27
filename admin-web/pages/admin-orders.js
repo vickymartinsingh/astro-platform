@@ -239,6 +239,12 @@ export default function AdminOrders() {
                           href={href} />
                       </>
                     )}
+                    {/* Regenerate works for ANY order status (Ready,
+                        Generating, Failed) - re-runs the same relay
+                        path with regenerate:true, which gives admin a
+                        one-click way to recover stuck or stale PDFs
+                        from inside Order Management. */}
+                    <RegenerateButton o={o} u={u} />
                   </div>
                 </div>
               </div>
@@ -354,6 +360,53 @@ function ResendButtons({ o, u, href }) {
         </div>
       )}
     </div>
+  );
+}
+
+// One-click regenerate. Calls kundliService.requestReport with the
+// SAME relay path the customer uses, plus regenerate:true so the
+// cached order is rebuilt from scratch. On success, reloads the page
+// to pick up the new pdfUrl + Ready status. Failed orders also use
+// this path - it always works because the relay now has the stuck-
+// order sweeper that refunds + clears stale "Generating..." rows
+// before generating fresh.
+function RegenerateButton({ o, u }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState({ text: '', kind: '' });
+  async function regen() {
+    if (!o || !o.kundliProfileId || !o.userId) {
+      setMsg({ text: 'Missing profile or user id.', kind: 'err' });
+      return;
+    }
+    setBusy(true); setMsg({ text: '', kind: '' });
+    try {
+      await kundliService.requestReport({
+        uid: o.userId,
+        kundliProfileId: o.kundliProfileId,
+        kind: o.kind || 'free',
+        regenerate: true,
+      });
+      setMsg({ text: 'Regenerated. Refreshing...', kind: 'ok' });
+      setTimeout(() => { try { window.location.reload(); }
+        catch (_) {} }, 700);
+    } catch (e) {
+      setMsg({ text: e.message || 'Regenerate failed.', kind: 'err' });
+    } finally { setBusy(false); }
+  }
+  return (
+    <>
+      <button type="button" onClick={regen} disabled={busy}
+        className="rounded-full border border-accent bg-white
+          px-3 py-1 text-[11px] font-bold text-accent disabled:opacity-50">
+        {busy ? 'Regenerating...' : 'Regenerate'}
+      </button>
+      {msg.text && (
+        <div className={`text-[10px] font-bold ${msg.kind === 'ok'
+          ? 'text-success' : 'text-danger'}`}>
+          {msg.text}
+        </div>
+      )}
+    </>
   );
 }
 

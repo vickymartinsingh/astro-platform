@@ -65,8 +65,8 @@ input, textarea, select { font-size: 16px; }
   }
   .surface { @apply bg-white rounded-2xl shadow-sm; }
   .featured-badge {
-    @apply absolute left-3 top-3 rounded-full bg-amber-100
-           px-2 py-0.5 text-[11px] font-semibold text-amber-700;
+    @apply absolute left-3 top-3 rounded-full bg-primary
+           px-2 py-0.5 text-[11px] font-semibold text-white;
     z-index: 1;
   }
 }

@@ -861,9 +861,13 @@ function FullKundli({ r, kundli }) {
           {r.cached ? 'Saved report' : 'Newly generated'}
         </span>
       </div>
-      <ReportButtons kundli={kundli} />
+      {/* The old ReportButtons row (Janma Kundli + 12-Month + Career +
+          Lifetime buy pills) used to render here, ABOVE the tabs.
+          Removed because it duplicated the Premium Reports tab and
+          confused the layout. Premium reports now have their own
+          dedicated tab; the free PDF lives at the top of Free Report. */}
 
-      {/* Yellow-active pill tabs, matching the AstroTalk web view. */}
+      {/* Pill tabs, matching the AstroTalk web view. */}
       <div className="mt-3 flex flex-nowrap gap-1 overflow-x-auto
         rounded-card bg-white p-1">
         {TABS.map(([k, label]) => (
@@ -1467,10 +1471,11 @@ function FreeReportTab({ r, n, lucky, kundli }) {
         <DoshasNarrativeSection r={r} raw={raw} />
       )}
 
-      {/* Relocated per user request: the "Download & share your kundli
-          report" banner now lives at the bottom of the Free Report tab
-          only. It used to repeat under every tab. */}
-      <DownloadBanner kundli={kundli} full={r} />
+      {/* DownloadBanner removed entirely per user feedback - the
+          ApiPdfHero at the top of this tab already provides View +
+          Download with the live API PDF. The legacy banner was just
+          rendering an empty dark strip that did not open anything
+          on mobile. */}
     </>
   );
 }

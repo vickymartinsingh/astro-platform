@@ -53,16 +53,46 @@ function kundliEndpoint() {
 // so the relay stays under Vercel Hobby's 12-function limit.
 // Throws Error(msg) on 4xx/5xx so the caller can surface a clear
 // toast (insufficient wallet etc).
-export async function requestReport({ uid, kundliProfileId, kind }) {
+export async function requestReport({
+  uid, kundliProfileId, kind, complimentary, senderNote, regenerate,
+}) {
   const url = kundliEndpoint();
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      action: 'report',
-      uid, kundliProfileId, kind: kind || 'free',
-    }),
-  });
+  // Hard 70s client timeout so the user sees a clean "timed out"
+  // error instead of the browser's generic "Failed to fetch" when
+  // the relay function exceeds Vercel's 60s cap.
+  let r;
+  const ac = (typeof AbortController !== 'undefined')
+    ? new AbortController() : null;
+  const tid = ac ? setTimeout(() => ac.abort(), 70000) : null;
+  try {
+    r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'report',
+        uid, kundliProfileId, kind: kind || 'free',
+        complimentary: !!complimentary,
+        senderNote: senderNote || '',
+        regenerate: !!regenerate,
+      }),
+      signal: ac ? ac.signal : undefined,
+    });
+  } catch (e) {
+    if (tid) clearTimeout(tid);
+    // Network-layer failure (Failed to fetch / abort / DNS) - turn
+    // it into a human error string the UI can show without confusing
+    // the customer with browser jargon.
+    const isAbort = e && (e.name === 'AbortError' || /abort/i
+      .test(String(e.message || '')));
+    const err = new Error(isAbort
+      ? 'Server timed out while preparing your report. The PDF '
+        + 'service may be cold-starting - please retry in a minute.'
+      : 'Could not reach the report service. Check your internet '
+        + 'connection and try again.');
+    err.code = 'network';
+    throw err;
+  }
+  if (tid) clearTimeout(tid);
   const j = await r.json().catch(() => ({}));
   if (!r.ok) {
     // Surface the relay's `detail` field too so the UI can show

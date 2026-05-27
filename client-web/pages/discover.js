@@ -142,8 +142,8 @@ export default function Discover() {
           </p>
         </div>
         <Link href="/wallet"
-          className="rounded-full bg-[#FFD63A] px-4 py-1.5 text-xs
-            font-bold text-dark-text">
+          className="rounded-full bg-primary px-4 py-1.5 text-xs
+            font-bold text-white">
           Wallet ₹{Number(wallet || 0).toFixed(0)}
         </Link>
       </div>

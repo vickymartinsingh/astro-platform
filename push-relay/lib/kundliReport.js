@@ -214,6 +214,12 @@ async function callAstroSeerPdf({ base, key, body }) {
   // Same stale-key recovery as the kundli JSON path: try WITH the
   // key first, retry WITHOUT on 401. AstroSeer rejects an invalid
   // key but accepts unauthenticated calls.
+  //
+  // Hard 50s timeout (Vercel function cap is 60s) - AstroSeer on
+  // Render free tier cold-starts in ~30s, so we give it room while
+  // still aborting before Vercel kills us with a 504. Without this
+  // the browser sees "Failed to fetch" with no JSON body (because
+  // Vercel terminates the function mid-response).
   const url = `${base}/api/report/pdf`;
   const payload = JSON.stringify(body);
   const withKey = {
@@ -221,13 +227,35 @@ async function callAstroSeerPdf({ base, key, body }) {
     ...(key ? { 'X-API-Key': key } : {}),
   };
   const noKey = { 'Content-Type': 'application/json' };
-  let r = await fetch(url, {
-    method: 'POST', headers: withKey, body: payload,
-  });
+  const doFetch = async (headers) => {
+    const ac = new AbortController();
+    const tid = setTimeout(() => ac.abort(), 50000);
+    try {
+      return await fetch(url, {
+        method: 'POST', headers, body: payload, signal: ac.signal,
+      });
+    } finally { clearTimeout(tid); }
+  };
+  let r;
+  try {
+    r = await doFetch(withKey);
+  } catch (e) {
+    if (e && e.name === 'AbortError') {
+      throw new Error('AstroSeer PDF API timed out after 50s. The '
+        + 'service may be cold-starting on Render free tier - '
+        + 'retry in a minute.');
+    }
+    throw new Error(`AstroSeer fetch failed: ${(e && e.message) || e}`);
+  }
   if (r.status === 401 && key) {
-    r = await fetch(url, {
-      method: 'POST', headers: noKey, body: payload,
-    });
+    try {
+      r = await doFetch(noKey);
+    } catch (e) {
+      if (e && e.name === 'AbortError') {
+        throw new Error('AstroSeer PDF API timed out (retry without key).');
+      }
+      throw e;
+    }
   }
   if (!r.ok) {
     const t = await r.text().catch(() => '');
@@ -641,7 +669,14 @@ async function handleReport(req, res) {
   // orderBy() so Firestore does NOT need a composite index. The
   // orders subcollection is per-user, almost always under 20 docs,
   // so client-side filtering + pick-most-recent is cheap.
+  // Admin can force a rebuild from the order management list or
+  // from the user profile by passing regenerate:true. In that mode
+  // we SKIP the cache lookup entirely so the relay always generates
+  // a fresh PDF (with the latest birth data the admin may just have
+  // edited).
+  const skipCache = !!body.regenerate;
   try {
+    if (skipCache) throw new Error('skipCache'); // jumps to catch
     const cached = await db.collection('users').doc(uid)
       .collection('orders')
       .where('birthSig', '==', sig)
@@ -764,6 +799,67 @@ async function handleReport(req, res) {
     // through to fresh generation. The original-flow refund/email
     // guarantees still apply.
   }
+
+  // 1c. Stuck-order sweeper. Any *_generating order from this user
+  //     older than 90s is now considered failed - the relay's
+  //     previous run timed out before the PDF landed. Mark it
+  //     failed_timeout AND refund the wallet (paid kinds only) so
+  //     the customer is not stuck with a debit + the admin Order
+  //     Management list does not show "Generating..." indefinitely.
+  //
+  // Best-effort: any error here is swallowed; we still attempt the
+  // fresh generation below.
+  try {
+    const stale = await db.collection('users').doc(uid)
+      .collection('orders')
+      .where('status', 'in',
+        ['paid_generating', 'free_generating'])
+      .get();
+    const now = Date.now();
+    const writes = [];
+    stale.docs.forEach((d) => {
+      const o = d.data() || {};
+      const paidMs = (o.paidAt && o.paidAt.toMillis
+        && o.paidAt.toMillis()) || 0;
+      if (!paidMs || (now - paidMs) < 90 * 1000) return;
+      const refundAmount = Number(o.amount || 0);
+      writes.push((async () => {
+        if (refundAmount > 0) {
+          // Atomic refund + status update.
+          try {
+            await db.runTransaction(async (tx) => {
+              const uRef = db.collection('users').doc(uid);
+              const uSnap = await tx.get(uRef);
+              const w = Number((uSnap.data() || {}).wallet || 0);
+              tx.update(uRef, { wallet: w + refundAmount,
+                updatedAt: admin.firestore.FieldValue
+                  .serverTimestamp() });
+              tx.update(d.ref, {
+                status: 'failed_refunded',
+                failedAt: admin.firestore.FieldValue.serverTimestamp(),
+                failReason: 'Generation timed out (>90s); '
+                  + 'wallet auto-refunded.',
+              });
+              const txRef = db.collection('transactions').doc();
+              tx.set(txRef, {
+                userId: uid, amount: refundAmount, type: 'credit',
+                reason: 'Kundli report refund (generation timeout)',
+                referenceId: d.id,
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+              });
+            });
+          } catch (_) { /* leave for next sweep */ }
+        } else {
+          await d.ref.update({
+            status: 'failed',
+            failedAt: admin.firestore.FieldValue.serverTimestamp(),
+            failReason: 'Generation timed out (>90s).',
+          }).catch(() => {});
+        }
+      })());
+    });
+    if (writes.length) await Promise.all(writes);
+  } catch (_) { /* sweeper failure must not block fresh generate */ }
 
   // 2. Resolve price + check we have AstroSeer creds.
   const price = await getReportPrice(db, kind);

@@ -305,6 +305,16 @@ export default function AdminUserProfile() {
                           a kundli identifier. Moon sign + Lagna
                           live inside the generated report. */}
                     </div>
+                    {/* Inline editor for admin to correct birth
+                        details. The user often needs admin to fix
+                        a typo in DOB / TOB / place and force a
+                        regenerate without bothering the customer. */}
+                    <AdminEditKundli k={k}
+                      onSaved={async () => {
+                        const fresh = await kundliService
+                          .getKundliProfiles(id).catch(() => null);
+                        if (fresh) setKundlis(fresh);
+                      }} />
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {/* "View" - the in-page JSON summary panel
@@ -485,6 +495,121 @@ export default function AdminUserProfile() {
           onClose={() => setViewer(null)} />
       )}
     </Layout>
+  );
+}
+
+// Inline admin editor for a kundli profile. Lets admin correct
+// DOB / TOB / AM-PM / place WITHOUT bothering the customer, then
+// the user can hit Regenerate to rebuild the PDF from the new birth
+// data. Writes straight to kundliProfiles/{id} - the cache-hit
+// branch in push-relay sees the new birthSig and recomputes.
+function AdminEditKundli({ k, onSaved }) {
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({
+    name: k.name || '', dob: k.dob || '', tob: k.tob || '',
+    ampm: k.ampm || 'AM', place: k.place || '',
+  });
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState({ text: '', kind: '' });
+  function set(field, value) { setForm((f) => ({ ...f, [field]: value })); }
+  async function save() {
+    setBusy(true); setMsg({ text: '', kind: '' });
+    try {
+      const { doc, updateDoc, serverTimestamp } = await import(
+        'firebase/firestore');
+      await updateDoc(doc(db, 'kundliProfiles', k.id), {
+        name: form.name, dob: form.dob, tob: form.tob,
+        ampm: form.ampm, place: form.place,
+        editedByAdminAt: serverTimestamp(),
+      });
+      setMsg({ text: 'Saved. Click Regenerate to rebuild the PDF.',
+        kind: 'ok' });
+      if (onSaved) onSaved();
+    } catch (e) {
+      setMsg({ text: (e && e.message) || 'Save failed.',
+        kind: 'err' });
+    } finally { setBusy(false); }
+  }
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)}
+        className="mt-1 text-[11px] font-bold text-primary
+          underline hover:text-accent">
+        Edit birth details
+      </button>
+    );
+  }
+  return (
+    <div className="mt-2 rounded-card border border-primary/30
+      bg-bg-light/40 p-3">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <label className="block">
+          <span className="block text-[10px] font-bold uppercase
+            tracking-wide text-sub-text">Name</span>
+          <input type="text" value={form.name}
+            onChange={(e) => set('name', e.target.value)}
+            className="mt-1 w-full rounded-card border border-gray-200
+              bg-white px-2 py-1 text-sm" />
+        </label>
+        <label className="block">
+          <span className="block text-[10px] font-bold uppercase
+            tracking-wide text-sub-text">
+            Date of birth (DD-MM-YYYY)
+          </span>
+          <input type="text" value={form.dob}
+            placeholder="DD-MM-YYYY"
+            onChange={(e) => set('dob', e.target.value)}
+            className="mt-1 w-full rounded-card border border-gray-200
+              bg-white px-2 py-1 text-sm" />
+        </label>
+        <label className="block">
+          <span className="block text-[10px] font-bold uppercase
+            tracking-wide text-sub-text">Time of birth (HH:MM)</span>
+          <input type="text" value={form.tob}
+            placeholder="HH:MM"
+            onChange={(e) => set('tob', e.target.value)}
+            className="mt-1 w-full rounded-card border border-gray-200
+              bg-white px-2 py-1 text-sm" />
+        </label>
+        <label className="block">
+          <span className="block text-[10px] font-bold uppercase
+            tracking-wide text-sub-text">AM / PM</span>
+          <select value={form.ampm}
+            onChange={(e) => set('ampm', e.target.value)}
+            className="mt-1 w-full rounded-card border border-gray-200
+              bg-white px-2 py-1 text-sm">
+            <option value="AM">AM</option>
+            <option value="PM">PM</option>
+          </select>
+        </label>
+        <label className="block sm:col-span-2">
+          <span className="block text-[10px] font-bold uppercase
+            tracking-wide text-sub-text">Place of birth</span>
+          <input type="text" value={form.place}
+            onChange={(e) => set('place', e.target.value)}
+            className="mt-1 w-full rounded-card border border-gray-200
+              bg-white px-2 py-1 text-sm" />
+        </label>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <button type="button" onClick={save} disabled={busy}
+          className="rounded-full bg-primary px-3 py-1 text-xs
+            font-bold text-white disabled:opacity-60">
+          {busy ? 'Saving...' : 'Save changes'}
+        </button>
+        <button type="button" onClick={() => setOpen(false)}
+          className="rounded-full border border-gray-300 bg-white
+            px-3 py-1 text-xs font-bold text-dark-text">
+          Cancel
+        </button>
+        {msg.text && (
+          <span className={`text-[11px] font-bold ${msg.kind === 'ok'
+            ? 'text-success' : 'text-danger'}`}>
+            {msg.text}
+          </span>
+        )}
+      </div>
+    </div>
   );
 }
 
