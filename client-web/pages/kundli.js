@@ -940,7 +940,18 @@ function BasicTab({ r, raw, kundli }) {
   // Every row value goes through txt() so provider-returned objects
   // (e.g. r.nakshatra = { name, lord, number, pada }) never reach
   // React as a child - that's React error #31.
+  // Ascendant (Lagna) is the anchor of the whole chart - it MUST
+  // be the very first thing the customer sees in Basic Details
+  // per user feedback ("first should be ascendent even on this").
+  // We compose a one-line summary "Capricorn (Dhanishta)" so the
+  // user reads sign + nakshatra at a glance.
+  const ascSign = txt(a.sign) || '';
+  const ascNak = txt(a.nakshatra) || '';
+  const ascSummary = ascSign
+    ? (ascNak ? `${ascSign} (${ascNak})` : ascSign)
+    : '·';
   const birthRows = [
+    ['Ascendant (Lagna)', ascSummary],
     ['Name', txt(kundli?.name || basic.name) || '·'],
     ['Date', txt(dobStr) || '·'],
     ['Time', txt(tobStr) || '·'],
@@ -1065,7 +1076,7 @@ function KundliMainTab({ r, raw, kundli,
             </tr>
           </thead>
           <tbody>
-            {(r.planets || []).map((p) => (
+            {planetsWithAscendant(r).map((p) => (
               <tr key={txt(p.name)}
                 className="border-t border-gray-100">
                 <td className="px-2 py-1 font-semibold">{txt(p.name)}</td>
@@ -1076,10 +1087,11 @@ function KundliMainTab({ r, raw, kundli,
                   {txt(p.nakshatra_lord) || '·'}</td>
                 <td className="px-2 py-1">{txt(p.degree) || '·'}</td>
                 <td className="px-2 py-1">
-                  {p.retrograde ? 'Retro' : 'Direct'}
+                  {p.isAscendant ? '-'
+                    : (p.retrograde ? 'Retro' : 'Direct')}
                 </td>
                 <td className="px-2 py-1">
-                  {p.combust ? 'Yes' : 'No'}
+                  {p.isAscendant ? '-' : (p.combust ? 'Yes' : 'No')}
                 </td>
                 <td className="px-2 py-1">{txt(p.avastha) || '·'}</td>
                 <td className="px-2 py-1">{p.house ?? '·'}</td>
@@ -1097,6 +1109,38 @@ function KundliMainTab({ r, raw, kundli,
       </div>
     </>
   );
+}
+
+// Build the Planets table rows with the Ascendant (Lagna) as the
+// FIRST row - traditional Vedic order puts the rising sign at the
+// top because it anchors every house calculation. r.ascendant is
+// the same shape as a planet but tagged with isAscendant so the
+// Retro / Combust columns render as "-" instead of misleading
+// "Direct" / "No" values that don't apply to the Lagna.
+function planetsWithAscendant(r) {
+  const planets = (r && r.planets) || [];
+  const asc = (r && r.ascendant) || null;
+  if (!asc || (!asc.sign && !asc.nakshatra && asc.degree == null)) {
+    return planets;
+  }
+  const ascRow = {
+    name: 'Ascendant',
+    sign: asc.sign,
+    sign_lord: asc.sign_lord || asc.lord,
+    nakshatra: asc.nakshatra,
+    nakshatra_lord: asc.nakshatra_lord,
+    degree: asc.degree,
+    house: 1,
+    isAscendant: true,
+    avastha: '',
+    dignity: '',
+    status: '',
+  };
+  // Avoid duplicating if the provider already includes Ascendant
+  // in the planets list (some kundli APIs do this).
+  const hasAsc = planets.some((p) => /asc|lagna|ascend/i
+    .test(String(p.name || '')));
+  return hasAsc ? planets : [ascRow, ...planets];
 }
 
 // ---------- Tab: KP (Bhav Chalit + Ruling Planets + KP Planets) ----
@@ -1151,7 +1195,7 @@ function KpTab({ r, raw }) {
             </tr>
           </thead>
           <tbody>
-            {(r.planets || []).map((p) => (
+            {planetsWithAscendant(r).map((p) => (
               <tr key={txt(p.name)}
                 className="border-t border-gray-100">
                 <td className="px-2 py-1 font-semibold">{txt(p.name)}</td>
