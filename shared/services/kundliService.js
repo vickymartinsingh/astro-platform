@@ -145,11 +145,37 @@ export async function listOrders(uid) {
 //     anchor click with download attribute.
 // Either way the user sees a real "saving file" prompt with the
 // right filename, not a blank tab.
+// Returns true if we are running inside a Capacitor native app shell
+// (iOS / Android). The web build always returns false.
+function isNativeApp() {
+  return typeof window !== 'undefined'
+    && !!window.Capacitor
+    && typeof window.Capacitor.isNativePlatform === 'function'
+    && window.Capacitor.isNativePlatform();
+}
+
+// Download the kundli PDF to the user's device, working on:
+//   - desktop / mobile browsers : <a download> click
+//   - iOS Capacitor             : open in system Safari, which shows
+//                                 the native "Open in Files / Books /
+//                                 Share" sheet for PDFs
+//   - Android Capacitor         : open in system browser, which fires
+//                                 the OS download manager
+//   - data: URLs (inline base64): convert to a Blob URL first so
+//                                 navigation actually works (iOS
+//                                 WKWebView blocks data: navigation)
+// Returns true on a best-effort attempt, false only on an exception
+// (typically a popup blocker). The popup the kundli flow uses
+// continues to show "Open in My Orders" as a fallback for either case.
 export function downloadPdfFromUrl(url, filename) {
   if (typeof window === 'undefined' || !url) return false;
   let href = url;
   let isBlob = false;
   try {
+    // Inline data: URL -> Blob URL so Safari / system browser can
+    // actually open it. iOS WKWebView refuses data: navigation
+    // outright, which is why the old <a download> path failed
+    // silently on the app.
     if (typeof url === 'string' && url.startsWith('data:')) {
       const commaIdx = url.indexOf(',');
       const meta = url.slice(5, commaIdx); // "application/pdf;base64"
@@ -164,6 +190,38 @@ export function downloadPdfFromUrl(url, filename) {
       href = URL.createObjectURL(blob);
       isBlob = true;
     }
+
+    // NATIVE APP path. Capacitor's URLOpener intercepts window.open
+    // with target '_system' and routes the URL out to the OS
+    // browser, which then offers the user a "Save to Files" /
+    // download-manager flow. The <a download> approach used to
+    // silently no-op inside WKWebView.
+    if (isNativeApp()) {
+      let opened = null;
+      try { opened = window.open(href, '_system'); } catch (_) { /* */ }
+      // Some Capacitor versions only honour target='_blank' for
+      // _system routing. Try both so iOS + Android both work.
+      if (!opened) {
+        try { opened = window.open(href, '_blank'); } catch (_) { /* */ }
+      }
+      if (!opened) {
+        // Last-ditch: navigate the WebView itself. iOS will refuse
+        // for data: URLs (we have a Blob URL by now, so OK), and
+        // Android's WebView triggers the download manager.
+        try { window.location.assign(href); } catch (_) { /* */ }
+      }
+      if (isBlob) {
+        // Give the OS browser a moment to grab the bytes before we
+        // revoke the Blob URL.
+        setTimeout(() => {
+          try { URL.revokeObjectURL(href); } catch (_) { /* */ }
+        }, 8000);
+      }
+      return true;
+    }
+
+    // WEB path. The classic <a download> click works in every
+    // desktop / mobile browser.
     const a = document.createElement('a');
     a.href = href;
     a.download = filename || 'AstroSeer-Kundli.pdf';

@@ -839,6 +839,9 @@ function FullKundli({ r, kundli }) {
     ['charts', 'Charts'],
     ['dasha', 'Dasha'],
     ['freeReport', 'Free Report'],
+    // NEW (user-requested): a dashboard tab listing every paid
+    // kundli report with a monochrome icon, demo link, and buy CTA.
+    ['premium', 'Premium Reports'],
   ];
 
   // Coerce older saved tab keys to the new schema so the bookmarked
@@ -892,9 +895,15 @@ function FullKundli({ r, kundli }) {
       {activeTab === 'freeReport' && (
         <FreeReportTab r={r} n={n} lucky={lucky} kundli={kundli} />
       )}
+      {activeTab === 'premium' && (
+        <PremiumReportsTab kundli={kundli} />
+      )}
 
       <TalkChatCTA />
-      <DownloadBanner kundli={kundli} full={r} />
+      {/* Download banner intentionally NOT rendered globally any more.
+          It now lives at the bottom of the Free Report tab (relocated
+          per user request) so it is not duplicated under every other
+          tab's content. */}
     </div>
   );
 }
@@ -1393,6 +1402,14 @@ function FreeReportTab({ r, n, lucky, kundli }) {
     <>
       <Banner title="Free Report" />
 
+      {/* HERO: open the API-generated PDF (the one actually saved in
+          our system) in a popup viewer with download + close. This is
+          the format the customer / admin sees everywhere - matches
+          the user's stated requirement: "the format made by the API
+          only, that should only get saved in our systems and when
+          anyone click on report that only should open like this".  */}
+      <ApiPdfHero kundli={kundli} />
+
       {/* Top sub-tabs - General / Remedies / Doshas */}
       {TOP_TABS.length > 1 && (
         <div className="mt-3 flex flex-wrap justify-center gap-2">
@@ -1449,6 +1466,11 @@ function FreeReportTab({ r, n, lucky, kundli }) {
       {sub === 'doshas' && showDoshas && (
         <DoshasNarrativeSection r={r} raw={raw} />
       )}
+
+      {/* Relocated per user request: the "Download & share your kundli
+          report" banner now lives at the bottom of the Free Report tab
+          only. It used to repeat under every tab. */}
+      <DownloadBanner kundli={kundli} full={r} />
     </>
   );
 }
@@ -3183,6 +3205,458 @@ function HouseGrid({ r, title }) {
         House 1 holds the Ascendant (Lagna). Read planets in each
         bhava with their lord + nakshatra (see Planets & Houses tab).
       </p>
+    </div>
+  );
+}
+
+// =====================================================================
+// API PDF HERO + PDF VIEWER POPUP + PREMIUM REPORTS TAB
+//
+// Three pieces, all user-requested in the long feedback message:
+//
+//   1. ApiPdfHero          - sits at the top of the Free Report tab.
+//                            Renders a prominent card that triggers
+//                            generation (or fetches the cached order)
+//                            of the API-generated PDF, then opens it
+//                            in a popup with View / Download / Close
+//                            buttons. This is the format the customer
+//                            asked us to use everywhere; we no longer
+//                            ship the HTML-print-dialog flavour as the
+//                            default report.
+//
+//   2. PdfViewerPopup      - in-app PDF viewer modal. iframe for web
+//                            and desktop, plus a Download button that
+//                            uses the upgraded kundliService
+//                            .downloadPdfFromUrl helper (which now
+//                            falls back to opening in the OS browser
+//                            on Capacitor iOS / Android so the file
+//                            actually lands in Files / Downloads).
+//
+//   3. PremiumReportsTab   - new top-level kundli tab. Lists every
+//                            paid report type as a card on a dashboard
+//                            grid with a SINGLE-COLOUR icon (not a
+//                            colourful emoji), the price, a Demo link
+//                            that previews the section list + delivery
+//                            time, and a Buy CTA that runs the same
+//                            wallet-deduct flow the existing
+//                            ReportButtons component uses.
+// =====================================================================
+
+function ApiPdfHero({ kundli }) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const [viewing, setViewing] = useState(false);
+  const [err, setErr] = useState('');
+
+  async function open() {
+    if (!kundli || !kundli.id || !kundli.userId) {
+      setErr('Save a kundli profile first.'); return;
+    }
+    setErr(''); setBusy(true);
+    try {
+      const out = await kundliService.requestReport({
+        uid: kundli.userId,
+        kundliProfileId: kundli.id,
+        kind: 'free',
+      });
+      if (!out || !out.ok || !out.pdfUrl) {
+        throw new Error((out && out.error)
+          || 'Could not load the PDF.');
+      }
+      setResult(out);
+      setViewing(true);
+    } catch (e) {
+      setErr(e.message || 'Could not load the PDF.');
+    } finally { setBusy(false); }
+  }
+
+  function downloadNow() {
+    if (!result || !result.pdfUrl) { open(); return; }
+    kundliService.downloadPdfFromUrl(result.pdfUrl,
+      result.pdfName || 'AstroSeer-Kundli.pdf');
+  }
+
+  return (
+    <div className="mt-3 rounded-card bg-white p-4 shadow-sm">
+      <div className="flex items-start gap-3">
+        <div className="grid h-12 w-12 shrink-0 place-items-center
+          rounded-full bg-primary/10 text-2xl text-primary">📄</div>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-bold text-primary">
+            Your free Vedic Kundli PDF
+          </div>
+          <p className="mt-0.5 text-[12px] leading-snug text-sub-text">
+            The full 250+ page chart generated by our system. View
+            inside the app or download to your device.
+          </p>
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button type="button" onClick={open} disabled={busy}
+          className="rounded-full bg-primary px-4 py-2 text-xs
+            font-bold text-white disabled:opacity-60">
+          {busy ? 'Opening...' : (result ? 'Re-open PDF' : 'View PDF')}
+        </button>
+        <button type="button" onClick={downloadNow} disabled={busy}
+          className="rounded-full border border-primary px-4 py-2
+            text-xs font-bold text-primary disabled:opacity-60">
+          Download PDF
+        </button>
+      </div>
+      {err && (
+        <div className="mt-2 rounded-card bg-danger/10 px-3 py-2
+          text-[11px] text-danger">
+          {err}
+        </div>
+      )}
+      {viewing && result && (
+        <PdfViewerPopup
+          url={result.pdfUrl}
+          name={result.pdfName || 'AstroSeer-Kundli.pdf'}
+          onClose={() => setViewing(false)} />
+      )}
+    </div>
+  );
+}
+
+// Full-screen PDF viewer with close + download. The iframe is rebuilt
+// on each open with the latest URL; on iOS Capacitor where iframes do
+// not render PDF inline reliably, the "Open externally" button kicks
+// it into Safari (the same path downloadPdfFromUrl uses).
+function PdfViewerPopup({ url, name, onClose }) {
+  function isNative() {
+    return typeof window !== 'undefined'
+      && !!window.Capacitor
+      && typeof window.Capacitor.isNativePlatform === 'function'
+      && window.Capacitor.isNativePlatform();
+  }
+  function download() {
+    kundliService.downloadPdfFromUrl(url,
+      name || 'AstroSeer-Kundli.pdf');
+  }
+  function openExternal() {
+    try { window.open(url, '_system'); }
+    catch (_) {
+      try { window.open(url, '_blank'); } catch (e) { /* */ }
+    }
+  }
+  return (
+    <div className="fixed inset-0 z-[2147483647] flex flex-col
+      bg-black/80">
+      <div className="flex items-center justify-between gap-2
+        bg-primary px-3 py-2 text-white">
+        <div className="min-w-0 flex-1 truncate text-sm font-bold">
+          {name || 'Kundli PDF'}
+        </div>
+        <button type="button" onClick={download}
+          className="rounded-full bg-white/20 px-3 py-1 text-[11px]
+            font-bold hover:bg-white/30">
+          Download
+        </button>
+        {isNative() && (
+          <button type="button" onClick={openExternal}
+            className="rounded-full bg-white/20 px-3 py-1 text-[11px]
+              font-bold hover:bg-white/30">
+            Open in browser
+          </button>
+        )}
+        <button type="button" onClick={onClose}
+          aria-label="Close"
+          className="ml-1 grid h-8 w-8 place-items-center rounded-full
+            bg-white/20 text-base font-bold hover:bg-white/30">
+          ×
+        </button>
+      </div>
+      <div className="flex-1 bg-white">
+        <iframe src={url} title={name || 'Kundli PDF'}
+          className="h-full w-full border-0"
+          style={{ minHeight: '60vh' }} />
+      </div>
+    </div>
+  );
+}
+
+// Inline monochrome SVG icons for the premium-report cards. Single
+// theme colour (primary), no colourful emoji - matches the
+// "single color icon not colorful" rule.
+function PremiumIcon({ kind }) {
+  const cls = 'h-7 w-7 text-primary';
+  if (kind === 'forecast12') {
+    return (
+      <svg viewBox="0 0 24 24" className={cls} fill="none"
+        stroke="currentColor" strokeWidth="1.8">
+        <rect x="3" y="5" width="18" height="16" rx="2" />
+        <path d="M3 9h18M8 3v4M16 3v4" />
+        <path d="M7 13h2M11 13h2M15 13h2M7 17h2M11 17h2M15 17h2" />
+      </svg>
+    );
+  }
+  if (kind === 'careerFinance') {
+    return (
+      <svg viewBox="0 0 24 24" className={cls} fill="none"
+        stroke="currentColor" strokeWidth="1.8">
+        <path d="M3 21h18M5 21V10l7-5 7 5v11M9 21v-6h6v6" />
+      </svg>
+    );
+  }
+  if (kind === 'lifetime') {
+    return (
+      <svg viewBox="0 0 24 24" className={cls} fill="none"
+        stroke="currentColor" strokeWidth="1.8">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 3v9l5 3" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" className={cls} fill="none"
+      stroke="currentColor" strokeWidth="1.8">
+      <path d="M6 4h9l4 4v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" />
+      <path d="M14 4v5h5M8 14h8M8 18h5" />
+    </svg>
+  );
+}
+
+function PremiumReportsTab({ kundli }) {
+  const [prices, setPrices] = useState(() => {
+    const out = {};
+    REPORT_TYPES.forEach((t) => { out[t.id] = t.defaultPrice; });
+    return out;
+  });
+  const [pending, setPending] = useState(null);   // confirm popup
+  const [demo, setDemo] = useState(null);         // demo popup
+  const [result, setResult] = useState(null);     // download popup
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const s = await getDoc(doc(db, 'settings', 'config'));
+        const cfg = (s.exists() && s.data()) || {};
+        const next = {};
+        REPORT_TYPES.forEach((t) => {
+          next[t.id] = resolvePrice(t.id, cfg);
+        });
+        setPrices(next);
+      } catch (_) { /* keep defaults */ }
+    })();
+  }, []);
+
+  async function buy(kind) {
+    setError(null); setBusy(kind); setResult(null);
+    try {
+      if (!kundli || !kundli.id || !kundli.userId) {
+        throw new Error('Save a kundli profile first.');
+      }
+      const out = await kundliService.requestReport({
+        uid: kundli.userId, kundliProfileId: kundli.id, kind,
+      });
+      setResult(out);
+    } catch (e) { setError(e); }
+    finally { setBusy(''); }
+  }
+
+  // Paid reports only (free already lives at the top of the Free
+  // Report tab).
+  const PAID = REPORT_TYPES.filter((t) => t.id !== 'free');
+
+  return (
+    <div className="mt-3">
+      <Banner title="Premium Reports" />
+      <p className="mt-3 text-center text-[12px] text-sub-text">
+        Detailed Vedic reports generated by our system. Tap a card
+        to preview the sections inside, or buy the PDF straight to
+        your Orders.
+      </p>
+
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {PAID.map((t) => {
+          const price = prices[t.id] || t.defaultPrice;
+          const isBusy = busy === t.id;
+          return (
+            <div key={t.id} className="flex flex-col rounded-card
+              bg-white p-4 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="grid h-12 w-12 shrink-0 place-items-center
+                  rounded-full bg-primary/10">
+                  <PremiumIcon kind={t.id} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-bold text-primary">
+                    {t.name}
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-sub-text">
+                    {t.tat}
+                  </div>
+                </div>
+                <div className="shrink-0 text-right">
+                  <div className="text-base font-bold text-primary">
+                    ₹{price}
+                  </div>
+                  <div className="text-[10px] uppercase tracking-wide
+                    text-sub-text">from wallet</div>
+                </div>
+              </div>
+              <p className="mt-2 line-clamp-3 text-[12px]
+                leading-snug text-dark-text">
+                {t.summary}
+              </p>
+              <div className="mt-3 flex gap-2">
+                <button type="button" onClick={() => setDemo(t)}
+                  className="flex-1 rounded-full border border-primary
+                    bg-white px-3 py-2 text-xs font-bold text-primary">
+                  Demo
+                </button>
+                <button type="button" disabled={!!busy}
+                  onClick={() => setPending({ kind: t.id, price })}
+                  className="flex-1 rounded-full bg-accent px-3 py-2
+                    text-xs font-bold text-white disabled:opacity-60">
+                  {isBusy ? 'Charging...' : `Buy for ₹${price}`}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {error && (
+        <div className="mt-3 rounded-card bg-danger/10 p-3 text-xs
+          text-danger">
+          {error.code === 'insufficient_wallet' ? (
+            <>
+              Wallet balance ₹{error.wallet || 0} is not enough.{' '}
+              <Link href="/wallet" className="font-bold underline">
+                Add money to wallet
+              </Link>
+            </>
+          ) : (
+            <>Could not generate: {error.message}
+              {error.refunded ? ' (wallet refunded automatically)' : ''}
+            </>
+          )}
+        </div>
+      )}
+
+      {pending && (
+        <ConfirmReportPopup
+          spec={(() => {
+            const t = reportType(pending.kind);
+            if (!t) return null;
+            return {
+              title: t.name,
+              badge: '',
+              sections: t.sections,
+              tat: t.tat,
+              confirmCta: t.confirmCta,
+              summary: t.summary,
+            };
+          })()}
+          price={pending.price}
+          kind={pending.kind}
+          onCancel={() => setPending(null)}
+          onConfirm={() => {
+            const k = pending.kind;
+            setPending(null);
+            buy(k);
+          }} />
+      )}
+
+      {demo && (
+        <PremiumDemoPopup spec={demo} price={prices[demo.id]
+          || demo.defaultPrice}
+          onClose={() => setDemo(null)}
+          onBuy={() => {
+            const k = demo.id;
+            setDemo(null);
+            setPending({ kind: k, price: prices[k] || demo.defaultPrice });
+          }} />
+      )}
+
+      {result && result.ok && (
+        <DownloadPopup result={result}
+          onClose={() => setResult(null)} />
+      )}
+    </div>
+  );
+}
+
+// Demo / preview popup for a premium report. Shows the full section
+// list, delivery time and a representative sample-page screenshot
+// placeholder. Two CTAs: Close, Buy.
+function PremiumDemoPopup({ spec, price, onClose, onBuy }) {
+  if (!spec) return null;
+  return (
+    <div className="fixed inset-0 z-[2147483647] flex items-center
+      justify-center bg-black/60 p-4">
+      <div className="w-full max-w-md overflow-hidden rounded-2xl
+        bg-white shadow-2xl">
+        <div className="flex items-start justify-between gap-3
+          border-b border-gray-100 px-5 pt-5 pb-4">
+          <div className="min-w-0">
+            <h2 className="text-lg font-bold text-primary">
+              {spec.name}
+            </h2>
+            <div className="mt-1 text-[11px] uppercase tracking-wide
+              text-sub-text">Sample preview</div>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close"
+            className="grid h-8 w-8 shrink-0 place-items-center
+              rounded-full bg-bg-light text-lg font-bold text-primary">
+            ×
+          </button>
+        </div>
+        <div className="max-h-[60vh] overflow-auto px-5 py-4">
+          <p className="text-[13px] leading-snug text-dark-text">
+            {spec.summary}
+          </p>
+          <div className="mt-4 text-[11px] font-bold uppercase
+            tracking-wide text-primary">
+            What you receive
+          </div>
+          <ol className="mt-2 list-none space-y-2 text-[13px]
+            leading-snug text-dark-text">
+            {spec.sections.map((text, i) => (
+              <li key={text} className="flex items-start gap-3">
+                <span className="mt-0.5 inline-flex h-5 w-5 shrink-0
+                  items-center justify-center rounded-full
+                  bg-primary/10 text-[10px] font-bold text-primary">
+                  {i + 1}
+                </span>
+                <span>{text}</span>
+              </li>
+            ))}
+          </ol>
+          <div className="mt-4 rounded-card border border-gray-100
+            bg-bg-light px-3 py-2 text-[12px] leading-snug
+            text-dark-text">
+            <div className="text-[10px] font-bold uppercase
+              tracking-wide text-primary">Delivery</div>
+            <div className="mt-1">{spec.tat}</div>
+          </div>
+        </div>
+        <div className="flex items-center justify-between gap-2
+          border-t border-gray-100 px-5 py-4">
+          <div>
+            <div className="text-xs text-sub-text">Price</div>
+            <div className="text-lg font-bold text-primary">
+              ₹{price}
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button type="button" onClick={onClose}
+              className="rounded-full border border-gray-300 bg-white
+                px-4 py-2 text-sm font-bold text-dark-text">
+              Close
+            </button>
+            <button type="button" onClick={onBuy}
+              className="rounded-full bg-accent px-4 py-2 text-sm
+                font-bold text-white shadow-sm">
+              Buy for ₹{price}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
