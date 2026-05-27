@@ -1,4 +1,4 @@
-// Kundli PDF report — both flavours land here:
+// Kundli PDF report - both flavours land here:
 //
 //   POST /api/kundliReport
 //   body: { kind, kundliProfileId, uid }
@@ -47,7 +47,7 @@ function init() {
 // explicit FIREBASE_STORAGE_BUCKET env on Vercel, then the new
 // "<project>.firebasestorage.app" format (current default for
 // projects created in 2024+), then the legacy "<project>.appspot.com"
-// — we try both, the upload that succeeds wins.
+// - we try both, the upload that succeeds wins.
 function bucketName(sa) {
   return process.env.FIREBASE_STORAGE_BUCKET
     || `${(sa && sa.project_id) || 'astrology-2092d'}.firebasestorage.app`;
@@ -129,12 +129,12 @@ async function getReportPrice(db, kind) {
 function astroSeerBody(kind, p, lat, lng, profile) {
   // tz: prefer the value locked on the profile at city-select time.
   // Falls back to India IST (5.5) only if the profile carried no
-  // timezone — that lines up with our customer base today and is
+  // timezone - that lines up with our customer base today and is
   // safer than GMT+0 which would silently corrupt every chart.
   const profileTz = Number(profile && profile.tz);
   const tz = Number.isFinite(profileTz) ? profileTz : 5.5;
   // 0 is a "missing" sentinel here even though it's a valid
-  // coordinate — there is no birth in the middle of the Atlantic.
+  // coordinate - there is no birth in the middle of the Atlantic.
   // Without this guard the report ends up at (0, 0) GMT+0 (the
   // user-reported bug).
   const latNum = Number(lat);
@@ -174,7 +174,7 @@ function astroSeerBody(kind, p, lat, lng, profile) {
 // Open-Meteo geocoding (no key, no quota for the volume we run at).
 // Mirrors the geocode() in api/kundli.js. Used as a fallback when
 // the kundliProfiles doc only has a `place` string with no
-// pre-resolved lat/lng — most user-saved profiles are that shape
+// pre-resolved lat/lng - most user-saved profiles are that shape
 // because the BirthInputs CityField only writes the text label.
 // AstroSeer's /api/report/pdf insists on numeric latitude+longitude
 // and 422's otherwise (this was the actual cause of the "Report
@@ -368,7 +368,7 @@ async function emailReport({
     ? 'Your 12-Month Kundli Forecast'
     : 'Your Vedic Kundli Report';
   const subject = complimentary
-    ? `A complimentary kundli from AstroSeer — ${human}`
+    ? `A complimentary kundli from AstroSeer - ${human}`
     : `${human} from AstroSeer is ready`;
   const opener = complimentary
     ? `As a thank-you from the AstroSeer team, please find your `
@@ -465,7 +465,7 @@ async function emailReport({
 </td></tr></table>
 </body></html>`;
   // Write an audit row to chats/{id} so /admin-email log can show
-  // exactly what was sent — subject, body, html preview, attachment
+  // exactly what was sent - subject, body, html preview, attachment
   // metadata (name + size only, not the binary), final status.
   const auditRef = db.collection('chats').doc();
   try {
@@ -491,7 +491,7 @@ async function emailReport({
   // the user has confirmed works). Then try the with-attachment
   // email as a bonus second send. This way:
   //   - Customer ALWAYS receives the email (link-only never fails
-  //     unless SMTP itself is broken — and the test send proves
+  //     unless SMTP itself is broken - and the test send proves
   //     it isn't).
   //   - If the attachment send succeeds, customer gets two emails:
   //     one with the link, one with the PDF attached. Two is fine;
@@ -521,7 +521,7 @@ async function emailReport({
     return t.transporter.sendMail(opts);
   }
 
-  // 1) Link-only email — the guaranteed delivery.
+  // 1) Link-only email - the guaranteed delivery.
   let linkOnlyInfo = null;
   let linkOnlyError = null;
   try {
@@ -617,7 +617,7 @@ async function handleReport(req, res) {
     return res.status(400).json({ error: 'profile missing birth data' });
   }
 
-  // birthSig — same shape the shared client kundliService uses. Two
+  // birthSig - same shape the shared client kundliService uses. Two
   // profiles with the same DOB / TOB / AM-PM / place collapse into
   // one signature; any minor edit to those four fields changes it.
   // We stamp this on every order doc so a later "cached order
@@ -633,7 +633,7 @@ async function handleReport(req, res) {
   //     birthSig) is already 'ready', return that PDF immediately.
   //     No AstroSeer call, no Storage upload, no wallet deduction
   //     for paid kinds (the user already paid for THIS chart). Edit
-  //     the profile and the sig changes, so we regenerate — exactly
+  //     the profile and the sig changes, so we regenerate - exactly
   //     what the user asked for ("even a minor change must force a
   //     regenerate").
   //
@@ -662,7 +662,7 @@ async function handleReport(req, res) {
     if (ready) {
       // For inline-storage orders the actual pdfUrl on the doc is
       // a short marker ("inline"). The real bytes are on
-      // pdfBase64 — rebuild the data URL here so the client gets
+      // pdfBase64 - rebuild the data URL here so the client gets
       // a clickable download with no extra round-trip.
       const realUrl = ready.pdfBase64
         ? `data:application/pdf;base64,${ready.pdfBase64}`
@@ -681,7 +681,7 @@ async function handleReport(req, res) {
       });
     }
   } catch (_) {
-    // Never block PDF delivery on a cache-lookup failure — fall
+    // Never block PDF delivery on a cache-lookup failure - fall
     // through to fresh generation. The original-flow refund/email
     // guarantees still apply.
   }
@@ -767,7 +767,7 @@ async function handleReport(req, res) {
   //    next 12 monthly transit + dasha forecasts into the PDF.
   //
   // Resolve lat/lng: profiles created by the BirthInputs CityField
-  // only carry a `place` string label — no numeric coords. AstroSeer
+  // only carry a `place` string label - no numeric coords. AstroSeer
   // 422's on null lat/lng, so we geocode the place text via the
   // same Open-Meteo lookup api/kundli.js uses. If that ALSO fails
   // we fall back to Mumbai (Vedic apps' default reference) so the

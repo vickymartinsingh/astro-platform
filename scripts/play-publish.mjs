@@ -98,7 +98,7 @@ const publisher = google.androidpublisher({ version: 'v3', auth });
     const listingPath = join(process.cwd(), '..',
       'AstroSeer_PlayStoreListing', 'STORE-LISTING.txt');
     let title = 'AstroSeer Connect';
-    let shortDesc = 'Talk to trusted Vedic astrologers — chat, '
+    let shortDesc = 'Talk to trusted Vedic astrologers - chat, '
       + 'call & video. Kundli, horoscope.';
     let fullDesc = title;
     if (existsSync(listingPath)) {
@@ -122,7 +122,7 @@ const publisher = google.androidpublisher({ version: 'v3', auth });
     requestBody: {
       track: TRACK,
       releases: [{
-        name: `1.0.${versionCode} — automated`,
+        name: `1.0.${versionCode} - automated`,
         versionCodes: [String(versionCode)],
         status: STATUS,
         releaseNotes: [{ language: 'en-US', text: NOTES }],

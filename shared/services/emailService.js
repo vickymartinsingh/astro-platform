@@ -119,7 +119,7 @@ const T = {
     const kindLabel = (v && v.kindLabel) || 'Vedic Kundli Report';
     const ordersUrl = (v && v.ordersUrl) || 'https://astroseer.in/orders';
     const subject = `Your ${kindLabel} is ready`
-      + (profileName ? ` — ${profileName}` : '');
+      + (profileName ? ` - ${profileName}` : '');
     const text = `Namaste ${name},\n\n`
       + `Your ${kindLabel}${profileName
         ? ` for ${profileName}` : ''} is ready and attached to `

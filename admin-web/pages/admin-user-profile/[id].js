@@ -238,7 +238,7 @@ export default function AdminUserProfile() {
                     <div className="text-xs text-sub-text">
                       {k.dob} · {k.tob} {k.ampm} · {k.place}
                       {/* Zodiac (sun sign by DOB) intentionally
-                          omitted — that's a horoscope concept, not
+                          omitted - that's a horoscope concept, not
                           a kundli identifier. Moon sign + Lagna
                           live inside the generated report. */}
                     </div>
@@ -496,7 +496,7 @@ function EmailKundliButton({ k, u, report, onLoad }) {
           error: j.emailError
             || j.attachmentError
             || j.linkOnlyError
-            || 'Relay did not return an error string — open '
+            || 'Relay did not return an error string - open '
               + 'Vercel logs for the push-relay function.',
           attachmentError: j.attachmentError || '',
           linkOnlyError: j.linkOnlyError || '' });
@@ -605,7 +605,7 @@ function ComplimentaryProgressPopup({ p, email, onClose, onRetry }) {
             <div className="mt-2 text-[11px]">
               Open <b>/admin-email</b> to verify SMTP host / user /
               password. The PDF was generated successfully and is
-              saved on the order — you can also re-trigger the
+              saved on the order - you can also re-trigger the
               email after fixing the settings.
             </div>
           </div>

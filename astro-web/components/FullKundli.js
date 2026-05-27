@@ -3,7 +3,7 @@ import { kundliService, vimshottari } from '@astro/shared';
 
 // Full kundli viewer for the astrologer panel. Mirrors the customer
 // /kundli viewer (same data shape from kundliService.getFullKundli)
-// but strips the "buy report" / "edit profile" UI — the astrologer
+// but strips the "buy report" / "edit profile" UI - the astrologer
 // only reads. Tabs: Overview · Chart (N/S) · Planets · Dasha · Houses
 // · Transits · Yogas · Doshas · Panchang.
 
@@ -476,7 +476,7 @@ function CurrentDashaCard({ cd }) {
   );
 }
 
-// 4-level drilldown — uses shared vimshottari math so any sub-period
+// 4-level drilldown - uses shared vimshottari math so any sub-period
 // below pratyantar is computed client-side (no extra API calls).
 const LEVEL_LABELS = ['Mahadasha', 'Antardasha',
   'Pratyantardasha', 'Sookshmadasha'];

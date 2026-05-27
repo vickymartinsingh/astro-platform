@@ -38,7 +38,7 @@ export default function Document() {
             returning visitors then have their localStorage cached
             palette overlaid on top so an admin custom theme also
             renders without waiting for the Firestore snapshot.
-            STAYS IN LOCKSTEP WITH ADMIN-THEMES — if the active theme
+            STAYS IN LOCKSTEP WITH ADMIN-THEMES - if the active theme
             switches, update the d={...} block and redeploy. */}
         <script
           dangerouslySetInnerHTML={{

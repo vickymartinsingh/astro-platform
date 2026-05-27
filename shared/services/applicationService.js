@@ -91,14 +91,14 @@ export async function findApplicationsByEmail(email) {
 
 // Block-list check before letting a new application through. Returns
 // { allowed, reason }:
-//   - allowed: false, reason: 'active' — that email already has an
+//   - allowed: false, reason: 'active' - that email already has an
 //     active astrologer login (we should never duplicate them).
-//   - allowed: false, reason: 'maxRejections' — they've been rejected
+//   - allowed: false, reason: 'maxRejections' - they've been rejected
 //     six times; ask them to contact support instead of re-applying.
-//   - allowed: false, reason: 'inProgress' — they have a live
+//   - allowed: false, reason: 'inProgress' - they have a live
 //     application that isn't rejected; tracking link instead of a
 //     new submission.
-//   - allowed: true — fresh email or a previously rejected applicant
+//   - allowed: true - fresh email or a previously rejected applicant
 //     under the cap.
 export async function canApply(email) {
   const e = String(email || '').trim().toLowerCase();
@@ -138,7 +138,7 @@ export async function canApply(email) {
 // Requires the email to already be OTP-verified (the public form
 // gates submit on a successful verifyEmailOtp). The relay flips the
 // emailVerified flag on the Firestore users doc, but for the public
-// form we don't have a uid yet — the OTP cooldown / used-flag on the
+// form we don't have a uid yet - the OTP cooldown / used-flag on the
 // emailOtps doc is our proof, so we pass `emailVerified: true` only
 // when the caller has just verified.
 export async function submitApplication(data) {
@@ -254,7 +254,7 @@ export async function getApplicationByToken(token) {
   if (!token) return null;
   const t = String(token).trim();
   // New tokens are 6-digit numeric; older legacy tokens were 8-char
-  // base32 — try both lookups.
+  // base32 - try both lookups.
   try {
     const snap = await getDocs(query(
       collection(db, 'astroApplications'),
@@ -274,7 +274,7 @@ export async function getApplicationByToken(token) {
 
 // Tracking-page lookup: applicants enter their registered email +
 // 6-digit token and we return the latest matching application so they
-// can see where it is in the pipeline. Both fields must match — the
+// can see where it is in the pipeline. Both fields must match - the
 // token alone would let anyone with a guessed number peek at someone
 // else's status, and the email alone wouldn't disambiguate re-applies.
 export async function trackApplication(email, token) {

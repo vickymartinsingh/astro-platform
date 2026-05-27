@@ -28,17 +28,17 @@ const TOGGLES = [
   //     toggleable so admin can hide / show the entire section
   //     across every customer's report) ---
   ['free_report_general_enabled',
-    'Free Report > General — Ascendant overview + personality + career + health + love + life path + lucky'],
+    'Free Report > General - Ascendant overview + personality + career + health + love + life path + lucky'],
   ['free_report_planetary_enabled',
-    'Free Report > Planetary — per-planet sign + house narratives'],
+    'Free Report > Planetary - per-planet sign + house narratives'],
   ['free_report_dasha_enabled',
-    'Free Report > Vimshottari — per-mahadasha narratives'],
+    'Free Report > Vimshottari - per-mahadasha narratives'],
   ['free_report_yoga_enabled',
-    'Free Report > Yoga — detected yogas with detailed descriptions'],
+    'Free Report > Yoga - detected yogas with detailed descriptions'],
   ['free_report_remedies_enabled',
-    'Free Report > Remedies — gemstone, rudraksha, mantras, fasting, charity'],
+    'Free Report > Remedies - gemstone, rudraksha, mantras, fasting, charity'],
   ['free_report_doshas_enabled',
-    'Free Report > Doshas — Mangal, Kalsarp, Sade Sati, Pitra, Guru Chandal'],
+    'Free Report > Doshas - Mangal, Kalsarp, Sade Sati, Pitra, Guru Chandal'],
   // --- Reports / monetisation ---
   // Master kill-switch for the paid + free PDF reports. When OFF the
   // /kundli buy buttons hide and the relay refuses /api/kundli/report.
@@ -165,7 +165,7 @@ export default function AdminFeatures() {
           ['primary',
             'Primary (current, production)',
             'The 7-tab AstroTalk-style kundli viewer you see today. '
-              + 'Use this for everyone — safe.'],
+              + 'Use this for everyone - safe.'],
           ['secondary',
             'Secondary (test only, do NOT promote)',
             'Parallel build for A/B testing. Will not be present '

@@ -208,7 +208,7 @@ export default function ActivityHistory({ uid, user }) {
     const name = (user && user.name) || uid || 'user';
     const email = (user && user.email) || '';
     const html = `<!doctype html><html><head><meta charset="utf-8" />
-<title>Activity History — ${escapeHtml(name)}</title>
+<title>Activity History - ${escapeHtml(name)}</title>
 <style>
   body { font: 12px -apple-system, Segoe UI, Roboto, Helvetica, Arial;
     color: #1A1A2E; margin: 24px; }
@@ -224,7 +224,7 @@ export default function ActivityHistory({ uid, user }) {
   .amt-neg { color: #B83227; font-weight: 700; }
   @media print { @page { margin: 12mm; } }
 </style></head><body>
-<h1>Activity History — ${escapeHtml(name)}</h1>
+<h1>Activity History - ${escapeHtml(name)}</h1>
 <div class="sub">
   ${escapeHtml(email)} · UID ${escapeHtml(uid)}<br/>
   Range: ${fmt(fromMs)} → ${fmt(toMs)}<br/>

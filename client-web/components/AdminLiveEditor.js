@@ -123,7 +123,7 @@ export default function AdminLiveEditor() {
           cursor: 'pointer', color: '#fff', fontWeight: 800,
           fontSize: 13, boxShadow: '0 8px 24px rgba(0,0,0,.35)',
           fontFamily: 'Inter, system-ui, sans-serif',
-          background: 'linear-gradient(135deg,#6C2BD9,#8B5CF6)',
+          background: 'linear-gradient(135deg,#7F2020,#D4A12A)',
         }}>
         ✏️ {open ? 'Close editor' : 'Edit this portal'}
       </button>
@@ -160,7 +160,7 @@ export default function AdminLiveEditor() {
                 flex: 1, padding: '10px 4px', border: 0, cursor: 'pointer',
                 fontSize: 12, fontWeight: 700, textTransform: 'capitalize',
                 background: tab === t ? '#EEF1FB' : '#fff',
-                color: tab === t ? '#6C2BD9' : '#374151',
+                color: tab === t ? '#7F2020' : '#374151',
               }}>{t}</button>
             ))}
           </div>
@@ -295,11 +295,11 @@ const del = { border: 0, background: 'none', color: '#C0392B',
   cursor: 'pointer', fontSize: 16 };
 const addBtn = {
   width: '100%', padding: 8, fontSize: 13, fontWeight: 600,
-  color: '#6C2BD9', background: '#EEF1FB', border: '1px dashed #c7c9f3',
+  color: '#7F2020', background: '#EEF1FB', border: '1px dashed #c7c9f3',
   borderRadius: 10, cursor: 'pointer', marginBottom: 10,
 };
 const pub = {
   width: '100%', padding: 10, border: 0, borderRadius: 10,
   fontWeight: 800, fontSize: 14, color: '#fff', cursor: 'pointer',
-  marginTop: 6, background: 'linear-gradient(135deg,#6C2BD9,#8B5CF6)',
+  marginTop: 6, background: 'linear-gradient(135deg,#7F2020,#D4A12A)',
 };

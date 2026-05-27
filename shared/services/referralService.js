@@ -33,7 +33,7 @@ async function loadConfig(cfg) {
 
 // Called from callService / chatService when a paid session ends.
 // `durationMinutes` should already exclude any refunded inactivity.
-// Returns { credited, amount, reason }. Never throws — failures are
+// Returns { credited, amount, reason }. Never throws - failures are
 // logged into the pending doc and reported back so the session-end
 // path doesn't surface money errors to the customer.
 export async function maybeCreditAstroReferral(astrologerUid,

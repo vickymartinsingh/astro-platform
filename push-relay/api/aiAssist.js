@@ -56,7 +56,7 @@ async function logAttempt(db, payload) {
 //     clientUid resolved from the chats/{chatId}.participants array
 //     (the customer half of the conversation, see "resolve
 //     participants" block in the main handler). Each AI reply
-//     re-runs this — there is no in-memory cache — so user A's
+//     re-runs this - there is no in-memory cache - so user A's
 //     chart can never bleed into user B's chat.
 //   - Returns `{ text, profileId, signature }`. The caller passes
 //     `profileId` and `signature` into the audit log so any future
@@ -76,7 +76,7 @@ async function kundliContext(db, clientUid) {
 
     // BELT-AND-BRACES: drop the kundli if its userId doesn't match the
     // chat's clientUid. The query above already filters by userId so
-    // this should never trigger — but if a stray doc ever lands with
+    // this should never trigger - but if a stray doc ever lands with
     // a mismatched userId (admin manual write etc), we want to NEVER
     // forward someone else's chart into the LLM context.
     if (String(k.userId || '') !== String(clientUid)) return empty;
@@ -139,8 +139,7 @@ async function kundliContext(db, clientUid) {
 
     // Short signature so the audit log can confirm at a glance that
     // we used the RIGHT person's chart. (clientUid + profileId + dob
-    // + place head digest.) Not a security primitive on its own —
-    // the userId match above is the actual gate — but it makes
+    // + place head digest.) Not a security primitive on its own - // the userId match above is the actual gate - but it makes
     // cross-user leakage detectable if it ever happened.
     const sig = `${String(clientUid).slice(0, 6)}/`
       + `${String(k.id || '').slice(0, 6)}/`
@@ -470,7 +469,7 @@ module.exports = async (req, res) => {
     clientUid,
     // Audit which kundli profile (if any) was used for this reply.
     // Cross-user leakage would surface here as a profileId on the
-    // wrong user's chat — easy to grep / monitor.
+    // wrong user's chat - easy to grep / monitor.
     kundliProfileId: kctx.profileId || null,
     kundliSignature: kctx.signature || '',
     kundliUsed: !!kctx.text,

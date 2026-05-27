@@ -5,7 +5,7 @@
 // instant __next has content. A second React-rendered splash on top
 // of that just added 1.8+ seconds of "the app feels stuck" AND
 // switched the background mid-load (boot=maroon -> splash=navy
-// #0F0A23 — visible colour flash).
+// #0F0A23 - visible colour flash).
 //
 // Kept as a no-op so a future revisit to the launch-screen story
 // (faster/smarter heuristic) is a drop-in replacement instead of a

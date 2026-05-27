@@ -105,7 +105,7 @@ export default function Orders() {
                 {o.status === 'ready' && (() => {
                   // Inline-stored orders carry only a short marker on
                   // pdfUrl ("inline") and the real bytes on
-                  // pdfBase64 — we rebuild a data URL on the fly,
+                  // pdfBase64 - we rebuild a data URL on the fly,
                   // then download it via Blob so Chrome's
                   // data-URL-navigation block (since 2021) does
                   // not turn the click into an about:blank tab.

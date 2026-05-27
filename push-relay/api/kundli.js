@@ -16,7 +16,7 @@ function initAdmin() {
   if (!raw) return false;
   try {
     const sa = JSON.parse(raw);
-    // ALSO set storageBucket here — the lazy require of
+    // ALSO set storageBucket here - the lazy require of
     // lib/kundliReport.js below uploads PDFs to Firebase Storage
     // and admin.storage().bucket() throws "Bucket name not
     // specified" if no bucket was given at init. Initialising once
@@ -347,7 +347,7 @@ async function runFreeAstrologyApi(creds, p, lat, lng) {
 // say "astroseer.in Vercel dashboard" but our architecture funnels all
 // provider calls through the relay so the key stays server-side.
 async function runAstroSeer(creds, p, lat, lng) {
-  // Defensive URL resolution — we've seen ASTROSEER_API_URL get
+  // Defensive URL resolution - we've seen ASTROSEER_API_URL get
   // accidentally set to the API KEY value on Vercel (the two env
   // vars are easy to swap). Validate that whatever we pull is
   // actually an http(s) URL; otherwise fall back to the next
@@ -370,7 +370,7 @@ async function runAstroSeer(creds, p, lat, lng) {
     (u) => typeof u === 'string' && /^https?:\/\//i.test(u))
     || 'https://astroseer-api.onrender.com';
 
-  // Same defensive treatment for the key — accept either env var,
+  // Same defensive treatment for the key - accept either env var,
   // ignore values that don't look like an AstroSeer key. The API
   // currently accepts unauthenticated calls so an empty key still
   // works; we send the header only when we have something.
@@ -445,7 +445,7 @@ async function runAstroSeer(creds, p, lat, lng) {
   // Best-effort mapping back to the shape the rest of the app expects.
   // AstroSeer returns objects for nakshatra / moon_sign / sun_sign
   // (rich detail with pada/lord/yoni/gana/nadi) while the client
-  // expects strings ("Dhanishta", "Capricorn", "Libra") — rendering
+  // expects strings ("Dhanishta", "Capricorn", "Libra") - rendering
   // an object directly throws "Objects are not valid as a React
   // child". We flatten to strings at the top level AND surface the
   // full detail under nakshatraDetail / moonSign / sunSign for any
@@ -476,7 +476,7 @@ async function runAstroSeer(creds, p, lat, lng) {
     dignity: pl.dignity || null,
   }));
   // Vimshottari dasha tree. Pulled from /api/dasha when the kundli
-  // endpoint itself doesn't include it (AstroSeer's design — keeps
+  // endpoint itself doesn't include it (AstroSeer's design - keeps
   // the kundli call snappy and dasha optional). Each maha period has
   // a nested antardasha[] and each antardasha has a pratyantardasha[]
   // (sub-sub). Falls back to whatever /api/kundli might already have
@@ -585,7 +585,7 @@ async function runAstroSeer(creds, p, lat, lng) {
   //   nakshatra: { name, pada, lord, yoni, gana, nadi }
   //   moon_sign: { sign, nakshatra, pada, lord }
   //   sun_sign:  { sign, lord }
-  // The client renders these as plain text — extract `.name` /
+  // The client renders these as plain text - extract `.name` /
   // `.sign` so React doesn't bail.
   function flatName(x) {
     if (!x) return null;
@@ -616,7 +616,7 @@ async function runAstroSeer(creds, p, lat, lng) {
     // Full Vimshottari tree (each maha has nested antardasha[],
     // each antar has nested pratyantardasha[]). `current: true` is
     // stamped on the period containing now at every level.
-    // markDasha returns {dasha, currentDasha} — we just want the
+    // markDasha returns {dasha, currentDasha} - we just want the
     // marked array here; AstroSeer's separate /api/dasha/current
     // already gives us the current period drilled down (see
     // currentDasha below) so we don't lose that detail.
@@ -662,7 +662,7 @@ module.exports = async (req, res) => {
         : (req.body || {}))
     : (req.query || {});
 
-  // PDF report action — folded under /api/kundli so the relay stays
+  // PDF report action - folded under /api/kundli so the relay stays
   // at 12 serverless functions (Vercel Hobby cap). Caller sends
   //   POST /api/kundli with body { action:'report', kind, uid,
   //                                kundliProfileId }

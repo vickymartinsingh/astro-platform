@@ -303,7 +303,7 @@ export default function RegisterAsAstrologer() {
             </F>
           </div>
 
-          {/* Practice — multiselect chips for languages + skills,
+          {/* Practice - multiselect chips for languages + skills,
               bucketed dropdown for years. No more comma-separated
               text fields. */}
           <F label="Languages you consult in *">
@@ -325,7 +325,7 @@ export default function RegisterAsAstrologer() {
               <select className="input" value={f.experienceYears}
                 onChange={(e) =>
                   set('experienceYears', e.target.value)} required>
-                <option value="">— select —</option>
+                <option value=""> - select - </option>
                 {EXPERIENCE_BUCKETS.map((b) => (
                   <option key={b.value}
                     value={b.value}>{b.label}</option>

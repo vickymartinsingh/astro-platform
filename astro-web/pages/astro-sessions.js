@@ -30,7 +30,7 @@ export default function AstroSessions() {
   const [rfReason, setRfReason] = useState(REFUND_REASONS[0]);
   const [rfNote, setRfNote] = useState('');
   const [rfBusy, setRfBusy] = useState(false);
-  // Themed post-action banner (replaces window.alert) — disappears
+  // Themed post-action banner (replaces window.alert) - disappears
   // after 6s on success, sticks until dismissed on error.
   const [toast, setToast] = useState(null);
 
@@ -58,7 +58,7 @@ export default function AstroSessions() {
           ? 'This session was already refunded.'
           : `Refund processed instantly. ₹${r.refunded} credited to the `
             + 'customer wallet. Admin has been notified for records.')
-        : 'Refund queued — admin will process within a few minutes.';
+        : 'Refund queued - admin will process within a few minutes.';
       setToast({ kind: 'ok', msg });
       setTimeout(() => setToast(null), 6000);
     } catch (e) {

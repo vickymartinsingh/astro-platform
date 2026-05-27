@@ -217,7 +217,7 @@ function buildSystemPrompt({ astrologer, client, context }) {
     + 'language for the rest of the chat unless they change again.\n\n'
     // -------- PUNCTUATION (hard ban) ----------------------------------
     + 'PUNCTUATION (hard ban): NEVER use the dash characters "-", "--", '
-    + '"–" or "—" anywhere in your reply. No em-dash, no '
+    + '"–" or " - " anywhere in your reply. No em-dash, no '
     + 'en-dash, no spaced hyphen. Use a comma, a period, or split into '
     + 'two short sentences instead. This is a strict rule.\n\n'
     // -------- LENGTH & MULTI-BUBBLE FORMAT ----------------------------
@@ -249,7 +249,7 @@ function buildSystemPrompt({ astrologer, client, context }) {
         + 'else. Every reading, dasha reference, nakshatra, planetary '
         + 'placement, yoga or dosha you quote MUST come from the chart '
         + 'block below. Do NOT mix in details from any other client, '
-        + 'celebrity, or example chart you may have seen — readings '
+        + 'celebrity, or example chart you may have seen - readings '
         + 'meant for one person leaking into another\'s session is the '
         + 'single worst thing you can do. If the chart block is empty, '
         + 'speak in general terms only.\n'
@@ -315,9 +315,9 @@ function scrubReply(raw) {
   // 2. Replace dash characters (hyphen-minus, en-dash, em-dash) when
   // used as separators (space-dash-space) with a comma. Standalone
   // hyphens inside words ("e-mail", "21-year-old") are left alone.
-  s = s.replace(/\s+[—–-]\s+/g, ', ');
+  s = s.replace(/\s+[ - –-]\s+/g, ', ');
   // Kill any remaining em-dash / en-dash anywhere.
-  s = s.replace(/[—–]/g, ',');
+  s = s.replace(/[ - –]/g, ',');
   // 3. Collapse any double spaces or double commas the scrubs created.
   s = s.replace(/\s{2,}/g, ' ').replace(/,\s*,/g, ',').trim();
   // Final safety net: never return empty. If our scrubbing accidentally

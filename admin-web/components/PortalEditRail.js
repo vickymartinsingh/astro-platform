@@ -140,8 +140,8 @@ export default function PortalEditRail({ portal, onPublished }) {
             ))}
             <button onClick={add} style={{
               width: '100%', padding: 8, fontSize: 13, fontWeight: 600,
-              color: '#6C2BD9', background: '#EEF1FB', border:
-              '1px dashed #c7c9f3', borderRadius: 10, cursor: 'pointer',
+              color: '#7F2020', background: '#FBF7EE', border:
+              '1px dashed #E6DEC9', borderRadius: 10, cursor: 'pointer',
             }}>+ Add menu item</button>
           </div>
           <div style={{ padding: 12, borderTop: '1px solid #eee' }}>
@@ -156,7 +156,7 @@ export default function PortalEditRail({ portal, onPublished }) {
                 width: '100%', padding: 10, border: 0, borderRadius: 10,
                 fontWeight: 800, fontSize: 14, color: '#fff',
                 cursor: 'pointer', opacity: busy ? 0.6 : 1,
-                background: 'linear-gradient(135deg,#6C2BD9,#8B5CF6)',
+                background: 'linear-gradient(135deg,#7F2020,#D4A12A)',
               }}>
               {busy ? 'Publishing…' : 'Publish - go live'}
             </button>

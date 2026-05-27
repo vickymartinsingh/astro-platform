@@ -68,7 +68,7 @@ export default function AdminDashboard() {
     return <Layout><div className="surface p-4">Loading…</div></Layout>;
   }
 
-  // KPI cards — wide top strip so the operator gets the daily
+  // KPI cards - wide top strip so the operator gets the daily
   // pulse without scrolling.
   const KPIS = [
     { label: 'Total Users', value: m.users,
@@ -107,7 +107,7 @@ export default function AdminDashboard() {
     ]],
     ['Money', [
       ['/admin-orders', 'Kundli orders',
-        'Every PDF report bought — drilldown + resend'],
+        'Every PDF report bought - drilldown + resend'],
       ['/admin-transactions', 'Transactions',
         'Wallet credits + debits + reconciliation'],
       ['/admin-payouts', 'Payouts',
@@ -147,7 +147,7 @@ export default function AdminDashboard() {
     ]],
     ['Content & Notifications', [
       ['/admin-cms', 'CMS builder',
-        'Pages, banners, blocks — no-code editor'],
+        'Pages, banners, blocks - no-code editor'],
       ['/admin-icons', 'Icons',
         'Zodiac + horoscope + section icon uploads'],
       ['/admin-announcement', 'Announcement',
@@ -241,7 +241,7 @@ export default function AdminDashboard() {
         </Link>
       )}
 
-      {/* KPI strip — high-density daily pulse. */}
+      {/* KPI strip - high-density daily pulse. */}
       <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
         {KPIS.map((k) => (
           <Link key={k.label} href={k.href}

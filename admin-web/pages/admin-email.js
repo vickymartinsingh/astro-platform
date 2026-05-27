@@ -240,7 +240,7 @@ function EmailLogDetail({ m }) {
       )}
       {!m.body && !m.html && (
         <div className="p-3 text-xs text-sub-text">
-          (No body captured — the relay sent the email but did not
+          (No body captured - the relay sent the email but did not
           persist the rendered content. Future sends will store
           subject + body + html + error here.)
         </div>

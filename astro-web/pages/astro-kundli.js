@@ -38,7 +38,7 @@ export default function AstroKundli() {
         }
         if (!seen.has(s.userId)) seen.set(s.userId, null);
       }
-      // Parallel fan-out for all client lookups (was serial N+1 — a
+      // Parallel fan-out for all client lookups (was serial N+1 - a
       // 30-client list took ~3s on a slow connection). With Promise.all
       // it's one round-trip wide instead of N round-trips deep.
       const arr = await Promise.all(

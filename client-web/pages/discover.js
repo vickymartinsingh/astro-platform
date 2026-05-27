@@ -9,7 +9,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { useRequireClient } from '../lib/useAuth';
 
-// Discover page — every AstroSeer-API-backed reading rendered as a
+// Discover page - every AstroSeer-API-backed reading rendered as a
 // monochrome icon card. Click → detail panel with the sections,
 // price and a "Get this report" button. Before charging we run a
 // pre-flight wallet check; insufficient balance pops a recharge
@@ -35,9 +35,9 @@ export default function Discover() {
   const [cfg, setCfg] = useState({});
   const [wallet, setWallet] = useState(null);
   const [busy, setBusy] = useState(false);
-  // null | { feature, need } — drives the insufficient-balance modal
+  // null | { feature, need } - drives the insufficient-balance modal
   const [recharge, setRecharge] = useState(null);
-  // null | { feature, result } — drives the success modal
+  // null | { feature, result } - drives the success modal
   const [done, setDone] = useState(null);
   const [error, setError] = useState('');
 
@@ -65,7 +65,7 @@ export default function Discover() {
   const active = activeId ? featureById(activeId) : null;
 
   // BUY: pre-flight balance check FIRST. Never start an AstroSeer
-  // round-trip if the customer can't afford it — pop the recharge
+  // round-trip if the customer can't afford it - pop the recharge
   // modal instead. (Previously the relay would generate, then 402
   // back; this wasted time + AstroSeer credits.)
   async function buy(feature) {
@@ -80,8 +80,7 @@ export default function Discover() {
     }
     setBusy(true);
     try {
-      // For kundli-shaped reports we route through kundliService —
-      // it already handles the default kundli profile resolution,
+      // For kundli-shaped reports we route through kundliService - // it already handles the default kundli profile resolution,
       // server-side wallet deduct, PDF generation and inline order
       // record. Features that aren't yet wired up surface a friendly
       // "coming soon" message so we never silently 404.
@@ -107,7 +106,7 @@ export default function Discover() {
         });
         setDone({ feature, result });
       } else {
-        // Catalogue item the relay doesn't expose yet — show a
+        // Catalogue item the relay doesn't expose yet - show a
         // friendly "coming soon" instead of a stack trace.
         setError(`"${feature.title}" is not yet wired up to the API. `
           + 'Our team is building it; please check back shortly.');
@@ -138,7 +137,7 @@ export default function Discover() {
         <div>
           <h1 className="text-2xl font-bold">Discover</h1>
           <p className="text-xs text-sub-text">
-            Every Vedic reading we offer — tap a card to see what it
+            Every Vedic reading we offer - tap a card to see what it
             includes and the price.
           </p>
         </div>
@@ -204,7 +203,7 @@ export default function Discover() {
         })}
       </div>
 
-      {/* Detail page — opens IN-APP (no new tab) so the customer
+      {/* Detail page - opens IN-APP (no new tab) so the customer
           stays in the wallet/auth context. */}
       {active && (
         <FeatureDetail f={active}
@@ -302,7 +301,7 @@ function FeatureDetail({ f, price, wallet, busy, onClose, onBuy }) {
 }
 
 // Insufficient-balance modal. Comes up the INSTANT we know the
-// wallet can't cover the price — never after the relay round-trip.
+// wallet can't cover the price - never after the relay round-trip.
 // Inline "Add to wallet" CTA so the customer doesn't have to hunt
 // for the wallet page, and an explicit "Later" so they can dismiss
 // without feeling pressured.

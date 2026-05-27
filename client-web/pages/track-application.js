@@ -152,14 +152,14 @@ export default function TrackApplication() {
                 text-sm text-danger">
                 Unfortunately your application was not selected this
                 time. {hit.note ? `Note: ${hit.note}` : ''} You can
-                re-apply with the same email — applications are
+                re-apply with the same email - applications are
                 capped at 6 attempts.
               </div>
             )}
             {hit.status === 'approved' && (
               <div className="mt-3 rounded-card bg-success/10 p-3
                 text-sm text-success">
-                Congratulations — you&apos;re approved. Check your
+                Congratulations - you&apos;re approved. Check your
                 inbox for the login email.
               </div>
             )}

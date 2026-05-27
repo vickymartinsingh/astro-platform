@@ -9,7 +9,7 @@ import { flash } from '../lib/flash';
 // relay (just paste the key and it works). The rest are listed so you
 // can store the key now; their adapter is added on request with docs.
 const PROVIDERS = [
-  // AstroSeer — our own Render-hosted API. POST {baseUrl}/api/kundli
+  // AstroSeer - our own Render-hosted API. POST {baseUrl}/api/kundli
   // with X-API-Key header. The "secret" slot doubles as an optional
   // base-URL override so you can rotate hosts (Render preview, custom
   // domain) without redeploying the relay.
@@ -213,7 +213,7 @@ export default function AdminKundliApi() {
                       Firestore key saved:{' '}
                       {probe.firestoreKey
                         ? <span className="text-success">✅ yes</span>
-                        : <span className="text-sub-text">— no</span>}
+                        : <span className="text-sub-text"> - no</span>}
                     </div>
                     <div>
                       <code>/health</code> ping:{' '}

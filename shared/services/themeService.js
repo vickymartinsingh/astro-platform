@@ -36,7 +36,7 @@ export const THEME_FIELDS = [
 ];
 
 // Royal (Maroon / Amber / Olive) is the ONLY approved brand
-// palette. The Classic (Purple) variant has been retired — its
+// palette. The Classic (Purple) variant has been retired - its
 // key now resolves to the Royal palette so any legacy save in
 // settings/branding still renders the brand-correct colours.
 const ROYAL = {

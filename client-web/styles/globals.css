@@ -4,7 +4,7 @@
 
 :root {
   color-scheme: light;
-  /* Royal palette — Maroon / Amber / Olive (the only approved
+  /* Royal palette - Maroon / Amber / Olive (the only approved
      brand colours). Purple #6C2BD9 / #8B5CF6 is STRICTLY
      prohibited and must never render anywhere. */
   --c-primary: 127 32 32;   /* Maroon #7F2020 */

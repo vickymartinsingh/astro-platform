@@ -37,7 +37,7 @@ export default function Document() {
             today). Cold-cache visitors paint on-theme on frame #1;
             returning visitors have their localStorage cached palette
             overlaid for instant custom-theme support.
-            STAYS IN LOCKSTEP WITH ADMIN-THEMES — if the active theme
+            STAYS IN LOCKSTEP WITH ADMIN-THEMES - if the active theme
             switches, update the d={...} block and redeploy. */}
         <script
           dangerouslySetInnerHTML={{

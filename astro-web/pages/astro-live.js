@@ -39,8 +39,10 @@ function Tick({ green }) {
 
 function Avatar({ name }) {
   const ch = (name || '?').trim().charAt(0).toUpperCase();
-  const colors = ['#F59E0B', '#EC4899', '#8B5CF6', '#10B981',
-    '#3B82F6', '#EF4444'];
+  // Royal palette only - no purple/indigo. Maroon / Amber / Olive /
+  // Rust / Cream-dark / Deep maroon for avatar variety.
+  const colors = ['#7F2020', '#D4A12A', '#5A6E32', '#B45309',
+    '#1A1A2E', '#2A1408'];
   const c = colors[(name || 'x').charCodeAt(0) % colors.length];
   return (
     <span className="flex h-8 w-8 shrink-0 items-center justify-center

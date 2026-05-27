@@ -395,7 +395,7 @@ function AstroTypingBubble({ who }) {
           width: 6px;
           height: 6px;
           border-radius: 999px;
-          background: #6c2bd9;
+          background: #7F2020;
           display: inline-block;
           animation: atb-bounce 1s infinite ease-in-out;
         }

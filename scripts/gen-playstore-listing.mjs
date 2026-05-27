@@ -13,7 +13,7 @@ const BG = { r: 0x0f, g: 0x0a, b: 0x23, alpha: 1 };
 const dest = join(ROOT, '..', 'AstroSeer_PlayStoreListing');
 mkdirSync(dest, { recursive: true });
 
-// 1. App icon — 512×512, opaque, no alpha (Play requires this).
+// 1. App icon - 512×512, opaque, no alpha (Play requires this).
 const src = existsSync(IOS_ICON) ? IOS_ICON : SPLASH;
 await sharp(src)
   .resize(512, 512, { fit: 'cover', position: 'centre' })
@@ -21,7 +21,7 @@ await sharp(src)
   .png()
   .toFile(join(dest, 'app-icon-512.png'));
 
-// 2. Feature graphic — 1024×500, branded with logo + wordmark.
+// 2. Feature graphic - 1024×500, branded with logo + wordmark.
 const logoSize = 360;
 const logoBuf = await sharp(SPLASH)
   .resize(logoSize, logoSize, { fit: 'contain',
@@ -65,7 +65,7 @@ await sharp({ create: { width: 1024, height: 500, channels: 4,
   .toFile(join(dest, 'feature-graphic-1024x500.png'));
 
 // 3. Text listing.
-const listing = `# Google Play Store — Default Store Listing
+const listing = `# Google Play Store - Default Store Listing
 # Project: astrology-2092d · Package: com.astroseer.mobile
 
 ==============================================
@@ -76,11 +76,11 @@ App name (30 char max):
 AstroSeer Connect
 
 Short description (80 char max, 73 used):
-Talk to trusted Vedic astrologers — chat, call & video. Kundli, horoscope.
+Talk to trusted Vedic astrologers - chat, call & video. Kundli, horoscope.
 
 Full description (paste below, ~2900 char):
 ----------------------------------------------
-AstroSeer Connect brings you trusted Vedic astrologers, real-time guidance, and personalised astrology content — all in one beautifully crafted app.
+AstroSeer Connect brings you trusted Vedic astrologers, real-time guidance, and personalised astrology content - all in one beautifully crafted app.
 
 WHAT YOU GET
 • Live chat, voice and video consultations with verified astrologers
@@ -92,22 +92,22 @@ WHAT YOU GET
 • Live astrology shows and announcements
 
 WHY ASTROSEER
-✓ Verified astrologers only — every profile is reviewed by our team
+✓ Verified astrologers only - every profile is reviewed by our team
 ✓ Transparent per-minute pricing, secure wallet recharge
-✓ Private and ad-free — your birth details are never sold or shared
+✓ Private and ad-free - your birth details are never sold or shared
 ✓ Beautiful Vedic-inspired design built for everyday use
 ✓ Save your favourite astrologers and consultation history
 ✓ End-to-end encrypted session transport
 
 HOW IT WORKS
-1. Sign up with email or Google — it takes seconds
+1. Sign up with email or Google - it takes seconds
 2. Add your birth details to unlock your personal kundli
 3. Browse astrologers by speciality (love, marriage, career, health)
 4. Tap Chat, Call or Video to start a consultation
 5. Top up your wallet securely and consult whenever you need
 
 WHO IT'S FOR
-Anyone curious about Vedic astrology — first-timers, regulars, devotees of jyotish, or people seeking guidance on relationships, career, marriage compatibility, finance, health and life direction.
+Anyone curious about Vedic astrology - first-timers, regulars, devotees of jyotish, or people seeking guidance on relationships, career, marriage compatibility, finance, health and life direction.
 
 PRIVACY & SAFETY
 Your data stays yours. We collect only what's needed to deliver consultations and generate astrology content. Read our full policy at astroseer.in/privacy. You can request account and data deletion any time at astroseer.in/account-deletion or by emailing support@astroseer.in.
@@ -116,9 +116,9 @@ DISCLAIMER
 Astrology content and consultations are for guidance and entertainment purposes; they do not replace professional medical, legal, financial or psychological advice.
 
 NEED HELP?
-support@astroseer.in — we usually reply within a business day.
+support@astroseer.in - we usually reply within a business day.
 
-Welcome to AstroSeer Connect — your trusted home for personal astrology.
+Welcome to AstroSeer Connect - your trusted home for personal astrology.
 ----------------------------------------------
 
 ==============================================
@@ -129,7 +129,7 @@ App icon (512×512 PNG, opaque):  app-icon-512.png
 Feature graphic (1024×500 PNG):  feature-graphic-1024x500.png
 
 Still needed (you take these from the running app):
-  Phone screenshots — at least 2, up to 8
+  Phone screenshots - at least 2, up to 8
   Aspect 9:16 (portrait) or 16:9 (landscape); min 320px on the short side
   Suggested shots: Home/dashboard, Astrologers list, Astrologer profile,
   Chat in progress, Video call UI, Kundli view, Horoscope, Wallet.
@@ -151,7 +151,7 @@ Phone:           (leave blank or your support number)
 Privacy policy:  https://www.astroseer.in/privacy
 
 ==============================================
-APP CONTENT — REQUIRED ANSWERS
+APP CONTENT - REQUIRED ANSWERS
 ==============================================
 
 Privacy policy URL:        https://www.astroseer.in/privacy

@@ -1,7 +1,7 @@
 import Head from 'next/head';
 import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
-// Deep imports (not the barrel) — pull ONLY the two services _app
+// Deep imports (not the barrel) - pull ONLY the two services _app
 // actually uses. Going through `@astro/shared` index re-exports drags
 // ~30 services + their Firestore queries into the boot chunk even
 // when only a couple are referenced.

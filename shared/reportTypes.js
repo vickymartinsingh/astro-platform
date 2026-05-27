@@ -6,7 +6,7 @@
 // defaultPrice below applies.
 //
 // Marriage compatibility (gunaMilan) takes TWO charts so the buy
-// flow surfaces a second-person form — wired later when the UI
+// flow surfaces a second-person form - wired later when the UI
 // supports a partner kundli picker.
 
 export const REPORT_TYPES = [

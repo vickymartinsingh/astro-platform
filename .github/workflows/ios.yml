@@ -195,7 +195,7 @@ jobs:
           echo "::endgroup::"
 
           # Bundled-app mode (REVERTED from remote-URL shell).
-          # User feedback: remote shells "look like a website" — splash
+          # User feedback: remote shells "look like a website" - splash
           # was actually a browser-style load. With bundled mode the
           # static Next export sits INSIDE the IPA and Capacitor loads
           # it from the local file system, so the app opens instantly

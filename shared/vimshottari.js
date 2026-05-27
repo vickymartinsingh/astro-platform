@@ -1,6 +1,6 @@
 // Vimshottari Dasha math (Vedic astrology, 120-year cycle).
 //
-// The AstroSeer API returns 3 levels (maha / antar / pratyantar) — anything
+// The AstroSeer API returns 3 levels (maha / antar / pratyantar) - anything
 // deeper (sookshma, prana, deha) costs an extra round-trip. So we compute
 // sub-periods purely client-side from the dates that the API DID return.
 //
@@ -63,8 +63,7 @@ export function childOrder(parentLord) {
 // children as [{ lord, startMs, endMs, durationMs }, ...] using
 // Vimshottari proportional math:
 //   childYears = parentTotalYears * childLordYears / 120
-// All children sum exactly to the parent span (no rounding drift —
-// we cumulate from startMs).
+// All children sum exactly to the parent span (no rounding drift - // we cumulate from startMs).
 export function subPeriods(parent) {
   if (!parent || !parent.lord) return [];
   const lord = normalizeLord(parent.lord) || parent.lord;
@@ -90,7 +89,7 @@ export function subPeriods(parent) {
   });
 }
 
-// Format ms-since-epoch as "DD MMM YYYY" — matches the AstroTalk
+// Format ms-since-epoch as "DD MMM YYYY" - matches the AstroTalk
 // reference layout (e.g. "10 Aug 2019").
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug',
   'Sep', 'Oct', 'Nov', 'Dec'];

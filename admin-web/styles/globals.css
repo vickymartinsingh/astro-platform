@@ -4,7 +4,7 @@
 
 :root {
   color-scheme: light;
-  /* Royal palette — Maroon / Amber / Olive only. Purple is
+  /* Royal palette - Maroon / Amber / Olive only. Purple is
      strictly prohibited. */
   --c-primary: 127 32 32;
   --c-bglight: 251 247 238;

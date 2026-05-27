@@ -52,7 +52,7 @@ export default function AccountDeletion() {
               'Please delete my AstroSeer account and personal data.'
               + '\n\nRegistered email:\nUser ID (if known):'
               + '\nReason (optional):'
-            )}`} style={{ color: '#6C2BD9', fontWeight: 600 }}>
+            )}`} style={{ color: '#7F2020', fontWeight: 600 }}>
               {CONTACT}
             </a> with the subject <i>“Delete my AstroSeer account”</i>.
             We confirm within 48 hours and complete deletion within 30
@@ -101,22 +101,22 @@ export default function AccountDeletion() {
         <S title="5. Change your mind?">
           If you request deletion by mistake, email{' '}
           <a href={`mailto:${CONTACT}`}
-            style={{ color: '#6C2BD9' }}>{CONTACT}</a>{' '}
+            style={{ color: '#7F2020' }}>{CONTACT}</a>{' '}
           within 7 days of the request and we can cancel it. After 30
           days the data is gone and cannot be restored.
         </S>
 
         <S title="6. Questions">
-          <a href={`mailto:${CONTACT}`} style={{ color: '#6C2BD9' }}>
+          <a href={`mailto:${CONTACT}`} style={{ color: '#7F2020' }}>
             {CONTACT}
           </a> - we respond within 48 hours on business days.
         </S>
 
         <p style={{ marginTop: 36, fontSize: 13 }}>
-          <Link href="/privacy" style={{ color: '#6C2BD9' }}>
+          <Link href="/privacy" style={{ color: '#7F2020' }}>
             Privacy policy
           </Link>{' · '}
-          <Link href="/terms" style={{ color: '#6C2BD9' }}>
+          <Link href="/terms" style={{ color: '#7F2020' }}>
             Terms of service
           </Link>
         </p>

@@ -96,7 +96,7 @@ function bodyForCode(code, name) {
     + `<p style="margin:0 0 8px 0;font-size:14px;color:#555">`
     + `Hi ${name || 'there'}, your AstroSeer verification code is:`
     + `</p><div style="font-size:36px;font-weight:700;letter-spacing:`
-    + `6px;background:#f3eeff;color:#6c2bd9;padding:18px 12px;`
+    + `6px;background:#FBF7EE;color:#7F2020;padding:18px 12px;`
     + `border-radius:14px;text-align:center;margin:12px 0">`
     + `${code}</div><p style="font-size:12px;color:#777;margin-top:`
     + `12px">This code expires in 10 minutes. If you did not request `
@@ -411,7 +411,7 @@ async function handleSend(req, res, db, body) {
   // Persist the rendered content so /admin-email can show admin
   // exactly what landed in the customer's inbox (text + html +
   // attachment metadata + final status). The actual binary content
-  // of the attachment is NOT stored — only the filename + mime so
+  // of the attachment is NOT stored - only the filename + mime so
   // we don't bloat Firestore docs past the 1 MB limit.
   const attachMeta = (body.attachment && body.attachment.contentBase64)
     ? [{ filename: body.attachment.filename || 'attachment',

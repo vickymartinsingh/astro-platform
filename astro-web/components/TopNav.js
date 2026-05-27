@@ -88,7 +88,7 @@ export default function TopNav() {
           ) : (
             <>
               <span className="flex h-9 w-9 items-center justify-center
-                rounded-xl bg-gradient-to-br from-primary to-[#8B5CF6]
+                rounded-xl bg-gradient-to-br from-primary to-[#D4A12A]
                 font-bold text-white">A</span>
               <span className="leading-tight">
                 <span className="block font-bold">{brand.name}</span>

@@ -205,7 +205,7 @@ function ResultRow({ u, kind, onClick }) {
           )}
         </div>
         <div className="mt-0.5 truncate text-[11px] text-sub-text">
-          {u.email || '—'}
+          {u.email || ' - '}
           {u.phone ? ` · ${u.phone}` : ''}
           {u.createdAt ? ` · joined ${fmt(u.createdAt)}` : ''}
         </div>

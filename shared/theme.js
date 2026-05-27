@@ -1,18 +1,18 @@
 // Colour system + UI constants, blueprint Section 10.2 & 14.2.
 // Single source of truth, mirrored into each app's tailwind.config.js.
-// Royal palette — Maroon / Amber / Olive. Purple (#6C2BD9 /
+// Royal palette - Maroon / Amber / Olive. Purple (#6C2BD9 /
 // #8B5CF6) is STRICTLY PROHIBITED across the platform.
 export const COLORS = {
-  primary: '#7F2020',      // Maroon — buttons, navbar, headings, badges
-  bgLight: '#FBF7EE',      // Warm cream — card backgrounds, info boxes
+  primary: '#7F2020',      // Maroon - buttons, navbar, headings, badges
+  bgLight: '#FBF7EE',      // Warm cream - card backgrounds, info boxes
   accentBlue: '#FBF7EE',   // (kept name for compatibility; cream tone)
-  success: '#5A6E32',      // Olive — online status, credit, success
+  success: '#5A6E32',      // Olive - online status, credit, success
   danger: '#C0392B',       // offline/busy, debit, End Call, errors
-  warning: '#D4A12A',      // Amber — low balance warning, urgent notices
-  gold: '#D4A12A',         // Amber — star ratings
+  warning: '#D4A12A',      // Amber - low balance warning, urgent notices
+  gold: '#D4A12A',         // Amber - star ratings
   amber: '#D4A12A',        // Amber
-  amberDark: '#B45309',    // Rust — gradient stop
-  olive: '#5A6E32',        // Olive — success / accent
+  amberDark: '#B45309',    // Rust - gradient stop
+  olive: '#5A6E32',        // Olive - success / accent
   darkText: '#1A1A2E',     // body text
   subText: '#555555',      // secondary labels, timestamps
   bgGray: '#F5F1EA',       // warm gray page backgrounds

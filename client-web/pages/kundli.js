@@ -8,7 +8,7 @@ import { useRequireClient } from '../lib/useAuth';
 import { DateField, TimeField, CityField } from '../components/BirthInputs';
 
 // Form shape. lat/lng/tz are captured at place-pick time so the
-// relay always has the right coordinates + timezone — fixes the
+// relay always has the right coordinates + timezone - fixes the
 // silent "kundli with coordinates 0,0 / GMT+0" failure mode.
 const EMPTY = { name: '', gender: '', dob: '', tob: '', ampm: 'AM',
   place: '', lat: null, lng: null, tz: null,
@@ -46,7 +46,7 @@ export default function Kundli() {
     setList(l);
     // Pre-cache the default profile's chart in the background so a
     // subsequent pick is instant. The picker modal still opens on
-    // first load — we never auto-render a profile without consent.
+    // first load - we never auto-render a profile without consent.
     const def = l.find((k) => k.isDefault) || l[0];
     if (def) {
       setChart((c) => (c[def.id] ? c
@@ -95,7 +95,7 @@ export default function Kundli() {
     // Hard gate: lat/lng/tz are MANDATORY. Without them AstroSeer
     // generates a kundli for (0,0) GMT+0 which is wrong on every
     // axis. The CityField captures these on selection from the
-    // dropdown — if any are missing, the user typed a city but
+    // dropdown - if any are missing, the user typed a city but
     // never picked from the suggestions.
     const lat = form.lat != null ? Number(form.lat) : null;
     const lng = form.lng != null ? Number(form.lng) : null;
@@ -104,7 +104,7 @@ export default function Kundli() {
         || !Number.isFinite(tz)) {
       // eslint-disable-next-line no-alert
       window.alert('Please pick the city from the suggestions list '
-        + 'so we can lock the latitude, longitude and timezone — '
+        + 'so we can lock the latitude, longitude and timezone - '
         + 'these are mandatory for an accurate kundli. Start typing '
         + 'the city again and choose from the dropdown.');
       return;
@@ -231,7 +231,7 @@ export default function Kundli() {
         )}
       </div>
 
-      {/* Picker modal — the entry point of every /kundli visit when
+      {/* Picker modal - the entry point of every /kundli visit when
           the user has at least one saved profile. Close button is
           only enabled if the user already has a profile selected
           (so they can dismiss back to that view); on first load
@@ -399,7 +399,7 @@ export default function Kundli() {
 }
 
 // Brand banner header used at the top of every boxed section.
-// Inline brand-gradient (purple) — never yellow, even if a stale
+// Inline brand-gradient (purple) - never yellow, even if a stale
 // Tailwind purge / CDN cache strips bg-primary.
 function Banner({ title, sub }) {
   return (
@@ -440,7 +440,7 @@ function txt(v) {
 // Legacy small-header section used inside cards; left as-is for the
 // existing tabs (transits / yogas / doshas etc) that haven't been
 // restyled yet.
-// Picker modal — shown on /kundli load when the user has at least
+// Picker modal - shown on /kundli load when the user has at least
 // one saved profile. Brand maroon header strip, polished cards,
 // dismissable via × button OR clicking outside the panel. List is
 // scrollable for power users with many saved profiles. The "Add
@@ -461,10 +461,10 @@ function KundliPickerModal({ list, onPick, onAddNew, onClose }) {
           border: '2px solid #7F2020',
           boxShadow: '0 20px 50px rgba(127,32,32,.25)',
         }}>
-        {/* Brand header — maroon gradient strip with title +
+        {/* Brand header - maroon gradient strip with title +
             saved-count chip + close button. The close button is
             ALWAYS shown (was previously gated behind a "canClose"
-            prop that hid it on first-load — that's the wrong
+            prop that hid it on first-load - that's the wrong
             default; the user must always be able to dismiss). */}
         <div className="flex items-center justify-between gap-2
           px-4 py-3 text-white"
@@ -666,7 +666,7 @@ function dashaInsight(lord, planetsArr) {
   if (!k && !h) return '';
   if (k && h) {
     return `${lord} (${k}) sits in house ${house} (${h}). The period `
-      + `activates these areas — expect themes here to surface.`;
+      + `activates these areas - expect themes here to surface.`;
   }
   return k || `House ${house}: ${h}.`;
 }
@@ -830,7 +830,7 @@ function FullKundli({ r, kundli }) {
   // Seven top-level tabs that mirror the AstroTalk reference exactly.
   // Older tabs (transits / yogas / doshas / compat / numerology) are
   // folded into the relevant new tab as a sub-section so nothing is
-  // lost — just reorganised to match the reference layout.
+  // lost - just reorganised to match the reference layout.
   const TABS = [
     ['basic', 'Basic'],
     ['kundli', 'Kundli'],
@@ -926,7 +926,7 @@ function BasicTab({ r, raw, kundli }) {
     : (basic.time || '·');
   // Every row value goes through txt() so provider-returned objects
   // (e.g. r.nakshatra = { name, lord, number, pada }) never reach
-  // React as a child — that's React error #31.
+  // React as a child - that's React error #31.
   const birthRows = [
     ['Name', txt(kundli?.name || basic.name) || '·'],
     ['Date', txt(dobStr) || '·'],
@@ -941,7 +941,7 @@ function BasicTab({ r, raw, kundli }) {
     ['Sunset', txt(basic.sunset || p.sunset) || '·'],
     ['Ayanamsha', txt(basic.ayanamsha || raw?.ayanamsha) || '·'],
   ];
-  // Avakhada — pull from raw.avakhada if AstroSeer returns it,
+  // Avakhada - pull from raw.avakhada if AstroSeer returns it,
   // fall back to derived values from the existing fields so the
   // table is never empty.
   const av = raw?.avakhada || raw?.avakhada_details || {};
@@ -983,7 +983,7 @@ function BasicTab({ r, raw, kundli }) {
   );
 }
 
-// Yellow-headed two-column key/value table — the building block used
+// Yellow-headed two-column key/value table - the building block used
 // by every "Details" box across the AstroTalk reference.
 function YBox({ title, rows }) {
   return (
@@ -1238,7 +1238,7 @@ function AshtakvargaTab({ r, raw }) {
   );
 }
 
-// Mini Ashtakvarga chart — North-Indian diamond with one bindu number
+// Mini Ashtakvarga chart - North-Indian diamond with one bindu number
 // per house. Reused 8 times in the AshtakvargaTab grid.
 function AshtakvargaMiniChart({ bindus }) {
   const cells = bindus && typeof bindus === 'object'
@@ -1353,7 +1353,7 @@ function useFeatureFlag(key, defaultOn = true) {
 
 function FreeReportTab({ r, n, lucky, kundli }) {
   const raw = r.raw || {};
-  // Sub-tab state — mirrors the AstroTalk Free Report top strip:
+  // Sub-tab state - mirrors the AstroTalk Free Report top strip:
   // General · Remedies · Doshas, with General further split into
   // General / Planetary / Vimshottari Dasha / Yoga via nested
   // chip tabs. Each section is independently admin-gated.
@@ -1393,7 +1393,7 @@ function FreeReportTab({ r, n, lucky, kundli }) {
     <>
       <Banner title="Free Report" />
 
-      {/* Top sub-tabs — General / Remedies / Doshas */}
+      {/* Top sub-tabs - General / Remedies / Doshas */}
       {TOP_TABS.length > 1 && (
         <div className="mt-3 flex flex-wrap justify-center gap-2">
           {TOP_TABS.map(([k, label]) => (
@@ -1410,7 +1410,7 @@ function FreeReportTab({ r, n, lucky, kundli }) {
 
       {sub === 'general' && (
         <>
-          {/* Inner chip tabs — General · Planetary · Vimshottari ·
+          {/* Inner chip tabs - General · Planetary · Vimshottari ·
               Yoga. Hidden when admin disables all of them. */}
           {INNER_TABS.length > 1 && (
             <div className="mt-2 flex flex-wrap justify-center gap-1.5">
@@ -1538,7 +1538,7 @@ function AscendantOverviewSection({ r, n, lucky }) {
 
 // Per-sign micro-blurbs used to thicken the Ascendant section even
 // when the provider returns terse one-liners. Picked from classical
-// associations — generic but accurate.
+// associations - generic but accurate.
 function houseBlurb(_kind, sign) {
   const S = (sign || '').toLowerCase();
   if (S === 'aries') return 'You lead with initiative, courage and a '
@@ -1664,9 +1664,9 @@ function PlanetaryNarrativeSection({ r, raw }) {
                   || 'karaka'}) sits in ${txt(p.sign) || 'your chart'}`
                   + (p.house ? `, house ${p.house}` : '')
                   + (p.house && HOUSE_THEMES[p.house]
-                    ? ` — ${HOUSE_THEMES[p.house]}` : '')
+                    ? ` - ${HOUSE_THEMES[p.house]}` : '')
                   + `. ${(p.retrograde ? 'Retrograde here turns its '
-                    + 'energy inward — old themes get revisited.'
+                    + 'energy inward - old themes get revisited.'
                     : 'Direct motion runs its themes forward in this '
                       + 'life.')}`)}
               </p>
@@ -1694,7 +1694,7 @@ function VimshottariNarrativeSection({ r, raw }) {
   }
   return (
     <>
-      <Banner title="Vimshottari Dasha — Period Predictions" />
+      <Banner title="Vimshottari Dasha - Period Predictions" />
       <div className="mt-3 space-y-2">
         {mahas.map((d, i) => {
           const provider = list.find((x) =>
@@ -1849,7 +1849,7 @@ function DoshasNarrativeSection({ r, raw }) {
       + 'Chalisa and Saturday Saturn offerings help.'],
     ['Pitra Dosha', d.pitra, 'Karma carried from ancestors; ease '
       + 'with shradh on Pitru Paksha + selfless service.'],
-    ['Guru Chandal', d.guru_chandal, 'Jupiter conjunct Rahu — '
+    ['Guru Chandal', d.guru_chandal, 'Jupiter conjunct Rahu - '
       + 'wisdom mixed with confusion. Yellow sapphire after expert '
       + 'consultation.'],
   ].filter(([, val]) => val);
@@ -1989,7 +1989,7 @@ function ChartTab({ r, chartStyle, onChangeStyle }) {
   );
 }
 
-// North Indian diamond chart — Lagna at top middle, houses run
+// North Indian diamond chart - Lagna at top middle, houses run
 // counter-clockwise. Drawn as a single SVG so it looks identical
 // on web + bundled APK/iOS shells.
 function NorthChart({ r }) {
@@ -2067,7 +2067,7 @@ function NorthChart({ r }) {
   );
 }
 
-// South Indian chart — fixed sign layout, planets slot into the
+// South Indian chart - fixed sign layout, planets slot into the
 // sign-cell they currently occupy. Always reads the same way.
 function SouthChart({ r }) {
   const SIGN_CELLS = [
@@ -2439,7 +2439,7 @@ function DashaDrilldown({ dasha }) {
         )}
       </div>
 
-      {/* Level Up button — visible whenever we're below level 1.
+      {/* Level Up button - visible whenever we're below level 1.
           AstroTalk reference shows this as a full-width yellow strip
           underneath the table; we use a centered pill that fits the
           same visual language. */}
@@ -2455,7 +2455,7 @@ function DashaDrilldown({ dasha }) {
 
       {/* List of 9 children at the current level. Click any
           row to drill one level deeper (unless we're at the
-          deepest level — Sookshma — already). */}
+          deepest level - Sookshma - already). */}
       <div className="rounded-card bg-white p-2">
         <div className="mb-1 px-2 text-[11px] font-bold
           uppercase tracking-wide text-sub-text">
@@ -2849,15 +2849,15 @@ function NumerologyTab() {
 
 // ---- Report CTAs (free + paid) ------------------------------------
 // Two buttons that sit inside the FullKundli card:
-//   1. Free 250+ page Vedic kundli — server-side PDF, emailed,
+//   1. Free 250+ page Vedic kundli - server-side PDF, emailed,
 //      downloadable immediately + later from /orders.
-//   2. Paid 12-month forecast — price comes from Firestore
+//   2. Paid 12-month forecast - price comes from Firestore
 //      settings/config.kundli_report_price (default 50, set by
 //      admin). Wallet-deducted server-side inside a Firestore
 //      transaction; insufficient balance pops a "Top up wallet"
 //      link instead of failing silently.
 // On success the user sees an immediate Download popup with the
-// signed Firebase Storage URL — same one stored on users/{uid}/
+// signed Firebase Storage URL - same one stored on users/{uid}/
 // orders/{id} for unlimited re-download.
 // Table of contents shown in the confirm popup so the customer
 // knows exactly what they're getting before we deduct any money
@@ -3027,7 +3027,7 @@ function ConfirmReportPopup({ spec, price, kind, onCancel, onConfirm }) {
           </p>
         </div>
 
-        {/* Sections — numbered, plain text, scrollable */}
+        {/* Sections - numbered, plain text, scrollable */}
         <ol className="max-h-72 list-none space-y-2 overflow-auto
                        px-5 py-4 text-[13px] leading-snug
                        text-dark-text">
@@ -3085,7 +3085,7 @@ function DownloadPopup({ result, onClose }) {
                     justify-center bg-black/60 p-4">
       <div className="w-full max-w-sm overflow-hidden rounded-2xl
                       bg-white shadow-2xl">
-        {/* Header strip on the brand colour — gives a confident,
+        {/* Header strip on the brand colour - gives a confident,
             professional vibe without resorting to emoji confetti. */}
         <div className="bg-primary px-5 py-4 text-white">
           <div className="text-[11px] font-bold uppercase
@@ -3141,7 +3141,7 @@ function DownloadPopup({ result, onClose }) {
 
 // 12-house grid showing planets in each bhava + ascendant marker.
 // Used as a fallback when the provider didn't ship a rendered SVG
-// chart (AstroSeer's /api/kundli omits charts by design — they sit
+// chart (AstroSeer's /api/kundli omits charts by design - they sit
 // on a separate /api/chart/render endpoint we'll wire later). Far
 // more useful than the old "Chart image unavailable on the current
 // Prokerala plan" placeholder, which read like a broken feature to

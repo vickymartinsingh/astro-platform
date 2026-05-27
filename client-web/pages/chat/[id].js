@@ -542,7 +542,7 @@ export default function ChatScreen() {
           );
         })}
 
-        {/* WhatsApp / Meta / Amazon style typing bubble — three
+        {/* WhatsApp / Meta / Amazon style typing bubble - three
             bouncing dots inside a chat bubble on the astrologer's
             (left) side, prefixed with their name so the customer
             knows it isn't them. */}
@@ -773,7 +773,7 @@ function TypingBubble({ who, avatar }) {
           width: 6px;
           height: 6px;
           border-radius: 999px;
-          background: #6c2bd9;
+          background: #7F2020;
           display: inline-block;
           animation: typing-bounce 1s infinite ease-in-out;
         }

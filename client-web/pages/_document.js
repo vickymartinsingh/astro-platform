@@ -44,8 +44,7 @@ export default function Document() {
                in settings/theme.active = "royal" (maroon / amber /
                olive). A cold cache (first install, cleared storage,
                incognito) now paints on-theme on the very first frame.
-               THESE VALUES MUST STAY IN LOCKSTEP WITH THE LIVE THEME
-               — if you switch the active theme in admin-themes,
+               THESE VALUES MUST STAY IN LOCKSTEP WITH THE LIVE THEME - if you switch the active theme in admin-themes,
                update the d={...} block below and redeploy, otherwise
                first-paint flashes the previous palette until the
                localStorage override kicks in.

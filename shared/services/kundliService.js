@@ -15,11 +15,11 @@ function parseZodiac(dob) {
 }
 
 // Real kundli via the relay. The relay picks the provider
-// (settings/kundliApi.provider in Firestore — astroseer / prokerala /
+// (settings/kundliApi.provider in Firestore - astroseer / prokerala /
 // etc); the actual provider key stays server-side.
 // Endpoint derives from the push relay URL, or NEXT_PUBLIC_KUNDLI_ENDPOINT.
 // Returns null if not configured / on any failure (caller shows the
-// basic zodiac instead — never throws).
+// basic zodiac instead - never throws).
 function kundliEndpoint() {
   // Reference process.env.NEXT_PUBLIC_* DIRECTLY: Next.js only inlines
   // the literal expression at build time, so an aliased read is
@@ -31,7 +31,7 @@ function kundliEndpoint() {
   const push = (typeof process !== 'undefined' && process.env
     && process.env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
   if (push) return push.replace(/\/sendPush\/?$/, '/kundli');
-  // Hardcoded fallback — same pattern as authService / pushService.
+  // Hardcoded fallback - same pattern as authService / pushService.
   // Lets localhost / env-less builds talk to the live relay so
   // Kundli generation never silently no-ops because of a missing
   // .env.local entry. Override either NEXT_PUBLIC_KUNDLI_ENDPOINT
@@ -138,10 +138,10 @@ export async function listOrders(uid) {
 }
 
 // Programmatic PDF download that handles BOTH:
-//   - data: URLs (inline-stored PDFs) — Chrome blocks navigation to
+//   - data: URLs (inline-stored PDFs) - Chrome blocks navigation to
 //     large data: URLs since 2021; clicking the link opens
 //     about:blank with no download. Convert to a Blob first.
-//   - http(s) URLs (Vercel Blob, Firebase Storage etc.) — direct
+//   - http(s) URLs (Vercel Blob, Firebase Storage etc.) - direct
 //     anchor click with download attribute.
 // Either way the user sees a real "saving file" prompt with the
 // right filename, not a blank tab.
@@ -512,27 +512,35 @@ export function buildKundliReportHtml(kundli, report) {
       + 'and self-reflection. For personalised predictions, consult an '
       + 'astrologer on AstroSeer.')));
 
+  // Royal palette ONLY (Maroon #7F2020 / Amber #D4A12A / Cream #FBF7EE).
+  // Purple was strictly prohibited and has been fully removed from the
+  // brand cover + headings + accent strip.
   return `<!doctype html><html><head><meta charset="utf-8">`
     + `<title>${esc(k.name || 'Kundli')} Vedic Report</title><style>`
     + `*{box-sizing:border-box}body{font-family:Georgia,'Times New Roman',`
-    + `serif;color:#1f2937;margin:0;line-height:1.55}`
+    + `serif;color:#1A1A2E;margin:0;line-height:1.55;background:#FBF7EE}`
     + `.page{padding:48px 56px;min-height:100vh;page-break-after:always;`
-    + `border-bottom:1px solid #eee}`
-    + `h1{font-size:30px;color:#5b21b6;margin:8px 0}`
-    + `h2{font-size:20px;color:#5b21b6;border-bottom:2px solid #ede9fe;`
+    + `border-bottom:1px solid #E6DEC9;background:#FFFFFF}`
+    + `h1{font-size:30px;color:#7F2020;margin:8px 0}`
+    + `h2{font-size:20px;color:#7F2020;border-bottom:2px solid #D4A12A;`
     + `padding-bottom:6px;margin:0 0 12px}`
-    + `p{font-size:14px;margin:0 0 12px;text-align:justify}`
+    + `p{font-size:14px;margin:0 0 12px;text-align:justify;color:#1A1A2E}`
     + `.cover{text-align:center;padding-top:80px}`
-    + `.brand{letter-spacing:3px;color:#a78bfa;font-weight:bold}`
-    + `.kundli-name{font-size:22px;font-weight:bold;margin:6px 0 24px}`
+    + `.brand{letter-spacing:3px;color:#D4A12A;font-weight:bold;`
+    + `text-transform:uppercase}`
+    + `.kundli-name{font-size:22px;font-weight:bold;margin:6px 0 24px;`
+    + `color:#7F2020}`
     + `table{width:100%;border-collapse:collapse;margin:0 auto 12px}`
     + `.birth{max-width:420px}.birth td,.kv td{padding:7px 10px;`
-    + `border:1px solid #e5e7eb;text-align:left;font-size:14px}`
-    + `.birth td:first-child,.kv td:first-child{color:#6b7280;width:45%}`
-    + `.grid th,.grid td{border:1px solid #e5e7eb;padding:6px 8px;`
-    + `font-size:13px;text-align:left}.grid th{background:#f5f3ff}`
-    + `.generated{margin-top:36px;color:#9ca3af;font-size:12px}`
-    + `.cur{background:#5b21b6;color:#fff;padding:10px 12px;border-radius:8px}`
+    + `border:1px solid #E6DEC9;text-align:left;font-size:14px}`
+    + `.birth td:first-child,.kv td:first-child{color:#5A6E32;width:45%;`
+    + `font-weight:600}`
+    + `.grid th,.grid td{border:1px solid #E6DEC9;padding:6px 8px;`
+    + `font-size:13px;text-align:left}.grid th{background:#FBF7EE;`
+    + `color:#7F2020}`
+    + `.generated{margin-top:36px;color:#5A6E32;font-size:12px}`
+    + `.cur{background:#7F2020;color:#fff;padding:10px 12px;`
+    + `border-radius:8px}`
     + `@media print{.page{border:none}}`
     + `</style></head><body>${html}</body></html>`;
 }
@@ -588,8 +596,7 @@ function normaliseReport(r) {
     out.sunSign = out.soorya_rasi;
     out.soorya_rasi = flatName(out.soorya_rasi);
   }
-  // Fallbacks for AstroSeer where the relay didn't pre-flatten —
-  // pull from the raw moon_sign / sun_sign objects if present.
+  // Fallbacks for AstroSeer where the relay didn't pre-flatten - // pull from the raw moon_sign / sun_sign objects if present.
   if (!out.chandra_rasi && r.raw && r.raw.moon_sign) {
     out.chandra_rasi = flatName(r.raw.moon_sign);
   }
@@ -635,11 +642,11 @@ export async function getFullKundli(profile) {
     // stay stuck on the cached crash.
     // A cached report is "stale" when:
     //   1. nakshatra is still the old object shape (pre-flatten bug)
-    //   2. ascendant.sign is missing — happens when AstroSeer 401'd
+    //   2. ascendant.sign is missing - happens when AstroSeer 401'd
     //      during the original generate and we cached a near-empty
     //      payload. Now that the relay falls back to unauth on 401,
     //      a re-fetch will populate everything.
-    //   3. planets[] is empty — same root cause as (2).
+    //   3. planets[] is empty - same root cause as (2).
     // Any of the three forces a fresh fetch.
     const rep = profile.report || {};
     const stale = (rep.nakshatra && typeof rep.nakshatra === 'object')
@@ -692,8 +699,7 @@ export async function saveKundli(uid, data) {
 
 // Update an existing kundli profile in place. Touching dob/tob/place
 // changes birthSig, so the cached report auto-invalidates on the
-// next View Full Kundli call and a fresh AstroSeer fetch lands —
-// no manual cache bust needed.
+// next View Full Kundli call and a fresh AstroSeer fetch lands - // no manual cache bust needed.
 export async function updateKundli(uid, kundliId, data) {
   if (!kundliId) throw new Error('kundliId required');
   const ref = doc(db, 'kundliProfiles', kundliId);
@@ -713,7 +719,7 @@ export async function updateKundli(uid, kundliId, data) {
     tob: data.tob || '',
     ampm: data.ampm || 'AM',
     place: data.place || '',
-    // Locked geo (lat/lng/tz) — re-saved on every edit so a user
+    // Locked geo (lat/lng/tz) - re-saved on every edit so a user
     // who re-picks their city in the form gets the fresh values.
     lat: data.lat != null ? Number(data.lat) : null,
     lng: data.lng != null ? Number(data.lng) : null,

@@ -157,7 +157,7 @@ export default function ActiveSession() {
     try { await sessionService.endAndSettleClient(id); } catch (_) {}
     try { await sessionService.collectAstrologerEarnings(user.uid); }
     catch (_) {}
-    // Referral bonus check — if this astrologer was referred by
+    // Referral bonus check - if this astrologer was referred by
     // another astrologer at signup, and this session was their
     // first paid 30-minute (admin-configurable) session, credit
     // the referrer's wallet now. Idempotent server-side: the

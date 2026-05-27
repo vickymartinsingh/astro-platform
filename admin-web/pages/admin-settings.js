@@ -204,7 +204,7 @@ export default function AdminSettings() {
         ))}
       </div>
 
-      {/* Kundli report pricing — every report defined in
+      {/* Kundli report pricing - every report defined in
           shared/reportTypes.js gets a price field. Blank = revert
           to defaultPrice. Free reports stay free. */}
       <h2 className="mt-6 mb-2 text-lg font-bold">Kundli report pricing</h2>

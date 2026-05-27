@@ -1,8 +1,8 @@
-# AstroSeer Kundli — API + UI Specification
+# AstroSeer Kundli - API + UI Specification
 
 Paste this into a fresh agent to build the AstroSeer API endpoints + matching UI
 that powers the kundli viewer in the AstroSeer customer app, astrologer app and
-admin panel. The reference visual is AstroTalk's free kundli flow — match the
+admin panel. The reference visual is AstroTalk's free kundli flow - match the
 layout, NOT the brand. AstroSeer brand colours and copy rules apply (see end).
 
 ---
@@ -11,13 +11,13 @@ layout, NOT the brand. AstroSeer brand colours and copy rules apply (see end).
 
 A user opens their saved kundli profile and sees **7 main tabs** at the top:
 
-1. **Basic** — birth + avakhada + panchang details
-2. **Kundli** — Lagna + Navamsa charts (North/South toggle) + planets table
-3. **KP** — Bhav Chalit chart + ruling planets + KP planets + cusps tables
-4. **Ashtakvarga** — Sarvashtakavarga + 8 per-planet ashtakavarga charts
-5. **Charts** — 12 divisional charts (D1, D2, D3, D4, D7, D9, D10, D12, D16, D24, D30, D60) with North/South toggle
-6. **Dasha** — Vimshottari + Yogini, with 4-level interactive drilldown
-7. **Free Report** — General / Remedies / Dosha sub-sections with full prediction text + Download PDF button
+1. **Basic** - birth + avakhada + panchang details
+2. **Kundli** - Lagna + Navamsa charts (North/South toggle) + planets table
+3. **KP** - Bhav Chalit chart + ruling planets + KP planets + cusps tables
+4. **Ashtakvarga** - Sarvashtakavarga + 8 per-planet ashtakavarga charts
+5. **Charts** - 12 divisional charts (D1, D2, D3, D4, D7, D9, D10, D12, D16, D24, D30, D60) with North/South toggle
+6. **Dasha** - Vimshottari + Yogini, with 4-level interactive drilldown
+7. **Free Report** - General / Remedies / Dosha sub-sections with full prediction text + Download PDF button
 
 Each tab must work on web + bundled iOS/Android (no platform-specific code).
 All copy must follow the brand rules at the end of this doc (no em-dashes, no
@@ -29,7 +29,7 @@ decorative emojis).
 
 Two columns on desktop, stacked on mobile.
 
-**Left column — Basic Details**
+**Left column - Basic Details**
 | Field | Source |
 |---|---|
 | Name | profile.name |
@@ -43,7 +43,7 @@ Two columns on desktop, stacked on mobile.
 | Sunset | panchang.sunset |
 | Ayanamsha | calculation.ayanamsha (decimal degrees) |
 
-**Left column — Panchang Details (below Basic)**
+**Left column - Panchang Details (below Basic)**
 | Field | Source |
 |---|---|
 | Tithi | panchang.tithi |
@@ -51,7 +51,7 @@ Two columns on desktop, stacked on mobile.
 | Yog | panchang.yoga |
 | Nakshatra | panchang.nakshatra |
 
-**Right column — Avakhada Details**
+**Right column - Avakhada Details**
 | Field | Source |
 |---|---|
 | Varna | avakhada.varna |
@@ -175,7 +175,7 @@ GET /api/kundli/kp?profileId=...
 ## Tab 4: Ashtakvarga
 
 9 charts in a 3×3 grid:
-1. **Sav** (Sarvashtakavarga) — totals
+1. **Sav** (Sarvashtakavarga) - totals
 2. **Asc** (Ascendant)
 3. **Jupiter**
 4. **Mars**
@@ -342,15 +342,15 @@ a network round-trip per drill click.
 Three sub-tabs at the top: **General | Remedies | Dosha**.
 
 Under **General**, four pill sub-tabs:
-- **General** — Description, Personality, Physical, Health, Career, Relationship
-- **Planetary** — Sun Consideration, Moon, Mercury, Venus, Mars, Jupiter,
+- **General** - Description, Personality, Physical, Health, Career, Relationship
+- **Planetary** - Sun Consideration, Moon, Mercury, Venus, Mars, Jupiter,
   Saturn, Rahu, Ketu Considerations (paragraph each)
-- **Vimshottari Dasha** — Mars Mahadasha, Rahu Mahadasha … Moon Mahadasha
+- **Vimshottari Dasha** - Mars Mahadasha, Rahu Mahadasha … Moon Mahadasha
   (paragraph each with date range)
-- **Yoga** — every detected yoga with name, condition rule, and prediction
+- **Yoga** - every detected yoga with name, condition rule, and prediction
   paragraph
 
-Under **Remedies** and **Dosha** — similar nested structure (lifestyle,
+Under **Remedies** and **Dosha** - similar nested structure (lifestyle,
 gemstone, mantra, donation, fasting for Remedies; Mangal, Kalsarp, Sade Sati,
 Pitra for Dosha).
 
@@ -414,7 +414,7 @@ body: { profileId, kind: 'free' | 'forecast12' | 'careerFinance' | 'lifetime' }
 - Spacing scale: 4, 8, 12, 16, 24, 32px (Tailwind 1/2/3/4/6/8)
 
 **Hard rules on copy**:
-- **NO em-dashes (—) or en-dashes (–) ANYWHERE** in user-visible text. Use
+- **NO em-dashes ( - ) or en-dashes (–) ANYWHERE** in user-visible text. Use
   commas, periods, parentheses, "and" instead. This is strict.
 - **NO colourful emojis** (🪐 🕉️ ⚠️ 📊 etc). A small `·` separator dot is
   fine. Numbered pills are fine. Decorative emojis are not.
@@ -474,7 +474,7 @@ new birth signature.
 
 Suggested commit cadence so each piece can be tested independently:
 
-1. `/api/kundli/full?profileId` — returns ALL sections in one payload. Add
+1. `/api/kundli/full?profileId` - returns ALL sections in one payload. Add
    the response-shape unit tests first.
 2. Basic + Avakhada + Panchang tab (server already returns this; just
    render).
@@ -517,7 +517,7 @@ What the agent still needs to add API-side:
 - KP cusps + ruling planets calculation.
 - Yogini dasha endpoint (or computation if pure formula).
 - Free Report text generation per planet / per dasha / per yoga / per
-  remedy / per dosha — cached on the order doc so re-views are instant.
+  remedy / per dosha - cached on the order doc so re-views are instant.
 
 ---
 

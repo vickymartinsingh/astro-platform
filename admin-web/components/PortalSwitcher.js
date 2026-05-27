@@ -7,7 +7,7 @@ import {
 } from '../lib/portal';
 import PortalEditRail from './PortalEditRail';
 
-// Floating portal switcher — small icon-only chip by default, expands
+// Floating portal switcher - small icon-only chip by default, expands
 // to a panel on click, AND is draggable anywhere on the screen. The
 // position is persisted in localStorage so it stays where you put it
 // across page loads.
@@ -55,7 +55,7 @@ export default function PortalSwitcher() {
     }
   }, []);
 
-  // Drag handlers — used on the small chip handle, NOT the panel body
+  // Drag handlers - used on the small chip handle, NOT the panel body
   // (so clicks on portal options still register).
   function onDown(e) {
     const point = e.touches ? e.touches[0] : e;
@@ -273,7 +273,7 @@ export default function PortalSwitcher() {
           </div>
         )}
 
-        {/* Tiny draggable chip — icon-only, 40px round. Click to expand,
+        {/* Tiny draggable chip - icon-only, 40px round. Click to expand,
             hold + drag to move. Tooltip on hover. */}
         <button
           onMouseDown={onDown}

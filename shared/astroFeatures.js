@@ -6,7 +6,7 @@
 //   - the relay action that produces the deliverable
 //
 // Icons are intentionally simple line emoji so the cards render
-// single-colour on every device — no colourful PNG zoo. The
+// single-colour on every device - no colourful PNG zoo. The
 // dashboard CSS forces a monochrome shadow + tint anyway.
 export const FEATURE_GROUPS = [
   ['core',      'Core Vedic'],
@@ -47,13 +47,13 @@ export const FEATURES = [
 
   // --- Divisional charts ---
   { id: 'd9_navamsa', group: 'vargas', icon: 'rings',
-    title: 'D9 Navamsa — Marriage',
+    title: 'D9 Navamsa - Marriage',
     blurb: 'Marriage and dharma chart with detailed reading.',
     priceKey: 'd9_navamsa_price', defaultPrice: 49,
     sections: ['Navamsa chart', '7th house deep analysis',
       'Spouse character indications'] },
   { id: 'd10_dasamsa', group: 'vargas', icon: 'briefcase',
-    title: 'D10 Dasamsa — Career',
+    title: 'D10 Dasamsa - Career',
     blurb: 'Career and profession chart with timing windows.',
     priceKey: 'd10_dasamsa_price', defaultPrice: 49,
     sections: ['Dasamsa chart', '10th house deep analysis',
@@ -137,7 +137,7 @@ export const FEATURES = [
       'Quick room layout fixes'] },
   { id: 'numerology', group: 'life', icon: 'numerology',
     title: 'Numerology Deep Profile',
-    blurb: 'Driver, conductor, life-path, soul, destiny — full numerology.',
+    blurb: 'Driver, conductor, life-path, soul, destiny - full numerology.',
     priceKey: 'numerology_price', defaultPrice: 49,
     sections: ['Driver number', 'Conductor number', 'Life-path number',
       'Soul + destiny + personality numbers',

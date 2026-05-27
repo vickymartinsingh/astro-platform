@@ -8,7 +8,7 @@ import dynamic from 'next/dynamic';
 import { useAuth } from './useAuth';
 
 // LoginCard is the single biggest chrome dep on the boot path (~140 KB
-// minified — it pulls Firebase Auth flows, OTP plumbing, Google sign-in
+// minified - it pulls Firebase Auth flows, OTP plumbing, Google sign-in
 // helpers). It is only visible when the auth modal opens, so we ship
 // it in its own chunk that the browser fetches on demand. Until the
 // chunk lands the overlay shows a lightweight spinner, then swaps in

@@ -28,7 +28,8 @@ exports.generatePDFReport = functions.https.onCall(async (data, context) => {
   docPdf.on('data', (b) => buffers.push(b));
   const done = new Promise((res) => docPdf.on('end', res));
 
-  docPdf.fontSize(20).fillColor('#6C2BD9')
+  // Royal palette (Maroon). Purple is strictly prohibited.
+  docPdf.fontSize(20).fillColor('#7F2020')
     .text(`${type.toUpperCase()} REPORT`, { align: 'left' });
   docPdf.moveDown(0.3).fontSize(10).fillColor('#555555')
     .text(`Generated ${new Date().toLocaleString()}`);
