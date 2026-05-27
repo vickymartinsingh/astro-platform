@@ -923,7 +923,17 @@ function FullKundli({ r, kundli }) {
 // Three boxed tables: Basic Details, Avakhada Details, Panchang Details.
 // Mirrors User-kundali-report.pdf p.2 + p.3 layout.
 function BasicTab({ r, raw, kundli }) {
-  const a = r.ascendant || {};
+  // Robust ascendant resolution - check every shape AstroSeer + its
+  // adapters might return. Without this fallback the row falls back
+  // to "·" silently and the user does not see the Lagna even though
+  // we asked for it. Mirrors planetsWithAscendant() below.
+  const ascFromPlanets = (r.planets || []).find((x) => /asc|lagna|ascend/i
+    .test(String(x.name || '')));
+  const a = r.ascendant
+    || r.lagna
+    || (raw && (raw.ascendant || raw.lagna))
+    || ascFromPlanets
+    || {};
   const p = (raw && raw.panchang) || r.panchang || {};
   const moon = (r.planets || []).find((x) => /moon/i.test(x.name || ''))
     || {};
@@ -945,10 +955,14 @@ function BasicTab({ r, raw, kundli }) {
   // per user feedback ("first should be ascendent even on this").
   // We compose a one-line summary "Capricorn (Dhanishta)" so the
   // user reads sign + nakshatra at a glance.
-  const ascSign = txt(a.sign) || '';
-  const ascNak = txt(a.nakshatra) || '';
+  const ascSign = txt(a.sign || a.zodiac || a.rasi
+    || (a.rasi && a.rasi.name)) || '';
+  const ascNak = txt(a.nakshatra
+    || (a.nakshatra && a.nakshatra.name)) || '';
+  const ascLord = txt(a.sign_lord || a.lord || a.rasi_lord) || '';
   const ascSummary = ascSign
-    ? (ascNak ? `${ascSign} (${ascNak})` : ascSign)
+    ? `${ascSign}${ascNak ? ` (${ascNak})` : ''}${ascLord
+        ? ` · Lord ${ascLord}` : ''}`
     : '·';
   const birthRows = [
     ['Ascendant (Lagna)', ascSummary],
@@ -970,13 +984,21 @@ function BasicTab({ r, raw, kundli }) {
   // table is never empty.
   const av = raw?.avakhada || raw?.avakhada_details || {};
   const avakhadaRows = [
+    // Ascendant rows at the very top of the Avakhada panel too so
+    // the customer sees the Lagna no matter which sub-panel they
+    // are reading. Sign / Sign Lord here are the ASCENDANT sign +
+    // lord; the Moon-sign + Moon-sign-lord rows further down stay
+    // for Avakhada-traditional readers.
+    ['Ascendant (Lagna)', ascSign || '·'],
+    ['Ascendant Lord', ascLord || '·'],
+    ['Ascendant Nakshatra', ascNak || '·'],
     ['Varna', txt(av.varna) || '·'],
     ['Vashya', txt(av.vashya) || '·'],
     ['Yoni', txt(av.yoni) || '·'],
     ['Gan', txt(av.gan || av.gana) || '·'],
     ['Nadi', txt(av.nadi) || '·'],
-    ['Sign', txt(av.sign || moon.sign || r.chandra_rasi) || '·'],
-    ['Sign Lord', txt(av.sign_lord || moon.sign_lord) || '·'],
+    ['Moon Sign', txt(av.sign || moon.sign || r.chandra_rasi) || '·'],
+    ['Moon Sign Lord', txt(av.sign_lord || moon.sign_lord) || '·'],
     ['Nakshatra-Charan',
       txt(av.nakshatra_charan || moon.pada || r.nakshatra) || '·'],
     ['Yog', txt(av.yog || p.yoga) || '·'],
@@ -1113,34 +1135,56 @@ function KundliMainTab({ r, raw, kundli,
 
 // Build the Planets table rows with the Ascendant (Lagna) as the
 // FIRST row - traditional Vedic order puts the rising sign at the
-// top because it anchors every house calculation. r.ascendant is
-// the same shape as a planet but tagged with isAscendant so the
-// Retro / Combust columns render as "-" instead of misleading
-// "Direct" / "No" values that don't apply to the Lagna.
+// top because it anchors every house calculation. ALWAYS renders
+// the row, even if the provider returned no ascendant data - empty
+// fields fall back to "·" rather than hiding the row entirely
+// (user explicitly asked for Ascendant to be visible).
+//
+// Sources tried, first match wins:
+//   1. r.ascendant (top-level shape returned by the relay)
+//   2. r.lagna (some kundli APIs use this name)
+//   3. r.raw.ascendant / r.raw.lagna (legacy field locations)
+//   4. r.raw.basic.ascendant_sign / r.raw.basic.lagna_sign
+//   5. A planet entry whose name matches /asc|lagna/i (a few
+//      providers embed Ascendant in the planets array directly)
 function planetsWithAscendant(r) {
   const planets = (r && r.planets) || [];
-  const asc = (r && r.ascendant) || null;
-  if (!asc || (!asc.sign && !asc.nakshatra && asc.degree == null)) {
-    return planets;
+  // De-duplicate: if a planet entry already represents Ascendant,
+  // hoist it to the front and we are done.
+  const ascInPlanets = planets.find((p) => /asc|lagna|ascend/i
+    .test(String((p && p.name) || '')));
+  if (ascInPlanets) {
+    const rest = planets.filter((p) => p !== ascInPlanets);
+    return [{ ...ascInPlanets, name: 'Ascendant',
+      isAscendant: true, house: ascInPlanets.house ?? 1 }, ...rest];
   }
+  // Compose synthetic ascendant row from any source we can find.
+  const raw = (r && r.raw) || {};
+  const asc = (r && r.ascendant)
+    || (r && r.lagna)
+    || (raw && raw.ascendant)
+    || (raw && raw.lagna)
+    || {};
+  const basicSign = (raw && raw.basic && (raw.basic.ascendant_sign
+    || raw.basic.lagna_sign || raw.basic.ascendant)) || '';
   const ascRow = {
     name: 'Ascendant',
-    sign: asc.sign,
-    sign_lord: asc.sign_lord || asc.lord,
-    nakshatra: asc.nakshatra,
-    nakshatra_lord: asc.nakshatra_lord,
-    degree: asc.degree,
+    sign: asc.sign || asc.zodiac || asc.rasi
+      || (asc.rasi && asc.rasi.name) || basicSign || '',
+    sign_lord: asc.sign_lord || asc.lord || asc.rasi_lord || '',
+    nakshatra: asc.nakshatra
+      || (asc.nakshatra && asc.nakshatra.name) || '',
+    nakshatra_lord: asc.nakshatra_lord
+      || (asc.nakshatra && asc.nakshatra.lord) || '',
+    degree: asc.degree || asc.degree_display
+      || asc.degrees_in_sign || '',
     house: 1,
     isAscendant: true,
     avastha: '',
     dignity: '',
     status: '',
   };
-  // Avoid duplicating if the provider already includes Ascendant
-  // in the planets list (some kundli APIs do this).
-  const hasAsc = planets.some((p) => /asc|lagna|ascend/i
-    .test(String(p.name || '')));
-  return hasAsc ? planets : [ascRow, ...planets];
+  return [ascRow, ...planets];
 }
 
 // ---------- Tab: KP (Bhav Chalit + Ruling Planets + KP Planets) ----
