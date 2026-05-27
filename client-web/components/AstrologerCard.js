@@ -1,3 +1,4 @@
+import { inr } from '@astro/shared';
 import { avatarGradient, initial } from '../lib/avatar';
 import VerifiedBadge from './VerifiedBadge';
 
@@ -94,7 +95,7 @@ export default function AstrologerCard({
           {freeMin > 0 ? (
             <>
               <span className="mr-1 text-sub-text line-through">
-                ₹{price}
+                ₹{inr(price)}
               </span>
               <span className="font-bold text-success">
                 First {freeMin} min FREE
@@ -102,7 +103,7 @@ export default function AstrologerCard({
             </>
           ) : (
             <span className="font-bold">
-              from ₹{Math.min(...svc.map((s) => s.price))}
+              from ₹{inr(Math.min(...svc.map((s) => s.price)))}
               <span className="text-xs font-normal text-sub-text">
                 /min
               </span>

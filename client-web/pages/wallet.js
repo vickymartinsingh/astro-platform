@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import {
-  walletService, db, sessionService, astrologerService,
+  walletService, db, sessionService, astrologerService, rupees,
 } from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
@@ -109,7 +109,7 @@ export default function Wallet() {
     setMsg(null);
     const amt = Number(amount) || 0;
     if (amt < MIN_RECHARGE) {
-      setMsg({ ok: false, t: `Minimum recharge is ₹${MIN_RECHARGE}.` });
+      setMsg({ ok: false, t: `Minimum recharge is ${rupees(MIN_RECHARGE)}.` });
       return;
     }
     setBusy(true);
@@ -163,9 +163,9 @@ export default function Wallet() {
               const bonus = Number(v && v.bonus) || 0;
               setMsg({ ok: true,
                 t: bonus > 0
-                  ? `Payment successful. ₹${amt} added, +₹${bonus} `
-                    + `coupon bonus (${couponCode}).`
-                  : `Payment successful, ₹${amt} added`,
+                  ? `Payment successful. ${rupees(amt)} added, `
+                    + `+${rupees(bonus)} coupon bonus (${couponCode}).`
+                  : `Payment successful, ${rupees(amt)} added`,
                 back });
               clearCoupon();
             } catch {
@@ -221,9 +221,9 @@ export default function Wallet() {
           const bonus = Number(r && r.bonus) || 0;
           setMsg({ ok: true,
             t: bonus > 0
-              ? `Payment successful. ₹${r.amount || amt} added, `
-                + `+₹${bonus} coupon bonus (${storedCoupon}).`
-              : `Payment successful, ₹${r.amount || amt} added`,
+              ? `Payment successful. ${rupees(r.amount || amt)} added, `
+                + `+${rupees(bonus)} coupon bonus (${storedCoupon}).`
+              : `Payment successful, ${rupees(r.amount || amt)} added`,
             back });
           clearCoupon();
         } else {
@@ -269,7 +269,7 @@ export default function Wallet() {
 
       <div className="hero-grad rounded-card p-6 text-center text-white">
         <div className="text-sm opacity-80">Wallet Balance</div>
-        <div className="mt-1 text-4xl font-bold">₹{wallet}</div>
+        <div className="mt-1 text-4xl font-bold">{rupees(wallet)}</div>
       </div>
 
       <div className="mt-4 flex gap-2">
@@ -292,7 +292,7 @@ export default function Wallet() {
               <button key={q} onClick={() => setAmount(q)}
                 className={`rounded-card py-3 font-semibold ${
                   amount === q ? 'bg-primary text-white' : 'bg-bg-light'}`}>
-                ₹{q}
+                {rupees(q)}
               </button>
             ))}
           </div>

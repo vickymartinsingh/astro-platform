@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import {
   walletService, sessionService, astrologerService, db, kundliService,
+  inr,
 } from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
@@ -215,7 +216,7 @@ export default function Transactions() {
                 </div>
                 <div className={`shrink-0 font-bold ${t.amount >= 0
                   ? 'text-success' : 'text-danger'}`}>
-                  {t.amount >= 0 ? '+' : ''}₹{Math.abs(t.amount)}
+                  {t.amount >= 0 ? '+' : ''}₹{inr(Math.abs(t.amount))}
                 </div>
               </div>
             );
