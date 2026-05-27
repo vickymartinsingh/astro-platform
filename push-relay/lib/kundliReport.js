@@ -1304,11 +1304,13 @@ async function handleReportStatus(req, res) {
 
   // If we already cached the PDF, return ready immediately - no
   // need to bother AstroSeer.
-  if (o.status === 'ready' && (o.pdfUrl || o.pdfBase64)) {
+  if ((o.status === 'ready' || o.status === 'ready_rescued')
+      && (o.pdfUrl || o.pdfBase64)) {
     return res.status(200).json({
       ok: true,
       orderId,
       status: 'ready',
+      rescued: o.status === 'ready_rescued',
       pdfUrl: o.pdfBase64
         ? `data:application/pdf;base64,${o.pdfBase64}`
         : o.pdfUrl,
@@ -1317,7 +1319,20 @@ async function handleReportStatus(req, res) {
       kind,
     });
   }
-  if (o.status === 'failed' || o.status === 'failed_refunded') {
+  // RESCUE PATH: order is locally marked failed_refunded, but
+  // AstroSeer's own auto-resume may have succeeded after we
+  // refunded. Probe AstroSeer status; if it now says 'sent', we
+  // pull the PDF and deliver it. The wallet stays refunded
+  // (customer effectively gets the PDF free as compensation for
+  // the relay's premature refund). DO NOT short-circuit to
+  // failed_refunded here - fall through to the AstroSeer poll
+  // below, with a flag to handle the success branch carefully.
+  const isRescue = o.status === 'failed_refunded'
+    || o.status === 'failed';
+  if ((o.status === 'failed' || o.status === 'failed_refunded')
+      && !isRescue) {
+    // Unreachable - isRescue is always true for failed states.
+    // Keeping the guard for clarity of intent.
     return res.status(200).json({
       ok: false,
       orderId,
@@ -1390,14 +1405,63 @@ async function handleReportStatus(req, res) {
   }
 
   if (remoteStatus === 'failed') {
-    // AUTO-RETRY on AstroSeer-reported failure. WeasyPrint
-    // occasionally crashes on transient issues (font fetch
-    // failure, internal race condition) - the spec promises
-    // 3 internal retries on AstroSeer's side, but observed rows
-    // in the Activity feed show single-attempt FAILED entries
-    // that suggest the internal retry sometimes does not fire.
-    // We add a SINGLE relay-level retry before refunding so the
-    // customer doesn't see avoidable failures.
+    // If we are already in rescue mode (Firestore says
+    // failed_refunded but client is still polling), DO NOT
+    // try to refund again - just report the current state.
+    if (isRescue) {
+      return res.status(200).json({
+        ok: false,
+        orderId,
+        status: o.status,
+        error: o.failReason || astroStatus.error
+          || 'Generation failed.',
+        refunded: o.status === 'failed_refunded',
+        kind,
+      });
+    }
+    // PATIENCE TIMER: AstroSeer's own internal auto-resume
+    // (up to 3 tries per their spec) often succeeds within
+    // 60-90 seconds AFTER reporting failed on a polling
+    // request. If we refund the moment we see 'failed', we
+    // strand orders that AstroSeer eventually delivers
+    // successfully. So: on first 'failed' sighting, set a
+    // failedSeenAt timestamp and KEEP polling. Only after
+    // 90 seconds of CONFIRMED 'failed' do we actually
+    // refund.
+    const failedSeenAtMs = o.failedSeenAt && o.failedSeenAt.toMillis
+      ? o.failedSeenAt.toMillis() : 0;
+    if (!failedSeenAtMs) {
+      await orderRef.update({
+        failedSeenAt: admin.firestore.FieldValue.serverTimestamp(),
+        lastFailReason: astroStatus.error
+          || 'AstroSeer reported failed.',
+      }).catch(() => {});
+      return res.status(200).json({
+        ok: true,
+        orderId,
+        status: 'generating',
+        warning: 'Generation hit a hiccup, waiting for '
+          + 'AstroSeer auto-resume...',
+        kind,
+      });
+    }
+    const failedAgeMs = Date.now() - failedSeenAtMs;
+    if (failedAgeMs < 90 * 1000) {
+      // Less than 90s since first failed sighting - keep
+      // polling so AstroSeer auto-resume can land.
+      return res.status(200).json({
+        ok: true,
+        orderId,
+        status: 'generating',
+        warning: `Generation hiccup ~${Math.round(failedAgeMs
+          / 1000)}s ago, waiting for auto-resume...`,
+        kind,
+      });
+    }
+    // 90s of confirmed failed. AUTO-RETRY before refunding -
+    // re-POST /api/orders/log so AstroSeer restarts cleanly.
+    // (WeasyPrint sometimes recovers from a stuck render
+    // when re-invoked with the same params.)
     const retried = Number(o.astroseerRetryCount || 0);
     if (retried < 1) {
       try {
@@ -1582,6 +1646,20 @@ async function handleReportStatus(req, res) {
     validUntil,
     deliveredAt: admin.firestore.FieldValue.serverTimestamp(),
   };
+  // RESCUE: order was previously marked failed_refunded (we
+  // refunded the wallet too eagerly), but AstroSeer ultimately
+  // delivered the PDF. Flip to ready_rescued so admin can
+  // tell the story in Order Management. The customer's wallet
+  // STAYS refunded - they get the PDF effectively as a
+  // goodwill gesture for the relay's premature refund.
+  if (isRescue) {
+    orderPatch.status = 'ready_rescued';
+    orderPatch.rescuedAt = admin.firestore.FieldValue
+      .serverTimestamp();
+    orderPatch.rescueNote = 'AstroSeer auto-resume delivered the '
+      + 'PDF after the relay had marked failed_refunded. PDF '
+      + 'delivered to customer, wallet refund preserved.';
+  }
   if (uploaded.inline && uploaded.pdfBase64) {
     orderPatch.pdfBase64 = uploaded.pdfBase64;
   }
