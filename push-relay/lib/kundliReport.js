@@ -236,39 +236,31 @@ async function callAstroSeerPdf({ base, key, body }) {
   // the browser sees "Failed to fetch" with no JSON body (because
   // Vercel terminates the function mid-response).
   //
-  // Pre-flight wake-up: ping /health with a 25s timeout BEFORE the
-  // real PDF call. On Render free tier this absorbs the dyno
-  // cold-start without burning our PDF generation budget. /health
-  // is a tiny endpoint so it wakes the dyno and returns fast once
-  // the dyno is alive. If /health itself fails or times out, we
-  // surface a clean "AstroSeer offline" error instead of waiting
-  // another 55s for /api/kundli/pdf to also time out.
+  // Cold-start strategy: fire /health in the BACKGROUND (no await)
+  // to start waking the Render dyno, then immediately call the real
+  // /api/kundli/pdf endpoint. Both requests race to the same dyno;
+  // whichever arrives first triggers the cold-start, the other one
+  // queues until the dyno is alive. This way we don't waste the
+  // 55s PDF budget waiting for /health to finish a 30-40s wake-up.
+  //
+  // Previously we awaited /health with a 25s timeout, but Render
+  // free dyno cold-starts often exceed 25s, so /health aborted
+  // before the dyno was alive and the whole flow failed without
+  // even attempting PDF generation. Fire-and-forget instead.
   try {
-    const hac = new AbortController();
-    const htid = setTimeout(() => hac.abort(), 25000);
-    try {
-      const hr = await fetch(`${base}/health`, {
-        method: 'GET',
-        headers: key ? { 'X-API-Key': key } : {},
-        signal: hac.signal,
-      });
-      if (!hr.ok && hr.status !== 401) {
-        throw new Error(`AstroSeer /health ${hr.status} - the API `
-          + 'is reachable but reports unhealthy. Check the Render '
-          + 'service logs.');
-      }
-    } finally { clearTimeout(htid); }
-  } catch (e) {
-    if (e && e.name === 'AbortError') {
-      throw new Error('AstroSeer API is offline (Render free dyno '
-        + 'failed to wake in 25s). Visit '
-        + `${base}/admin/dashboard once to spin it up, then retry.`);
-    }
-    // Re-throw non-abort errors with the same shape the PDF call
-    // would have produced so the caller's catch path is identical.
-    throw new Error(`AstroSeer /health unreachable: `
-      + `${(e && e.message) || e}`);
-  }
+    const wakeAc = new AbortController();
+    // 8s is enough to fire the request + initiate the cold-start
+    // on Render's edge; after that the dyno wake-up continues in
+    // the background regardless of whether we keep listening.
+    const wakeTid = setTimeout(() => wakeAc.abort(), 8000);
+    fetch(`${base}/health`, {
+      method: 'GET',
+      headers: key ? { 'X-API-Key': key } : {},
+      signal: wakeAc.signal,
+    }).catch(() => { /* swallow - the real PDF call will surface
+                        any persistent failure */ })
+      .finally(() => clearTimeout(wakeTid));
+  } catch (_) { /* swallow - never block on the warm-up */ }
   const url = `${base}/api/kundli/pdf`;
   const payload = JSON.stringify(body);
   const withKey = {
@@ -278,11 +270,12 @@ async function callAstroSeerPdf({ base, key, body }) {
   const noKey = { 'Content-Type': 'application/json' };
   const doFetch = async (headers) => {
     const ac = new AbortController();
-    // 55s: leaves 5s headroom under Vercel's 60s function cap so we
+    // 57s: leaves 3s headroom under Vercel's 60s function cap so we
     // abort cleanly and return a JSON error before Vercel kills the
     // process (which would strip CORS headers and surface as
-    // "Failed to fetch" in the browser).
-    const tid = setTimeout(() => ac.abort(), 55000);
+    // "Failed to fetch" in the browser). This is the maximum we
+    // can give the AstroSeer dyno to wake AND respond.
+    const tid = setTimeout(() => ac.abort(), 57000);
     try {
       return await fetch(url, {
         method: 'POST', headers, body: payload, signal: ac.signal,
@@ -294,9 +287,16 @@ async function callAstroSeerPdf({ base, key, body }) {
     r = await doFetch(withKey);
   } catch (e) {
     if (e && e.name === 'AbortError') {
-      throw new Error('AstroSeer PDF API timed out after 50s. The '
-        + 'service may be cold-starting on Render free tier - '
-        + 'retry in a minute.');
+      // 57s passed and Render still hadn't woken + processed. On
+      // free tier this happens when the dyno was in deep sleep AND
+      // the PDF tier is large (lifetime / forecast12). The retry
+      // hint is real - the background /health ping we fired at the
+      // top of this function has now had time to wake the dyno, so
+      // a second attempt usually succeeds in under 10s.
+      throw new Error('AstroSeer PDF API did not respond within 57s. '
+        + 'The Render dyno was cold; it should now be warm. Please '
+        + 'click Regenerate once more and the PDF will generate '
+        + 'instantly. (Wallet was auto-refunded for paid orders.)');
     }
     throw new Error(`AstroSeer fetch failed: ${(e && e.message) || e}`);
   }
