@@ -1390,8 +1390,88 @@ async function handleReportStatus(req, res) {
   }
 
   if (remoteStatus === 'failed') {
-    // Atomic refund if this was a paid order that hadn't been
-    // marked failed_refunded yet.
+    // AUTO-RETRY on AstroSeer-reported failure. WeasyPrint
+    // occasionally crashes on transient issues (font fetch
+    // failure, internal race condition) - the spec promises
+    // 3 internal retries on AstroSeer's side, but observed rows
+    // in the Activity feed show single-attempt FAILED entries
+    // that suggest the internal retry sometimes does not fire.
+    // We add a SINGLE relay-level retry before refunding so the
+    // customer doesn't see avoidable failures.
+    const retried = Number(o.astroseerRetryCount || 0);
+    if (retried < 1) {
+      try {
+        // Rebuild the birth payload from the saved profile fields
+        // we snapshotted onto the order doc. Same shape as the
+        // initial POST.
+        const profSnap = await db.collection('kundliProfiles')
+          .doc(o.kundliProfileId).get();
+        const prof = (profSnap.exists ? profSnap.data() : null) || {};
+        const pd = parseDob(prof.dob || o.profileDob,
+          prof.tob || o.profileTob,
+          prof.ampm || o.profileAmpm);
+        let lat = Number(prof.lat) || 0;
+        let lng = Number(prof.lng) || 0;
+        if (!lat || !lng) {
+          const g = await geocode(prof.place
+            || o.profilePlace || '');
+          if (g) { lat = g.lat; lng = g.lng; }
+        }
+        if (!lat || !lng) { lat = 19.076; lng = 72.8777; }
+        const tz = Number(prof.tz);
+        const tzOffset = Number.isFinite(tz) ? tz : 5.5;
+        const REPORT_TYPE = {
+          free: 'basic', forecast12: 'yearly',
+          careerFinance: 'career', lifetime: 'full_life',
+        };
+        const retryBody = {
+          order_id: orderId,
+          status: 'generating',
+          report_type: REPORT_TYPE[kind] || 'basic',
+          customer_uid: uid,
+          place: prof.place || o.profilePlace || '',
+          birth_summary: birthSummaryFromProfile(prof),
+          birth_year: pd.y, birth_month: pd.m, birth_day: pd.d,
+          birth_hour: pd.hh, birth_minute: pd.mm, birth_second: 0,
+          tz_offset: tzOffset, latitude: lat, longitude: lng,
+        };
+        const ac = new AbortController();
+        setTimeout(() => ac.abort(), 20000);
+        const retryResp = await fetch(`${base}/api/orders/log`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(retryBody),
+          signal: ac.signal,
+        });
+        if (retryResp && retryResp.ok) {
+          await orderRef.update({
+            astroseerRetryCount: retried + 1,
+            astroseerRetriedAt:
+              admin.firestore.FieldValue.serverTimestamp(),
+            lastFailReason:
+              astroStatus.error || 'AstroSeer reported failed.',
+          });
+          // Tell the client we are retrying so the polling UI
+          // can show the right copy.
+          return res.status(200).json({
+            ok: true,
+            orderId,
+            status: 'generating',
+            retryCount: retried + 1,
+            retried: true,
+            warning: 'Generation hiccup, auto-retrying...',
+            kind,
+          });
+        }
+      } catch (_) {
+        // Retry POST itself failed - fall through to refund below
+        // so the customer is never billed for a missing PDF.
+      }
+    }
+
+    // Already retried once (or retry POST itself failed). Atomic
+    // refund if this was a paid order that hadn't been marked
+    // failed_refunded yet.
     const chargedAmount = Number(o.amount || 0);
     try {
       if (chargedAmount > 0 && o.status !== 'failed_refunded') {
@@ -1406,7 +1486,8 @@ async function handleReportStatus(req, res) {
           tx.update(orderRef, {
             status: 'failed_refunded',
             failedAt: admin.firestore.FieldValue.serverTimestamp(),
-            failReason: astroStatus.error || 'AstroSeer reported failed.',
+            failReason: astroStatus.error
+              || 'AstroSeer reported failed after retry.',
           });
           const txRef = db.collection('transactions').doc();
           tx.set(txRef, {
@@ -1420,7 +1501,8 @@ async function handleReportStatus(req, res) {
         await orderRef.update({
           status: 'failed',
           failedAt: admin.firestore.FieldValue.serverTimestamp(),
-          failReason: astroStatus.error || 'AstroSeer reported failed.',
+          failReason: astroStatus.error
+            || 'AstroSeer reported failed after retry.',
         });
       }
     } catch (_) { /* refund retry is next poll's job */ }
@@ -1428,8 +1510,10 @@ async function handleReportStatus(req, res) {
       ok: false,
       orderId,
       status: chargedAmount > 0 ? 'failed_refunded' : 'failed',
-      error: astroStatus.error || 'Generation failed.',
+      error: astroStatus.error
+        || 'Generation failed after auto-retry.',
       refunded: chargedAmount > 0,
+      retried: retried >= 1,
       kind,
     });
   }
