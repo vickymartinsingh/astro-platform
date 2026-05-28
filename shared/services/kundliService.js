@@ -116,42 +116,78 @@ export async function requestReport({
   uid, kundliProfileId, kind, complimentary, senderNote, regenerate,
 }) {
   const url = kundliEndpoint();
-  // Hard 70s client timeout so the user sees a clean "timed out"
-  // error instead of the browser's generic "Failed to fetch" when
-  // the relay function exceeds Vercel's 60s cap.
+  // Two-attempt fetch with backoff so a transient browser-side
+  // network blip (Wi-Fi handoff, brief DNS resolver hiccup) does
+  // not surface as a hard error to the customer. First attempt
+  // 70s, retry attempt 30s (relay returns in <2s once warm).
+  async function doFetch(timeoutMs) {
+    const ac = (typeof AbortController !== 'undefined')
+      ? new AbortController() : null;
+    const tid = ac ? setTimeout(() => ac.abort(), timeoutMs) : null;
+    try {
+      return await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'report',
+          uid, kundliProfileId, kind: kind || 'free',
+          complimentary: !!complimentary,
+          senderNote: senderNote || '',
+          regenerate: !!regenerate,
+        }),
+        signal: ac ? ac.signal : undefined,
+        // Explicit credentials mode - some browser extensions
+        // (uBlock Origin, Brave Shield, corporate WPAD proxies)
+        // block POST with default credentials. Sending 'omit' is
+        // safe because the relay does not rely on cookies.
+        credentials: 'omit',
+        // Cache-bust so a stale cached error response from a
+        // previous timeout does not get served back.
+        cache: 'no-store',
+      });
+    } finally { if (tid) clearTimeout(tid); }
+  }
   let r;
-  const ac = (typeof AbortController !== 'undefined')
-    ? new AbortController() : null;
-  const tid = ac ? setTimeout(() => ac.abort(), 70000) : null;
+  let lastErr;
   try {
-    r = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'report',
-        uid, kundliProfileId, kind: kind || 'free',
-        complimentary: !!complimentary,
-        senderNote: senderNote || '',
-        regenerate: !!regenerate,
-      }),
-      signal: ac ? ac.signal : undefined,
-    });
+    r = await doFetch(70000);
   } catch (e) {
-    if (tid) clearTimeout(tid);
-    // Network-layer failure (Failed to fetch / abort / DNS) - turn
-    // it into a human error string the UI can show without confusing
-    // the customer with browser jargon.
+    lastErr = e;
+    // Retry once on a non-abort network failure. AbortError means
+    // we genuinely waited 70s for the relay, so retrying with
+    // another 30s would just waste another 30s.
     const isAbort = e && (e.name === 'AbortError' || /abort/i
       .test(String(e.message || '')));
+    if (!isAbort) {
+      try {
+        // Brief backoff so we don't hammer.
+        await new Promise((rs) => setTimeout(rs, 1500));
+        r = await doFetch(30000);
+        lastErr = null;
+      } catch (e2) { lastErr = e2; }
+    }
+  }
+  if (!r) {
+    const e = lastErr || new Error('unknown');
+    const isAbort = e.name === 'AbortError'
+      || /abort/i.test(String(e.message || ''));
+    // Surface the real underlying error so the customer (or admin
+    // looking at the screenshot) can see if it was a DNS issue, a
+    // browser-extension block, mixed-content, etc - not just a
+    // generic "could not reach" toast that tells us nothing.
+    const detail = String((e && e.message) || e || '')
+      .slice(0, 120);
     const err = new Error(isAbort
       ? 'Server timed out while preparing your report. The PDF '
         + 'service may be cold-starting - please retry in a minute.'
-      : 'Could not reach the report service. Check your internet '
-        + 'connection and try again.');
+      : `Could not reach the report service (${detail}). Hard-`
+        + 'refresh the page (Ctrl+Shift+R) or disable any ad / '
+        + 'privacy extension and try again.');
     err.code = 'network';
+    err.detail = detail;
+    err.url = url;
     throw err;
   }
-  if (tid) clearTimeout(tid);
   const j = await r.json().catch(() => ({}));
   if (!r.ok) {
     // Surface the relay's `detail` field too so the UI can show

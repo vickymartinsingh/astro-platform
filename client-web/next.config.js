@@ -17,4 +17,5 @@ const nextConfig = {
 // Deploy marker: 2026-05-27T13:00 - webhook stuck again at 2a9f8ca, force second redeploy.
 // Deploy marker: 2026-05-27T13:30 - user-requested redeploy.
 // Deploy marker: 2026-05-27T14:00 - re-push after quota reset, force fresh build.
+// Deploy marker: 2026-05-28 - resilient requestReport (1 auto-retry + diagnostic detail).
 module.exports = nextConfig;
