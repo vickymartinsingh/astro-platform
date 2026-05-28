@@ -8,5 +8,5 @@
   "functions": {
     "api/*.js": { "maxDuration": 60 }
   },
-  "_deployMarker": "2026-05-27T13:30 user-requested redeploy"
+  "_deployMarker": "2026-05-27T14:00 force redeploy - daily quota reset"
 }

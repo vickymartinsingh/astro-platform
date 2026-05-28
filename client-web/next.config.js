@@ -16,4 +16,5 @@ const nextConfig = {
 // Deploy marker: 2026-05-27 - force Vercel rebuild after webhook miss on c41c9d2.
 // Deploy marker: 2026-05-27T13:00 - webhook stuck again at 2a9f8ca, force second redeploy.
 // Deploy marker: 2026-05-27T13:30 - user-requested redeploy.
+// Deploy marker: 2026-05-27T14:00 - re-push after quota reset, force fresh build.
 module.exports = nextConfig;

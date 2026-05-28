@@ -12,4 +12,5 @@ const nextConfig = {
   ...(process.env.CAPACITOR === 'true'
     ? { output: 'export', trailingSlash: true } : {}),
 };
+// Deploy marker: 2026-05-27T14:00 - re-push after quota reset.
 module.exports = nextConfig;
