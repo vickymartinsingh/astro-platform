@@ -430,9 +430,29 @@ async function uploadPdf(uid, kind, buf) {
       resumable: false,
       validation: false,
     });
-    try { await file.makePublic(); } catch (_) { /* ignore */ }
-    const url = `https://firebasestorage.googleapis.com/v0/b/`
-      + `${bucket.name}/o/${encodeURIComponent(path)}?alt=media`;
+    // Try makePublic for the simple firebaseapp.com download URL.
+    // If the relay's service account lacks the storage.objects
+    // setIamPolicy permission, fall back to a 100-year signed URL
+    // which uses the service account's signBlob permission instead
+    // (much more commonly granted). Either way the customer's
+    // /orders re-download keeps working.
+    let url = null;
+    try {
+      await file.makePublic();
+      url = `https://firebasestorage.googleapis.com/v0/b/`
+        + `${bucket.name}/o/${encodeURIComponent(path)}?alt=media`;
+    } catch (_) {
+      try {
+        const [signed] = await file.getSignedUrl({
+          action: 'read',
+          expires: Date.now() + (100 * 365 * 24 * 60 * 60 * 1000),
+        });
+        url = signed;
+      } catch (e2) {
+        throw new Error('Could not produce a download URL: '
+          + ((e2 && e2.message) || e2));
+      }
+    }
     return {
       storagePath: path,
       bucketUsed: bucket.name,
