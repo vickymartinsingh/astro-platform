@@ -3348,43 +3348,47 @@ function ApiPdfHero({ kundli }) {
   // (30-60s).
   useEffect(() => { kundliService.wakeAstroSeer(); }, []);
 
-  // Fire-and-forget order placement. Customer clicks Buy / Generate,
-  // we POST to the relay which kicks off async generation, then we
-  // immediately show the OrderConfirmation modal with the SLA per
-  // report kind ("30 minutes to 4 hours" etc) and a link to /orders.
-  // No more in-page polling spinner. Customer either watches /orders
-  // (which auto-refreshes) or just waits for the email.
+  // OPTIMISTIC UI: confirmation modal opens INSTANTLY on click.
+  // We then fire the relay call in the background and update the
+  // modal with the real Order ID (or flip it to an error state)
+  // when the relay returns. No more "Placing..." wait state.
   const [confirmation, setConfirmation] = useState(null);
-  async function open() {
+  function open() {
     if (!kundli || !kundli.id || !kundli.userId) {
       setErr('Save a kundli profile first.'); return;
     }
-    setErr(''); setBusy(true);
-    setProgress('Placing your order...');
-    try {
-      const initial = await kundliService.requestReport({
-        uid: kundli.userId,
-        kundliProfileId: kundli.id,
-        kind: 'free',
-      });
-      // Fast path: relay served the cached PDF straight away. Skip
-      // the confirmation modal and open the PDF immediately.
+    setErr('');
+    // Step 1: open the modal NOW with pending order id so the
+    // customer sees instant feedback. Wallet status (if any) is
+    // unknown at this point - we are optimistic.
+    setConfirmation({ orderId: null, kind: 'free', pending: true });
+    // Step 2: kick off the relay request in the background.
+    kundliService.requestReport({
+      uid: kundli.userId,
+      kundliProfileId: kundli.id,
+      kind: 'free',
+    }).then((initial) => {
+      // Cache hit - close the order modal and open the PDF
+      // viewer directly. This is the only "non-optimistic" branch.
       if (initial && initial.ok && initial.pdfUrl) {
-        setResult(initial); setViewing(true); return;
+        setConfirmation(null);
+        setResult(initial); setViewing(true);
+        return;
       }
       if (!initial || !initial.orderId) {
-        throw new Error((initial && initial.error)
-          || 'Could not start generation.');
+        setConfirmation((c) => ({ ...(c || {}),
+          pending: false,
+          error: (initial && initial.error)
+            || 'Could not place the order.' }));
+        return;
       }
-      // Async path: order placed, relay started AstroSeer
-      // generation in the background. Show the confirmation modal.
-      setConfirmation({
-        orderId: initial.orderId,
-        kind: 'free',
-      });
-    } catch (e) {
-      setErr((e && e.message) || 'Could not place the order.');
-    } finally { setBusy(false); setProgress(''); }
+      setConfirmation({ orderId: initial.orderId,
+        kind: 'free', pending: false });
+    }).catch((e) => {
+      setConfirmation((c) => ({ ...(c || {}),
+        pending: false,
+        error: (e && e.message) || 'Could not place the order.' }));
+    });
   }
 
   function downloadNow() {
@@ -3442,6 +3446,9 @@ function ApiPdfHero({ kundli }) {
         <OrderConfirmationModal
           orderId={confirmation.orderId}
           kind={confirmation.kind}
+          pending={confirmation.pending}
+          error={confirmation.error}
+          walletShortfall={confirmation.walletShortfall}
           onClose={() => setConfirmation(null)} />
       )}
     </div>
@@ -3511,7 +3518,16 @@ function PdfViewerPopup({ url, name, onClose }) {
 // to /orders where the PDF will appear when ready. Replaces the
 // in-page polling spinner which made long-running paid reports
 // feel broken even though they were generating fine.
-function OrderConfirmationModal({ orderId, kind, onClose }) {
+// Three states this modal renders:
+//   - pending: relay request in flight, order id not yet known.
+//     Shows the SLA + a "Confirming with our system..." hint.
+//   - confirmed (orderId set): shows the real order id + "Check
+//     My Orders" CTA.
+//   - error: shows the failure reason inside the modal (so the
+//     customer is not left thinking the order succeeded when it
+//     actually hit insufficient_wallet or a network blip).
+function OrderConfirmationModal({ orderId, kind, pending, error,
+  walletShortfall, onClose }) {
   const t = reportType(kind || 'free');
   const sla = (t && t.sla) || '30 minutes to 4 hours';
   const label = (t && t.shortName)
@@ -3519,62 +3535,108 @@ function OrderConfirmationModal({ orderId, kind, onClose }) {
       : kind === 'careerFinance' ? 'Career Report'
         : kind === 'lifetime' ? 'Lifetime Report'
           : 'Vedic Kundli');
+  const isError = !!error;
   return (
     <div className="fixed inset-0 z-[2147483647] flex items-center
       justify-center bg-black/60 px-3 py-4"
       role="dialog" aria-modal="true">
       <div className="w-full max-w-md overflow-hidden rounded-2xl
         bg-white shadow-2xl">
-        {/* Header strip with the brand gradient + a confident
-            "order placed" message. */}
+        {/* Header strip - red on error, brand gradient otherwise. */}
         <div className="px-5 py-5 text-white"
-          style={{ background: 'linear-gradient(135deg, '
-            + '#D4A12A 0%, #B45309 50%, #7F2020 100%)' }}>
+          style={{ background: isError
+            ? 'linear-gradient(135deg, #C0392B 0%, #7F2020 100%)'
+            : 'linear-gradient(135deg, '
+              + '#D4A12A 0%, #B45309 50%, #7F2020 100%)' }}>
           <div className="text-[11px] font-bold uppercase
-            tracking-wide opacity-90">Order placed</div>
+            tracking-wide opacity-90">
+            {isError ? 'Order could not be placed'
+              : pending ? 'Placing order' : 'Order placed'}
+          </div>
           <div className="mt-1 text-xl font-bold">
-            Thank you, your {label} is on its way
+            {isError
+              ? `We could not place your ${label} order`
+              : `Thank you, your ${label} is on its way`}
           </div>
-          <div className="mt-2 text-[12px] leading-snug
-            opacity-95">
-            We have started generating your report. You will get an
-            email AND a download link in My Orders when it is ready.
-          </div>
-        </div>
-        {/* SLA box */}
-        <div className="border-b border-gray-100 px-5 py-4">
-          <div className="flex items-center gap-3">
-            <div className="grid h-10 w-10 shrink-0 place-items-center
-              rounded-full bg-primary/10 text-primary">
-              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none"
-                stroke="currentColor" strokeWidth="2">
-                <circle cx="12" cy="12" r="9" />
-                <path d="M12 7v5l3 2" />
-              </svg>
-            </div>
-            <div className="min-w-0">
-              <div className="text-[11px] font-bold uppercase
-                tracking-wide text-sub-text">
-                Expected delivery
-              </div>
-              <div className="text-base font-bold text-dark-text">
-                {sla}
-              </div>
-            </div>
-          </div>
-          {orderId && (
-            <div className="mt-3 rounded-card bg-bg-light px-3 py-2
-              text-[11px]">
-              <div className="text-sub-text">Order ID</div>
-              <div className="mt-0.5 font-mono break-all
-                text-dark-text">{orderId}</div>
+          {!isError && (
+            <div className="mt-2 text-[12px] leading-snug
+              opacity-95">
+              {pending
+                ? 'Confirming with our system... your report will '
+                  + 'start generating in a moment.'
+                : 'We have started generating your report. You will '
+                  + 'get an email AND a download link in My Orders '
+                  + 'when it is ready.'}
             </div>
           )}
-          <p className="mt-3 text-[12px] leading-snug text-sub-text">
-            You can close this window and continue using the app.
-            We will email you the moment the report is ready, and
-            the download link lives permanently in My Orders.
-          </p>
+        </div>
+        <div className="border-b border-gray-100 px-5 py-4">
+          {!isError && (
+            <>
+              <div className="flex items-center gap-3">
+                <div className="grid h-10 w-10 shrink-0
+                  place-items-center rounded-full bg-primary/10
+                  text-primary">
+                  <svg viewBox="0 0 24 24" className="h-5 w-5"
+                    fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 7v5l3 2" />
+                  </svg>
+                </div>
+                <div className="min-w-0">
+                  <div className="text-[11px] font-bold uppercase
+                    tracking-wide text-sub-text">
+                    Expected delivery
+                  </div>
+                  <div className="text-base font-bold text-dark-text">
+                    {sla}
+                  </div>
+                </div>
+              </div>
+              {orderId && (
+                <div className="mt-3 rounded-card bg-bg-light px-3
+                  py-2 text-[11px]">
+                  <div className="text-sub-text">Order ID</div>
+                  <div className="mt-0.5 font-mono break-all
+                    text-dark-text">{orderId}</div>
+                </div>
+              )}
+              {pending && !orderId && (
+                <div className="mt-3 rounded-card bg-bg-light px-3
+                  py-2 text-[11px] text-sub-text">
+                  Order ID will appear here once the system
+                  confirms your purchase.
+                </div>
+              )}
+              <p className="mt-3 text-[12px] leading-snug
+                text-sub-text">
+                You can close this window and continue using the
+                app. We will email you the moment the report is
+                ready, and the download link lives permanently in
+                My Orders.
+              </p>
+            </>
+          )}
+          {isError && (
+            <div className="rounded-card bg-danger/10 p-3
+              text-[12px] text-danger">
+              <div className="font-bold">What went wrong</div>
+              <div className="mt-1 break-all">{error}</div>
+              {walletShortfall && (
+                <div className="mt-3 rounded-card bg-white p-2">
+                  <div>Wallet balance:
+                    <b> ₹{walletShortfall.wallet || 0}</b></div>
+                  <div>Report price:
+                    <b> ₹{walletShortfall.price || 0}</b></div>
+                  <Link href="/wallet" onClick={onClose}
+                    className="mt-2 inline-block font-bold
+                      underline">
+                    Add money to wallet →
+                  </Link>
+                </div>
+              )}
+            </div>
+          )}
         </div>
         {/* CTAs */}
         <div className="flex gap-2 px-5 py-4">
@@ -3584,12 +3646,14 @@ function OrderConfirmationModal({ orderId, kind, onClose }) {
               transition hover:bg-bg-light">
             Close
           </button>
-          <Link href="/orders" onClick={onClose}
-            className="flex-1 rounded-full bg-primary py-2.5
-              text-center text-sm font-bold text-white shadow-sm
-              hover:brightness-95">
-            Check My Orders
-          </Link>
+          {!isError && (
+            <Link href="/orders" onClick={onClose}
+              className="flex-1 rounded-full bg-primary py-2.5
+                text-center text-sm font-bold text-white shadow-sm
+                hover:brightness-95">
+              Check My Orders
+            </Link>
+          )}
         </div>
       </div>
     </div>
@@ -3667,36 +3731,50 @@ function PremiumReportsTab({ kundli }) {
   // every 5s for up to 5 minutes. Long premium reports (lifetime,
   // careerFinance) take 60-90s on Render free tier, well past the
   // old 90s synchronous timeout.
-  // Fire-and-forget paid-report purchase. Customer clicks Buy →
-  // we POST to the relay (wallet debits, AstroSeer generation
-  // kicks off in the background) → we immediately show the
-  // OrderConfirmationModal with the SLA copy ("2 to 6 hours" /
-  // "12 to 24 hours" depending on kind) and a CTA to /orders.
-  // No more in-page polling spinner.
+  // OPTIMISTIC UI: confirmation modal opens INSTANTLY on click.
+  // No more "Charging..." wait. We fire the relay call in the
+  // background and update the modal with the real Order ID (or
+  // flip it to an error state - e.g. insufficient_wallet) the
+  // moment the relay returns. Customer's screen never blocks.
   const [confirmation, setConfirmation] = useState(null);
-  async function buy(kind) {
-    setError(null); setBusy(kind); setResult(null);
-    try {
-      if (!kundli || !kundli.id || !kundli.userId) {
-        throw new Error('Save a kundli profile first.');
-      }
-      const initial = await kundliService.requestReport({
-        uid: kundli.userId, kundliProfileId: kundli.id, kind,
-      });
-      // Fast path: cache hit, PDF already ready. Open the
-      // download popup as before.
+  function buy(kind) {
+    setError(null); setResult(null);
+    if (!kundli || !kundli.id || !kundli.userId) {
+      setError({ message: 'Save a kundli profile first.' });
+      return;
+    }
+    // Step 1: open modal immediately with pending order id.
+    setConfirmation({ orderId: null, kind, pending: true });
+    // Step 2: kick off relay in background.
+    kundliService.requestReport({
+      uid: kundli.userId, kundliProfileId: kundli.id, kind,
+    }).then((initial) => {
       if (initial && initial.ok && initial.pdfUrl) {
-        setResult(initial); return;
+        // Cache hit - close confirmation, open the existing
+        // DownloadPopup with the ready PDF.
+        setConfirmation(null);
+        setResult(initial);
+        return;
       }
       if (!initial || !initial.orderId) {
-        throw new Error((initial && initial.error)
-          || 'Could not place the order.');
+        setConfirmation((c) => ({ ...(c || {}),
+          pending: false,
+          error: (initial && initial.error)
+            || 'Could not place the order.' }));
+        return;
       }
-      // Order placed. Show the confirmation modal with the
-      // delivery SLA for this report kind.
-      setConfirmation({ orderId: initial.orderId, kind });
-    } catch (e) { setError(e); }
-    finally { setBusy(''); }
+      setConfirmation({ orderId: initial.orderId, kind,
+        pending: false });
+    }).catch((e) => {
+      // insufficient_wallet errors carry a wallet/price field.
+      // Show them inline in the confirmation modal so the
+      // customer knows wallet ran out before generation started.
+      setConfirmation((c) => ({ ...(c || {}),
+        pending: false,
+        error: (e && e.message) || 'Could not place the order.',
+        walletShortfall: e && e.code === 'insufficient_wallet'
+          ? { wallet: e.wallet, price: e.price } : null }));
+    });
   }
 
   // Pre-warm the AstroSeer dyno so the user's click goes against a
@@ -3766,14 +3844,12 @@ function PremiumReportsTab({ kundli }) {
         })}
       </div>
 
-      {busy && (
-        <div className="mt-3 rounded-card bg-bg-light p-3 text-xs
-          text-primary">
-          Placing your order...
-        </div>
-      )}
-
-      {error && (
+      {/* Error / busy state is now surfaced INSIDE the confirmation
+          modal which opens optimistically; no inline strip needed
+          here. The outer `error` state is kept only for top-of-
+          page wallet shortfall messaging if the modal was closed
+          before the relay finished. */}
+      {error && !confirmation && (
         <div className="mt-3 rounded-card bg-danger/10 p-3 text-xs
           text-danger">
           {error.code === 'insufficient_wallet' ? (
@@ -3795,6 +3871,9 @@ function PremiumReportsTab({ kundli }) {
         <OrderConfirmationModal
           orderId={confirmation.orderId}
           kind={confirmation.kind}
+          pending={confirmation.pending}
+          error={confirmation.error}
+          walletShortfall={confirmation.walletShortfall}
           onClose={() => setConfirmation(null)} />
       )}
 
