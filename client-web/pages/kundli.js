@@ -3388,9 +3388,11 @@ function ApiPdfHero({ kundli }) {
   // 'failed' = AstroSeer rejected. Polled via Firestore onSnapshot
   // so the customer sees the state flip live.
   const [autoGen, setAutoGen] = useState({ status: null });
-  // Inline email send state for the "Send via email" button.
-  const [emailing, setEmailing] = useState(false);
-  const [emailMsg, setEmailMsg] = useState('');
+  // (Send-via-email button was removed 2026-05-28 - per user
+  // requirement the Free Report card carries ONLY View + Download.
+  // Email delivery for paid reports happens automatically when the
+  // relay finishes generating; auto-generated free reports never
+  // auto-email.)
 
   // Pre-warm the AstroSeer Render dyno on mount so the customer's
   // click goes against a hot dyno (5-15s) instead of a cold one
@@ -3524,10 +3526,33 @@ function ApiPdfHero({ kundli }) {
     });
   }
 
+  // Download path:
+  //   - If the auto-gen PDF is already ready in storage (autoGen
+  //     listener has populated url+name), trigger the in-app
+  //     download immediately - no relay round-trip.
+  //   - If a viewer was opened earlier this session, re-use that
+  //     cached result.
+  //   - Otherwise (PDF still generating in the background), surface
+  //     the friendly "kundli is being generated" popup instead of
+  //     silently doing nothing.
   function downloadNow() {
-    if (!result || !result.pdfUrl) { open(); return; }
-    kundliService.downloadPdfFromUrl(result.pdfUrl,
-      result.pdfName || 'AstroSeer-Kundli.pdf');
+    if (autoGen.status === 'ready' && autoGen.url) {
+      kundliService.downloadPdfFromUrl(autoGen.url,
+        autoGen.name || 'AstroSeer-Kundli.pdf');
+      return;
+    }
+    if (result && result.pdfUrl) {
+      kundliService.downloadPdfFromUrl(result.pdfUrl,
+        result.pdfName || 'AstroSeer-Kundli.pdf');
+      return;
+    }
+    if (autoGen.status === 'generating') {
+      setInFlightPopup(true);
+      return;
+    }
+    // No PDF cached yet AND no auto-gen on the way - fall through
+    // to the regular order-placement flow which will kick one off.
+    open();
   }
 
   return (
@@ -3545,63 +3570,31 @@ function ApiPdfHero({ kundli }) {
           </p>
         </div>
       </div>
+      {/* Strictly two CTAs on the free report card:
+            VIEW PDF      -> opens an in-app PDF viewer popup if the
+                             auto-generated PDF is ready; otherwise
+                             shows the "kundli is being generated"
+                             friendly popup with the wait copy.
+            DOWNLOAD PDF  -> triggers an in-app download if ready;
+                             otherwise shows the same "still
+                             generating" popup so the customer never
+                             clicks an empty action.
+          The buttons are always labelled "View PDF" / "Download PDF"
+          - we never show a "Check status" / "Re-open PDF" string per
+          user requirement 2026-05-28 (the click handler decides what
+          to do at the moment of the tap based on autoGen.status). */}
       <div className="mt-3 flex flex-wrap gap-2">
         <button type="button" onClick={open} disabled={busy}
           className="rounded-full bg-primary px-4 py-2 text-xs
             font-bold text-white disabled:opacity-60">
-          {busy ? 'Opening...' : (result ? 'Re-open PDF'
-            : (autoGen.status === 'ready' ? 'View PDF'
-              : (autoGen.status === 'generating'
-                ? 'Check status' : 'View PDF')))}
+          {busy ? 'Opening...' : 'View PDF'}
         </button>
         <button type="button" onClick={downloadNow} disabled={busy}
           className="rounded-full border border-primary px-4 py-2
             text-xs font-bold text-primary disabled:opacity-60">
           Download PDF
         </button>
-        {/* Send via email - only meaningful when a ready PDF
-            exists. Auto-generated PDFs do NOT email by default
-            (per user requirement 2026-05-28), so this button is
-            the customer's opt-in to get a copy in their inbox. */}
-        {autoGen.status === 'ready' && autoGen.order && (
-          <button type="button" disabled={emailing}
-            onClick={async () => {
-              setEmailMsg(''); setEmailing(true);
-              try {
-                const r = await kundliService.requestReport({
-                  uid: kundli.userId,
-                  kundliProfileId: kundli.id,
-                  kind: 'free',
-                  // email:true triggers the relay's cache-hit
-                  // email path - re-uses the cached PDF, no new
-                  // AstroSeer call, just an SMTP send.
-                  email: true,
-                });
-                if (r && r.emailed) {
-                  setEmailMsg('Sent. Check your inbox.');
-                } else {
-                  setEmailMsg(r && (r.emailError || r.error)
-                    || 'Email did not go through. Check SMTP '
-                      + 'settings or try again in a moment.');
-                }
-              } catch (e) {
-                setEmailMsg((e && e.message)
-                  || 'Email send failed.');
-              } finally { setEmailing(false);
-                setTimeout(() => setEmailMsg(''), 6000); }
-            }}
-            className="rounded-full border border-accent px-4 py-2
-              text-xs font-bold text-accent disabled:opacity-60">
-            {emailing ? 'Sending...' : 'Send via email'}
-          </button>
-        )}
       </div>
-      {emailMsg && (
-        <div className="mt-2 rounded-card bg-bg-light px-3 py-2
-          text-[11px] text-primary">
-          {emailMsg}
-        </div>
-      )}
       {progress && busy && (
         <div className="mt-2 rounded-card bg-bg-light px-3 py-2
           text-[11px] text-primary">

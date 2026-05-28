@@ -872,6 +872,35 @@ async function handleReport(req, res) {
         const realUrl = prepaid.pdfBase64
           ? `data:application/pdf;base64,${prepaid.pdfBase64}`
           : prepaid.pdfUrl;
+        // Per user requirement 2026-05-28: paid kundlis MUST email
+        // the customer when they're delivered. The prepaid pipeline
+        // skipped email at generation time (PDF was free at that
+        // point; emailing would have leaked it). Now that the
+        // customer has actually paid by claiming, fire the same
+        // SMTP send the fresh-generate path uses. Fire-and-forget so
+        // a slow SMTP doesn't delay the PDF response back to the
+        // customer (they get the viewer instantly).
+        (async () => {
+          try {
+            let pdfBufClaim = null;
+            if (prepaid.pdfBase64) {
+              try { pdfBufClaim = Buffer.from(
+                prepaid.pdfBase64, 'base64'); } catch (_) { /* */ }
+            }
+            const uSnap2 = await db.collection('users').doc(uid).get();
+            const u2 = (uSnap2.exists ? uSnap2.data() : null) || {};
+            const toEmail = u2.email || '';
+            if (toEmail) {
+              await emailReport({
+                db, toEmail, name: u2.name || profile.name || '',
+                kind, pdfBuf: pdfBufClaim || Buffer.alloc(0),
+                pdfName: prepaid.pdfName || 'AstroSeer-Kundli.pdf',
+                complimentary: false,
+                senderNote: '',
+              });
+            }
+          } catch (_) { /* never block the claim response */ }
+        })();
         return res.status(200).json({
           ok: true,
           orderId: prepaid.id,
