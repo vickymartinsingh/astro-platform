@@ -10,6 +10,7 @@ import * as auditService from '@astro/shared/services/auditService.js';
 import { useRouter } from 'next/router';
 import '../styles/globals.css';
 import { AuthProvider, useAuth } from '../lib/useAuth';
+import { useOrderSyncer } from '../lib/useOrderSyncer';
 import { I18nProvider } from '../lib/i18n';
 import { AuthModalProvider } from '../lib/authModal';
 import { KundliGateProvider } from '../lib/kundliGate';
@@ -39,6 +40,12 @@ const ConfirmModalHost = dynamic(
 function WithProviders({ children }) {
   const { user, profile } = useAuth();
   useNativeBack();
+  // Background order syncer - runs on every customer-app page
+  // for signed-in users. Fires the relay's sweepPending sweep
+  // every 60s so any *_generating order in Firestore catches up
+  // with AstroSeer's actual SENT status without the customer
+  // needing to land on /orders specifically.
+  useOrderSyncer({ enabled: !!user });
   return (
     <I18nProvider profile={profile} uid={user?.uid}>
       <AuthModalProvider>

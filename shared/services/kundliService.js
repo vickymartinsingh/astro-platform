@@ -68,6 +68,26 @@ export async function wakeAstroSeer() {
   } catch (_) { /* swallow */ }
 }
 
+// Server-side sweep: tells the relay to walk every *_generating
+// order across all customers, poll AstroSeer's status endpoint
+// for each, and flip our Firestore docs to 'ready' (+ fetch PDF
+// + email customer) once AstroSeer reports the job done.
+// Fire-and-forget from the customer side - the relay does all
+// the heavy lifting. Returns the summary { ok, checked, ready,
+// failed, stillGenerating } for callers that care.
+export async function triggerSweepPending() {
+  try {
+    const url = kundliEndpoint();
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'sweepPending' }),
+      keepalive: true,
+    });
+    return r.json().catch(() => ({ ok: false }));
+  } catch (_) { return { ok: false }; }
+}
+
 // Poll the relay's reportStatus action. The relay handles the
 // AstroSeer round-trip, the PDF upload to storage on first 'sent',
 // and the email. Returns the same shape regardless of where the

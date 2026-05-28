@@ -1,0 +1,49 @@
+import { useEffect } from 'react';
+import { kundliService } from '@astro/shared';
+
+// Background sync trigger mounted by _app.js so it runs on every
+// customer-facing page. Fires the relay's action:'sweepPending'
+// endpoint, which walks every *_generating order across all
+// customers, polls AstroSeer's status endpoint for each, and
+// flips Firestore status:'ready' (+ fetches PDF + emails the
+// customer) as soon as AstroSeer reports the job done.
+//
+// Why mount globally instead of only on /orders?
+//
+//   - Customer might be on /kundli or /discover when their report
+//     finishes generating. Without a global trigger they would not
+//     see the "Ready" state until they navigate to /orders or wait
+//     for the next manual visit.
+//
+//   - Each sweep is cheap (one collectionGroup query + a few
+//     AstroSeer pings + Firestore writes) and batched at 50 per
+//     call so we never blow Vercel's 60s function cap.
+//
+//   - For full 24/7 automation independent of any customer being
+//     in the app, the user should also point an external cron
+//     service (cron-job.org, EasyCron) at the same endpoint.
+//
+// Schedule:
+//   - Fire ONCE 3s after mount so we don't pile onto the initial
+//     page-render network burst.
+//   - Then every 60s while the app stays open.
+//
+// This is purely background. Errors are swallowed.
+export function useOrderSyncer({ enabled = true } = {}) {
+  useEffect(() => {
+    if (!enabled) return undefined;
+    if (typeof window === 'undefined') return undefined;
+    let alive = true;
+    const tick = () => {
+      if (!alive) return;
+      kundliService.triggerSweepPending().catch(() => { /* */ });
+    };
+    const t1 = setTimeout(tick, 3000);
+    const t2 = setInterval(tick, 60000);
+    return () => {
+      alive = false;
+      clearTimeout(t1);
+      clearInterval(t2);
+    };
+  }, [enabled]);
+}

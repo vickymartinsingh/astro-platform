@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { kundliService } from '@astro/shared';
+import { kundliService, db } from '@astro/shared';
+import {
+  collection, query, orderBy, onSnapshot,
+} from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { useRequireClient } from '../lib/useAuth';
 
@@ -9,16 +12,32 @@ import { useRequireClient } from '../lib/useAuth';
 // Storage URL stored on each order doc; we never re-hit the relay
 // for repeats, so this page is essentially free.
 //
-// Mirrors the data the /kundli "Orders" tab will read once #69 lands.
+// LIVE UPDATES: the page subscribes to users/{uid}/orders with
+// Firestore onSnapshot, so the moment the relay's sweep writes
+// status:'ready' to an order doc the customer's UI flips from
+// "Generating..." to "Ready" + the Download button appears - no
+// refresh, no polling. The relay sweep is itself fired by:
+//   - useOrderSyncer (mounted in _app.js) on every page load + 60s
+//   - The customer's own /orders polling effect below
+//   - The admin Report Activity page on mount + every 30s
+//   - Any external cron service pointed at action:'sweepPending'
+// So at least one trigger is ALWAYS active for any signed-in user.
 export default function Orders() {
   const { user, loading } = useRequireClient();
   const [rows, setRows] = useState(null);
 
   useEffect(() => {
-    if (!user) return;
-    kundliService.listOrders(user.uid)
-      .then(setRows)
-      .catch(() => setRows([]));
+    if (!user) return undefined;
+    // Live subscription instead of a one-shot listOrders fetch.
+    // Sorted by paidAt desc so the newest order is on top.
+    const q = query(
+      collection(db, 'users', user.uid, 'orders'),
+      orderBy('paidAt', 'desc'),
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      setRows(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    }, () => setRows([]));
+    return () => unsub();
   }, [user]);
 
   // BACKGROUND POLLING: any order in *_generating gets its
