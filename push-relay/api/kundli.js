@@ -705,6 +705,13 @@ module.exports = async (req, res) => {
   if (src.action === 'sweepPending') {
     return reportMod().handleSweepPending(req, res);
   }
+  // AstroSeer pushes here the moment a job flips to status:'sent' (or
+  // 'failed'). The relay then fetches the PDF, uploads to Firebase
+  // Storage, and flips the corresponding Firestore order doc to
+  // 'ready'. Authenticated by shared secret header.
+  if (src.action === 'webhookComplete' && req.method === 'POST') {
+    return reportMod().handleWebhookComplete(req, res);
+  }
 
   // GET ?probe=1 -> just report which provider would be used and
   // whether the relay can read Firestore. Lets admin verify the chain

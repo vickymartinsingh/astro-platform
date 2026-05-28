@@ -2037,31 +2037,32 @@ async function handleSweepPending(req, res) {
       error: String((e && e.message) || e) });
   }
   const db = admin.firestore();
-  // collectionGroup query, same shape as listAllOrdersAdmin in
-  // shared/services/kundliService.js (orderBy paidAt desc, no
-  // where clause). Switched away from where('status','in', [...])
-  // on 2026-05-28 because that variant requires an explicit
-  // collection-group index on `status` which is NOT auto-created
-  // by Firestore. orderBy('paidAt') uses the SAME index admin's
-  // existing /admin-orders list query already triggered, so this
-  // sweep works on first call with no manual Firebase setup.
+  // collectionGroup query. Every creation path (free / paid /
+  // prepaid / regenerate) explicitly sets paidAt = serverTimestamp(),
+  // so orderBy('paidAt') catches every pending order regardless
+  // of payment state. The 'paidAt' field is somewhat misnamed for
+  // free orders but it works as the universal "created at" timestamp.
   //
-  // Status filter happens in-memory after fetching. We pull the
-  // 200 most-recent orders, filter for *_generating status, then
-  // process up to 50 per call. So a fresh pending order placed
-  // in the last few minutes will always be caught on the next
-  // sweep tick.
+  // Status filter (in-memory after fetching) now catches ALL of:
+  //   paid_generating       customer paid, waiting for PDF
+  //   free_generating       free auto-gen still running
+  //   prepaid_generating    pre-paid pipeline still running
+  //   failed                AstroSeer transient failure - rescue
+  //   failed_refunded       relay refunded too early - rescue
+  //   ANY status w/ kickoffPending:true   initial POST aborted
+  //
+  // The handleReportStatus delegate handles each state correctly:
+  //  - *_generating: polls AstroSeer status, fetches PDF on 'sent'
+  //  - failed*: same rescue path (delivers PDF as goodwill, keeps
+  //    refund in place if any)
+  //  - kickoffPending: re-POSTs /api/orders/log to wake the API
   let snap;
   try {
     snap = await db.collectionGroup('orders')
       .orderBy('paidAt', 'desc')
-      .limit(200)
+      .limit(300)
       .get();
   } catch (e) {
-    // Index not yet built or other Firestore error - surface
-    // the actual reason so the admin user can act on it (the
-    // error message includes a Firebase Console URL to create
-    // the missing index).
     return res.status(500).json({
       error: 'collectionGroup query failed',
       detail: (e && e.message) || String(e),
@@ -2069,8 +2070,15 @@ async function handleSweepPending(req, res) {
   }
   const pending = snap.docs.filter((d) => {
     const o = d.data() || {};
+    if (o.kickoffPending) return true;
+    // Don't re-attempt already-rescued orders.
+    if (o.status === 'ready' || o.status === 'ready_rescued'
+      || o.status === 'prepaid') return false;
     return o.status === 'paid_generating'
-      || o.status === 'free_generating';
+      || o.status === 'free_generating'
+      || o.status === 'prepaid_generating'
+      || o.status === 'failed'
+      || o.status === 'failed_refunded';
   }).slice(0, 50);
   if (pending.length === 0) {
     return res.status(200).json({
@@ -2130,10 +2138,86 @@ async function handleSweepPending(req, res) {
   return res.status(200).json(summary);
 }
 
+// ====================================================================
+// WEBHOOK from AstroSeer API.
+// Fires when an order on the API side flips to 'sent' or 'failed'.
+// Body: { order_id, status, bytes_out, pdf_url, error, customer_uid,
+//         report_type }
+// Header: X-Webhook-Secret must match env VERCEL_WEBHOOK_SECRET.
+// This lets the API push status changes to us instantly instead of us
+// polling every 60s. Falls back to delegating to handleReportStatus so
+// we reuse the exact same PDF fetch + upload + email + Firestore flip
+// logic the sweep + customer-side polling use.
+// ====================================================================
+async function handleWebhookComplete(req, res) {
+  try { init(); } catch (e) {
+    return res.status(503).json({
+      error: String((e && e.message) || e) });
+  }
+  // Validate shared secret. Belt-and-braces: also accept it as a query
+  // param so the API can send a plain ?secret=... URL when shipping
+  // through middleware that strips custom headers.
+  const expected = String(process.env.VERCEL_WEBHOOK_SECRET || '').trim();
+  const got = String(
+    (req.headers['x-webhook-secret']
+      || req.headers['X-Webhook-Secret']
+      || (req.query && req.query.secret)
+      || '').toString()).trim();
+  if (!expected || expected !== got) {
+    return res.status(401).json({ error: 'invalid webhook secret' });
+  }
+  const body = readBody(req);
+  const orderId = String(body.order_id || body.orderId || '').trim();
+  const customerUid = String(body.customer_uid
+    || body.customerUid || '').trim();
+  const status = String(body.status || '').trim();
+  if (!orderId || !customerUid) {
+    return res.status(400).json({
+      error: 'order_id and customer_uid required' });
+  }
+  if (status !== 'sent' && status !== 'failed') {
+    return res.status(400).json({
+      error: `unsupported status '${status}'` });
+  }
+  // Delegate to handleReportStatus. It will:
+  //   - find users/{uid}/orders/{orderId}
+  //   - poll AstroSeer status (it will now see 'sent' immediately)
+  //   - fetch PDF + upload to storage + flip Firestore to 'ready'
+  //   - email the customer if not auto-generated / prepaid
+  // We synthesise the same fakeReq/fakeRes shim handleSweepPending
+  // uses so all the logic lives in one place.
+  const captured = await new Promise((resolve) => {
+    const fakeReq = { method: 'POST',
+      body: { orderId, uid: customerUid } };
+    let payload = null;
+    const fakeRes = {
+      _code: 200,
+      status(c) { this._code = c; return this; },
+      json(d) { payload = { code: this._code, data: d };
+        resolve(payload); return this; },
+      setHeader() { /* */ },
+      end() { resolve(payload); },
+    };
+    handleReportStatus(fakeReq, fakeRes).catch((e) => {
+      resolve({ code: 500, data: { error: String(e.message || e) } });
+    });
+  });
+  const finalStatus = (captured && captured.data
+    && captured.data.status) || 'unknown';
+  return res.status(200).json({
+    ok: true,
+    orderId,
+    finalStatus,
+    delegateCode: captured ? captured.code : null,
+    delegateData: captured ? captured.data : null,
+  });
+}
+
 module.exports = {
   handleReport,
   handleReportStatus,
   handleReportPdf,
   handleWake,
   handleSweepPending,
+  handleWebhookComplete,
 };
