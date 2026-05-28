@@ -766,7 +766,7 @@ module.exports = async (req, res) => {
       // Build marker - bumped on every deploy so admin can verify
       // exactly which relay version is live (especially when chasing
       // a stuck Vercel build).
-      relayBuild: 'async-nonaborting-v4-2026-05-28',
+      relayBuild: 'firebase-storage-tier-2026-05-28T17:36',
       provider: pc.provider,
       adminInit: pc.adminInit,
       hasKey: !!(pc.creds && (pc.creds.key || pc.creds.secret))
