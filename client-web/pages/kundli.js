@@ -3348,44 +3348,56 @@ function ApiPdfHero({ kundli }) {
   // (30-60s).
   useEffect(() => { kundliService.wakeAstroSeer(); }, []);
 
-  // OPTIMISTIC UI: confirmation modal opens INSTANTLY on click.
-  // We then fire the relay call in the background and update the
-  // modal with the real Order ID (or flip it to an error state)
-  // when the relay returns. No more "Placing..." wait state.
+  // OPTIMISTIC UI: confirmation modal opens INSTANTLY on click in
+  // 'pending' state. Two things then race:
+  //   1. The relay call (usually 200ms-2s)
+  //   2. A small minimum-display floor (~1800ms randomised)
+  // We only flip the modal to 'confirmed' (or 'error') once BOTH
+  // have completed. So even on a fast relay the customer sees the
+  // brief "Placing your order..." beat first, then the order ID
+  // populates - feels less jarring than an instant pop.
   const [confirmation, setConfirmation] = useState(null);
   function open() {
     if (!kundli || !kundli.id || !kundli.userId) {
       setErr('Save a kundli profile first.'); return;
     }
     setErr('');
-    // Step 1: open the modal NOW with pending order id so the
-    // customer sees instant feedback. Wallet status (if any) is
-    // unknown at this point - we are optimistic.
     setConfirmation({ orderId: null, kind: 'free', pending: true });
-    // Step 2: kick off the relay request in the background.
+    const startMs = Date.now();
+    // Random 1.5-2.8s floor so the pending state feels like a
+    // real processing beat, not a flicker.
+    const minDelayMs = 1500 + Math.floor(Math.random() * 1300);
+    const settle = (updater) => {
+      const elapsed = Date.now() - startMs;
+      const wait = Math.max(0, minDelayMs - elapsed);
+      setTimeout(() => setConfirmation((c) => updater(c)), wait);
+    };
     kundliService.requestReport({
       uid: kundli.userId,
       kundliProfileId: kundli.id,
       kind: 'free',
     }).then((initial) => {
-      // Cache hit - close the order modal and open the PDF
-      // viewer directly. This is the only "non-optimistic" branch.
+      // Cache hit - the existing PDF is ready. Close the
+      // confirmation modal AFTER the same min-display floor and
+      // open the PDF viewer.
       if (initial && initial.ok && initial.pdfUrl) {
-        setConfirmation(null);
-        setResult(initial); setViewing(true);
+        settle(() => null);
+        setTimeout(() => {
+          setResult(initial); setViewing(true);
+        }, Math.max(0, minDelayMs - (Date.now() - startMs)));
         return;
       }
       if (!initial || !initial.orderId) {
-        setConfirmation((c) => ({ ...(c || {}),
+        settle((c) => ({ ...(c || {}),
           pending: false,
           error: (initial && initial.error)
             || 'Could not place the order.' }));
         return;
       }
-      setConfirmation({ orderId: initial.orderId,
-        kind: 'free', pending: false });
+      settle(() => ({ orderId: initial.orderId,
+        kind: 'free', pending: false }));
     }).catch((e) => {
-      setConfirmation((c) => ({ ...(c || {}),
+      settle((c) => ({ ...(c || {}),
         pending: false,
         error: (e && e.message) || 'Could not place the order.' }));
     });
@@ -3731,11 +3743,9 @@ function PremiumReportsTab({ kundli }) {
   // every 5s for up to 5 minutes. Long premium reports (lifetime,
   // careerFinance) take 60-90s on Render free tier, well past the
   // old 90s synchronous timeout.
-  // OPTIMISTIC UI: confirmation modal opens INSTANTLY on click.
-  // No more "Charging..." wait. We fire the relay call in the
-  // background and update the modal with the real Order ID (or
-  // flip it to an error state - e.g. insufficient_wallet) the
-  // moment the relay returns. Customer's screen never blocks.
+  // OPTIMISTIC UI with a 1.5-2.8s minimum-display floor so the
+  // 'Placing order' state always feels like a real processing
+  // beat. Same pattern as ApiPdfHero.open() above.
   const [confirmation, setConfirmation] = useState(null);
   function buy(kind) {
     setError(null); setResult(null);
@@ -3743,33 +3753,34 @@ function PremiumReportsTab({ kundli }) {
       setError({ message: 'Save a kundli profile first.' });
       return;
     }
-    // Step 1: open modal immediately with pending order id.
     setConfirmation({ orderId: null, kind, pending: true });
-    // Step 2: kick off relay in background.
+    const startMs = Date.now();
+    const minDelayMs = 1500 + Math.floor(Math.random() * 1300);
+    const settle = (updater) => {
+      const elapsed = Date.now() - startMs;
+      const wait = Math.max(0, minDelayMs - elapsed);
+      setTimeout(() => setConfirmation((c) => updater(c)), wait);
+    };
     kundliService.requestReport({
       uid: kundli.userId, kundliProfileId: kundli.id, kind,
     }).then((initial) => {
       if (initial && initial.ok && initial.pdfUrl) {
-        // Cache hit - close confirmation, open the existing
-        // DownloadPopup with the ready PDF.
-        setConfirmation(null);
-        setResult(initial);
+        settle(() => null);
+        setTimeout(() => setResult(initial),
+          Math.max(0, minDelayMs - (Date.now() - startMs)));
         return;
       }
       if (!initial || !initial.orderId) {
-        setConfirmation((c) => ({ ...(c || {}),
+        settle((c) => ({ ...(c || {}),
           pending: false,
           error: (initial && initial.error)
             || 'Could not place the order.' }));
         return;
       }
-      setConfirmation({ orderId: initial.orderId, kind,
-        pending: false });
+      settle(() => ({ orderId: initial.orderId, kind,
+        pending: false }));
     }).catch((e) => {
-      // insufficient_wallet errors carry a wallet/price field.
-      // Show them inline in the confirmation modal so the
-      // customer knows wallet ran out before generation started.
-      setConfirmation((c) => ({ ...(c || {}),
+      settle((c) => ({ ...(c || {}),
         pending: false,
         error: (e && e.message) || 'Could not place the order.',
         walletShortfall: e && e.code === 'insufficient_wallet'

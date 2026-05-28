@@ -46,40 +46,42 @@ function init() {
   });
 }
 
-// Mint a unique 8-digit numeric Order ID via an atomic counter
-// at counters/orderNumber. First call ever returns "10000000",
-// then "10000001", and so on - guaranteed monotonic + unique by
-// the transaction. Strings are returned so they slot in as a
-// Firestore document id without any further encoding.
+// Mint a unique RANDOM 8-digit numeric Order ID. Each candidate
+// (between 10000000 and 99999999, ~90 million space) is reserved
+// atomically by trying to write to orderNumbers/{candidate} inside
+// a Firestore transaction. If the doc already exists (collision)
+// we generate another candidate. With ~thousands of orders in a
+// 90 million space the birthday-paradox collision probability per
+// attempt is microscopic, so 6 attempts is plenty of headroom.
 //
-// On transaction failure (e.g. counter doc temporarily
-// unreachable), falls back to a long auto-generated id so the
-// customer's purchase is never blocked by counter problems.
-// Returned id is ALWAYS exactly 8 digits when the counter path
-// succeeded; longer when we fell back.
+// User asked for "unique randomised 8 digit numbers" - sequential
+// counters leak how many orders we have processed; random ids are
+// harder to guess + look more like real order numbers.
+//
+// Falls back to a Firestore auto-id (longer alphanumeric) only if
+// all 6 attempts somehow collide, so a customer purchase is never
+// blocked by id minting.
 async function mintOrderId(db) {
-  try {
-    const counterRef = db.collection('counters').doc('orderNumber');
-    const next = await db.runTransaction(async (tx) => {
-      const snap = await tx.get(counterRef);
-      const cur = snap.exists ? Number(snap.data().value || 0) : 0;
-      const n = cur < 10000000 ? 10000000 : cur + 1;
-      if (n > 99999999) {
-        // Highly unlikely (90 million orders) - but if we ever
-        // get there, fall through to the catch path which uses
-        // the long auto id.
-        throw new Error('order counter overflow');
-      }
-      tx.set(counterRef, {
-        value: n,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-      }, { merge: true });
-      return n;
-    });
-    return String(next);
-  } catch (_) {
-    return db.collection('_tmp').doc().id;
+  const reg = db.collection('orderNumbers');
+  for (let i = 0; i < 6; i += 1) {
+    // 10000000 + 0..89999999 covers exactly the 8-digit range.
+    const candidate = String(10000000
+      + Math.floor(Math.random() * 90000000));
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const id = await db.runTransaction(async (tx) => {
+        const ref = reg.doc(candidate);
+        const snap = await tx.get(ref);
+        if (snap.exists) return null;     // collision, retry
+        tx.set(ref, {
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        return candidate;
+      });
+      if (id) return id;
+    } catch (_) { /* retry */ }
   }
+  return db.collection('_tmp').doc().id;
 }
 
 // Resolve the Firebase Storage bucket name. Source-of-truth order:

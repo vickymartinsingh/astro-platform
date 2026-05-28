@@ -97,10 +97,18 @@ export default function Discover() {
       return;
     }
     // Step 1: open the SuccessModal IMMEDIATELY in pending state
-    // and close the FeatureDetail card so the customer sees the
-    // confirmation pop right away.
+    // and close the FeatureDetail card. 1.5-2.8s minimum-display
+    // floor so the pending beat always feels like real processing
+    // instead of a flicker - even on a sub-second relay round trip.
     setActiveId('');
     setDone({ feature, result: { pending: true } });
+    const startMs = Date.now();
+    const minDelayMs = 1500 + Math.floor(Math.random() * 1300);
+    const settle = (fn) => {
+      const elapsed = Date.now() - startMs;
+      const wait = Math.max(0, minDelayMs - elapsed);
+      setTimeout(fn, wait);
+    };
     // Step 2: fire the relay request in the background. No await.
     (async () => {
       try {
@@ -108,32 +116,28 @@ export default function Discover() {
           .getKundliProfiles(user.uid).catch(() => []);
         const def = profiles.find((p) => p.isDefault) || profiles[0];
         if (!def) {
-          setDone(null);
-          setError('Save a kundli profile first under the Kundli '
-            + 'tab.');
+          settle(() => { setDone(null);
+            setError('Save a kundli profile first under the Kundli '
+              + 'tab.'); });
           return;
         }
         const result = await kundliService.requestReport({
           uid: user.uid, kundliProfileId: def.id, kind,
         });
-        // Update the modal with the real result (orderId for
-        // async, or pdfUrl for a cache hit).
-        setDone({ feature, result: { ...result, pending: false } });
+        // Update the modal with the real result after the floor.
+        settle(() => setDone({ feature,
+          result: { ...result, pending: false } }));
       } catch (e) {
         const msg = e && e.message ? e.message : 'Could not process.';
-        // Insufficient wallet -> close SuccessModal + pop the
-        // recharge modal so the customer can top up.
         if (/insufficient/i.test(msg) || (e && e.code
           === 'insufficient_wallet')) {
-          setDone(null);
-          setRecharge({ feature, need: featurePrice(feature, cfg),
-            price: featurePrice(feature, cfg),
-            walletAt: Number(wallet || 0) });
+          settle(() => { setDone(null);
+            setRecharge({ feature, need: featurePrice(feature, cfg),
+              price: featurePrice(feature, cfg),
+              walletAt: Number(wallet || 0) }); });
         } else {
-          // Generic failure: flip the modal to its error state
-          // (still shows the title + the cause) so the customer
-          // is never left wondering.
-          setDone({ feature, result: { pending: false, error: msg } });
+          settle(() => setDone({ feature,
+            result: { pending: false, error: msg } }));
         }
       }
     })();
