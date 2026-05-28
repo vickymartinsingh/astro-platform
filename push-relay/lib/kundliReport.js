@@ -1542,10 +1542,15 @@ async function handleReportStatus(req, res) {
     }
     // 90s of confirmed failed. AUTO-RETRY before refunding -
     // re-POST /api/orders/log so AstroSeer restarts cleanly.
-    // (WeasyPrint sometimes recovers from a stuck render
-    // when re-invoked with the same params.)
+    // 2026-05-28 user screenshot showed AstroSeer aborting at
+    // "23s / 8s · 99%" - generation reached 99% then aborted on
+    // their side. Bumped from 1 to 3 retries (matching their
+    // own "auto-resume retries up to 3 times" promise) since
+    // these aborts are transient and tend to clear by the next
+    // attempt.
+    const MAX_RETRIES = 3;
     const retried = Number(o.astroseerRetryCount || 0);
-    if (retried < 1) {
+    if (retried < MAX_RETRIES) {
       try {
         // Rebuild the birth payload from the saved profile fields
         // we snapshotted onto the order doc. Same shape as the
