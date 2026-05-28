@@ -748,7 +748,7 @@ module.exports = async (req, res) => {
       // Build marker - bumped on every deploy so admin can verify
       // exactly which relay version is live (especially when chasing
       // a stuck Vercel build).
-      relayBuild: 'async-nonaborting-v3-2026-05-28',
+      relayBuild: 'async-nonaborting-v4-2026-05-28',
       provider: pc.provider,
       adminInit: pc.adminInit,
       hasKey: !!(pc.creds && (pc.creds.key || pc.creds.secret))
