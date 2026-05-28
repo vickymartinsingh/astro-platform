@@ -103,7 +103,7 @@ export default function Discover() {
     setActiveId('');
     setDone({ feature, result: { pending: true } });
     const startMs = Date.now();
-    const minDelayMs = 1500 + Math.floor(Math.random() * 1300);
+    const minDelayMs = 3000 + Math.floor(Math.random() * 1000);
     const settle = (fn) => {
       const elapsed = Date.now() - startMs;
       const wait = Math.max(0, minDelayMs - elapsed);
