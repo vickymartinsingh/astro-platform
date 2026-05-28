@@ -34,6 +34,8 @@
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",
+    "archiver": "^8.0.0",
+    "firebase-admin": "^13.10.0",
     "googleapis": "^172.0.0"
   }
 }

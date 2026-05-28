@@ -7,6 +7,13 @@
     "androidScheme": "https"
   },
   "plugins": {
+    "CapacitorUpdater": {
+      "autoUpdate": true,
+      "autoDeleteFailed": true,
+      "autoDeletePrevious": true,
+      "resetWhenUpdate": false,
+      "updateUrl": "https://firebasestorage.googleapis.com/v0/b/astrology-2092d.firebasestorage.app/o/ota%2Fastrologer%2Fmanifest.json?alt=media"
+    },
     "GoogleAuth": {
       "scopes": ["profile", "email"],
       "serverClientId": "402763204723-1f0mff93i07o9i481eg2u24mk43si5t6.apps.googleusercontent.com",

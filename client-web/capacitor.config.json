@@ -15,6 +15,13 @@
     ]
   },
   "plugins": {
+    "CapacitorUpdater": {
+      "autoUpdate": true,
+      "autoDeleteFailed": true,
+      "autoDeletePrevious": true,
+      "resetWhenUpdate": false,
+      "updateUrl": "https://firebasestorage.googleapis.com/v0/b/astrology-2092d.firebasestorage.app/o/ota%2Fcustomer%2Fmanifest.json?alt=media"
+    },
     "FirebaseAuthentication": {
       "skipNativeAuth": false,
       "providers": ["google.com"]

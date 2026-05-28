@@ -23,6 +23,21 @@ export default function App({ Component, pageProps }) {
   useNativeBack();
   const router = useRouter();
   useEffect(() => themeService.watchTheme(), []);
+  // OTA web bundle updates via capgo/capacitor-updater (native only).
+  useEffect(() => {
+    (async () => {
+      try {
+        if (typeof window === 'undefined') return;
+        if (!window.Capacitor || !window.Capacitor.isNativePlatform
+          || !window.Capacitor.isNativePlatform()) return;
+        const mod = await import('@capgo/capacitor-updater');
+        if (mod && mod.CapacitorUpdater
+          && mod.CapacitorUpdater.notifyAppReady) {
+          await mod.CapacitorUpdater.notifyAppReady();
+        }
+      } catch (_) { /* best-effort */ }
+    })();
+  }, []);
   useEffect(() => {
     const onChange = (url) => auditService.logRoute(url, { admin: true });
     onChange(router.asPath);

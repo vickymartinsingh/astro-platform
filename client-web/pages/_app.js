@@ -61,6 +61,26 @@ export default function App({ Component, pageProps }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const router = useRouter();
   useEffect(() => themeService.watchTheme(), []);
+  // OTA web bundle updates via capgo/capacitor-updater. On native
+  // platforms only - no-op on web. Tells the plugin the new bundle
+  // booted successfully so it doesn't roll back on next launch.
+  // The actual download + swap happens automatically in the plugin
+  // (autoUpdate:true in capacitor.config.json) on app launch + when
+  // the app comes back from background.
+  useEffect(() => {
+    (async () => {
+      try {
+        if (typeof window === 'undefined') return;
+        if (!window.Capacitor || !window.Capacitor.isNativePlatform
+          || !window.Capacitor.isNativePlatform()) return;
+        const mod = await import('@capgo/capacitor-updater');
+        if (mod && mod.CapacitorUpdater
+          && mod.CapacitorUpdater.notifyAppReady) {
+          await mod.CapacitorUpdater.notifyAppReady();
+        }
+      } catch (_) { /* OTA is best-effort, never crash boot */ }
+    })();
+  }, []);
   // Compliance: log every route change (deduped per uid+path) so admin
   // can see what each user clicked / browsed in their activity log.
   useEffect(() => {
