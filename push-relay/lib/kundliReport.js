@@ -1867,9 +1867,107 @@ async function handleWake(req, res) {
   return res.status(200).json({ ok: true, woke: base + '/wake' });
 }
 
+// ====================================================================
+// SWEEP PENDING ORDERS - server-side automation
+//
+// Polls every order whose status is *_generating, asks AstroSeer
+// where it stands, and pulls the PDF + emails the customer + writes
+// status:'ready' to Firestore if AstroSeer reports the job finished.
+// Same logic the customer's /orders page runs when they're looking
+// at it, but server-side so it works without anyone visiting.
+//
+// Trigger options (any combination):
+//   - External cron service (cron-job.org, EasyCron) hits this URL
+//     every 1 min. Free + works on Vercel Hobby plan. RECOMMENDED.
+//   - Vercel cron in vercel.json (Pro plan: arbitrary cadence).
+//   - Admin's Report Activity page calls it on load + every 30s.
+//   - Manual click in admin via the new "Sweep now" button.
+//
+// Batched - processes up to 50 orders per call so a single sweep
+// never exceeds Vercel's 60s function cap, even if every order
+// triggers an AstroSeer fetch + PDF upload.
+//
+// Returns: { ok, checked, ready, failed, stillGenerating, errors }
+// ====================================================================
+async function handleSweepPending(req, res) {
+  try { init(); } catch (e) {
+    return res.status(503).json({
+      error: String((e && e.message) || e) });
+  }
+  const db = admin.firestore();
+  // collectionGroup query - reaches every users/{uid}/orders doc.
+  // Firestore needs an index on (status ASC) for collectionGroup
+  // orders; that's created automatically the first time this runs.
+  let snap;
+  try {
+    snap = await db.collectionGroup('orders')
+      .where('status', 'in',
+        ['paid_generating', 'free_generating'])
+      .limit(50)
+      .get();
+  } catch (e) {
+    return res.status(500).json({
+      error: 'collectionGroup query failed',
+      detail: (e && e.message) || String(e),
+    });
+  }
+  if (snap.empty) {
+    return res.status(200).json({
+      ok: true, checked: 0, ready: 0, failed: 0,
+      stillGenerating: 0, errors: [],
+      note: 'No pending orders.',
+    });
+  }
+  const summary = { ok: true, checked: 0, ready: 0, failed: 0,
+    stillGenerating: 0, errors: [] };
+  for (let i = 0; i < snap.docs.length; i += 1) {
+    const docRef = snap.docs[i];
+    const userId = docRef.ref.parent.parent
+      ? docRef.ref.parent.parent.id : '';
+    const orderId = docRef.id;
+    if (!userId) continue;     // eslint-disable-line
+    summary.checked += 1;
+    // Delegate to handleReportStatus via a captured-response shim
+    // so we reuse the exact AstroSeer poll + PDF fetch + upload +
+    // email + refund logic the customer path uses. No duplication.
+    const captured = await new Promise((resolve) => {   // eslint-disable-line
+      const fakeReq = { method: 'POST',
+        body: { orderId, uid: userId } };
+      let payload = null;
+      const fakeRes = {
+        _code: 200,
+        status(c) { this._code = c; return this; },
+        json(d) { payload = { code: this._code, data: d };
+          resolve(payload); return this; },
+        setHeader() { /* */ },
+        end() { resolve(payload); },
+      };
+      handleReportStatus(fakeReq, fakeRes).catch((e) => {
+        resolve({ code: 500, data: { error: String(e.message || e) } });
+      });
+    });
+    const s = (captured && captured.data && captured.data.status)
+      || '';
+    if (s === 'ready') summary.ready += 1;
+    else if (s === 'failed' || s === 'failed_refunded') {
+      summary.failed += 1;
+    } else summary.stillGenerating += 1;
+    if (captured && captured.data && captured.data.error
+      && s !== 'ready') {
+      summary.errors.push({ orderId,
+        error: String(captured.data.error).slice(0, 200) });
+    }
+  }
+  // If we hit the 50-doc batch ceiling there may be more pending
+  // orders. The next sweep tick will pick them up.
+  if (snap.size >= 50) summary.note = 'Batch full; more remain.';
+  return res.status(200).json(summary);
+}
+
 module.exports = {
   handleReport,
   handleReportStatus,
   handleReportPdf,
   handleWake,
+  handleSweepPending,
 };

@@ -125,6 +125,57 @@ export default function AdminReportActivity() {
     return () => clearInterval(t);
   }, [autoRefresh, load]);
 
+  // Server-side sweep: hits the relay's action:'sweepPending'
+  // which iterates over every *_generating order and pulls fresh
+  // AstroSeer status. Runs ONCE on page mount + every 30s while
+  // the admin is here. So opening Report Activity == syncing
+  // every pending order. The relay handles PDF fetch + email +
+  // refund automatically; we just need to nudge it.
+  const [sweepBusy, setSweepBusy] = useState(false);
+  const [sweepInfo, setSweepInfo] = useState('');
+  const sweep = useCallback(async (silent) => {
+    if (!silent) setSweepBusy(true);
+    try {
+      const url = (typeof process !== 'undefined'
+        && process.env && process.env.NEXT_PUBLIC_PUSH_ENDPOINT)
+        ? process.env.NEXT_PUBLIC_PUSH_ENDPOINT
+          .replace(/\/sendPush\/?$/, '/kundli')
+        : 'https://astro-platform-push-relay.vercel.app/api/kundli';
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'sweepPending' }),
+      });
+      const j = await r.json().catch(() => ({}));
+      const checked = Number(j.checked || 0);
+      const ready = Number(j.ready || 0);
+      const failed = Number(j.failed || 0);
+      const still = Number(j.stillGenerating || 0);
+      if (checked > 0) {
+        setSweepInfo(`Synced ${checked} pending: `
+          + `${ready} ready, ${failed} failed, ${still} still generating.`);
+        // Refresh the Firestore-side rows so the UI reflects the
+        // status flips the sweep just wrote.
+        load();
+      } else if (!silent) {
+        setSweepInfo('No pending orders to sync.');
+      }
+      // Auto-clear the info banner after 6 seconds.
+      setTimeout(() => setSweepInfo(''), 6000);
+    } catch (e) {
+      if (!silent) {
+        setSweepInfo(`Sweep failed: ${(e && e.message) || e}`);
+      }
+    } finally { setSweepBusy(false); }
+  }, [load]);
+
+  // Auto-sweep: once on mount + every 30s while the page is open.
+  useEffect(() => {
+    sweep(true);                          // silent first-tick
+    const t = setInterval(() => sweep(true), 30000);
+    return () => clearInterval(t);
+  }, [sweep]);
+
   const filtered = useMemo(() => {
     if (!Array.isArray(rows)) return null;
     const now = Date.now();
@@ -239,17 +290,34 @@ export default function AdminReportActivity() {
       {/* Header */}
       <div className="flex items-baseline justify-between gap-2">
         <h1 className="text-2xl font-bold">Report Activity</h1>
-        <Link href="/admin-orders"
-          className="text-xs font-bold text-primary hover:underline">
-          ← Back to Orders
-        </Link>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => sweep(false)}
+            disabled={sweepBusy}
+            className="rounded-full border border-accent bg-white
+              px-3 py-1 text-[11px] font-bold text-accent
+              disabled:opacity-50">
+            {sweepBusy ? 'Syncing...' : 'Sync pending now'}
+          </button>
+          <Link href="/admin-orders"
+            className="text-xs font-bold text-primary
+              hover:underline">
+            ← Back to Orders
+          </Link>
+        </div>
       </div>
       <p className="mt-1 text-xs text-sub-text">
         Live feed of every kundli PDF generated through our relay.
         Auto-refreshes every 3 seconds. Times in your local timezone.
-        Every successful PDF is cached on the order doc, so download
-        and view are instant for any row marked SENT.
+        Pending orders are server-synced every 30 seconds against
+        the AstroSeer status endpoint; click <b>Sync pending now</b>
+        to force an immediate check.
       </p>
+      {sweepInfo && (
+        <div className="mt-2 rounded-card bg-primary/10 px-3 py-2
+          text-xs text-primary">
+          {sweepInfo}
+        </div>
+      )}
 
       {/* Stat tiles */}
       <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-7">

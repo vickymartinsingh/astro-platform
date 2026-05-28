@@ -694,6 +694,17 @@ module.exports = async (req, res) => {
   if (src.action === 'wake') {
     return reportMod().handleWake(req, res);
   }
+  // Server-side sweep of every *_generating order across all
+  // customers. Polls AstroSeer for each, fetches PDF + emails the
+  // customer + writes Firestore status:'ready' when AstroSeer
+  // says the job finished. Designed to be hit by an external
+  // 1-min cron (cron-job.org, EasyCron) so order updates happen
+  // automatically without anyone visiting the admin panel.
+  // Hitting via GET ?action=sweepPending also works so the cron
+  // service can just hit a plain URL with no body.
+  if (src.action === 'sweepPending') {
+    return reportMod().handleSweepPending(req, res);
+  }
 
   // GET ?probe=1 -> just report which provider would be used and
   // whether the relay can read Firestore. Lets admin verify the chain
