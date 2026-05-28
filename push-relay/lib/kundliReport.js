@@ -2056,20 +2056,15 @@ async function handleSweepPending(req, res) {
   //  - failed*: same rescue path (delivers PDF as goodwill, keeps
   //    refund in place if any)
   //  - kickoffPending: re-POSTs /api/orders/log to wake the API
-  // Use orderBy on __name__ (always indexed by Firestore) instead of
-  // paidAt: collection-group queries on real fields like paidAt require
-  // an explicit COLLECTION_GROUP_DESC index that must be created in the
-  // Firebase Console. __name__ is implicitly indexed so this query
-  // works with no manual setup. Descending order biases the scan
-  // toward more recent docs (order ids are 8-digit random ints, so
-  // it's not strictly chronological but it spreads the scan across
-  // the full id space rather than always reading the oldest 300).
+  // No orderBy: collection-group queries against `orders` need a
+  // COLLECTION_GROUP_ASC/DESC index in Firestore to use ANY field
+  // (including orderBy('__name__','desc')) - that index is NOT auto-
+  // created. The naked query uses the implicit __name__ ASC order
+  // which doesn't need an exemption, so it works out of the box.
+  // We pull a generous 500-doc batch and filter in memory.
   let snap;
   try {
-    snap = await db.collectionGroup('orders')
-      .orderBy(admin.firestore.FieldPath.documentId(), 'desc')
-      .limit(500)
-      .get();
+    snap = await db.collectionGroup('orders').limit(500).get();
   } catch (e) {
     return res.status(500).json({
       error: 'collectionGroup query failed',
