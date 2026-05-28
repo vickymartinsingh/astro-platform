@@ -371,14 +371,20 @@ async function callAstroSeerPdf({ base, key, body }) {
 //      re-download. Only kicks in if the operator has actually
 //      created + connected a Blob store in the Vercel dashboard.
 //
-//   2. Firestore inline base64 (default fallback) - used otherwise.
-//      Writes the PDF base64 onto users/{uid}/orders/{id}.pdfBase64
-//      and returns a `data:application/pdf;base64,...` URL the
-//      browser can download immediately. Works on Spark (free)
-//      with zero external setup. Firestore allows 1 MB per doc;
-//      AstroSeer PDFs are ~60 KB (~80 KB base64) so we have ~12x
-//      headroom. The /orders page re-builds the data URL from the
-//      same pdfBase64 field on re-download.
+//   2. Firebase Storage - default path when no Blob token.
+//      We already init the admin SDK with storageBucket set so
+//      this works on every install without any extra setup.
+//      Uploads to gs://<bucket>/reports/{uid}/{ts}_{kind}.pdf,
+//      marks the object public, returns the firebaseapp.com URL.
+//      AstroSeer PDFs can be 1-4 MB which is too big for the
+//      inline path below, so this tier is the workhorse.
+//
+//   3. Firestore inline base64 (last-resort fallback) - only for
+//      PDFs under ~950 KB (Firestore 1 MB doc cap minus headroom
+//      for the other order fields). Writes the PDF base64 onto
+//      users/{uid}/orders/{id}.pdfBase64 and returns a
+//      `data:application/pdf;base64,...` URL. The /orders page
+//      re-builds the data URL from the same field on re-download.
 //
 // Caller gets back { url, storagePath, bucketUsed } as before so
 // the rest of handleReport doesn't change. inline === true on the
@@ -404,27 +410,50 @@ async function uploadPdf(uid, kind, buf) {
       };
     } catch (e) {
       // Don't fail the whole report on a Blob blip - fall through
-      // to the inline path so the user always gets their PDF.
+      // to the Firebase Storage path so the user always gets their PDF.
       // eslint-disable-next-line no-console
       console.warn('Vercel Blob upload failed, falling back to '
-        + 'inline Firestore storage:', (e && e.message) || e);
+        + 'Firebase Storage:', (e && e.message) || e);
     }
   }
-  // Fallback: encode the PDF bytes as base64 and return a data
-  // URL the browser can download directly. The base64 string is
-  // ALSO written onto the order doc by the caller so /orders can
-  // re-build the same data URL forever without a relay call.
+  // Firebase Storage tier. Requires admin SDK to have been
+  // initialised with storageBucket - init() above does that using
+  // FIREBASE_STORAGE_BUCKET env var or the project_id default.
+  try {
+    const bucket = admin.storage().bucket();
+    const ts = Date.now();
+    const path = `reports/${uid}/${ts}_${kind}.pdf`;
+    const file = bucket.file(path);
+    await file.save(buf, {
+      metadata: { contentType: 'application/pdf',
+        cacheControl: 'public, max-age=31536000, immutable' },
+      resumable: false,
+      validation: false,
+    });
+    try { await file.makePublic(); } catch (_) { /* ignore */ }
+    const url = `https://firebasestorage.googleapis.com/v0/b/`
+      + `${bucket.name}/o/${encodeURIComponent(path)}?alt=media`;
+    return {
+      storagePath: path,
+      bucketUsed: bucket.name,
+      url,
+      inline: false,
+    };
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn('Firebase Storage upload failed, falling back to '
+      + 'inline Firestore base64:', (e && e.message) || e);
+  }
+  // Last-resort inline path: encode the PDF bytes as base64 and
+  // return a data URL the browser can download directly. Only
+  // works for sub-megabyte PDFs.
   const b64 = Buffer.from(buf).toString('base64');
   const dataUrl = `data:application/pdf;base64,${b64}`;
   if (b64.length > 950 * 1024) {
-    // Firestore caps a doc at 1 MB. Leave headroom for the other
-    // order fields. If a future AstroSeer tier produces a bigger
-    // PDF, the operator will have to set up Blob (above) or we
-    // chunk across multiple docs.
     throw new Error('PDF is too large to store inline '
-      + `(${(b64.length / 1024).toFixed(0)} KB base64). Set `
-      + 'BLOB_READ_WRITE_TOKEN on the relay to enable Vercel Blob '
-      + 'storage instead.');
+      + `(${(b64.length / 1024).toFixed(0)} KB base64) and Firebase `
+      + 'Storage upload failed - check FIREBASE_STORAGE_BUCKET on '
+      + 'the relay env or set BLOB_READ_WRITE_TOKEN for Vercel Blob.');
   }
   return {
     storagePath: `inline:${uid}:${Date.now()}_${kind}`,
