@@ -76,6 +76,13 @@ export default function Orders() {
       case 'ready': return { text: 'Ready', cls: 'bg-success/10 text-success' };
       case 'paid_generating':
       case 'free_generating':
+        // kickoffPending = relay couldn't reach AstroSeer to start
+        // generation (service is busy with another order). The
+        // pill text changes so the customer knows it's a queue
+        // wait, not silent breakage.
+        if (o.kickoffPending) {
+          return { text: 'Queued', cls: 'bg-warning/10 text-warning' };
+        }
         return { text: 'Generating…', cls: 'bg-warning/10 text-warning' };
       case 'failed':
       case 'failed_refunded':
@@ -85,6 +92,28 @@ export default function Orders() {
       default: return { text: o.status || '·',
         cls: 'bg-bg-light text-sub-text' };
     }
+  }
+
+  // Human note about queue state. Shown below the row when the
+  // order has been waiting >30s with kickoffPending (i.e. our
+  // relay couldn't get a confirmation handoff from AstroSeer).
+  // Tells the customer it's normal and what to expect.
+  function queueNote(o) {
+    if (!o || !o.kickoffPending) return '';
+    const paidMs = (o.paidAt && o.paidAt.toMillis
+      && o.paidAt.toMillis()) || 0;
+    if (!paidMs) return '';
+    const ageS = (Date.now() - paidMs) / 1000;
+    if (ageS < 30) return '';
+    if (ageS < 120) {
+      return 'Waiting for the report service to confirm your '
+        + 'order. This is normal when the service is busy with '
+        + 'other reports; usually clears within a minute.';
+    }
+    return 'Report service is taking longer than usual to start '
+      + 'this order. We will keep retrying for up to 5 minutes; '
+      + 'if it still does not start, your wallet is refunded '
+      + 'automatically.';
   }
 
   return (
@@ -143,6 +172,12 @@ export default function Orders() {
                     {s.text}
                   </span>
                 </div>
+                {queueNote(o) && (
+                  <div className="mt-2 rounded-card bg-warning/10
+                    px-3 py-2 text-[11px] leading-snug text-warning">
+                    {queueNote(o)}
+                  </div>
+                )}
                 {o.status === 'ready' && (() => {
                   // Inline-stored orders carry only a short marker on
                   // pdfUrl ("inline") and the real bytes on

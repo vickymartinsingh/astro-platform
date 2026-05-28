@@ -1186,10 +1186,18 @@ async function handleReport(req, res) {
   let startResp = null;
   let startError = null;
   try {
-    startResp = await postOrdersLog(45000);
+    // Shortened from 45s to 15s on 2026-05-28. AstroSeer's Render
+    // free-tier dyno is single-worker, so when a PDF generation is
+    // in flight, the next POST to /api/orders/log just QUEUES at
+    // the edge until the worker is free (observed 30s+ hangs in
+    // the user's screenshots). A short timeout + kickoffPending
+    // flag + polling retry path is more responsive than waiting
+    // 45s upfront. The cold-start window (~30s) is still covered
+    // by the polling retry which runs every 5s from the client.
+    startResp = await postOrdersLog(15000);
   } catch (e) {
     if (e && e.name === 'AbortError') {
-      try { startResp = await postOrdersLog(20000); }
+      try { startResp = await postOrdersLog(10000); }
       catch (e2) { startError = e2; }
     } else { startError = e; }
   }

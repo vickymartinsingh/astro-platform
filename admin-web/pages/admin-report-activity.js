@@ -395,11 +395,25 @@ export default function AdminReportActivity() {
                       border px-2 py-0.5 text-[10px] font-bold
                       uppercase tracking-wide ${STATUS_CHIP[o.status]
                         || 'bg-gray-100 text-sub-text'}`}>
-                      {STATUS_LABEL[o.status] || o.status || '-'}
+                      {o.kickoffPending && isGen ? 'QUEUED'
+                        : (STATUS_LABEL[o.status] || o.status || '-')}
                     </span>
                     {o.astroseerRetryCount > 0 && (
                       <div className="text-[10px] text-warning">
                         retry × {o.astroseerRetryCount}
+                      </div>
+                    )}
+                    {o.kickoffPending && (
+                      <div className="text-[10px] text-warning"
+                        title={o.kickoffLastError || ''}>
+                        kickoff pending
+                      </div>
+                    )}
+                    {o.kickoffLastError && !o.kickoffPending && (
+                      <div className="mt-1 line-clamp-2 max-w-[200px]
+                        text-[9px] text-danger"
+                        title={o.kickoffLastError}>
+                        {String(o.kickoffLastError).slice(0, 60)}
                       </div>
                     )}
                   </td>
