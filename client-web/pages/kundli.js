@@ -3803,36 +3803,65 @@ function OrderConfirmationModal({ orderId, kind, pending, error,
       role="dialog" aria-modal="true">
       <div className="w-full max-w-md overflow-hidden rounded-2xl
         bg-white shadow-2xl">
-        {/* Header strip - red on error, brand gradient otherwise. */}
+        {/* Header strip - red on error, NEUTRAL gradient + spinner
+            on pending (so customer clearly sees a processing beat,
+            not an instant "ORDER PLACED"), brand gradient on
+            confirmed. The pending look is visually distinct from
+            confirmed - same colors but a big spinner + "Processing"
+            language, never "Thank you" until the order id is in. */}
         <div className="px-5 py-5 text-white"
           style={{ background: isError
             ? 'linear-gradient(135deg, #C0392B 0%, #7F2020 100%)'
-            : 'linear-gradient(135deg, '
-              + '#D4A12A 0%, #B45309 50%, #7F2020 100%)' }}>
+            : pending
+              ? 'linear-gradient(135deg, #5A6E32 0%, #3F4E22 100%)'
+              : 'linear-gradient(135deg, '
+                + '#D4A12A 0%, #B45309 50%, #7F2020 100%)' }}>
           <div className="text-[11px] font-bold uppercase
             tracking-wide opacity-90">
             {isError ? 'Order could not be placed'
-              : pending ? 'Placing order' : 'Order placed'}
+              : pending ? 'Processing' : 'Order placed'}
           </div>
-          <div className="mt-1 text-xl font-bold">
-            {isError
-              ? `We could not place your ${label} order`
-              : `Thank you, your ${label} is on its way`}
-          </div>
-          {!isError && (
-            <div className="mt-2 text-[12px] leading-snug
-              opacity-95">
-              {pending
-                ? 'Confirming with our system... your report will '
-                  + 'start generating in a moment.'
-                : 'We have started generating your report. You will '
-                  + 'get an email AND a download link in My Orders '
-                  + 'when it is ready.'}
+          {pending && !isError ? (
+            <div className="mt-2 flex items-center gap-3">
+              <svg className="h-6 w-6 shrink-0 animate-spin
+                text-white" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="9" stroke="currentColor"
+                  strokeOpacity="0.35" strokeWidth="3" />
+                <path d="M21 12a9 9 0 0 0-9-9"
+                  stroke="currentColor" strokeWidth="3"
+                  strokeLinecap="round" />
+              </svg>
+              <div>
+                <div className="text-xl font-bold">
+                  Placing your {label} order...
+                </div>
+                <div className="mt-1 text-[12px] leading-snug
+                  opacity-95">
+                  Confirming with our system. This usually takes
+                  a few seconds, please do not close this window.
+                </div>
+              </div>
             </div>
+          ) : (
+            <>
+              <div className="mt-1 text-xl font-bold">
+                {isError
+                  ? `We could not place your ${label} order`
+                  : `Thank you, your ${label} is on its way`}
+              </div>
+              {!isError && (
+                <div className="mt-2 text-[12px] leading-snug
+                  opacity-95">
+                  We have started generating your report. You will
+                  get an email AND a download link in My Orders
+                  when it is ready.
+                </div>
+              )}
+            </>
           )}
         </div>
         <div className="border-b border-gray-100 px-5 py-4">
-          {!isError && (
+          {!isError && !pending && (
             <>
               <div className="flex items-center gap-3">
                 <div className="grid h-10 w-10 shrink-0
@@ -3862,13 +3891,6 @@ function OrderConfirmationModal({ orderId, kind, pending, error,
                     text-dark-text">{orderId}</div>
                 </div>
               )}
-              {pending && !orderId && (
-                <div className="mt-3 rounded-card bg-bg-light px-3
-                  py-2 text-[11px] text-sub-text">
-                  Order ID will appear here once the system
-                  confirms your purchase.
-                </div>
-              )}
               <p className="mt-3 text-[12px] leading-snug
                 text-sub-text">
                 You can close this window and continue using the
@@ -3877,6 +3899,22 @@ function OrderConfirmationModal({ orderId, kind, pending, error,
                 My Orders.
               </p>
             </>
+          )}
+          {pending && !isError && (
+            <div className="rounded-card bg-bg-light px-3 py-3
+              text-[12px] leading-snug text-sub-text">
+              <div className="flex items-center gap-2">
+                <span className="inline-block h-2 w-2 animate-pulse
+                  rounded-full bg-amber-500" />
+                <span className="font-bold text-dark-text">
+                  Confirming your order with our system
+                </span>
+              </div>
+              <div className="mt-1">
+                This usually takes 3 to 5 seconds. We will show your
+                Order ID and SLA the moment it is confirmed.
+              </div>
+            </div>
           )}
           {isError && (
             <div className="rounded-card bg-danger/10 p-3
@@ -3902,12 +3940,14 @@ function OrderConfirmationModal({ orderId, kind, pending, error,
         {/* CTAs */}
         <div className="flex gap-2 px-5 py-4">
           <button type="button" onClick={onClose}
+            disabled={pending && !isError}
             className="flex-1 rounded-full border border-gray-300
               bg-white py-2.5 text-sm font-bold text-dark-text
-              transition hover:bg-bg-light">
-            Close
+              transition hover:bg-bg-light disabled:cursor-not-allowed
+              disabled:opacity-50">
+            {pending && !isError ? 'Please wait...' : 'Close'}
           </button>
-          {!isError && (
+          {!isError && !pending && (
             <Link href="/orders" onClick={onClose}
               className="flex-1 rounded-full bg-primary py-2.5
                 text-center text-sm font-bold text-white shadow-sm
