@@ -1897,33 +1897,54 @@ async function handleSweepPending(req, res) {
       error: String((e && e.message) || e) });
   }
   const db = admin.firestore();
-  // collectionGroup query - reaches every users/{uid}/orders doc.
-  // Firestore needs an index on (status ASC) for collectionGroup
-  // orders; that's created automatically the first time this runs.
+  // collectionGroup query, same shape as listAllOrdersAdmin in
+  // shared/services/kundliService.js (orderBy paidAt desc, no
+  // where clause). Switched away from where('status','in', [...])
+  // on 2026-05-28 because that variant requires an explicit
+  // collection-group index on `status` which is NOT auto-created
+  // by Firestore. orderBy('paidAt') uses the SAME index admin's
+  // existing /admin-orders list query already triggered, so this
+  // sweep works on first call with no manual Firebase setup.
+  //
+  // Status filter happens in-memory after fetching. We pull the
+  // 200 most-recent orders, filter for *_generating status, then
+  // process up to 50 per call. So a fresh pending order placed
+  // in the last few minutes will always be caught on the next
+  // sweep tick.
   let snap;
   try {
     snap = await db.collectionGroup('orders')
-      .where('status', 'in',
-        ['paid_generating', 'free_generating'])
-      .limit(50)
+      .orderBy('paidAt', 'desc')
+      .limit(200)
       .get();
   } catch (e) {
+    // Index not yet built or other Firestore error - surface
+    // the actual reason so the admin user can act on it (the
+    // error message includes a Firebase Console URL to create
+    // the missing index).
     return res.status(500).json({
       error: 'collectionGroup query failed',
       detail: (e && e.message) || String(e),
     });
   }
-  if (snap.empty) {
+  const pending = snap.docs.filter((d) => {
+    const o = d.data() || {};
+    return o.status === 'paid_generating'
+      || o.status === 'free_generating';
+  }).slice(0, 50);
+  if (pending.length === 0) {
     return res.status(200).json({
       ok: true, checked: 0, ready: 0, failed: 0,
       stillGenerating: 0, errors: [],
+      scanned: snap.docs.length,
       note: 'No pending orders.',
     });
   }
   const summary = { ok: true, checked: 0, ready: 0, failed: 0,
-    stillGenerating: 0, errors: [] };
-  for (let i = 0; i < snap.docs.length; i += 1) {
-    const docRef = snap.docs[i];
+    stillGenerating: 0, errors: [],
+    scanned: snap.docs.length };
+  for (let i = 0; i < pending.length; i += 1) {
+    const docRef = pending[i];
     const userId = docRef.ref.parent.parent
       ? docRef.ref.parent.parent.id : '';
     const orderId = docRef.id;
@@ -1962,7 +1983,10 @@ async function handleSweepPending(req, res) {
   }
   // If we hit the 50-doc batch ceiling there may be more pending
   // orders. The next sweep tick will pick them up.
-  if (snap.size >= 50) summary.note = 'Batch full; more remain.';
+  if (pending.length >= 50) {
+    summary.note = 'Batch full; remaining pending will be picked '
+      + 'up on the next sweep tick.';
+  }
   return res.status(200).json(summary);
 }
 
