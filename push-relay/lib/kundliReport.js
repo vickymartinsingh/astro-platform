@@ -46,6 +46,42 @@ function init() {
   });
 }
 
+// Mint a unique 8-digit numeric Order ID via an atomic counter
+// at counters/orderNumber. First call ever returns "10000000",
+// then "10000001", and so on - guaranteed monotonic + unique by
+// the transaction. Strings are returned so they slot in as a
+// Firestore document id without any further encoding.
+//
+// On transaction failure (e.g. counter doc temporarily
+// unreachable), falls back to a long auto-generated id so the
+// customer's purchase is never blocked by counter problems.
+// Returned id is ALWAYS exactly 8 digits when the counter path
+// succeeded; longer when we fell back.
+async function mintOrderId(db) {
+  try {
+    const counterRef = db.collection('counters').doc('orderNumber');
+    const next = await db.runTransaction(async (tx) => {
+      const snap = await tx.get(counterRef);
+      const cur = snap.exists ? Number(snap.data().value || 0) : 0;
+      const n = cur < 10000000 ? 10000000 : cur + 1;
+      if (n > 99999999) {
+        // Highly unlikely (90 million orders) - but if we ever
+        // get there, fall through to the catch path which uses
+        // the long auto id.
+        throw new Error('order counter overflow');
+      }
+      tx.set(counterRef, {
+        value: n,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+      return n;
+    });
+    return String(next);
+  } catch (_) {
+    return db.collection('_tmp').doc().id;
+  }
+}
+
 // Resolve the Firebase Storage bucket name. Source-of-truth order:
 // explicit FIREBASE_STORAGE_BUCKET env on Vercel, then the new
 // "<project>.firebasestorage.app" format (current default for
@@ -945,6 +981,18 @@ async function handleReport(req, res) {
   const price = await getReportPrice(db, kind);
   const { base, key } = await getAstroSeerCreds(db);
 
+  // 2b. Mint an 8-digit numeric Order ID for the new doc.
+  //
+  // We use an atomic-transaction counter at counters/orderNumber so
+  // every order gets a strictly increasing, unique 8-digit id like
+  // 10000001, 10000002, ... up to 99999999 (~90M orders of room).
+  // Sequential numeric IDs are easier for the customer to read +
+  // dictate in support tickets, easier for admin to search, and
+  // can never collide. Falls back to Firestore's auto-generated
+  // doc id on transaction failure so a single bad transaction
+  // doesn't block the customer's purchase.
+  const orderId = await mintOrderId(db);
+
   // 3. For paid kinds: atomic wallet deduct + order placeholder.
   //
   // REGENERATE EXCEPTION: when body.regenerate is true (admin
@@ -954,7 +1002,8 @@ async function handleReport(req, res) {
   // order doc with amount:0. Without this, every Regenerate click
   // would re-charge the wallet ₹299, which is what the user just
   // reported as a bug.
-  let orderRef = db.collection('users').doc(uid).collection('orders').doc();
+  let orderRef = db.collection('users').doc(uid)
+    .collection('orders').doc(orderId);
   let chargedAmount = 0;
   if (price > 0 && !body.regenerate) {
     const userRef = db.collection('users').doc(uid);

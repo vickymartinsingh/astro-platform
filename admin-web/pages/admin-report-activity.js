@@ -433,7 +433,13 @@ export default function AdminReportActivity() {
                   </td>
                   <td className="px-3 py-2 font-mono text-[10px]
                     text-sub-text">
-                    {o.id ? o.id.slice(0, 10) : '-'}
+                    {/* 8-digit numeric ids (mintOrderId path)
+                        render in full; long auto-generated ids
+                        are truncated to the first 10 chars to
+                        keep the column narrow. */}
+                    {o.id
+                      ? (/^\d{8}$/.test(o.id) ? o.id : o.id.slice(0, 10))
+                      : '-'}
                   </td>
                   <td className="px-3 py-2 text-right">
                     <div className="inline-flex flex-wrap gap-1">

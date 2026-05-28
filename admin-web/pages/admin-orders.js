@@ -72,10 +72,64 @@ export default function AdminOrders() {
     })();
   }, []);
 
+  // Direct lookup by Order ID. When the search box contains an
+  // 8-digit number (the new mintOrderId format) we fire a
+  // collectionGroup query against orders and merge any hit into
+  // the displayed rows. Lets admin find an order by its receipt
+  // number even when it falls outside the 500-row default page.
+  const [extra, setExtra] = useState([]);
+  useEffect(() => {
+    const term = search.trim();
+    if (!/^\d{8,}$/.test(term)) { setExtra([]); return undefined; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { collectionGroup, query, where, getDocs, limit }
+          = await import('firebase/firestore');
+        // Firestore doesn't expose direct collectionGroup lookup
+        // by document id without a `where('__name__', ...)` clause
+        // which has its own path requirements. Easier path: scan
+        // collectionGroup with a small limit, then filter to the
+        // exact id. Sufficient for an 8-digit needle in a small
+        // haystack until we have millions of orders.
+        const snap = await getDocs(query(collectionGroup(db,
+          'orders'), limit(1000)));
+        const match = snap.docs.find((d) => d.id === term);
+        if (match && !cancelled) {
+          const p = match.ref.parent.parent;
+          setExtra([{ id: match.id, userId: p ? p.id : '',
+            ...match.data() }]);
+        } else if (!cancelled) {
+          setExtra([]);
+        }
+        // Fetch the customer doc for the matched order so the
+        // table row shows their name + email.
+        if (match && !cancelled) {
+          const p = match.ref.parent.parent;
+          if (p && !usersById[p.id]) {
+            const s = await getDoc(doc(db, 'users', p.id));
+            if (s.exists()) {
+              setUsersById((u) => ({ ...u,
+                [p.id]: { id: s.id, ...s.data() } }));
+            }
+          }
+        }
+      } catch (_) { /* swallow */ }
+    })();
+    return () => { cancelled = true; };
+  }, [search]);
+
   const filtered = useMemo(() => {
     if (!rows) return null;
     const term = search.trim().toLowerCase();
-    return rows.filter((o) => {
+    // Merge in any direct-lookup hits that aren't already in the
+    // loaded page, then de-duplicate by id.
+    const all = rows.slice();
+    if (extra && extra.length) {
+      const have = new Set(all.map((o) => o.id));
+      extra.forEach((o) => { if (!have.has(o.id)) all.push(o); });
+    }
+    return all.filter((o) => {
       if (statusFilter && o.status !== statusFilter) return false;
       if (kindFilter && o.kind !== kindFilter) return false;
       if (!term) return true;
@@ -88,7 +142,7 @@ export default function AdminOrders() {
         || String(o.userId || '').toLowerCase().includes(term)
       );
     });
-  }, [rows, search, statusFilter, kindFilter, usersById]);
+  }, [rows, extra, search, statusFilter, kindFilter, usersById]);
 
   if (loading || !rows) {
     return <Layout><div className="surface p-4">Loading…</div></Layout>;
@@ -120,8 +174,8 @@ export default function AdminOrders() {
       </div>
 
       <div className="surface mb-3 grid gap-2 p-3 sm:grid-cols-3">
-        <input className="input" placeholder="Search by customer
-          name, email, profile, order id…"
+        <input className="input" placeholder="Search by name, email,
+          profile, or paste 8-digit Order ID (e.g. 10000023)..."
           value={search} onChange={(e) => setSearch(e.target.value)} />
         <select className="input" value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}>

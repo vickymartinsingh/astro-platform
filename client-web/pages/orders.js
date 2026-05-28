@@ -166,6 +166,18 @@ export default function Orders() {
                       }) : ''}
                       {o.amount > 0 ? ` · ₹${o.amount}` : ' · free'}
                     </div>
+                    {/* Order ID line - mint-format 8-digit ids
+                        render in full so the customer can quote
+                        them in support tickets. Older long
+                        auto-generated ids show first 10 chars. */}
+                    {o.id && (
+                      <div className="mt-1 font-mono text-[10px]
+                        text-sub-text">
+                        Order #{(/^\d{8}$/).test(o.id)
+                          ? o.id
+                          : o.id.slice(0, 10)}
+                      </div>
+                    )}
                   </div>
                   <span className={`shrink-0 rounded-full px-2 py-0.5
                       text-[10px] font-bold ${s.cls}`}>
