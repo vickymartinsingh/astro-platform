@@ -100,6 +100,29 @@ export default function Kundli() {
     const lat = form.lat != null ? Number(form.lat) : null;
     const lng = form.lng != null ? Number(form.lng) : null;
     const tz = form.tz != null ? Number(form.tz) : null;
+    // Hard gates: DOB + TOB + place MUST be present. Previously the
+    // form accepted an empty dob silently - the saved profile was
+    // unusable downstream (chart fetch failed, the background auto-
+    // gen relay calls 400'd, /orders stayed empty). Reject early
+    // with an explicit message so the customer fixes it on the
+    // spot rather than discovering it later.
+    if (!form.name || !form.name.trim()) {
+      window.alert('Please enter the name.');           // eslint-disable-line
+      return;
+    }
+    if (!form.dob || !/^\d{2}-\d{2}-\d{4}$/.test(form.dob)) {
+      window.alert('Please enter a valid date of birth ' // eslint-disable-line
+        + '(dd/mm/yyyy).');
+      return;
+    }
+    if (!form.tob || !/^\d{1,2}:\d{2}$/.test(form.tob)) {
+      window.alert('Please enter the time of birth.');  // eslint-disable-line
+      return;
+    }
+    if (!form.place || !form.place.trim()) {
+      window.alert('Please enter the place of birth.'); // eslint-disable-line
+      return;
+    }
     if (!Number.isFinite(lat) || !Number.isFinite(lng)
         || !Number.isFinite(tz)) {
       // eslint-disable-next-line no-alert
