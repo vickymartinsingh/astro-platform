@@ -34,7 +34,7 @@ export const FEATURES = [
       'Career indications by ascendant'] },
   { id: 'moon_nakshatra', group: 'core', icon: 'moon',
     title: 'Moon Nakshatra Deep-Dive',
-    blurb: 'Detailed treatment of the native&apos;s Moon nakshatra.',
+    blurb: "Detailed treatment of the native's Moon nakshatra.",
     priceKey: 'moon_nakshatra_price', defaultPrice: 49,
     sections: ['Nakshatra lord and deity', 'Pada-level traits',
       'Compatible nakshatras', 'Career and money signals'] },

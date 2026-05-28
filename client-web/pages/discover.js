@@ -7,7 +7,8 @@ import {
 } from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
-import { useRequireClient } from '../lib/useAuth';
+import { useOptionalClient } from '../lib/useAuth';
+import { useAuthModal } from '../lib/authModal';
 
 // Discover page - every AstroSeer-API-backed reading rendered as a
 // monochrome icon card. Click → detail panel with the sections,
@@ -26,7 +27,12 @@ const ICON = {
 };
 
 export default function Discover() {
-  const { user, loading } = useRequireClient();
+  // Discover is a public browse page (like Horoscope / Astrologers):
+  // guests can read every feature card and tap into the detail panel.
+  // The "Get this report" CTA inside a feature checks for auth at the
+  // moment of purchase and pops the login modal then.
+  const { user, loading } = useOptionalClient();
+  const { openLogin } = useAuthModal();
   const router = useRouter();
   const [activeId, setActiveId] = useState(
     typeof router.query.f === 'string' ? router.query.f : '');
@@ -75,6 +81,12 @@ export default function Discover() {
   // wait on the FeatureDetail card.
   function buy(feature) {
     setError('');
+    // Guests can browse Discover; the moment they tap Get this
+    // report we pop the login modal so they sign in first.
+    if (!user) {
+      openLogin();
+      return;
+    }
     const price = featurePrice(feature, cfg);
     if (price > 0) {
       const w = Number(wallet || 0);
