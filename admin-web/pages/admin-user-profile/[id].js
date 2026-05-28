@@ -114,23 +114,121 @@ export default function AdminUserProfile() {
   // by the API because that is as per my need".
   const [pdfState, setPdfState] = useState({});   // { [k.id]: 'loading'|result|error-string }
   const [viewer, setViewer] = useState(null);     // { url, name } | null
+
+  // Compute the same birthSig the relay uses (push-relay/lib/
+  // kundliReport.js line 713) so we can locate the matching
+  // cached order without hitting the relay function at all.
+  // Includes name + dob + tob + ampm + place, lowercased + trimmed.
+  function birthSigOf(k) {
+    return [k.name, k.dob, k.tob, k.ampm, k.place]
+      .map((x) => String(x || '').trim().toLowerCase()).join('|');
+  }
+
+  // Read Firestore DIRECTLY for an already-generated, status:'ready'
+  // order matching the kundli profile's current birthSig. Avoids
+  // waking the relay function + waiting for the AstroSeer round-
+  // trip when a cached PDF is sitting right there in the customer's
+  // orders subcollection. Returns the same shape the relay would
+  // have returned on a cache hit, or null on miss.
+  async function findCachedOrder(k, kind) {
+    if (!k || !k.id || !k.userId) return null;
+    try {
+      const { collection, query, where, getDocs } = await import(
+        'firebase/firestore');
+      const q = query(
+        collection(db, 'users', k.userId, 'orders'),
+        where('kundliProfileId', '==', k.id),
+        where('kind', '==', kind || 'free'),
+        where('status', '==', 'ready'),
+      );
+      const snap = await getDocs(q);
+      const sig = birthSigOf(k);
+      const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+        .filter((d) => !d.birthSig || d.birthSig === sig)
+        .sort((a, b) => {
+          const at = (a.deliveredAt && a.deliveredAt.toMillis
+            && a.deliveredAt.toMillis()) || 0;
+          const bt = (b.deliveredAt && b.deliveredAt.toMillis
+            && b.deliveredAt.toMillis()) || 0;
+          return bt - at;
+        });
+      const ready = docs[0];
+      if (!ready || (!ready.pdfUrl && !ready.pdfBase64)) return null;
+      return {
+        ok: true,
+        cached: true,
+        orderId: ready.id,
+        pdfUrl: ready.pdfBase64
+          ? `data:application/pdf;base64,${ready.pdfBase64}`
+          : ready.pdfUrl,
+        pdfName: ready.pdfName || 'AstroSeer-Kundli.pdf',
+        sizeBytes: ready.sizeBytes || 0,
+        kind: ready.kind || kind || 'free',
+      };
+    } catch (_) { return null; }
+  }
+
+  // Three-step PDF fetch:
+  //   1. Check Firestore for a cached 'ready' order matching the
+  //      current profile birthSig - instant, no relay call.
+  //   2. If miss, ask the relay to start async generation.
+  //   3. Poll reportStatus every 5s for up to 5 min until 'ready'.
+  // After 2026-05-28 async refactor the relay returns
+  // status:'generating' on a fresh request, so polling is required.
   async function fetchApiPdf(k, { force = false } = {}) {
     if (!k || !k.id || !k.userId) return null;
     setPdfState((c) => ({ ...c, [k.id]: 'loading' }));
     try {
-      const out = await kundliService.requestReport({
+      // 1) Cache hit straight from Firestore (unless admin
+      // explicitly clicked Regenerate which sets force:true).
+      if (!force) {
+        const direct = await findCachedOrder(k, 'free');
+        if (direct && direct.pdfUrl) {
+          setPdfState((c) => ({ ...c, [k.id]: direct }));
+          return direct;
+        }
+      }
+
+      // 2) Start generation via relay.
+      const initial = await kundliService.requestReport({
         uid: k.userId,
         kundliProfileId: k.id,
         kind: 'free',
         regenerate: !!force,
       });
-      if (!out || !out.ok || !out.pdfUrl) {
-        const msg = (out && out.error) || 'PDF unavailable.';
+
+      // 2a) Relay returned cached PDF directly (relay also checks
+      // its own cache, so this is fast when birthSig matches a
+      // recent order). Skip polling.
+      if (initial && initial.ok && initial.pdfUrl) {
+        setPdfState((c) => ({ ...c, [k.id]: initial }));
+        return initial;
+      }
+
+      // 2b) Async flow - poll until ready.
+      if (initial && initial.orderId) {
+        const ready = await kundliService.pollReportUntilReady({
+          uid: k.userId,
+          orderId: initial.orderId,
+          onTick: (s, i) => {
+            setPdfState((c) => ({ ...c,
+              [k.id]: `Generating PDF... (${i * 5}s)` }));
+          },
+        });
+        if (ready && ready.ok && ready.pdfUrl) {
+          setPdfState((c) => ({ ...c, [k.id]: ready }));
+          return ready;
+        }
+        const msg = (ready && (ready.error || ready.warning))
+          || 'PDF generation did not complete in 5 min. '
+            + 'Check back later or click Regenerate.';
         setPdfState((c) => ({ ...c, [k.id]: msg }));
         return null;
       }
-      setPdfState((c) => ({ ...c, [k.id]: out }));
-      return out;
+
+      const msg = (initial && initial.error) || 'PDF unavailable.';
+      setPdfState((c) => ({ ...c, [k.id]: msg }));
+      return null;
     } catch (e) {
       setPdfState((c) => ({ ...c, [k.id]: (e && e.message)
         || 'PDF request failed.' }));
