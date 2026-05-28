@@ -1220,55 +1220,6 @@ async function handleReport(req, res) {
     amount: chargedAmount,
     kind,
   });
-
-  // Dead-code path kept for the previous try/catch shape; never
-  // reached in normal flow because we always return above.
-  // eslint-disable-next-line no-unreachable
-  try { ; } catch (e) {
-    if (chargedAmount > 0) {
-      try {
-        await db.runTransaction(async (tx) => {
-          const uRef = db.collection('users').doc(uid);
-          const uSnap = await tx.get(uRef);
-          const w = Number((uSnap.data() || {}).wallet || 0);
-          tx.update(uRef, { wallet: w + chargedAmount,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp() });
-          tx.update(orderRef, { status: 'failed_refunded',
-            failedAt: admin.firestore.FieldValue.serverTimestamp(),
-            failReason: String((e && e.message) || e) });
-          const txRef = db.collection('transactions').doc();
-          tx.set(txRef, {
-            userId: uid, amount: chargedAmount, type: 'credit',
-            reason: 'Kundli report refund (generation failed)',
-            referenceId: orderRef.id,
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          });
-        });
-      } catch (_) { /* refund retry is admin's job */ }
-    } else {
-      await orderRef.update({ status: 'failed',
-        failReason: String((e && e.message) || e) }).catch(() => {});
-    }
-    // AstroSeer central Activity feed: lifecycle event 3/3 -
-    // "failed" with the relay-side error so admin at the AstroSeer
-    // dashboard sees the same red row our own Order Management
-    // page surfaces.
-    try {
-      logAstroSeerEvent({
-        creds: { baseUrl: base },
-        orderId: orderRef.id,
-        status: 'failed',
-        kind,
-        userId: uid,
-        error: (e && e.message) || String(e),
-      });
-    } catch (_) { /* swallow */ }
-    return res.status(502).json({
-      error: 'Report generation failed',
-      detail: String((e && e.message) || e),
-      refunded: chargedAmount > 0,
-    });
-  }
 }
 
 // ====================================================================
