@@ -169,7 +169,13 @@ function astroSeerBody(kind, p, lat, lng, profile) {
     branding: {
       app: 'AstroSeer',
       accent: '#7F2020',
-      logo_url: 'https://astroseer.in/logo.png',
+      // Dedicated PDF cover-page logo (cosmic-eye / sun-mandala
+      // design in Royal navy + gold + rust). Lives in
+      // client-web/public/pdf-cover-logo.png so the customer
+      // Vercel project serves it at astroseer.in/pdf-cover-logo.png
+      // AstroSeer's WeasyPrint template fetches the URL at render
+      // time and embeds it on the cover.
+      logo_url: 'https://astroseer.in/pdf-cover-logo.png',
     },
   };
   if (kind === 'forecast12') {
@@ -704,8 +710,14 @@ async function handleReport(req, res) {
   // We stamp this on every order doc so a later "cached order
   // lookup" matches only when the birth data is byte-for-byte
   // identical to what generated the existing PDF.
+  // Cache key: DOB, TOB, AM/PM, place AND name. Per user request
+  // (2026-05-28) the cache must invalidate when any of these
+  // change; a name correction is a meaningful regeneration trigger
+  // because the cover page + greetings throughout the PDF carry
+  // the name. Everything else (lat/lng, isDefault, etc.) is
+  // ignored - those don't change the rendered output.
   function birthSig(p) {
-    return [p.dob, p.tob, p.ampm, p.place]
+    return [p.name, p.dob, p.tob, p.ampm, p.place]
       .map((x) => String(x || '').trim().toLowerCase()).join('|');
   }
   const sig = birthSig(profile);
