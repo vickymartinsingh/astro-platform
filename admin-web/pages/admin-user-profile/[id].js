@@ -744,7 +744,49 @@ function EmailKundliButton({ k, u, report, onLoad }) {
           || `Send failed (HTTP ${r.status}).`);
       }
       clearTimeout(bumpT);
-      if (j.emailed) {
+      // After the 2026-05-27 async refactor, the relay's
+      // action:'report' now returns immediately with
+      // { status:'generating', orderId } when the PDF is being
+      // generated in the background. The email gets sent
+      // automatically when polling detects the generation
+      // completed. Poll here on the admin side too so we can
+      // show the final delivered state in the popup.
+      if (j.status === 'generating' && j.orderId) {
+        await pollComplimentaryUntilSent(j.orderId, k.userId,
+          (tick, elapsedS) => {
+            setProgress({ step: 'emailing',
+              label: `Generating PDF, then emailing... (${elapsedS}s)`,
+            });
+          })
+          .then((finalState) => {
+            if (finalState && finalState.status === 'ready') {
+              setProgress({ step: 'done',
+                label: `Complimentary kundli PDF emailed to `
+                  + `${u.email}.`,
+                mode: 'with-attachment',
+                messageId: finalState.messageId || '' });
+            } else if (finalState
+              && finalState.status === 'failed_refunded') {
+              setProgress({ step: 'failed',
+                label: 'Generation failed; wallet auto-refunded.',
+                error: finalState.error
+                  || 'AstroSeer reported failed.' });
+            } else if (finalState && finalState.timedOut) {
+              setProgress({ step: 'done',
+                label: `PDF generation is taking longer than `
+                  + `usual. The email will be sent to ${u.email} `
+                  + `automatically when ready (no action needed).`,
+                mode: 'pending' });
+            } else {
+              setProgress({ step: 'failed',
+                label: 'Send did not complete.',
+                error: (finalState && finalState.error)
+                  || 'Unknown poll result.' });
+            }
+          });
+      } else if (j.emailed) {
+        // Legacy sync path (cached order returned immediately
+        // with PDF + email already sent).
         const mode = j.emailMode || 'link-only';
         let label;
         if (mode === 'both') {
@@ -765,12 +807,12 @@ function EmailKundliButton({ k, u, report, onLoad }) {
           messageId: j.messageId || '' });
       } else {
         setProgress({ step: 'failed',
-          label: 'Both email attempts failed.',
+          label: 'Send did not complete.',
           error: j.emailError
             || j.attachmentError
             || j.linkOnlyError
-            || 'Relay did not return an error string - open '
-              + 'Vercel logs for the push-relay function.',
+            || j.error
+            || 'Relay returned no status. Try again in a minute.',
           attachmentError: j.attachmentError || '',
           linkOnlyError: j.linkOnlyError || '' });
       }
@@ -781,6 +823,43 @@ function EmailKundliButton({ k, u, report, onLoad }) {
         label: 'Send failed.',
         error: e.message || 'Network or relay error.' });
     } finally { setBusy(false); }
+  }
+
+  // Polls the relay's reportStatus action every 5s for up to 5 min.
+  // Calls onTick(stateObj, elapsedSeconds) every successful poll so
+  // the popup can show live elapsed time. Resolves with the final
+  // state object whose status is 'ready' / 'failed' / 'failed_
+  // refunded', or { timedOut: true } after 5 minutes.
+  async function pollComplimentaryUntilSent(orderId, userId, onTick) {
+    const startMs = Date.now();
+    const endpoint = (typeof process !== 'undefined'
+      && process.env && process.env.NEXT_PUBLIC_PUSH_ENDPOINT)
+      ? process.env.NEXT_PUBLIC_PUSH_ENDPOINT
+        .replace(/\/sendPush\/?$/, '/kundli')
+      : 'https://astro-platform-push-relay.vercel.app/api/kundli';
+    for (let i = 0; i < 60; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      const r = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reportStatus',
+          uid: userId, orderId }),
+      }).catch(() => null);
+      // eslint-disable-next-line no-await-in-loop
+      const s = r ? await r.json().catch(() => ({})) : {};
+      const elapsedS = Math.round((Date.now() - startMs) / 1000);
+      if (typeof onTick === 'function') {
+        try { onTick(s, elapsedS); } catch (_) { /* */ }
+      }
+      if (s && (s.status === 'ready'
+        || s.status === 'failed'
+        || s.status === 'failed_refunded')) {
+        return s;
+      }
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((res) => setTimeout(res, 5000));
+    }
+    return { timedOut: true };
   }
   function closePopup() { setProgress(null); }
   return (

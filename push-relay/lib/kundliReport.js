@@ -1162,51 +1162,69 @@ async function handleReport(req, res) {
       });
     } finally { clearTimeout(tid); }
   }
+  // NEW NON-ABORTING STRATEGY (2026-05-27): the kick-off POST is
+  // best-effort. If it succeeds: great, we record the job ref and
+  // tell the client to start polling. If it ABORTS (cold dyno) or
+  // returns a non-OK status: we STILL return 200 to the client
+  // with status:'generating' and set kickoffPending:true on the
+  // Firestore order. The reportStatus poll handler will then
+  // RE-ATTEMPT the kick-off on its first poll once the dyno is
+  // warm. This way the customer never sees "This operation was
+  // aborted" - the worst case is one polling cycle of latency.
+  let startResp = null;
+  let startError = null;
   try {
-    let startResp;
-    try {
-      startResp = await postOrdersLog(45000);
-    } catch (e) {
-      // Only retry on abort (dyno cold). For other errors
-      // (DNS, TLS) the retry would just fail the same way.
-      if (!e || e.name !== 'AbortError') throw e;
-      try { startResp = await postOrdersLog(20000); }
-      catch (e2) {
-        throw new Error('AstroSeer /api/orders/log unreachable after '
-          + 'two attempts. The Render dyno may be offline; visit '
-          + `${base}/admin/dashboard to check.`);
-      }
-    }
-    if (!startResp || !startResp.ok) {
-      const t = startResp ? await startResp.text().catch(() => '') : '';
-      throw new Error(`AstroSeer /api/orders/log returned `
-        + `${startResp ? startResp.status : 'no response'}: `
-        + `${t.slice(0, 200)}`);
-    }
-    const startJson = await startResp.json().catch(() => ({}));
-    // Persist the AstroSeer-side job reference + async flag so the
-    // poll handler can verify it kicked off.
-    await orderRef.update({
-      astroseerJobRef: startJson.job_ref
-        || `ord_${orderRef.id}`,
-      asyncGenerationStarted: !!startJson.async_generation_started,
-      asyncStartedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-
-    // Return IMMEDIATELY to the customer. They will poll the
-    // reportStatus action every 5s until status flips to 'ready'.
-    return res.status(200).json({
-      ok: true,
-      orderId: orderRef.id,
-      status: 'generating',
-      asyncGenerationStarted: !!startJson.async_generation_started,
-      // The next two are what the customer UI should poll/fetch.
-      pollAction: 'reportStatus',
-      pdfAction: 'reportPdf',
-      amount: chargedAmount,
-      kind,
-    });
+    startResp = await postOrdersLog(45000);
   } catch (e) {
+    if (e && e.name === 'AbortError') {
+      try { startResp = await postOrdersLog(20000); }
+      catch (e2) { startError = e2; }
+    } else { startError = e; }
+  }
+  let startJson = {};
+  let kickoffOk = false;
+  if (startResp && startResp.ok) {
+    startJson = await startResp.json().catch(() => ({}));
+    kickoffOk = true;
+  } else if (startResp && !startResp.ok) {
+    const t = await startResp.text().catch(() => '');
+    startError = new Error(`AstroSeer /api/orders/log returned `
+      + `${startResp.status}: ${t.slice(0, 200)}`);
+  }
+  // Persist the AstroSeer-side job reference + async flag so the
+  // poll handler can verify it kicked off. ALSO record
+  // kickoffPending when the POST failed so polling can retry it.
+  await orderRef.update({
+    astroseerJobRef: startJson.job_ref
+      || `ord_${orderRef.id}`,
+    asyncGenerationStarted: !!startJson.async_generation_started,
+    asyncStartedAt: admin.firestore.FieldValue.serverTimestamp(),
+    kickoffPending: !kickoffOk,
+    kickoffLastError: kickoffOk ? null
+      : String((startError && startError.message) || startError
+        || 'unknown'),
+  });
+
+  // Return IMMEDIATELY to the customer. They will poll the
+  // reportStatus action every 5s until status flips to 'ready'.
+  // Even if kickoff to AstroSeer failed above, polling will retry
+  // it - the customer experience is "Generating..." not an abort.
+  return res.status(200).json({
+    ok: true,
+    orderId: orderRef.id,
+    status: 'generating',
+    asyncGenerationStarted: !!startJson.async_generation_started,
+    kickoffPending: !kickoffOk,
+    pollAction: 'reportStatus',
+    pdfAction: 'reportPdf',
+    amount: chargedAmount,
+    kind,
+  });
+
+  // Dead-code path kept for the previous try/catch shape; never
+  // reached in normal flow because we always return above.
+  // eslint-disable-next-line no-unreachable
+  try { ; } catch (e) {
     if (chargedAmount > 0) {
       try {
         await db.runTransaction(async (tx) => {
@@ -1345,6 +1363,70 @@ async function handleReportStatus(req, res) {
 
   // Poll AstroSeer.
   const base = await resolveAstroSeerBase(db);
+
+  // KICKOFF RETRY: if the initial POST /api/orders/log aborted
+  // during a cold dyno window (kickoffPending:true on the order
+  // doc), retry it now. AstroSeer's upsert means a duplicate POST
+  // with the same order_id is safe. After the retry we fall
+  // through to the regular status poll.
+  if (o.kickoffPending) {
+    try {
+      const profSnap = await db.collection('kundliProfiles')
+        .doc(o.kundliProfileId).get();
+      const prof = (profSnap.exists ? profSnap.data() : null) || {};
+      const pd = parseDob(prof.dob || o.profileDob,
+        prof.tob || o.profileTob,
+        prof.ampm || o.profileAmpm);
+      let kLat = Number(prof.lat) || 0;
+      let kLng = Number(prof.lng) || 0;
+      if (!kLat || !kLng) {
+        const g = await geocode(prof.place || o.profilePlace || '');
+        if (g) { kLat = g.lat; kLng = g.lng; }
+      }
+      if (!kLat || !kLng) { kLat = 19.076; kLng = 72.8777; }
+      const ktz = Number(prof.tz);
+      const ktzOffset = Number.isFinite(ktz) ? ktz : 5.5;
+      const REPORT_TYPE_MAP = {
+        free: 'basic', forecast12: 'yearly',
+        careerFinance: 'career', lifetime: 'full_life',
+      };
+      const ac = new AbortController();
+      setTimeout(() => ac.abort(), 20000);
+      const r = await fetch(`${base}/api/orders/log`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          order_id: orderId,
+          status: 'generating',
+          report_type: REPORT_TYPE_MAP[kind] || 'basic',
+          customer_uid: uid,
+          place: prof.place || o.profilePlace || '',
+          birth_summary: birthSummaryFromProfile(prof),
+          birth_year: pd.y, birth_month: pd.m, birth_day: pd.d,
+          birth_hour: pd.hh, birth_minute: pd.mm, birth_second: 0,
+          tz_offset: ktzOffset,
+          latitude: kLat, longitude: kLng,
+        }),
+        signal: ac.signal,
+      });
+      if (r && r.ok) {
+        await orderRef.update({
+          kickoffPending: false,
+          kickoffRetriedAt:
+            admin.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+    } catch (_) { /* keep kickoffPending - next poll retries */ }
+    // Return generating without polling /status this tick; let
+    // the next poll (5s later) actually fetch status.
+    return res.status(200).json({
+      ok: true,
+      orderId,
+      status: 'generating',
+      kickoffRetry: true,
+      kind,
+    });
+  }
   let astroStatus = null;
   try {
     const ac = new AbortController();
