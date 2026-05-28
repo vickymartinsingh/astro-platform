@@ -3348,27 +3348,27 @@ function ApiPdfHero({ kundli }) {
   // (30-60s).
   useEffect(() => { kundliService.wakeAstroSeer(); }, []);
 
+  // Fire-and-forget order placement. Customer clicks Buy / Generate,
+  // we POST to the relay which kicks off async generation, then we
+  // immediately show the OrderConfirmation modal with the SLA per
+  // report kind ("30 minutes to 4 hours" etc) and a link to /orders.
+  // No more in-page polling spinner. Customer either watches /orders
+  // (which auto-refreshes) or just waits for the email.
+  const [confirmation, setConfirmation] = useState(null);
   async function open() {
     if (!kundli || !kundli.id || !kundli.userId) {
       setErr('Save a kundli profile first.'); return;
     }
     setErr(''); setBusy(true);
-    // Live elapsed-time counter so the customer sees the request
-    // is in progress even during the ~30s cold-start window before
-    // polling kicks in. Stops when busy flips back to false.
-    const startMs = Date.now();
-    const tick = () => setProgress(`Generating your kundli PDF... `
-      + `(${Math.round((Date.now() - startMs) / 1000)}s)`);
-    tick();
-    const tickInterval = setInterval(tick, 1000);
+    setProgress('Placing your order...');
     try {
       const initial = await kundliService.requestReport({
         uid: kundli.userId,
         kundliProfileId: kundli.id,
         kind: 'free',
       });
-      // If the relay returned a fully-ready response (cached order),
-      // skip polling entirely.
+      // Fast path: relay served the cached PDF straight away. Skip
+      // the confirmation modal and open the PDF immediately.
       if (initial && initial.ok && initial.pdfUrl) {
         setResult(initial); setViewing(true); return;
       }
@@ -3376,34 +3376,15 @@ function ApiPdfHero({ kundli }) {
         throw new Error((initial && initial.error)
           || 'Could not start generation.');
       }
-      // Async flow: poll every 5s for up to 5 minutes. The
-      // elapsed-time tick keeps updating in the background.
-      const ready = await kundliService.pollReportUntilReady({
-        uid: kundli.userId,
+      // Async path: order placed, relay started AstroSeer
+      // generation in the background. Show the confirmation modal.
+      setConfirmation({
         orderId: initial.orderId,
-        onTick: (s) => {
-          if (s && s.status === 'ready') {
-            clearInterval(tickInterval);
-            setProgress('Finalising PDF...');
-          } else if (s && s.retryCount) {
-            setProgress(`Generating PDF (retry ${s.retryCount}, `
-              + `${Math.round((Date.now() - startMs) / 1000)}s)...`);
-          }
-          // Else - default ticker keeps showing elapsed seconds.
-        },
+        kind: 'free',
       });
-      if (!ready || !ready.ok || ready.status !== 'ready'
-        || !ready.pdfUrl) {
-        throw new Error(ready && (ready.error || ready.warning)
-          || 'Generation did not complete.');
-      }
-      setResult(ready); setViewing(true);
     } catch (e) {
-      setErr((e && e.message) || 'Could not load the PDF.');
-    } finally {
-      clearInterval(tickInterval);
-      setBusy(false); setProgress('');
-    }
+      setErr((e && e.message) || 'Could not place the order.');
+    } finally { setBusy(false); setProgress(''); }
   }
 
   function downloadNow() {
@@ -3456,6 +3437,12 @@ function ApiPdfHero({ kundli }) {
           url={result.pdfUrl}
           name={result.pdfName || 'AstroSeer-Kundli.pdf'}
           onClose={() => setViewing(false)} />
+      )}
+      {confirmation && (
+        <OrderConfirmationModal
+          orderId={confirmation.orderId}
+          kind={confirmation.kind}
+          onClose={() => setConfirmation(null)} />
       )}
     </div>
   );
@@ -3513,6 +3500,97 @@ function PdfViewerPopup({ url, name, onClose }) {
         <iframe src={url} title={name || 'Kundli PDF'}
           className="h-full w-full border-0"
           style={{ minHeight: '60vh' }} />
+      </div>
+    </div>
+  );
+}
+
+// Post-purchase confirmation modal. Shows the customer that their
+// order was placed successfully, the expected delivery SLA based
+// on the report kind, the order ID for tracking, and a clear CTA
+// to /orders where the PDF will appear when ready. Replaces the
+// in-page polling spinner which made long-running paid reports
+// feel broken even though they were generating fine.
+function OrderConfirmationModal({ orderId, kind, onClose }) {
+  const t = reportType(kind || 'free');
+  const sla = (t && t.sla) || '30 minutes to 4 hours';
+  const label = (t && t.shortName)
+    || (kind === 'forecast12' ? '12-Month Forecast'
+      : kind === 'careerFinance' ? 'Career Report'
+        : kind === 'lifetime' ? 'Lifetime Report'
+          : 'Vedic Kundli');
+  return (
+    <div className="fixed inset-0 z-[2147483647] flex items-center
+      justify-center bg-black/60 px-3 py-4"
+      role="dialog" aria-modal="true">
+      <div className="w-full max-w-md overflow-hidden rounded-2xl
+        bg-white shadow-2xl">
+        {/* Header strip with the brand gradient + a confident
+            "order placed" message. */}
+        <div className="px-5 py-5 text-white"
+          style={{ background: 'linear-gradient(135deg, '
+            + '#D4A12A 0%, #B45309 50%, #7F2020 100%)' }}>
+          <div className="text-[11px] font-bold uppercase
+            tracking-wide opacity-90">Order placed</div>
+          <div className="mt-1 text-xl font-bold">
+            Thank you, your {label} is on its way
+          </div>
+          <div className="mt-2 text-[12px] leading-snug
+            opacity-95">
+            We have started generating your report. You will get an
+            email AND a download link in My Orders when it is ready.
+          </div>
+        </div>
+        {/* SLA box */}
+        <div className="border-b border-gray-100 px-5 py-4">
+          <div className="flex items-center gap-3">
+            <div className="grid h-10 w-10 shrink-0 place-items-center
+              rounded-full bg-primary/10 text-primary">
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none"
+                stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 7v5l3 2" />
+              </svg>
+            </div>
+            <div className="min-w-0">
+              <div className="text-[11px] font-bold uppercase
+                tracking-wide text-sub-text">
+                Expected delivery
+              </div>
+              <div className="text-base font-bold text-dark-text">
+                {sla}
+              </div>
+            </div>
+          </div>
+          {orderId && (
+            <div className="mt-3 rounded-card bg-bg-light px-3 py-2
+              text-[11px]">
+              <div className="text-sub-text">Order ID</div>
+              <div className="mt-0.5 font-mono break-all
+                text-dark-text">{orderId}</div>
+            </div>
+          )}
+          <p className="mt-3 text-[12px] leading-snug text-sub-text">
+            You can close this window and continue using the app.
+            We will email you the moment the report is ready, and
+            the download link lives permanently in My Orders.
+          </p>
+        </div>
+        {/* CTAs */}
+        <div className="flex gap-2 px-5 py-4">
+          <button type="button" onClick={onClose}
+            className="flex-1 rounded-full border border-gray-300
+              bg-white py-2.5 text-sm font-bold text-dark-text
+              transition hover:bg-bg-light">
+            Close
+          </button>
+          <Link href="/orders" onClick={onClose}
+            className="flex-1 rounded-full bg-primary py-2.5
+              text-center text-sm font-bold text-white shadow-sm
+              hover:brightness-95">
+            Check My Orders
+          </Link>
+        </div>
       </div>
     </div>
   );
@@ -3589,9 +3667,15 @@ function PremiumReportsTab({ kundli }) {
   // every 5s for up to 5 minutes. Long premium reports (lifetime,
   // careerFinance) take 60-90s on Render free tier, well past the
   // old 90s synchronous timeout.
-  const [progress, setProgress] = useState('');
+  // Fire-and-forget paid-report purchase. Customer clicks Buy →
+  // we POST to the relay (wallet debits, AstroSeer generation
+  // kicks off in the background) → we immediately show the
+  // OrderConfirmationModal with the SLA copy ("2 to 6 hours" /
+  // "12 to 24 hours" depending on kind) and a CTA to /orders.
+  // No more in-page polling spinner.
+  const [confirmation, setConfirmation] = useState(null);
   async function buy(kind) {
-    setError(null); setBusy(kind); setResult(null); setProgress('');
+    setError(null); setBusy(kind); setResult(null);
     try {
       if (!kundli || !kundli.id || !kundli.userId) {
         throw new Error('Save a kundli profile first.');
@@ -3599,34 +3683,20 @@ function PremiumReportsTab({ kundli }) {
       const initial = await kundliService.requestReport({
         uid: kundli.userId, kundliProfileId: kundli.id, kind,
       });
+      // Fast path: cache hit, PDF already ready. Open the
+      // download popup as before.
       if (initial && initial.ok && initial.pdfUrl) {
         setResult(initial); return;
       }
       if (!initial || !initial.orderId) {
         throw new Error((initial && initial.error)
-          || 'Could not start generation.');
+          || 'Could not place the order.');
       }
-      setProgress('Charging wallet, starting generation...');
-      const ready = await kundliService.pollReportUntilReady({
-        uid: kundli.userId,
-        orderId: initial.orderId,
-        onTick: (s, i) => {
-          if (s.status === 'ready') setProgress('Finalising PDF...');
-          else if (s.retryCount) {
-            setProgress(`Generating (retry ${s.retryCount}, `
-              + `${i * 5}s elapsed)`);
-          } else setProgress(`Generating (${i * 5}s elapsed)...`);
-        },
-      });
-      if (!ready || !ready.ok || ready.status !== 'ready') {
-        const e2 = new Error(ready && (ready.error || ready.warning)
-          || 'Generation did not complete.');
-        e2.refunded = !!(ready && ready.refunded);
-        throw e2;
-      }
-      setResult(ready);
+      // Order placed. Show the confirmation modal with the
+      // delivery SLA for this report kind.
+      setConfirmation({ orderId: initial.orderId, kind });
     } catch (e) { setError(e); }
-    finally { setBusy(''); setProgress(''); }
+    finally { setBusy(''); }
   }
 
   // Pre-warm the AstroSeer dyno so the user's click goes against a
@@ -3696,10 +3766,10 @@ function PremiumReportsTab({ kundli }) {
         })}
       </div>
 
-      {progress && busy && (
+      {busy && (
         <div className="mt-3 rounded-card bg-bg-light p-3 text-xs
           text-primary">
-          {progress}
+          Placing your order...
         </div>
       )}
 
@@ -3714,11 +3784,18 @@ function PremiumReportsTab({ kundli }) {
               </Link>
             </>
           ) : (
-            <>Could not generate: {error.message}
+            <>Could not place the order: {error.message}
               {error.refunded ? ' (wallet refunded automatically)' : ''}
             </>
           )}
         </div>
+      )}
+
+      {confirmation && (
+        <OrderConfirmationModal
+          orderId={confirmation.orderId}
+          kind={confirmation.kind}
+          onClose={() => setConfirmation(null)} />
       )}
 
       {pending && (

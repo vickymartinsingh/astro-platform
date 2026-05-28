@@ -339,40 +339,108 @@ function InsufficientBalanceModal({
   );
 }
 
+// Two states this modal can show:
+//   - PDF already ready (cache hit on the relay): show the
+//     Download CTA + "saved to My Orders".
+//   - Order placed, generating in background (the common case
+//     after our 2026-05-28 fire-and-forget rewrite): show the
+//     expected delivery SLA and direct the customer to My Orders
+//     to track + download once ready. Email also goes
+//     automatically when ready.
 function SuccessModal({ result, feature, onClose }) {
+  const cached = !!(result && result.pdfUrl);
+  // Per-kind delivery SLA copy. Maps the catalogue's `sla` field
+  // through, with sensible defaults for non-kundli features that
+  // route through other AstroSeer endpoints.
+  const SLA_BY_FEATURE = {
+    kundli_basic: '30 minutes to 4 hours',
+    kundli_lagna: '30 minutes to 4 hours',
+    '12_month_forecast': '2 to 6 hours',
+    career_finance: '6 to 12 hours',
+    lifetime_report: '12 to 24 hours',
+  };
+  const sla = SLA_BY_FEATURE[feature.id] || '30 minutes to 4 hours';
   return (
     <div className="fixed inset-0 z-[70] flex items-center
       justify-center bg-black/50 px-4" role="dialog" aria-modal="true">
-      <div className="w-full max-w-sm rounded-2xl bg-white p-5
-        shadow-xl">
-        <div className="mb-2 flex items-center gap-2">
-          <span className="grid h-8 w-8 place-items-center
-            rounded-full bg-success/15 text-success">✓</span>
-          <h3 className="text-base font-bold text-dark-text">
-            {feature.title} is ready
-          </h3>
+      <div className="w-full max-w-sm overflow-hidden rounded-2xl
+        bg-white shadow-xl">
+        {/* Gradient header */}
+        <div className="px-5 py-4 text-white"
+          style={{ background: 'linear-gradient(135deg, '
+            + '#D4A12A 0%, #B45309 50%, #7F2020 100%)' }}>
+          <div className="text-[11px] font-bold uppercase
+            tracking-wide opacity-90">
+            {cached ? 'Report ready' : 'Order placed'}
+          </div>
+          <div className="mt-0.5 text-base font-bold">
+            {cached
+              ? `${feature.title} is ready`
+              : `Thank you, your ${feature.title} is on its way`}
+          </div>
         </div>
-        <p className="text-[13px] text-dark-text">
-          Your report is saved to <b>My Orders</b>. We&apos;ve also
-          emailed you a copy if SMTP is configured.
-        </p>
-        {result && result.pdfUrl && (
-          <a href={result.pdfUrl} target="_blank" rel="noreferrer"
-            className="btn-primary mt-4 block text-center">
-            Download PDF
-          </a>
-        )}
-        <div className="mt-2 grid grid-cols-2 gap-2">
-          <Link href="/orders" onClick={onClose}
-            className="rounded-full border border-primary bg-white
-              px-3 py-2 text-center text-sm font-bold text-primary">
-            Open My Orders
-          </Link>
-          <button type="button" onClick={onClose}
-            className="rounded-full bg-bg-light px-3 py-2
-              text-sm font-bold text-sub-text">
-            Close
-          </button>
+        <div className="px-5 py-4">
+          {cached ? (
+            <p className="text-[13px] text-dark-text">
+              Your report is saved to <b>My Orders</b>. We have also
+              emailed you a copy.
+            </p>
+          ) : (
+            <>
+              <div className="flex items-center gap-3">
+                <span className="grid h-9 w-9 shrink-0
+                  place-items-center rounded-full bg-primary/10
+                  text-primary">
+                  <svg viewBox="0 0 24 24" className="h-5 w-5"
+                    fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 7v5l3 2" />
+                  </svg>
+                </span>
+                <div>
+                  <div className="text-[10px] font-bold uppercase
+                    tracking-wide text-sub-text">
+                    Expected delivery
+                  </div>
+                  <div className="text-sm font-bold text-dark-text">
+                    {sla}
+                  </div>
+                </div>
+              </div>
+              <p className="mt-3 text-[12px] leading-snug
+                text-sub-text">
+                You can close this window. We will email you the
+                moment the PDF is ready, and the download link lives
+                permanently in <b>My Orders</b>.
+              </p>
+              {result && result.orderId && (
+                <div className="mt-3 rounded-card bg-bg-light px-3
+                  py-2 text-[11px]">
+                  <div className="text-sub-text">Order ID</div>
+                  <div className="mt-0.5 font-mono break-all
+                    text-dark-text">{result.orderId}</div>
+                </div>
+              )}
+            </>
+          )}
+          {cached && (
+            <a href={result.pdfUrl} target="_blank" rel="noreferrer"
+              className="btn-primary mt-4 block text-center">
+              Download PDF
+            </a>
+          )}
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <Link href="/orders" onClick={onClose}
+              className="rounded-full bg-primary px-3 py-2
+                text-center text-sm font-bold text-white">
+              Open My Orders
+            </Link>
+            <button type="button" onClick={onClose}
+              className="rounded-full border border-gray-300
+                bg-white px-3 py-2 text-sm font-bold text-dark-text">
+              Close
+            </button>
+          </div>
         </div>
       </div>
     </div>

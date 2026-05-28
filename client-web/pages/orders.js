@@ -21,6 +21,47 @@ export default function Orders() {
       .catch(() => setRows([]));
   }, [user]);
 
+  // BACKGROUND POLLING: any order in *_generating gets its
+  // reportStatus polled every 15s while the customer is on /orders.
+  // The relay's status endpoint will fetch the PDF from AstroSeer
+  // + upload to storage + email the customer the moment AstroSeer
+  // marks the order 'sent'. So orders flip from "Generating..." to
+  // "Ready" in front of the customer's eyes without them needing
+  // to refresh. Stops once no orders are pending (saves Firestore
+  // reads + relay calls).
+  useEffect(() => {
+    if (!user || !Array.isArray(rows)) return undefined;
+    const pending = rows.filter((o) => o.status === 'paid_generating'
+      || o.status === 'free_generating');
+    if (pending.length === 0) return undefined;
+    const tick = async () => {
+      let didChange = false;
+      await Promise.all(pending.map(async (o) => {
+        try {
+          const s = await kundliService.getReportStatus({
+            uid: user.uid, orderId: o.id,
+          });
+          if (s && (s.status === 'ready'
+            || s.status === 'failed'
+            || s.status === 'failed_refunded')) {
+            didChange = true;
+          }
+        } catch (_) { /* swallow */ }
+      }));
+      if (didChange) {
+        try {
+          const fresh = await kundliService.listOrders(user.uid);
+          if (fresh) setRows(fresh);
+        } catch (_) { /* */ }
+      }
+    };
+    // First tick after 5s so the relay has time to update
+    // Firestore from the prior poll. Subsequent ticks every 15s.
+    const t1 = setTimeout(tick, 5000);
+    const t2 = setInterval(tick, 15000);
+    return () => { clearTimeout(t1); clearInterval(t2); };
+  }, [user, rows]);
+
   if (loading || rows == null) {
     return <Layout><div className="card">Loading…</div></Layout>;
   }

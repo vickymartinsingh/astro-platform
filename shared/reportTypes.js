@@ -31,7 +31,10 @@ export const REPORT_TYPES = [
       'Panchang at birth (Tithi, Yoga, Karana, Nakshatra)',
       'PDF emailed plus saved in Orders for re-download',
     ],
-    tat: 'Usually ready in under 60 seconds.',
+    tat: 'PDF arrives in 30 minutes to 4 hours (most are ready in '
+      + 'under an hour). You will get an email AND a download link '
+      + 'in My Orders.',
+    sla: '30 minutes to 4 hours',
     confirmCta: 'Yes, generate the report',
   },
   {
@@ -56,9 +59,10 @@ export const REPORT_TYPES = [
       'Remedies with lucky days, colours and mantras per month',
       'PDF emailed plus saved in Orders for re-download',
     ],
-    tat: 'Usually ready in under 60 seconds. Wallet is debited '
-      + 'only after the PDF is delivered. If generation fails, '
-      + 'your wallet is refunded automatically.',
+    tat: 'PDF arrives in 2 to 6 hours. You will get an email AND '
+      + 'a download link in My Orders. Wallet is debited now and '
+      + 'auto-refunded if generation fails.',
+    sla: '2 to 6 hours',
     confirmCta: 'Yes, proceed to payment',
   },
   {
@@ -83,9 +87,11 @@ export const REPORT_TYPES = [
       'Remedies for career obstacles',
       'PDF emailed plus saved in Orders for re-download',
     ],
-    tat: 'Usually ready in under 90 seconds. '
-      + 'Wallet is debited only after delivery; refunded on '
-      + 'failure.',
+    tat: 'PDF arrives in 6 to 12 hours due to depth of analysis. '
+      + 'You will get an email AND a download link in My Orders. '
+      + 'Wallet is debited now and auto-refunded if generation '
+      + 'fails.',
+    sla: '6 to 12 hours',
     confirmCta: 'Yes, proceed to payment',
   },
   {
@@ -109,9 +115,11 @@ export const REPORT_TYPES = [
       'Remedies and mantras specific to each major period',
       'PDF emailed plus saved in Orders for re-download',
     ],
-    tat: 'Usually ready in 2-3 minutes due to size. '
-      + 'Wallet is debited only after delivery; refunded on '
-      + 'failure.',
+    tat: 'PDF arrives in 12 to 24 hours due to size (300+ pages). '
+      + 'You will get an email AND a download link in My Orders. '
+      + 'Wallet is debited now and auto-refunded if generation '
+      + 'fails.',
+    sla: '12 to 24 hours',
     confirmCta: 'Yes, proceed to payment',
   },
 ];
