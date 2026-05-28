@@ -68,7 +68,12 @@ export default function Discover() {
   // round-trip if the customer can't afford it - pop the recharge
   // modal instead. (Previously the relay would generate, then 402
   // back; this wasted time + AstroSeer credits.)
-  async function buy(feature) {
+  // OPTIMISTIC UI: SuccessModal opens INSTANTLY when customer
+  // clicks Buy on a feature card. The relay request fires in the
+  // background and the modal flips to the real Order ID (or an
+  // error state) when the relay returns. No more "Processing..."
+  // wait on the FeatureDetail card.
+  function buy(feature) {
     setError('');
     const price = featurePrice(feature, cfg);
     if (price > 0) {
@@ -78,52 +83,60 @@ export default function Discover() {
         return;
       }
     }
-    setBusy(true);
-    try {
-      // For kundli-shaped reports we route through kundliService - // it already handles the default kundli profile resolution,
-      // server-side wallet deduct, PDF generation and inline order
-      // record. Features that aren't yet wired up surface a friendly
-      // "coming soon" message so we never silently 404.
-      const KUNDLI_KIND_MAP = {
-        kundli_basic: 'free',
-        kundli_lagna: 'free',
-        '12_month_forecast': 'forecast12',
-        career_finance: 'careerFinance',
-        lifetime_report: 'lifetime',
-      };
-      const kind = KUNDLI_KIND_MAP[feature.id];
-      if (kind) {
-        // Use the customer's default kundli profile (if any).
+    const KUNDLI_KIND_MAP = {
+      kundli_basic: 'free',
+      kundli_lagna: 'free',
+      '12_month_forecast': 'forecast12',
+      career_finance: 'careerFinance',
+      lifetime_report: 'lifetime',
+    };
+    const kind = KUNDLI_KIND_MAP[feature.id];
+    if (!kind) {
+      setError(`"${feature.title}" is not yet wired up to the API. `
+        + 'Our team is building it; please check back shortly.');
+      return;
+    }
+    // Step 1: open the SuccessModal IMMEDIATELY in pending state
+    // and close the FeatureDetail card so the customer sees the
+    // confirmation pop right away.
+    setActiveId('');
+    setDone({ feature, result: { pending: true } });
+    // Step 2: fire the relay request in the background. No await.
+    (async () => {
+      try {
         const profiles = await kundliService
           .getKundliProfiles(user.uid).catch(() => []);
         const def = profiles.find((p) => p.isDefault) || profiles[0];
         if (!def) {
-          setError('Save a kundli profile first under the Kundli tab.');
+          setDone(null);
+          setError('Save a kundli profile first under the Kundli '
+            + 'tab.');
           return;
         }
         const result = await kundliService.requestReport({
           uid: user.uid, kundliProfileId: def.id, kind,
         });
-        setDone({ feature, result });
-      } else {
-        // Catalogue item the relay doesn't expose yet - show a
-        // friendly "coming soon" instead of a stack trace.
-        setError(`"${feature.title}" is not yet wired up to the API. `
-          + 'Our team is building it; please check back shortly.');
+        // Update the modal with the real result (orderId for
+        // async, or pdfUrl for a cache hit).
+        setDone({ feature, result: { ...result, pending: false } });
+      } catch (e) {
+        const msg = e && e.message ? e.message : 'Could not process.';
+        // Insufficient wallet -> close SuccessModal + pop the
+        // recharge modal so the customer can top up.
+        if (/insufficient/i.test(msg) || (e && e.code
+          === 'insufficient_wallet')) {
+          setDone(null);
+          setRecharge({ feature, need: featurePrice(feature, cfg),
+            price: featurePrice(feature, cfg),
+            walletAt: Number(wallet || 0) });
+        } else {
+          // Generic failure: flip the modal to its error state
+          // (still shows the title + the cause) so the customer
+          // is never left wondering.
+          setDone({ feature, result: { pending: false, error: msg } });
+        }
       }
-    } catch (e) {
-      const msg = e && e.message ? e.message : 'Could not process.';
-      // Defensive: server-side 402 still falls through here even
-      // after the pre-flight if the wallet was just spent in
-      // another tab. Re-pop the recharge modal in that case.
-      if (/insufficient/i.test(msg)) {
-        setRecharge({ feature, need: featurePrice(feature, cfg),
-          price: featurePrice(feature, cfg),
-          walletAt: Number(wallet || 0) });
-      } else {
-        setError(msg);
-      }
-    } finally { setBusy(false); }
+    })();
   }
 
   if (loading) {
@@ -349,6 +362,8 @@ function InsufficientBalanceModal({
 //     automatically when ready.
 function SuccessModal({ result, feature, onClose }) {
   const cached = !!(result && result.pdfUrl);
+  const pending = !!(result && result.pending);
+  const isError = !!(result && result.error);
   // Per-kind delivery SLA copy. Maps the catalogue's `sla` field
   // through, with sensible defaults for non-kundli features that
   // route through other AstroSeer endpoints.
@@ -360,6 +375,22 @@ function SuccessModal({ result, feature, onClose }) {
     lifetime_report: '12 to 24 hours',
   };
   const sla = SLA_BY_FEATURE[feature.id] || '30 minutes to 4 hours';
+  // Header copy depends on which state we are in:
+  //   pending - relay still kicking off, optimistic copy.
+  //   isError - relay returned an error, red header.
+  //   cached  - cache hit, PDF available immediately.
+  //   else    - order placed, async generation in flight.
+  const headerLabel = isError ? 'Order could not be placed'
+    : pending ? 'Placing order'
+      : cached ? 'Report ready'
+        : 'Order placed';
+  const headerTitle = isError
+    ? `We could not place your ${feature.title} order`
+    : cached ? `${feature.title} is ready`
+      : `Thank you, your ${feature.title} is on its way`;
+  const headerGradient = isError
+    ? 'linear-gradient(135deg, #C0392B 0%, #7F2020 100%)'
+    : 'linear-gradient(135deg, #D4A12A 0%, #B45309 50%, #7F2020 100%)';
   return (
     <div className="fixed inset-0 z-[70] flex items-center
       justify-center bg-black/50 px-4" role="dialog" aria-modal="true">
@@ -367,25 +398,30 @@ function SuccessModal({ result, feature, onClose }) {
         bg-white shadow-xl">
         {/* Gradient header */}
         <div className="px-5 py-4 text-white"
-          style={{ background: 'linear-gradient(135deg, '
-            + '#D4A12A 0%, #B45309 50%, #7F2020 100%)' }}>
+          style={{ background: headerGradient }}>
           <div className="text-[11px] font-bold uppercase
-            tracking-wide opacity-90">
-            {cached ? 'Report ready' : 'Order placed'}
-          </div>
-          <div className="mt-0.5 text-base font-bold">
-            {cached
-              ? `${feature.title} is ready`
-              : `Thank you, your ${feature.title} is on its way`}
-          </div>
+            tracking-wide opacity-90">{headerLabel}</div>
+          <div className="mt-0.5 text-base font-bold">{headerTitle}</div>
         </div>
         <div className="px-5 py-4">
-          {cached ? (
+          {isError && (
+            <div className="rounded-card bg-danger/10 p-3
+              text-[12px] text-danger">
+              <div className="font-bold">What went wrong</div>
+              <div className="mt-1 break-all">{result.error}</div>
+              <p className="mt-2 text-[11px]">
+                Your wallet was not charged. Try again in a moment
+                or contact support if the problem persists.
+              </p>
+            </div>
+          )}
+          {!isError && cached && (
             <p className="text-[13px] text-dark-text">
               Your report is saved to <b>My Orders</b>. We have also
               emailed you a copy.
             </p>
-          ) : (
+          )}
+          {!isError && !cached && (
             <>
               <div className="flex items-center gap-3">
                 <span className="grid h-9 w-9 shrink-0
@@ -409,35 +445,49 @@ function SuccessModal({ result, feature, onClose }) {
               </div>
               <p className="mt-3 text-[12px] leading-snug
                 text-sub-text">
-                You can close this window. We will email you the
-                moment the PDF is ready, and the download link lives
-                permanently in <b>My Orders</b>.
+                {pending
+                  ? 'Confirming with our system... your order will '
+                    + 'be ready shortly. You can close this window '
+                    + 'now and check My Orders at any time.'
+                  : 'You can close this window. We will email you '
+                    + 'the moment the PDF is ready, and the '
+                    + 'download link lives permanently in '}
+                {!pending && <b>My Orders</b>}{!pending && '.'}
               </p>
-              {result && result.orderId && (
+              {result && result.orderId ? (
                 <div className="mt-3 rounded-card bg-bg-light px-3
                   py-2 text-[11px]">
                   <div className="text-sub-text">Order ID</div>
                   <div className="mt-0.5 font-mono break-all
                     text-dark-text">{result.orderId}</div>
                 </div>
+              ) : pending && (
+                <div className="mt-3 rounded-card bg-bg-light px-3
+                  py-2 text-[11px] text-sub-text">
+                  Order ID will appear here once the system
+                  confirms your purchase.
+                </div>
               )}
             </>
           )}
-          {cached && (
+          {cached && !isError && (
             <a href={result.pdfUrl} target="_blank" rel="noreferrer"
               className="btn-primary mt-4 block text-center">
               Download PDF
             </a>
           )}
           <div className="mt-3 grid grid-cols-2 gap-2">
-            <Link href="/orders" onClick={onClose}
-              className="rounded-full bg-primary px-3 py-2
-                text-center text-sm font-bold text-white">
-              Open My Orders
-            </Link>
+            {!isError && (
+              <Link href="/orders" onClick={onClose}
+                className="rounded-full bg-primary px-3 py-2
+                  text-center text-sm font-bold text-white">
+                Open My Orders
+              </Link>
+            )}
             <button type="button" onClick={onClose}
-              className="rounded-full border border-gray-300
-                bg-white px-3 py-2 text-sm font-bold text-dark-text">
+              className={`rounded-full border border-gray-300
+                bg-white px-3 py-2 text-sm font-bold text-dark-text
+                ${isError ? 'col-span-2' : ''}`}>
               Close
             </button>
           </div>
