@@ -50,6 +50,7 @@ const GROUPS = [
   ]],
   ['Astrology', [
     ['/admin-kundli-api', 'Kundli API'],
+    ['/admin-report-activity', 'Report Activity'],
     ['/admin-horoscope', 'Horoscope CSV'],
     ['/admin-remedies', 'Remedies'],
   ]],
