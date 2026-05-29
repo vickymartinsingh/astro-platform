@@ -82,6 +82,12 @@ export function DateField({ value, onChange, label = 'Date of birth' }) {
 }
 
 // 24h time from the clock picker -> store 12h + AM/PM (kundli schema).
+// EXPLICIT AM/PM TOGGLE (2026-05-29): browser native <input type=time>
+// on India / 24-hour locales hides the AM/PM picker. A user who wants
+// "12:21 AM" (midnight) ends up picking "12:21" which the picker
+// interprets as noon, the form records as PM, and the PDF renders as
+// "12:21 PM". A dedicated AM/PM toggle in the UI prevents this:
+// whichever the picker thinks, the customer's last toggle click wins.
 export function TimeField({ value, ampm, onChange, label = 'Time of birth' }) {
   const iso = (() => {
     if (!value) return '';
@@ -90,17 +96,46 @@ export function TimeField({ value, ampm, onChange, label = 'Time of birth' }) {
     if (ampm === 'AM' && h === 12) h = 0;
     return `${String(h).padStart(2, '0')}:${String(mm || 0).padStart(2, '0')}`;
   })();
+  const activeAmpm = ampm || 'AM';
   return (
     <div>
       <label className="text-sm text-sub-text">{label}</label>
-      <input className="input mt-1" type="time" value={iso}
-        onChange={(e) => {
-          const [H, M] = e.target.value.split(':').map(Number);
-          const ap = H >= 12 ? 'PM' : 'AM';
-          let h12 = H % 12; if (h12 === 0) h12 = 12;
-          onChange(`${String(h12).padStart(2, '0')}:` +
-            `${String(M || 0).padStart(2, '0')}`, ap);
-        }} />
+      <div className="mt-1 flex items-center gap-2">
+        <input className="input flex-1" type="time" value={iso}
+          onChange={(e) => {
+            const [H, M] = e.target.value.split(':').map(Number);
+            // Picker output is 24h. Derive a 12h hour PLUS the
+            // ampm the picker implies, but if the user already has
+            // a saved ampm and the new hour is 12 (ambiguous: 12 AM
+            // or 12 PM), keep their previous toggle so we don't
+            // silently flip them.
+            let derivedAp = H >= 12 ? 'PM' : 'AM';
+            let h12 = H % 12; if (h12 === 0) h12 = 12;
+            const next = `${String(h12).padStart(2, '0')}:`
+              + `${String(M || 0).padStart(2, '0')}`;
+            // h12==12 happens for both 00:XX (midnight) and 12:XX
+            // (noon) - the picker's ap is unambiguous, but we
+            // still want to fire onChange so the toggle reflects
+            // the picker's interpretation.
+            onChange(next, derivedAp);
+          }} />
+        <div className="flex rounded-full border border-gray-200
+          bg-white p-0.5 text-xs font-bold">
+          {['AM', 'PM'].map((label) => (
+            <button key={label} type="button"
+              onClick={() => onChange(value || '12:00', label)}
+              className={'rounded-full px-3 py-1.5 transition '
+                + (activeAmpm === label
+                  ? 'bg-primary text-white'
+                  : 'text-sub-text hover:bg-bg-light')}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <p className="mt-1 text-[10px] text-sub-text">
+        Tap AM or PM to confirm your birth period.
+      </p>
     </div>
   );
 }

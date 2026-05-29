@@ -264,6 +264,14 @@ function parseDob(dob, tob, ampm) {
   const ap = String(ampm || '').toUpperCase();
   if (ap === 'PM' && hh < 12) hh += 12;
   if (ap === 'AM' && hh === 12) hh = 0;
+  // SAFETY: if we end up at hh=12 with no explicit PM, the source
+  // tob was probably 12:XX with an empty ampm. Logging so a future
+  // AM->PM bug surfaces in Vercel logs immediately.
+  if (hh === 12 && ap !== 'PM') {
+    // eslint-disable-next-line no-console
+    console.warn('[parseDob] hour=12 with non-PM ampm (' + ap
+      + '); profile likely missing ampm. tob=' + tob);
+  }
   return { y, m, d, hh, mm };
 }
 
@@ -2728,13 +2736,29 @@ async function _handleRescueByOrderIdInner(req, res) {
       let bd; let bm; let by;
       if (dobParts[0] > 31) [by, bm, bd] = dobParts;
       else [bd, bm, by] = dobParts;
-      // Parse tob "12:21" + optional ampm.
-      const [tH, tM] = String(birth.tob).split(':').map(Number);
-      let hh = tH || 12;
-      const mm = tM || 0;
+      // Parse tob "12:21" + optional ampm. Use explicit Number.isFinite
+      // checks so an hour of 0 (midnight in 24h, or 12 AM in 12h)
+      // is NOT treated as "missing" and silently defaulted to 12 -
+      // that's the historical AM->PM bug where midnight births got
+      // re-rendered as noon in the PDF.
+      const [tHraw, tMraw] = String(birth.tob || '12:00').split(':')
+        .map(Number);
+      let hh = Number.isFinite(tHraw) ? tHraw : 12;
+      const mm = Number.isFinite(tMraw) ? tMraw : 0;
       const ap = String(birth.ampm || '').toUpperCase();
       if (ap === 'PM' && hh < 12) hh += 12;
       if (ap === 'AM' && hh === 12) hh = 0;
+      // SAFETY: if we end up at hh=12 and the user didn't explicitly
+      // pass 'PM', the tob was probably 12:XX with empty/missing
+      // ampm. Defaulting to noon would print "12:XX PM" on a
+      // midnight birth - silently wrong. We log so the operator
+      // sees it but don't override: the customer-side form has its
+      // own default of 'AM' which covers this case.
+      if (hh === 12 && ap !== 'PM') {
+        // eslint-disable-next-line no-console
+        console.warn('[rescue] hour=12 with non-PM ampm (' + ap
+          + '); confirm intent. tob=' + birth.tob);
+      }
       // Map our kind -> AstroSeer report_type.
       const REPORT_TYPE = {
         free: 'basic', forecast12: 'yearly',
