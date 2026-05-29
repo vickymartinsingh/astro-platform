@@ -15,6 +15,15 @@
     ]
   },
   "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 2500,
+      "launchAutoHide": false,
+      "backgroundColor": "#1A0F0F",
+      "androidScaleType": "CENTER_CROP",
+      "showSpinner": false,
+      "splashFullScreen": true,
+      "splashImmersive": true
+    },
     "CapacitorUpdater": {
       "autoUpdate": true,
       "autoDeleteFailed": true,

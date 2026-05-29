@@ -42,6 +42,22 @@ export default function App({ Component, pageProps }) {
       } catch (_) { /* best-effort */ }
     })();
   }, []);
+  // Native splash hide. capacitor.config.json sets launchAutoHide:false
+  // so the native splash stays until React is up. Web/desktop no-op.
+  useEffect(() => {
+    (async () => {
+      try {
+        if (typeof window === 'undefined') return;
+        if (!window.Capacitor || !window.Capacitor.isNativePlatform
+          || !window.Capacitor.isNativePlatform()) return;
+        const mod = await import('@capacitor/splash-screen');
+        setTimeout(() => {
+          try { mod.SplashScreen.hide({ fadeOutDuration: 300 }); }
+          catch (_) { /* tolerate */ }
+        }, 200);
+      } catch (_) { /* not native */ }
+    })();
+  }, []);
   useEffect(() => {
     const onChange = (url) => auditService.logRoute(url);
     onChange(router.asPath);
