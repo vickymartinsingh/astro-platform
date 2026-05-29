@@ -801,7 +801,7 @@ module.exports = async (req, res) => {
       },
     };
     return res.status(200).json({
-      relayBuild: 'astroseer-fallback-2026-05-29T04:30',
+      relayBuild: 'firestore-free-free-flow-2026-05-29T04:50',
       provider: pc.provider,
       adminInit: pc.adminInit,
       hasKey: !!(pc.creds && (pc.creds.key || pc.creds.secret))

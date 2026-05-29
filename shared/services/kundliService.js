@@ -416,6 +416,38 @@ async function _isUrlAlive(url) {
 // URL. Triggered automatically by ApiPdfHero when the order has
 // been generating for more than a couple of minutes - covers the
 // case where Firebase quota / outage blocks the normal flip path.
+// Compute a deterministic 8-digit "order id" from a kundli profile.
+// Same profile + same birth details -> same orderId forever, so the
+// rescue endpoint can cache the PDF at rescued/<orderId>.pdf on R2
+// and every future View / Download click is an instant CDN hit.
+// First digit forced non-zero so the id is exactly 8 digits.
+export function profileOrderId(profile) {
+  if (!profile) return '10000000';
+  const seed = [profile.id || '', profile.userId || '',
+    profile.dob || '', profile.tob || '', profile.ampm || '',
+    (profile.place || '').toLowerCase()].join('|') || 'x';
+  let h = 5381;                                      // djb2 hash
+  for (let i = 0; i < seed.length; i += 1) {
+    h = ((h << 5) + h + seed.charCodeAt(i)) >>> 0;   // unsigned 32-bit
+  }
+  let s = String(h).padStart(10, '0').slice(-8);
+  if (s[0] === '0') s = '1' + s.slice(1);
+  return s;
+}
+
+// FIRE-AND-FORGET: prepare the kundli PDF on R2 the moment a profile
+// is saved (or viewed). Bypasses Firestore entirely - uses the
+// Firestore-free rescue endpoint with a deterministic orderId so
+// the next View / Download click is an instant R2 cache hit.
+export async function ensureKundliPdfReady(profile,
+  { kind = 'free' } = {}) {
+  if (!profile) return null;
+  const orderId = profileOrderId(profile);
+  return rescuePdfByOrderId(orderId, {
+    profile, uid: profile.userId, kind,
+  });
+}
+
 // Optionally pass birth details so the rescue path can REGENERATE
 // from scratch if AstroSeer has lost the order (Render free-tier
 // ephemeral disk wipes its SQLite on every restart). The customer's
