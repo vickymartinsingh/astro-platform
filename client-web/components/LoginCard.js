@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
-import { authService, userService } from '@astro/shared';
+import { authService, userService, db } from '@astro/shared';
+import { doc, getDoc } from 'firebase/firestore';
 import { DateField } from './BirthInputs';
 import { useSettings } from '../lib/useSettings';
 
@@ -27,6 +28,17 @@ export default function LoginCard({ onDone, compact, initialMode }) {
   const [otpUser, setOtpUser] = useState(null);
   const [otpCode, setOtpCode] = useState('');
   const [otpInfo, setOtpInfo] = useState('');
+  // Forgot-password flow state. resetStep:
+  //   'email'  -> ask email (after click on "Forgot password?")
+  //   'code'   -> email accepted, ask OTP + new password
+  //   null     -> not in reset flow
+  // resetEmail carries the email between the two steps; resetInfo and
+  // resetCode are local form state for the OTP screen.
+  const [resetStep, setResetStep] = useState(null);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetCode, setResetCode] = useState('');
+  const [resetNewPass, setResetNewPass] = useState('');
+  const [resetInfo, setResetInfo] = useState('');
 
   // Hard timeout for any auth promise. Firebase Auth occasionally hangs
   // (flaky network, IndexedDB lock, popup race) and never resolves OR
@@ -105,9 +117,15 @@ export default function LoginCard({ onDone, compact, initialMode }) {
         // settings/features.email_verification === true forces a
         // 6-digit OTP sent from support@astroseer.in before the new
         // user is signed in. Default OFF: signup completes as before.
-        // Belt-and-braces: also peek at the localStorage cache in case
-        // the in-memory `features` prop hasn't hydrated yet (the form
-        // can be submitted before the live snapshot lands).
+        //
+        // THREE layers of defence so the OTP gate never misses
+        // because the local cache hasn't caught up with admin yet:
+        //   1) live useSettings() prop (onSnapshot listener)
+        //   2) localStorage seed (last seen snapshot)
+        //   3) FRESH getDoc() against settings/features, awaited
+        //      right here at submit time. This is what fixes the
+        //      "OTP toggle is on in admin but signup still goes
+        //      straight through" report.
         let liveFeatures = features;
         try {
           if ((!liveFeatures || liveFeatures.email_verification == null)
@@ -117,6 +135,15 @@ export default function LoginCard({ onDone, compact, initialMode }) {
             liveFeatures = { ...(features || {}), ...cached };
           }
         } catch (_) { /* ignore */ }
+        // Layer 3: hard live read so we ALWAYS reflect the admin
+        // toggle as of this exact moment. Best-effort - if Firestore
+        // is unreachable we keep whatever we already have.
+        try {
+          const s = await getDoc(doc(db, 'settings', 'features'));
+          if (s.exists()) {
+            liveFeatures = { ...(liveFeatures || {}), ...s.data() };
+          }
+        } catch (_) { /* network blip - keep cached */ }
         if (liveFeatures && liveFeatures.email_verification === true) {
           try {
             // Sign the freshly-created user OUT immediately so the
@@ -222,12 +249,76 @@ export default function LoginCard({ onDone, compact, initialMode }) {
     } finally { setBusy(false); }
   }
 
-  async function forgot() {
-    if (!email.trim()) { setErr('Enter your email first.'); return; }
+  // Enter the reset flow (step 1: ask email). We do NOT use the
+  // already-typed email field - the user might have clicked Forgot
+  // before typing anything. This matches the user's request: "once
+  // click on the forgot password then there it should ask the email".
+  function openForgot() {
+    setErr(''); setResetInfo('');
+    setResetEmail(email.trim()); // pre-fill if they had typed one
+    setResetCode(''); setResetNewPass('');
+    setResetStep('email');
+  }
+  function closeForgot() {
+    setResetStep(null); setResetInfo(''); setErr('');
+  }
+
+  // Step 1: send the combined link + OTP. The relay tells us whether
+  // the email is registered; if not, we show a clear "no account"
+  // error instead of the silent "sent" Firebase ships by default.
+  async function submitForgotEmail(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    if (busy) return;
+    setErr(''); setResetInfo('');
+    const addr = resetEmail.trim();
+    if (!/.+@.+\..+/.test(addr)) {
+      setErr('Enter a valid email.'); return;
+    }
+    setBusy(true);
     try {
-      await authService.sendPasswordReset(email.trim());
-      setErr('Password reset email sent. Check your inbox.');
-    } catch { setErr('Could not send reset email.'); }
+      const r = await authService.requestPasswordReset(addr);
+      if (r && r.exists === false) {
+        setErr('No account found with this email. '
+          + 'Check the spelling or create a new account.');
+        return;
+      }
+      setResetInfo(`We just emailed a reset link AND a 6-digit code `
+        + `to ${addr}. Use either to set a new password.`);
+      setResetStep('code');
+    } catch (e2) {
+      setErr(e2 && e2.message
+        ? e2.message : 'Could not send reset email.');
+    } finally { setBusy(false); }
+  }
+
+  // Step 2: verify the OTP + set the new password in one shot. On
+  // success we sign the user back in immediately so they land on
+  // Home without having to log in again.
+  async function submitForgotCode(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    if (busy) return;
+    setErr('');
+    const code = String(resetCode).trim();
+    if (!/^\d{6}$/.test(code)) {
+      setErr('Enter the 6-digit code from the email.'); return;
+    }
+    if (resetNewPass.length < 6) {
+      setErr('New password must be at least 6 characters.'); return;
+    }
+    setBusy(true);
+    try {
+      await authService.verifyPasswordResetOtp(
+        resetEmail.trim(), code, resetNewPass);
+      // Auto-sign-in with the new password.
+      const user = await withTimeout(
+        authService.loginUser(resetEmail.trim(), resetNewPass),
+        25000, 'Login');
+      closeForgot();
+      await finish(user);
+    } catch (e2) {
+      setErr(e2 && e2.message
+        ? e2.message : 'Could not reset password.');
+    } finally { setBusy(false); }
   }
 
   async function verifyOtp(e) {
@@ -274,14 +365,22 @@ export default function LoginCard({ onDone, compact, initialMode }) {
         <div className="hero-grad p-6 text-white">
           <div className="text-xl font-bold">AstroSeer</div>
           <div className="mt-1 text-2xl font-bold">
-            {otpUser ? 'Verify your email'
-              : mode === 'signup' ? 'Create your account' : 'Welcome back'}
+            {resetStep
+              ? 'Reset your password'
+              : otpUser ? 'Verify your email'
+                : mode === 'signup' ? 'Create your account'
+                  : 'Welcome back'}
           </div>
           <p className="mt-1 text-sm opacity-90">
-            {otpUser ? 'Enter the 6-digit code from your inbox.'
-              : mode === 'signup'
-                ? 'Sign up to connect with astrologers.'
-                : 'Sign in to continue.'}
+            {resetStep === 'email'
+              ? 'Enter your email and we will send you a reset link + code.'
+              : resetStep === 'code'
+                ? 'Use the code OR the link from the email.'
+                : otpUser
+                  ? 'Enter the 6-digit code from your inbox.'
+                  : mode === 'signup'
+                    ? 'Sign up to connect with astrologers.'
+                    : 'Sign in to continue.'}
           </p>
         </div>
         <div className="p-6">
@@ -293,7 +392,66 @@ export default function LoginCard({ onDone, compact, initialMode }) {
             <div className="mb-3 rounded-xl bg-emerald-50 p-3 text-sm
                             text-emerald-700">{otpInfo}</div>
           )}
-          {otpUser ? (
+          {resetInfo && (
+            <div className="mb-3 rounded-xl bg-emerald-50 p-3 text-sm
+                            text-emerald-700">{resetInfo}</div>
+          )}
+          {resetStep === 'email' ? (
+            <form onSubmit={submitForgotEmail} className="space-y-3">
+              <p className="text-sm text-sub-text">
+                Enter the email address tied to your AstroSeer account.
+                We will check our records and email you both a reset
+                link AND a 6-digit code.
+              </p>
+              <input className="input" type="email" autoFocus
+                placeholder="you@example.com"
+                value={resetEmail}
+                onChange={(e) => setResetEmail(e.target.value)}
+                required />
+              <button className="btn-grad w-full justify-center py-3"
+                disabled={busy}>
+                {busy ? 'Checking…' : 'Send reset email'}
+              </button>
+              <button type="button" onClick={closeForgot}
+                className="w-full text-sm text-sub-text">
+                Back to login
+              </button>
+            </form>
+          ) : resetStep === 'code' ? (
+            <form onSubmit={submitForgotCode} className="space-y-3">
+              <p className="text-sm text-sub-text">
+                Paste the 6-digit code from the email AND pick a new
+                password. Or click the link inside the email to reset
+                in your browser instead.
+              </p>
+              <input className="input text-center tracking-[0.4em]
+                font-mono text-2xl" inputMode="numeric"
+                placeholder="000000" maxLength={6}
+                value={resetCode}
+                onChange={(e) => setResetCode(
+                  e.target.value.replace(/\D/g, '').slice(0, 6))}
+                autoFocus />
+              <input className="input" type="password"
+                placeholder="New password (min 6 characters)"
+                value={resetNewPass}
+                onChange={(e) => setResetNewPass(e.target.value)} />
+              <button className="btn-grad w-full justify-center py-3"
+                disabled={busy
+                  || resetCode.length !== 6
+                  || resetNewPass.length < 6}>
+                {busy ? 'Please wait…' : 'Set new password & sign in'}
+              </button>
+              <button type="button" onClick={submitForgotEmail}
+                disabled={busy}
+                className="w-full text-sm text-primary">
+                Didn&apos;t get it? Resend code
+              </button>
+              <button type="button" onClick={closeForgot}
+                className="w-full text-sm text-sub-text">
+                Back to login
+              </button>
+            </form>
+          ) : otpUser ? (
             <form onSubmit={verifyOtp} className="space-y-3">
               <input className="input text-center tracking-[0.4em]
                 font-mono text-2xl" inputMode="numeric"
@@ -365,7 +523,7 @@ export default function LoginCard({ onDone, compact, initialMode }) {
                 : mode === 'signup' ? 'Sign up' : 'Login'}
             </button>
             {mode === 'login' && (
-              <button type="button" onClick={forgot}
+              <button type="button" onClick={openForgot}
                 className="w-full text-sm text-primary">
                 Forgot password?
               </button>
@@ -373,7 +531,7 @@ export default function LoginCard({ onDone, compact, initialMode }) {
           </form>
           )}
 
-          {!otpUser && (() => {
+          {!otpUser && !resetStep && (() => {
             // Admin-toggled per platform (admin -> Feature Toggles):
             //   google_signin_mobile, google_signin_desktop
             // Default: OFF (hidden) until admin explicitly enables. The
@@ -408,7 +566,7 @@ export default function LoginCard({ onDone, compact, initialMode }) {
             );
           })()}
 
-          {!otpUser && (
+          {!otpUser && !resetStep && (
             <button
               onClick={() => { setErr(''); setMode(
                 mode === 'signup' ? 'login' : 'signup'); }}

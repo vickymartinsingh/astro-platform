@@ -152,6 +152,43 @@ module.exports = async (req, res) => {
     return handleSend(req, res, db, body);
   }
 
+  // ---------- PASSWORD RESET -----------------------------------------
+  // Two actions that work together to replace Firebase's "always 200,
+  // even if the email doesn't exist" reset flow with one that tells
+  // the customer whether their email is registered AND ships both
+  // options in a single email: a Firebase password-reset link AND a
+  // 6-digit OTP they can paste back into the app to pick a new
+  // password without leaving the screen.
+  //
+  // resetRequest:
+  //   body: { email }
+  //   1. Look up the user via Firebase Auth Admin SDK.
+  //   2. If not found -> { ok: true, exists: false } (UI says "no
+  //      account found"). We don't 404 because /admin-email log would
+  //      flood with red rows on bots probing for accounts; a clean
+  //      200 with exists:false keeps the operator log readable.
+  //   3. If found:
+  //      a. Generate a passwordResetLink via Admin SDK.
+  //      b. Generate a 6-digit OTP, write to passwordResetOtps/{email}
+  //         (TTL 15 min, attempts 0).
+  //      c. SMTP one combined email with both the reset button + the
+  //         code. Silent BCC + audit row as usual.
+  //      d. Return { ok: true, exists: true, sent: true }.
+  //
+  // resetVerify:
+  //   body: { email, code, newPassword }
+  //   - Validates code against passwordResetOtps/{email}. Caps at 5
+  //     wrong tries, expires in 15 min, single-use.
+  //   - On success, updates the Firebase Auth password via Admin SDK
+  //     AND flips emailVerified:true (the user proved control of the
+  //     mailbox by reading the OTP).
+  if (action === 'resetrequest') {
+    return handleResetRequest(req, res, db, body);
+  }
+  if (action === 'resetverify') {
+    return handleResetVerify(req, res, db, body);
+  }
+
   // ---------- WELCOME (new-signup touch) -----------------------------
   // Fired right after the client finishes signup. Honors the admin
   // toggle (welcomeEnabled) and pulls the custom subject line
@@ -690,3 +727,232 @@ async function handleWelcome(req, res, db, body) {
       error: String((e && e.message) || e) });
   }
 }
+
+// ============================================================
+// Password reset (combined link + OTP)
+// ============================================================
+
+const RESET_OTP_TTL_MS = 15 * 60 * 1000; // 15 minutes
+
+async function handleResetRequest(req, res, db, body) {
+  const email = normaliseEmail(body.email);
+  if (!email || !/.+@.+\..+/.test(email)) {
+    return res.status(400).json({ error: 'valid email required' });
+  }
+  // 1) Is there a Firebase Auth user with this email? If not, return
+  // exists:false so the UI shows "no account found" instead of the
+  // silent "always sent" message Firebase's built-in flow uses.
+  let userRec = null;
+  try {
+    userRec = await admin.auth().getUserByEmail(email);
+  } catch (e) {
+    if (e && e.code === 'auth/user-not-found') {
+      return res.status(200).json({ ok: true, exists: false });
+    }
+    return res.status(503).json({ error: 'auth lookup failed' });
+  }
+
+  // 2) Generate a Firebase password-reset link so the user can also
+  // use the link option if they prefer.
+  let resetLink = '';
+  try {
+    resetLink = await admin.auth().generatePasswordResetLink(email);
+  } catch (_) { resetLink = ''; }
+
+  // 3) Generate + persist the 6-digit OTP in its own collection so
+  // signup OTPs and reset OTPs do not collide on the same email.
+  const code = genCode();
+  const otpRef = db.collection('passwordResetOtps').doc(email);
+  try {
+    await otpRef.set({
+      email, code, used: false, attempts: 0,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      expiresAt: admin.firestore.Timestamp.fromMillis(
+        Date.now() + RESET_OTP_TTL_MS),
+    });
+  } catch (e) {
+    return res.status(503).json({
+      error: 'could not stage reset code' });
+  }
+
+  // 4) Combined email: button (link) + big OTP block.
+  const subject = 'Reset your AstroSeer password';
+  const text = `Hi ${userRec.displayName || 'there'},\n\n`
+    + 'We received a request to reset your AstroSeer password. You '
+    + 'can do this in either of two ways:\n\n'
+    + `1) Open this secure link in your browser:\n   ${resetLink || '(link unavailable - please use the code below)'}\n\n`
+    + `2) Or, enter this 6-digit code in the app:\n   ${code}\n\n`
+    + 'This code and link expire in 15 minutes. If you did not '
+    + 'request this, you can safely ignore this email.\n\n'
+    + '- AstroSeer Support';
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8" />
+<title>Reset your AstroSeer password</title></head>
+<body style="margin:0;padding:0;background:#F5F1EA;
+  font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,
+  Helvetica,Arial,sans-serif;color:#1A1A2E">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+  style="background:#F5F1EA"><tr><td align="center"
+  style="padding:24px 12px">
+  <table role="presentation" width="600" style="max-width:600px;
+    background:#fff;border-radius:16px;overflow:hidden;
+    box-shadow:0 4px 16px rgba(0,0,0,.06)">
+    <tr><td style="background:linear-gradient(135deg,#7F2020,#D4A12A);
+      padding:24px 28px;color:#fff">
+      <div style="font-size:12px;letter-spacing:2px;
+        text-transform:uppercase;opacity:.85">AstroSeer</div>
+      <h1 style="margin:6px 0 0 0;font-size:22px;line-height:1.3">
+        Reset your password</h1>
+    </td></tr>
+    <tr><td style="padding:24px 28px">
+      <p style="margin:0;font-size:14.5px;line-height:1.6">
+        Hi <b>${escapeHtml(userRec.displayName || 'there')}</b>, we
+        received a request to reset your AstroSeer password. Use
+        either option below. Both expire in 15 minutes.</p>
+      ${resetLink ? `<div style="margin:24px 0;text-align:center">
+        <a href="${escapeHtml(resetLink)}" style="display:inline-block;
+          padding:12px 26px;border-radius:999px;background:#7F2020;
+          color:#fff;text-decoration:none;font-weight:700;
+          font-size:14px">Open reset page</a>
+        <div style="margin-top:8px;font-size:11px;color:#777">
+          Or copy this URL into your browser:<br/>
+          <span style="word-break:break-all">${escapeHtml(resetLink)}</span>
+        </div></div>` : ''}
+      <div style="margin:24px 0;text-align:center">
+        <div style="font-size:11px;letter-spacing:2px;
+          text-transform:uppercase;color:#7F2020;font-weight:700">
+          Or use this code</div>
+        <div style="margin-top:8px;display:inline-block;font-size:32px;
+          font-weight:700;letter-spacing:6px;background:#FBF7EE;
+          color:#7F2020;padding:14px 18px;border-radius:12px">
+          ${code}</div>
+        <div style="margin-top:8px;font-size:11px;color:#777">
+          Paste this in the "I have a code" screen in the app.</div>
+      </div>
+      <p style="margin:16px 0 0 0;font-size:12px;line-height:1.55;
+        color:#777">If you did not request this, you can safely
+        ignore this email - nothing will change on your account.</p>
+    </td></tr>
+    <tr><td style="border-top:1px solid #F0E9D9;padding:18px 28px;
+      background:#FBF7EE;font-size:12px;color:#4A4A55">
+      <div style="font-weight:700;color:#7F2020">Team AstroSeer</div>
+      <a href="mailto:support@astroseer.in"
+        style="color:#7F2020;text-decoration:none">support@astroseer.in</a>
+    </td></tr>
+  </table>
+</td></tr></table></body></html>`;
+
+  // 5) Send + audit + silent BCC.
+  const auditRef = db.collection('chats').doc();
+  try {
+    await auditRef.set({
+      isEmailDoc: true,
+      to: email, kind: 'password_reset',
+      subject, body: text, html,
+      attachments: [],
+      status: 'sending', ts: Date.now(),
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (_) { /* tolerate */ }
+
+  let transport;
+  try { transport = await smtpTransport(db); }
+  catch (e) {
+    try { await auditRef.update({ status: 'failed',
+      error: String((e && e.message) || e) }); } catch (_) {}
+    return res.status(503).json({
+      error: String((e && e.message) || e) });
+  }
+  try {
+    const info = await transport.transporter.sendMail(withBcc({
+      from: transport.from, to: email, subject, text, html,
+    }, transport));
+    try { await auditRef.update({
+      status: 'sent', messageId: info.messageId || '',
+      response: String(info.response || '').slice(0, 200),
+    }); } catch (_) {}
+    return res.status(200).json({
+      ok: true, exists: true, sent: true });
+  } catch (e) {
+    try { await auditRef.update({ status: 'failed',
+      error: String((e && e.message) || e).slice(0, 500) }); } catch (_) {}
+    return res.status(502).json({
+      error: String((e && e.message) || e) });
+  }
+}
+
+async function handleResetVerify(req, res, db, body) {
+  const email = normaliseEmail(body.email);
+  const code = String(body.code || '').trim();
+  const newPassword = String(body.newPassword || '');
+  if (!email || !/.+@.+\..+/.test(email)) {
+    return res.status(400).json({ error: 'valid email required' });
+  }
+  if (!/^\d{6}$/.test(code)) {
+    return res.status(400).json({ error: 'Code must be 6 digits.' });
+  }
+  if (!newPassword || newPassword.length < 6) {
+    return res.status(400).json({
+      error: 'Password must be at least 6 characters.' });
+  }
+  const otpRef = db.collection('passwordResetOtps').doc(email);
+  const snap = await otpRef.get();
+  if (!snap.exists) {
+    return res.status(400).json({
+      error: 'No reset code on file. Request a new one.' });
+  }
+  const o = snap.data() || {};
+  if (o.used) {
+    return res.status(400).json({
+      error: 'This code has already been used. Request a new one.' });
+  }
+  const expMs = (o.expiresAt && o.expiresAt.toMillis
+    && o.expiresAt.toMillis()) || 0;
+  if (expMs && Date.now() > expMs) {
+    return res.status(410).json({
+      error: 'This code has expired. Request a new one.' });
+  }
+  if (Number(o.attempts || 0) >= MAX_ATTEMPTS) {
+    return res.status(429).json({
+      error: 'Too many wrong tries. Request a new code.' });
+  }
+  if (String(o.code) !== code) {
+    await otpRef.update({
+      attempts: admin.firestore.FieldValue.increment(1),
+    });
+    return res.status(400).json({
+      error: 'Incorrect code.',
+      remaining: Math.max(0, MAX_ATTEMPTS - 1 - Number(o.attempts || 0)),
+    });
+  }
+  // Match - update Firebase Auth password + flip emailVerified
+  // (the user demonstrated mailbox control by reading the OTP).
+  let userRec;
+  try {
+    userRec = await admin.auth().getUserByEmail(email);
+  } catch (_) {
+    return res.status(400).json({ error: 'Account not found.' });
+  }
+  try {
+    await admin.auth().updateUser(userRec.uid, {
+      password: newPassword,
+      emailVerified: true,
+    });
+  } catch (e) {
+    return res.status(502).json({
+      error: 'Could not update password: '
+        + String((e && e.message) || e) });
+  }
+  await otpRef.update({
+    used: true,
+    verifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  // Mirror emailVerified onto users/{uid} so admin list shows it
+  // without an Admin-SDK lookup per row.
+  try {
+    await db.collection('users').doc(userRec.uid).set({
+      emailVerified: true,
+    }, { merge: true });
+  } catch (_) {}
+  return res.status(200).json({ ok: true, updated: true });
+}
+

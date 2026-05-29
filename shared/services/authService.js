@@ -123,6 +123,38 @@ export async function verifyEmailOtp(email, code) {
   return j;
 }
 
+// ---- Forgot-password (combined link + OTP) -------------------------
+// Talks to the relay's /api/emailOtp endpoint with new actions:
+//   requestPasswordReset(email) -> { ok, exists, sent }
+//   verifyPasswordResetOtp(email, code, newPassword) -> { ok, updated }
+// Returns the server response shape so the UI can branch on
+// exists:false (no account) vs sent:true (email exists, code sent).
+export async function requestPasswordReset(email) {
+  const r = await fetch(otpEndpoint(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'resetRequest', email }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error
+    || `Reset request failed (HTTP ${r.status}).`);
+  return j;
+}
+
+export async function verifyPasswordResetOtp(email, code, newPassword) {
+  const r = await fetch(otpEndpoint(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'resetVerify', email, code, newPassword,
+    }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error
+    || `Reset verify failed (HTTP ${r.status}).`);
+  return j;
+}
+
 export async function logoutUser() {
   // Log BEFORE signing out so the audit POST still has a fresh ID token.
   try { await logAudit('logout', {}); } catch (_) {}

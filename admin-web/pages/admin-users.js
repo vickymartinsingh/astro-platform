@@ -125,7 +125,13 @@ export default function AdminUsers() {
         <table className="w-full text-sm">
           <thead className="text-left text-sub-text">
             <tr>
-              <th className="p-2">Name</th><th className="p-2">Email</th>
+              <th className="p-2">Name</th>
+              <th className="p-2">Email</th>
+              {/* New "Verified" column shows whether the user has
+                  completed the email OTP step. true once they verified
+                  via either the signup OTP or the forgot-password OTP
+                  (the relay flips users/{uid}.emailVerified on both). */}
+              <th className="p-2">Verified</th>
               <th className="p-2">Role</th><th className="p-2">Wallet</th>
               <th className="p-2">Status</th><th className="p-2">Actions</th>
             </tr>
@@ -135,6 +141,23 @@ export default function AdminUsers() {
               <tr key={u.uid} className="border-t">
                 <td className="p-2">{u.name}</td>
                 <td className="p-2">{u.email}</td>
+                <td className="p-2">
+                  {u.emailVerified ? (
+                    <span className="inline-flex items-center gap-1
+                      rounded-full bg-emerald-100 px-2 py-0.5
+                      text-[11px] font-bold text-emerald-700"
+                      title="Email verified via OTP">
+                      ✓ OTP verified
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1
+                      rounded-full bg-amber-100 px-2 py-0.5
+                      text-[11px] font-bold text-amber-700"
+                      title="Email not yet verified">
+                      ⚠ Not verified
+                    </span>
+                  )}
+                </td>
                 <td className="p-2 capitalize">
                   {u.role}{u.isAstrologer ? ' +astro' : ''}
                 </td>
