@@ -244,6 +244,88 @@ module.exports = async (req, res) => {
         testers: current, invited, inviteError,
       });
     }
+    // INVITE-ONLY: send the opt-in URL email without touching the
+    // Play Console list. Useful for resending an invitation to a
+    // tester who already exists or who missed the first email.
+    if (action === 'invite') {
+      const emailsRaw = body.email || body.emails;
+      const list = (Array.isArray(emailsRaw) ? emailsRaw
+        : [String(emailsRaw || '')])
+        .map((e) => String(e || '').trim().toLowerCase())
+        .filter((e) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e));
+      if (!list.length) {
+        return res.status(400).json({
+          error: 'at least one valid email required' });
+      }
+      if (!body.optInUrl) {
+        return res.status(400).json({
+          error: 'optInUrl required so the email can link to the install page' });
+      }
+      let invited = 0; const errors = [];
+      for (const e of list) {
+        try {
+          const r = await sendInvite({
+            toEmail: e, optInUrl: body.optInUrl,
+            packageName, track,
+          });
+          if (r && r.ok) invited += 1;
+          else errors.push({ email: e,
+            error: (r && r.error) || 'send failed' });
+        } catch (err) {
+          errors.push({ email: e,
+            error: String((err && err.message) || err) });
+        }
+      }
+      return res.status(200).json({
+        ok: true, invited, total: list.length, errors });
+    }
+    // BULK ADD: same as add but takes an array of emails.
+    if (action === 'addBulk') {
+      const emailsRaw = body.emails || [];
+      const incoming = (Array.isArray(emailsRaw) ? emailsRaw
+        : String(emailsRaw).split(/[\s,;]+/))
+        .map((e) => String(e || '').trim().toLowerCase())
+        .filter((e) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e));
+      if (!incoming.length) {
+        return res.status(400).json({
+          error: 'no valid emails in input' });
+      }
+      const current = await readTesters(packageName, track);
+      const added = [];
+      for (const e of incoming) {
+        if (!current.includes(e)) { current.push(e); added.push(e); }
+      }
+      if (added.length) {
+        await writeTesters(packageName, track, current);
+      }
+      let invited = 0;
+      const inviteErrors = [];
+      if (body.sendInvite !== false && body.optInUrl
+        && added.length) {
+        for (const e of added) {
+          try {
+            const r = await sendInvite({
+              toEmail: e, optInUrl: body.optInUrl,
+              packageName, track,
+            });
+            if (r && r.ok) invited += 1;
+            else inviteErrors.push({ email: e,
+              error: (r && r.error) || 'send failed' });
+          } catch (err) {
+            inviteErrors.push({ email: e,
+              error: String((err && err.message) || err) });
+          }
+        }
+      }
+      return res.status(200).json({
+        ok: true, package: packageName, track,
+        testers: current,
+        addedCount: added.length,
+        added,
+        invited,
+        inviteErrors,
+      });
+    }
     if (action === 'remove') {
       const email = String(body.email || '').trim().toLowerCase();
       if (!email) {

@@ -126,14 +126,62 @@ export default function AdminTesters() {
   if (loading) {
     return <Layout><div className="card">Loading...</div></Layout>;
   }
+  async function resendInvite(addr) {
+    if (!optInUrl.trim()) {
+      setErr('Paste the Play Store opt-in URL first.'); return;
+    }
+    setBusy(true);
+    try {
+      const r = await relayCall({
+        action: 'invite', package: pkg, track,
+        email: addr, optInUrl: optInUrl.trim(),
+      });
+      if (r && r.invited) {
+        flash(`Invite email re-sent to ${addr}.`);
+      } else {
+        flash(`Send failed: ${(r && r.errors && r.errors[0]
+          && r.errors[0].error) || 'unknown'}`);
+      }
+    } catch (e) {
+      setErr(e.message || 'Could not resend invite.');
+    } finally { setBusy(false); }
+  }
+
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkText, setBulkText] = useState('');
+
+  async function bulkAdd() {
+    setErr('');
+    if (!bulkText.trim()) { setErr('Paste emails first.'); return; }
+    setBusy(true);
+    try {
+      const r = await relayCall({
+        action: 'addBulk', package: pkg, track,
+        emails: bulkText, sendInvite, optInUrl: optInUrl.trim(),
+      });
+      setTesters(r.testers || []);
+      setBulkText('');
+      setBulkOpen(false);
+      flash(`Added ${r.addedCount || 0} new tester(s) on Play Console`
+        + (sendInvite ? `; ${r.invited || 0} invite email(s) sent.`
+          : '.'));
+    } catch (e) {
+      setErr(e.message || 'Bulk add failed.');
+    } finally { setBusy(false); }
+  }
+
   return (
     <Layout>
       <div className="card">
-        <h2 className="text-lg font-bold">Invite Tester</h2>
+        <h2 className="text-lg font-bold">Invite a new tester</h2>
         <p className="mt-1 text-sm text-sub-text">
           Add an email to the Play Console testers list for the
-          selected app and track. The tester gets an invite email
-          with the Play Store opt-in URL automatically.
+          selected app and track. The person gets a branded invite
+          email with the Play Store opt-in link. One tap on that
+          link, accept the test program, and they can install the
+          app from Play Store. Works only after the build is on the
+          selected track (it is on Internal and Closed Alpha
+          right now for the Customer app).
         </p>
 
         <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -191,8 +239,32 @@ export default function AdminTesters() {
         <label className="mt-3 flex items-center gap-2 text-sm">
           <input type="checkbox" checked={sendInvite}
             onChange={(e) => setSendInvite(e.target.checked)} />
-          Also email the tester the opt-in link
+          Also email the tester the opt-in link (recommended)
         </label>
+
+        <div className="mt-4 border-t border-gray-100 pt-3">
+          <button type="button"
+            onClick={() => setBulkOpen(!bulkOpen)}
+            className="text-sm font-bold text-primary">
+            {bulkOpen ? 'Hide' : '+ Invite multiple testers at once'}
+          </button>
+          {bulkOpen && (
+            <div className="mt-2">
+              <textarea className="input mt-1 min-h-[100px]"
+                placeholder={'Paste one email per line, OR separate '
+                  + 'them with commas / spaces.\n\nexample1@gmail.com\n'
+                  + 'example2@gmail.com'}
+                value={bulkText}
+                onChange={(e) => setBulkText(e.target.value)} />
+              <div className="mt-2 flex justify-end">
+                <button type="button" onClick={bulkAdd} disabled={busy}
+                  className="btn-primary !min-h-0 px-4 py-2 text-sm">
+                  {busy ? 'Saving...' : 'Add all + send invites'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
 
         {err && (
           <div className="mt-3 rounded-card bg-danger/10 p-3
@@ -220,15 +292,24 @@ export default function AdminTesters() {
           <ul className="mt-3 divide-y divide-gray-100">
             {testers.map((t) => (
               <li key={t} className="flex items-center justify-between
-                py-2 text-sm">
-                <span className="font-mono">{t}</span>
-                <button type="button"
-                  onClick={() => removeTester(t)}
-                  disabled={busy}
-                  className="text-xs font-bold text-danger
-                    hover:underline">
-                  Remove
-                </button>
+                gap-2 py-2 text-sm">
+                <span className="truncate font-mono">{t}</span>
+                <div className="flex shrink-0 items-center gap-3">
+                  <button type="button"
+                    onClick={() => resendInvite(t)}
+                    disabled={busy}
+                    className="text-xs font-bold text-primary
+                      hover:underline">
+                    Resend invite
+                  </button>
+                  <button type="button"
+                    onClick={() => removeTester(t)}
+                    disabled={busy}
+                    className="text-xs font-bold text-danger
+                      hover:underline">
+                    Remove
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
