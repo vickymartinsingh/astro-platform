@@ -419,50 +419,59 @@ async function uploadPdf(uid, kind, buf) {
   // Firebase Storage tier. Requires admin SDK to have been
   // initialised with storageBucket - init() above does that using
   // FIREBASE_STORAGE_BUCKET env var or the project_id default.
-  try {
-    const bucket = admin.storage().bucket();
-    const ts = Date.now();
-    const path = `reports/${uid}/${ts}_${kind}.pdf`;
-    const file = bucket.file(path);
-    await file.save(buf, {
-      metadata: { contentType: 'application/pdf',
-        cacheControl: 'public, max-age=31536000, immutable' },
-      resumable: false,
-      validation: false,
-    });
-    // Try makePublic for the simple firebaseapp.com download URL.
-    // If the relay's service account lacks the storage.objects
-    // setIamPolicy permission, fall back to a 100-year signed URL
-    // which uses the service account's signBlob permission instead
-    // (much more commonly granted). Either way the customer's
-    // /orders re-download keeps working.
-    let url = null;
+  // Try the default bucket (whichever bucketName(sa) resolved to),
+  // then fall back to the legacy <project>.appspot.com bucket if
+  // the first one doesn't exist. Google migrated newer projects to
+  // .firebasestorage.app in 2024 but a lot of projects also still
+  // own the old .appspot.com bucket - either can be the active one.
+  const sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
+  const candidates = [
+    bucketName(sa),
+    legacyBucketName(sa),
+  ].filter((n, i, a) => a.indexOf(n) === i);
+  const lastErr = { firebase: null, bucket: null };
+  for (const candidate of candidates) {
     try {
-      await file.makePublic();
-      url = `https://firebasestorage.googleapis.com/v0/b/`
-        + `${bucket.name}/o/${encodeURIComponent(path)}?alt=media`;
-    } catch (_) {
+      const bucket = admin.storage().bucket(candidate);
+      const ts = Date.now();
+      const path = `reports/${uid}/${ts}_${kind}.pdf`;
+      const file = bucket.file(path);
+      await file.save(buf, {
+        metadata: { contentType: 'application/pdf',
+          cacheControl: 'public, max-age=31536000, immutable' },
+        resumable: false,
+        validation: false,
+      });
+      // Try makePublic for the simple firebaseapp.com download URL.
+      // If the relay's service account lacks the storage.objects
+      // setIamPolicy permission, fall back to a 100-year signed URL
+      // which uses the service account's signBlob permission
+      // instead (much more commonly granted).
+      let url = null;
       try {
+        await file.makePublic();
+        url = `https://firebasestorage.googleapis.com/v0/b/`
+          + `${bucket.name}/o/${encodeURIComponent(path)}?alt=media`;
+      } catch (_) {
         const [signed] = await file.getSignedUrl({
           action: 'read',
           expires: Date.now() + (100 * 365 * 24 * 60 * 60 * 1000),
         });
         url = signed;
-      } catch (e2) {
-        throw new Error('Could not produce a download URL: '
-          + ((e2 && e2.message) || e2));
       }
+      return {
+        storagePath: path,
+        bucketUsed: bucket.name,
+        url,
+        inline: false,
+      };
+    } catch (e) {
+      lastErr.bucket = candidate;
+      lastErr.firebase = (e && e.message) || String(e);
+      // eslint-disable-next-line no-console
+      console.warn(`Firebase Storage upload to bucket "${candidate}" `
+        + `failed: ${lastErr.firebase}`);
     }
-    return {
-      storagePath: path,
-      bucketUsed: bucket.name,
-      url,
-      inline: false,
-    };
-  } catch (e) {
-    // eslint-disable-next-line no-console
-    console.warn('Firebase Storage upload failed, falling back to '
-      + 'inline Firestore base64:', (e && e.message) || e);
   }
   // Last-resort inline path: encode the PDF bytes as base64 and
   // return a data URL the browser can download directly. Only
@@ -472,8 +481,10 @@ async function uploadPdf(uid, kind, buf) {
   if (b64.length > 950 * 1024) {
     throw new Error('PDF is too large to store inline '
       + `(${(b64.length / 1024).toFixed(0)} KB base64) and Firebase `
-      + 'Storage upload failed - check FIREBASE_STORAGE_BUCKET on '
-      + 'the relay env or set BLOB_READ_WRITE_TOKEN for Vercel Blob.');
+      + `Storage upload failed (bucket=${lastErr.bucket || 'unknown'}, `
+      + `error=${lastErr.firebase || 'unknown'}). Check that the `
+      + 'relay service account has Storage Object Admin on the '
+      + 'bucket, or set BLOB_READ_WRITE_TOKEN for Vercel Blob.');
   }
   return {
     storagePath: `inline:${uid}:${Date.now()}_${kind}`,
