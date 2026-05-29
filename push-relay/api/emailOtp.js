@@ -359,7 +359,13 @@ function renderTemplate(kind, v) {
   v = v || {};
   if (kind === 'welcome') {
     const name = v.name || 'there';
-    const appUrl = v.appUrl || 'https://astroseer.in';
+    // Play Store install link is the primary CTA so new signups land
+    // straight on the install page. The web app URL is kept as the
+    // secondary fallback link in the body for desktop / iOS recipients.
+    const playUrl = v.playUrl
+      || 'https://play.google.com/store/apps/details'
+        + '?id=com.astroseer.mobile';
+    const webUrl = v.appUrl || 'https://astroseer.in';
     const subject = v.subject || 'Welcome to AstroSeer';
     const text = `Namaste ${name},\n\n`
       + 'Welcome to AstroSeer - your home for authentic Vedic '
@@ -370,7 +376,8 @@ function renderTemplate(kind, v) {
       + '  * Talk or chat with an astrologer in minutes\n'
       + '  * Read your daily horoscope and tarot pull\n'
       + '  * Explore numerology, kundli matching and remedies\n\n'
-      + `Open the app: ${appUrl}\n\n`
+      + `Install AstroSeer on Android: ${playUrl}\n`
+      + `Or open on the web: ${webUrl}\n\n`
       + 'With blessings,\nTeam AstroSeer\n'
       + 'support@astroseer.in - astroseer.in';
     const html = renderHtmlEmail({
@@ -386,10 +393,11 @@ function renderTemplate(kind, v) {
         'Read your daily horoscope and tarot pull',
         'Explore numerology, kundli matching and remedies',
       ],
-      ctaLabel: 'Open AstroSeer',
-      ctaUrl: appUrl,
-      footnote: 'If you have any questions, just reply to this '
-        + 'email - a real human from our team will get back to you.',
+      ctaLabel: 'Install on Google Play',
+      ctaUrl: playUrl,
+      footnote: 'Prefer the web? Open astroseer.in. Questions? Just '
+        + 'reply to this email - a real human from our team will '
+        + 'get back to you.',
     });
     return { subject, text, html };
   }
