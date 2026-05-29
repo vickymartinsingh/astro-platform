@@ -19,6 +19,10 @@ export default function LoginCard({ onDone, compact, initialMode }) {
   const [password, setPassword] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  // Step label shown next to the spinner so the user sees WHICH
+  // sub-step is in flight. On iOS this is the difference between
+  // "stuck forever with no clue" and "ah, profile lookup is slow".
+  const [stepLabel, setStepLabel] = useState('');
   // OTP step state. Only entered when the admin has
   // settings/features.email_verification === true AND the user is
   // creating a fresh account (mode === 'signup'). otpUser holds the
@@ -60,7 +64,10 @@ export default function LoginCard({ onDone, compact, initialMode }) {
   }
 
   async function finish(user) {
-    const p = await withTimeout(userService.getUser(user.uid), 15000,
+    setStepLabel('Loading profile…');
+    // Drop from 15s to 8s so an iOS Firestore hang surfaces as a real
+    // error fast instead of leaving the user staring at "Signing in…".
+    const p = await withTimeout(userService.getUser(user.uid), 8000,
       'Profile lookup');
     if (p && p.isBlocked) {
       await authService.logoutUser();
@@ -104,15 +111,16 @@ export default function LoginCard({ onDone, compact, initialMode }) {
         setErr('Password must be at least 6 characters.'); return;
       }
     }
-    setErr(''); setBusy(true);
+    setErr(''); setBusy(true); setStepLabel('');
     try {
       let user;
       if (mode === 'signup') {
+        setStepLabel('Creating account…');
         user = await withTimeout(
           authService.signupUser(name.trim(), email.trim(),
             password, { phone: phone.replace(/\D/g, '').replace(/^91/, ''),
               dob, gender }),
-          25000, 'Signup');
+          15000, 'Signup');
         // Admin-toggled email verification:
         // settings/features.email_verification === true forces a
         // 6-digit OTP sent from support@astroseer.in before the new
@@ -176,26 +184,45 @@ export default function LoginCard({ onDone, compact, initialMode }) {
           }
         }
       } else {
+        setStepLabel('Verifying credentials…');
         user = await withTimeout(
           authService.loginUser(email.trim(), password),
-          25000, 'Login');
+          12000, 'Login');
       }
       await finish(user);
     } catch (e2) {
       const code = e2?.code || '';
+      const msg = e2?.message || '';
       if (code === 'auth/timeout') {
-        setErr('Network is slow or unavailable. Please check your '
-          + 'connection and try again.');
+        // Surface WHICH step actually hung so the user (and we) can
+        // see if it's auth, the profile lookup, or something else.
+        setErr(`${msg || 'Operation timed out.'} `
+          + 'Please check your connection and try again. '
+          + '(If this keeps happening on the iPhone app, '
+          + 'force-close + reopen.)');
+      } else if (code === 'auth/wrong-password'
+                 || code === 'auth/invalid-credential') {
+        setErr('Wrong email or password.');
+      } else if (code === 'auth/user-not-found') {
+        setErr('No account found with that email.');
+      } else if (code === 'auth/too-many-requests') {
+        setErr('Too many attempts. Try again in a few minutes.');
+      } else if (code === 'auth/network-request-failed') {
+        setErr('Network request failed. Are you online?');
       } else if (mode === 'signup') {
         setErr(code === 'auth/email-already-in-use'
           ? 'That email is already registered.'
-          : 'Could not create account.');
+          : `Could not create account${code ? ` (${code})` : ''}.`);
       } else {
-        setErr('Invalid email or password.');
+        // Show the real Firebase error code so we can debug iOS
+        // edge cases instead of blanket "Invalid email or password".
+        setErr(`Sign-in failed${code ? ` (${code})` : ''}: `
+          + (msg || 'unknown error'));
       }
     } finally {
       // Belt and braces: always release the button, no matter what.
       setBusy(false);
+      setStepLabel('');
     }
   }
 
@@ -519,7 +546,8 @@ export default function LoginCard({ onDone, compact, initialMode }) {
               required />
             <button className="btn-grad w-full justify-center py-3"
               disabled={busy}>
-              {busy ? 'Please wait…'
+              {busy
+                ? (stepLabel || 'Please wait…')
                 : mode === 'signup' ? 'Sign up' : 'Login'}
             </button>
             {mode === 'login' && (

@@ -101,10 +101,21 @@ function initAuth() {
 }
 function initDb() {
   if (!app) return undefined;
+  // iOS Capacitor (capacitor:// custom scheme) is the silent killer
+  // for Firestore: the default WebChannel transport boots by opening
+  // a hidden iframe to negotiate; WKWebView under capacitor:// blocks
+  // those iframes for security so the auto-detect HANGS forever. The
+  // visible symptom is exactly what the user reports: tap Login, hit
+  // signInWithEmailAndPassword (which works), then the post-login
+  // userService.getUser() call into Firestore never resolves and the
+  // "Signing in..." spinner runs forever. Force long-polling on iOS
+  // so Firestore never tries the iframe path; auto-detect stays ON
+  // for Android / web where WebChannel works fine.
+  const force = isCapacitorIOS();
   try {
-    return initializeFirestore(app, {
-      experimentalAutoDetectLongPolling: true,
-    });
+    return initializeFirestore(app, force
+      ? { experimentalForceLongPolling: true, useFetchStreams: false }
+      : { experimentalAutoDetectLongPolling: true });
   } catch (_) {
     try { return getFirestore(app); } catch (e) { return undefined; }
   }
