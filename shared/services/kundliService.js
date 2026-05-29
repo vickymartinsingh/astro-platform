@@ -410,6 +410,39 @@ async function _isUrlAlive(url) {
   } catch (_) { return false; }
 }
 
+// FIRESTORE-FREE RESCUE: when the order doc says *_generating but
+// the PDF actually exists on AstroSeer, this asks the relay to
+// pull it straight to R2 (no Firestore involved) and return the
+// URL. Triggered automatically by ApiPdfHero when the order has
+// been generating for more than a couple of minutes - covers the
+// case where Firebase quota / outage blocks the normal flip path.
+export async function rescuePdfByOrderId(orderId) {
+  if (!orderId) return null;
+  // Reach the same /api/kundli endpoint as everything else; this
+  // is just a new action.
+  const base = (typeof process !== 'undefined' && process.env
+    && process.env.NEXT_PUBLIC_KUNDLI_ENDPOINT) || '';
+  const url = base ? base.replace(/\/api\/kundli$/, '/api/kundli')
+    : '/api/kundli';
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'rescueByOrderId',
+        orderId: String(orderId) }),
+    });
+    const j = await r.json().catch(() => null);
+    if (!j || !j.ok) return null;
+    return {
+      pdfUrl: j.pdfUrl,
+      status: j.status,
+      pdfReady: !!j.pdfUrl,
+      rescue: !!j.rescue,
+      source: j.source || null,
+    };
+  } catch (_) { return null; }
+}
+
 export async function resolveOrderPdfUrl(uid, order) {
   if (!order) return null;
   // Chunked path - reassembly from Firestore subcollection.

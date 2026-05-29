@@ -3475,6 +3475,25 @@ function ApiPdfHero({ kundli }) {
             || d.status === 'free_generating');
           if (gen) {
             setAutoGen({ status: 'generating', order: gen });
+            // AUTO-RESCUE: if the order has been generating for more
+            // than ~2 minutes, try the Firestore-free rescue path.
+            // Covers the case where Firebase is down/at-quota and
+            // the relay's normal sweep can't flip the status. The
+            // rescue endpoint pulls the PDF straight from AstroSeer
+            // and pushes it to R2 - no Firestore involvement.
+            const ageMs = gen.paidAt && gen.paidAt.toMillis
+              ? Date.now() - gen.paidAt.toMillis() : 0;
+            if (ageMs > 2 * 60 * 1000) {
+              (async () => {
+                const rescued = await kundliService
+                  .rescuePdfByOrderId(gen.id);
+                if (rescued && rescued.pdfUrl) {
+                  setAutoGen({ status: 'ready', order: gen,
+                    url: rescued.pdfUrl,
+                    name: `AstroSeer-Kundli-${gen.id}.pdf` });
+                }
+              })();
+            }
             return;
           }
           const failed = docs.find((d) => d.status === 'failed'
@@ -3518,14 +3537,37 @@ function ApiPdfHero({ kundli }) {
       setViewing(true);
       return;
     }
-    // STILL GENERATING: brief inline notice, NO modal. The
-    // onSnapshot listener will flip autoGen.status to 'ready'
-    // when AstroSeer delivers; the next click opens the viewer.
+    // STILL GENERATING: try the Firestore-free rescue path FIRST.
+    // The PDF may already be sitting on AstroSeer (or even cached
+    // on R2) - this fires the rescue endpoint which pulls the
+    // bytes and returns a ready URL without touching Firestore.
     if (autoGen.status === 'generating') {
-      setProgress('Your free kundli is still being prepared. The PDF '
-        + 'will appear here automatically - usually within a few '
-        + 'minutes.');
-      setTimeout(() => setProgress(''), 6000);
+      setProgress('Looking for your kundli now...');
+      if (autoGen.order && autoGen.order.id) {
+        (async () => {
+          const rescued = await kundliService.rescuePdfByOrderId(
+            autoGen.order.id);
+          if (rescued && rescued.pdfUrl) {
+            setResult({ ok: true, pdfUrl: rescued.pdfUrl,
+              pdfName: `AstroSeer-Kundli-${autoGen.order.id}.pdf` });
+            setAutoGen({ status: 'ready', order: autoGen.order,
+              url: rescued.pdfUrl,
+              name: `AstroSeer-Kundli-${autoGen.order.id}.pdf` });
+            setViewing(true);
+            setProgress('');
+          } else {
+            setProgress('Your free kundli is still being prepared. '
+              + 'The PDF will appear here automatically - usually '
+              + 'within a few minutes.');
+            setTimeout(() => setProgress(''), 6000);
+          }
+        })();
+      } else {
+        setProgress('Your free kundli is still being prepared. The '
+          + 'PDF will appear here automatically - usually within a '
+          + 'few minutes.');
+        setTimeout(() => setProgress(''), 6000);
+      }
       return;
     }
     // NO ORDER YET (or previous attempt failed): silently kick off
@@ -3572,10 +3614,29 @@ function ApiPdfHero({ kundli }) {
       return;
     }
     if (autoGen.status === 'generating') {
-      setProgress('Your free kundli is still being prepared. The PDF '
-        + 'will appear here automatically - usually within a few '
-        + 'minutes.');
-      setTimeout(() => setProgress(''), 6000);
+      // Try rescue path - skips Firestore entirely.
+      setProgress('Looking for your kundli now...');
+      if (autoGen.order && autoGen.order.id) {
+        (async () => {
+          const rescued = await kundliService.rescuePdfByOrderId(
+            autoGen.order.id);
+          if (rescued && rescued.pdfUrl) {
+            kundliService.downloadPdfFromUrl(rescued.pdfUrl,
+              `AstroSeer-Kundli-${autoGen.order.id}.pdf`);
+            setAutoGen({ status: 'ready', order: autoGen.order,
+              url: rescued.pdfUrl,
+              name: `AstroSeer-Kundli-${autoGen.order.id}.pdf` });
+            setProgress('');
+          } else {
+            setProgress('Your free kundli is still being prepared. '
+              + 'The PDF will appear here automatically.');
+            setTimeout(() => setProgress(''), 6000);
+          }
+        })();
+      } else {
+        setProgress('Your free kundli is still being prepared.');
+        setTimeout(() => setProgress(''), 6000);
+      }
       return;
     }
     // No PDF cached yet AND no auto-gen on the way - fall through

@@ -712,6 +712,13 @@ module.exports = async (req, res) => {
   if (src.action === 'webhookComplete' && req.method === 'POST') {
     return reportMod().handleWebhookComplete(req, res);
   }
+  // Firestore-free rescue path. Customer's app calls this when its
+  // Firestore listener hits RESOURCE_EXHAUSTED - we fetch the PDF
+  // from AstroSeer + push to R2 + return the URL without touching
+  // Firestore at all. Works as GET or POST.
+  if (src.action === 'rescueByOrderId') {
+    return reportMod().handleRescueByOrderId(req, res);
+  }
 
   // GET ?probe=1 -> just report which provider would be used and
   // whether the relay can read Firestore. Lets admin verify the chain
@@ -775,7 +782,7 @@ module.exports = async (req, res) => {
       },
     };
     return res.status(200).json({
-      relayBuild: 'r2-env-vars-set-2026-05-29T03:20',
+      relayBuild: 'firestore-free-rescue-2026-05-29T03:50',
       provider: pc.provider,
       adminInit: pc.adminInit,
       hasKey: !!(pc.creds && (pc.creds.key || pc.creds.secret))

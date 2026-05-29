@@ -2517,6 +2517,207 @@ async function handleWebhookComplete(req, res) {
   });
 }
 
+// ====================================================================
+// FIRESTORE-FREE RESCUE PATH
+//
+// When Firebase is unavailable (quota exhausted, network blip, even a
+// regional outage), the customer's normal Firestore-driven flow dies
+// before it reaches storage. The PDF is already sitting on AstroSeer
+// AND in many cases on our Cloudflare R2 bucket - the only thing
+// missing is a way to ask for it that doesn't go through Firestore.
+//
+// handleRescueByOrderId:
+//   POST /api/kundli  { action:'rescueByOrderId', orderId, uid }
+//   - Probes R2 first (cheap; the PDF may already be there from a
+//     successful prior upload). If hit, returns the public URL.
+//   - On miss: asks AstroSeer's status endpoint if the PDF is ready;
+//     if yes, fetches the bytes and uploads to R2; returns the URL.
+//   - Skips Firestore entirely (read AND write). This is the path
+//     the customer's app falls back to when its onSnapshot listener
+//     hits RESOURCE_EXHAUSTED.
+//
+// The endpoint is idempotent: hitting it 10 times for the same
+// order is safe - the first call uploads, the rest return the same
+// R2 URL from the deterministic key.
+// ====================================================================
+async function handleRescueByOrderId(req, res) {
+  try {
+    return await _handleRescueByOrderIdInner(req, res);
+  } catch (e) {
+    try {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+    } catch (_) { /* */ }
+    return res.status(503).json({
+      ok: false,
+      error: String((e && e.message) || e).slice(0, 400),
+    });
+  }
+}
+
+async function _handleRescueByOrderIdInner(req, res) {
+  const body = readBody(req);
+  // Both 'orderId' and 'order_id' accepted for clients that follow
+  // the AstroSeer log payload convention.
+  const orderIdRaw = body.orderId || body.order_id
+    || (req.query && (req.query.orderId || req.query.order_id))
+    || '';
+  const uidRaw = body.uid
+    || (req.query && req.query.uid)
+    || '';
+  const orderId = String(orderIdRaw || '').trim();
+  const uid = String(uidRaw || '').trim();
+  if (!orderId) {
+    return res.status(400).json({ error: 'orderId required' });
+  }
+  // R2 must be configured for this rescue path to work - it's the
+  // store we read from / write to. Vercel Blob also works.
+  const r2Configured = !!(process.env.R2_ACCOUNT_ID
+    && process.env.R2_ACCESS_KEY_ID
+    && process.env.R2_SECRET_ACCESS_KEY
+    && process.env.R2_BUCKET);
+  const blobConfigured = !!process.env.BLOB_READ_WRITE_TOKEN;
+  if (!r2Configured && !blobConfigured) {
+    return res.status(503).json({
+      error: 'no fallback storage configured (set BLOB_READ_WRITE_TOKEN'
+        + ' or R2_* env vars)' });
+  }
+  // ---- Step 1: check if the PDF is already in R2 (idempotency) ----
+  // We use a deterministic key per order so re-running the rescue
+  // doesn't create duplicate objects. The key pattern is
+  // rescued/{orderId}.pdf - flat and predictable.
+  const rescueKey = `rescued/${orderId}.pdf`;
+  const r2PublicBase = process.env.R2_PUBLIC_URL
+    || `https://${process.env.R2_BUCKET}.r2.dev`;
+  const r2RescueUrl = r2Configured
+    ? `${r2PublicBase.replace(/\/+$/, '')}/${rescueKey}` : null;
+  if (r2RescueUrl) {
+    try {
+      const head = await fetch(r2RescueUrl, { method: 'HEAD' });
+      if (head.ok) {
+        try {
+          res.setHeader('Access-Control-Allow-Origin', '*');
+        } catch (_) { /* */ }
+        return res.status(200).json({
+          ok: true,
+          orderId,
+          status: 'ready',
+          pdfUrl: r2RescueUrl,
+          source: 'r2-cache',
+          rescue: true,
+        });
+      }
+    } catch (_) { /* fall through to AstroSeer */ }
+  }
+  // ---- Step 2: ask AstroSeer if the PDF is generated yet ----
+  const base = process.env.ASTROSEER_API_URL
+    || 'https://astroseer-api.onrender.com';
+  let astroStatus = null;
+  try {
+    const sr = await fetch(`${base}/api/orders/`
+      + `${encodeURIComponent(orderId)}/status`, { method: 'GET' });
+    if (sr.ok) astroStatus = await sr.json().catch(() => null);
+  } catch (_) { /* */ }
+  if (!astroStatus) {
+    return res.status(502).json({
+      ok: false,
+      orderId,
+      status: 'generating',
+      error: 'AstroSeer status unreachable; try again in a moment.',
+    });
+  }
+  if (astroStatus.status !== 'sent' || !astroStatus.pdf_ready) {
+    return res.status(200).json({
+      ok: true,
+      orderId,
+      status: astroStatus.status || 'generating',
+      pdfReady: false,
+      hint: 'AstroSeer has not finished generating this order yet.',
+    });
+  }
+  // ---- Step 3: fetch PDF bytes from AstroSeer ----
+  let pdfBuf;
+  try {
+    const pr = await fetch(`${base}/api/orders/`
+      + `${encodeURIComponent(orderId)}/pdf`, { method: 'GET' });
+    if (!pr.ok) {
+      throw new Error(`AstroSeer pdf fetch ${pr.status}`);
+    }
+    pdfBuf = Buffer.from(await pr.arrayBuffer());
+  } catch (e) {
+    return res.status(502).json({
+      ok: false,
+      orderId,
+      error: `AstroSeer PDF fetch failed: ${(e && e.message) || e}`,
+    });
+  }
+  // ---- Step 4: upload to R2 at the deterministic rescue key ----
+  let finalUrl = null;
+  if (r2Configured) {
+    try {
+      const { S3Client, PutObjectCommand } = require(
+        '@aws-sdk/client-s3');
+      const client = new S3Client({
+        region: 'auto',
+        endpoint: `https://${process.env.R2_ACCOUNT_ID}.`
+          + 'r2.cloudflarestorage.com',
+        credentials: {
+          accessKeyId: process.env.R2_ACCESS_KEY_ID,
+          secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+        },
+        forcePathStyle: true,
+      });
+      await client.send(new PutObjectCommand({
+        Bucket: process.env.R2_BUCKET,
+        Key: rescueKey,
+        Body: pdfBuf,
+        ContentType: 'application/pdf',
+        CacheControl: 'public, max-age=31536000, immutable',
+      }));
+      finalUrl = r2RescueUrl;
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('R2 rescue upload failed:', (e && e.message) || e);
+    }
+  }
+  if (!finalUrl && blobConfigured) {
+    try {
+      const { put } = require('@vercel/blob');
+      const blob = await put(rescueKey, pdfBuf, {
+        access: 'public',
+        contentType: 'application/pdf',
+        cacheControlMaxAge: 31536000,
+        addRandomSuffix: false,
+      });
+      finalUrl = blob.url;
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('Vercel Blob rescue upload failed:',
+        (e && e.message) || e);
+    }
+  }
+  if (!finalUrl) {
+    return res.status(502).json({
+      ok: false,
+      orderId,
+      error: 'PDF fetched from AstroSeer but no storage backend '
+        + 'accepted the upload.',
+    });
+  }
+  try {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  } catch (_) { /* */ }
+  return res.status(200).json({
+    ok: true,
+    orderId,
+    uid: uid || null,
+    status: 'ready',
+    pdfUrl: finalUrl,
+    sizeBytes: pdfBuf.length,
+    source: 'astroseer->r2-rescue',
+    rescue: true,
+  });
+}
+
 module.exports = {
   handleReport,
   handleReportStatus,
@@ -2524,4 +2725,5 @@ module.exports = {
   handleWake,
   handleSweepPending,
   handleWebhookComplete,
+  handleRescueByOrderId,
 };
