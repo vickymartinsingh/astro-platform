@@ -12,16 +12,40 @@ export default function Document() {
             __html: "(function(){function bad(m){if(!m)return true;"
               + 'var s=String(m).trim();return s===""||s==='
               + '"Script error."||s==="Script error"||'
-              + '/^ResizeObserver/.test(s);}function show(m){try{var b='
+              + '/^ResizeObserver/.test(s);}'
+              // Detect Firestore quota / unreachable errors and show a
+              // friendly banner instead of the raw stack trace. Quota
+              // resets at midnight Pacific (~1:30 PM IST).
+              + 'function isQuota(m){var s=String(m||"");return '
+              + '/RESOURCE_EXHAUSTED|Quota exceeded|FirebaseError:[^\\n]'
+              + '*[Qq]uota/.test(s);}'
+              + 'function show(m){try{var b='
               + 'document.body||document.documentElement;var d='
               + "document.getElementById('__bootErr');if(!d){d="
-              + "document.createElement('pre');d.id='__bootErr';"
+              + "document.createElement('div');d.id='__bootErr';"
               + "d.style.cssText='position:fixed;left:0;top:0;right:0;"
-              + 'bottom:0;margin:0;padding:14px;background:#fff;'
-              + 'color:#b00020;font:12px/1.45 monospace;white-space:'
-              + 'pre-wrap;word-break:break-word;overflow:auto;z-index:'
-              + "2147483647';b.appendChild(d);}d.textContent='APP ERROR"
-              + " (screenshot this):\\n\\n'+m;}catch(e){}}"
+              + 'bottom:0;margin:0;padding:20px;background:#fff;'
+              + 'font:14px/1.5 system-ui,Inter,Arial,sans-serif;'
+              + 'overflow:auto;z-index:2147483647';b.appendChild(d);}'
+              + 'if(isQuota(m)){d.innerHTML="<div style=\\"max-width:'
+              + '640px;margin:60px auto;text-align:center;color:#7F2020"'
+              + '+"\\"><div style=\\"font-size:22px;font-weight:700;"'
+              + '+"margin-bottom:12px\\">Firebase daily quota reached'
+              + '</div><div style=\\"color:#444;line-height:1.6\\">'
+              + 'The admin panel uses Firestore for every read. We have'
+              + ' hit the Spark plan daily cap of 50,000 reads. The'
+              + ' quota resets at <b>midnight Pacific (about 1:30 PM'
+              + ' IST)</b>.<br/><br/>Real-time data will resume'
+              + ' automatically at that time. The customer-facing app'
+              + ' continues to work via the Firestore-free rescue path.'
+              + '</div><div style=\\"margin-top:24px;font-size:11px;'
+              + 'color:#999\\">If you need this resolved sooner, enable'
+              + ' Firebase Blaze plan ($0 at your scale; the daily cap'
+              + ' goes away).</div></div>";return;}'
+              + "d.style.cssText+=';padding:14px;color:#b00020;font:"
+              + '12px/1.45 monospace;white-space:pre-wrap;word-break:'
+              + "break-word';d.textContent='APP ERROR (screenshot this)"
+              + ":\\n\\n'+m;}catch(e){}}"
               + "window.addEventListener('error',function(e){var m=(e&&"
               + 'e.error&&(e.error.stack||e.error.message))||(e&&'
               + "e.message)||'';if(bad(m))return;show(m);});window."
