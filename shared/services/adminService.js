@@ -25,13 +25,15 @@ function pushEndpoint() {
     && process.env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
 }
 
-// Relay endpoint for admin Auth operations (derives from push endpoint).
+// Relay endpoint for admin tools. Now points at /api/adminTools (a
+// multi-tool dispatcher) - old /api/adminUser was merged into it so
+// the relay stays under Vercel Hobby's 12-function cap.
 function adminRelay() {
   const explicit = (typeof process !== 'undefined' && process.env
     && process.env.NEXT_PUBLIC_ADMIN_ENDPOINT) || '';
   if (explicit) return explicit;
   const push = pushEndpoint();
-  return push ? push.replace(/\/sendPush\/?$/, '/adminUser') : '';
+  return push ? push.replace(/\/sendPush\/?$/, '/adminTools') : '';
 }
 
 // Change a user's LOGIN email / password (Firebase Auth) via the relay,
@@ -45,13 +47,18 @@ export async function adminUpdateAuthUser(uid, { email, password } = {}) {
   const token = auth && auth.currentUser
     ? await auth.currentUser.getIdToken() : null;
   if (!token) throw new Error('Not signed in.');
+  // Need ADMIN_RELAY_KEY for the multi-tool endpoint. Falls back to
+  // empty string for setups still relying on idToken-only auth.
+  const relayKey = (typeof process !== 'undefined' && process.env
+    && process.env.NEXT_PUBLIC_ADMIN_RELAY_KEY) || '';
   const r = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
+      ...(relayKey ? { 'x-admin-key': relayKey } : {}),
     },
-    body: JSON.stringify({ uid, email, password }),
+    body: JSON.stringify({ tool: 'updateUser', uid, email, password }),
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok || j.error) throw new Error(j.error || 'Update failed');

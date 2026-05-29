@@ -40,13 +40,16 @@ function relayUrl() {
   return 'https://astro-platform-push-relay.vercel.app';
 }
 
+// Calls the multi-tool admin endpoint with tool:'playTesters'. The
+// old /api/playTesters path was merged into /api/adminTools to stay
+// under Vercel Hobby's 12-function cap.
 async function relayCall(body) {
-  const r = await fetch(`${relayUrl()}/api/playTesters`, {
+  const r = await fetch(`${relayUrl()}/api/adminTools`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json',
       'x-admin-key': (typeof process !== 'undefined' && process.env
         && process.env.NEXT_PUBLIC_ADMIN_RELAY_KEY) || '' },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ tool: 'playTesters', ...body }),
   });
   const j = await r.json().catch(() => null);
   if (!r.ok) {
