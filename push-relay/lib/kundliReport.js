@@ -614,6 +614,13 @@ async function smtpTransport(db) {
     ? cfg.smtpSecure : port === 465;
   const from = cfg.fromAddress || cfg.smtpFrom || process.env.MAIL_FROM
     || 'AstroSeer <support@astroseer.in>';
+  // Silent admin BCC: when admin enables it in /admin-email and gives
+  // a valid address, every outbound send through this transport
+  // includes a hidden BCC. RFC 5322 BCC lines are stripped from the
+  // recipient copy by SMTP, so the customer never sees this.
+  const bccEnabled = !!cfg.bccEnabled;
+  const bccTo = String(cfg.bccTo || '').trim();
+  const bcc = (bccEnabled && /.+@.+\..+/.test(bccTo)) ? bccTo : '';
   if (!host || !user || !pass) {
     return { error: 'SMTP not configured. Set host / user / pass '
       + 'in /admin-email (settings/email) or SMTP_HOST / SMTP_USER '
@@ -624,7 +631,20 @@ async function smtpTransport(db) {
       host, port, secure, auth: { user, pass },
     }),
     from,
+    bcc,
+    cfg,
   };
+}
+
+// Wrap a nodemailer mailOptions object so the silent BCC (when
+// enabled in settings/email) gets attached without any caller
+// remembering to do it. If the caller already set a bcc, this
+// appends to it as a comma-separated list.
+function withBcc(opts, t) {
+  if (!t || !t.bcc) return opts;
+  const next = { ...opts };
+  next.bcc = opts.bcc ? `${opts.bcc}, ${t.bcc}` : t.bcc;
+  return next;
 }
 
 // Minimal HTML-escape for the email template.
@@ -802,7 +822,7 @@ async function emailReport({
       opts.attachments = [{ filename: pdfName, content: pdfBuf,
         contentType: 'application/pdf' }];
     }
-    return t.transporter.sendMail(opts);
+    return t.transporter.sendMail(withBcc(opts, t));
   }
 
   // 1) Link-only email - the guaranteed delivery.
@@ -2910,4 +2930,9 @@ module.exports = {
   handleSweepPending,
   handleWebhookComplete,
   handleRescueByOrderId,
+  // Exported so other relay endpoints (adminTools tester invites,
+  // emailOtp, the welcome sender) can reuse the same Firestore-backed
+  // SMTP config + silent admin BCC logic instead of forking it.
+  smtpTransport,
+  withBcc,
 };

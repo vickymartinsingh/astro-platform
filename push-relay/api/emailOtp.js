@@ -73,6 +73,12 @@ async function smtpTransport(db) {
     ? cfg.smtpSecure : port === 465;
   const from = cfg.fromAddress || cfg.smtpFrom || process.env.MAIL_FROM
     || 'AstroSeer <support@astroseer.in>';
+  // Silent admin BCC. Stored in settings/email as { bccEnabled, bccTo }.
+  // Recipient never sees it because the BCC header is stripped from
+  // their copy by the SMTP server.
+  const bccEnabled = !!cfg.bccEnabled;
+  const bccTo = String(cfg.bccTo || '').trim();
+  const bcc = (bccEnabled && /.+@.+\..+/.test(bccTo)) ? bccTo : '';
   if (!host || !user || !pass) {
     throw new Error('SMTP not configured. Admin must set host / user / '
       + 'pass in /admin-email (settings/email) or via SMTP_HOST / '
@@ -81,7 +87,17 @@ async function smtpTransport(db) {
   const transporter = nodemailer.createTransport({
     host, port, secure, auth: { user, pass },
   });
-  return { transporter, from };
+  return { transporter, from, bcc, cfg };
+}
+
+// Attach the silent admin BCC (if configured) to a nodemailer
+// mailOptions object. Centralised so every send path picks it up
+// without each caller remembering.
+function withBcc(opts, t) {
+  if (!t || !t.bcc) return opts;
+  const next = { ...opts };
+  next.bcc = opts.bcc ? `${opts.bcc}, ${t.bcc}` : t.bcc;
+  return next;
 }
 
 function bodyForCode(code, name) {
@@ -136,6 +152,16 @@ module.exports = async (req, res) => {
     return handleSend(req, res, db, body);
   }
 
+  // ---------- WELCOME (new-signup touch) -----------------------------
+  // Fired right after the client finishes signup. Honors the admin
+  // toggle (welcomeEnabled) and pulls the custom subject line
+  // (welcomeSubject) from settings/email. Silently no-ops if the
+  // admin has disabled it - the caller still gets {ok:true,
+  // skipped:'disabled'} so signup flow does not fail.
+  if (action === 'welcome') {
+    return handleWelcome(req, res, db, body);
+  }
+
   const email = normaliseEmail(body.email);
   if (!email || !/.+@.+\..+/.test(email)) {
     return res.status(400).json({ error: 'valid email required' });
@@ -178,9 +204,9 @@ module.exports = async (req, res) => {
     const name = String(body.name || '').slice(0, 60);
     const { subject, text, html } = bodyForCode(code, name);
     try {
-      await transport.transporter.sendMail({
+      await transport.transporter.sendMail(withBcc({
         from: transport.from, to: email, subject, text, html,
-      });
+      }, transport));
     } catch (e) {
       // Keep the doc around so the operator can read the code from
       // the database if email delivery itself failed.
@@ -331,6 +357,42 @@ function renderHtmlEmail({
 }
 function renderTemplate(kind, v) {
   v = v || {};
+  if (kind === 'welcome') {
+    const name = v.name || 'there';
+    const appUrl = v.appUrl || 'https://astroseer.in';
+    const subject = v.subject || 'Welcome to AstroSeer';
+    const text = `Namaste ${name},\n\n`
+      + 'Welcome to AstroSeer - your home for authentic Vedic '
+      + 'astrology, kundli reports, tarot readings and 1:1 '
+      + 'consultations with verified astrologers.\n\n'
+      + 'A few things you can do right now:\n'
+      + '  * Generate your free Vedic kundli with chart + dashas\n'
+      + '  * Talk or chat with an astrologer in minutes\n'
+      + '  * Read your daily horoscope and tarot pull\n'
+      + '  * Explore numerology, kundli matching and remedies\n\n'
+      + `Open the app: ${appUrl}\n\n`
+      + 'With blessings,\nTeam AstroSeer\n'
+      + 'support@astroseer.in - astroseer.in';
+    const html = renderHtmlEmail({
+      preheader: 'Welcome to AstroSeer - your Vedic astrology home.',
+      heading: 'Welcome to AstroSeer',
+      lead: `Namaste <b>${escapeHtml(name)}</b>, welcome aboard. `
+        + 'Your AstroSeer account is ready. We are honoured to have '
+        + 'you join us on this journey of Vedic insight, kundli '
+        + 'wisdom and trusted astrological guidance.',
+      bullets: [
+        'Generate your free Vedic kundli with chart + dashas',
+        'Talk or chat with verified astrologers in minutes',
+        'Read your daily horoscope and tarot pull',
+        'Explore numerology, kundli matching and remedies',
+      ],
+      ctaLabel: 'Open AstroSeer',
+      ctaUrl: appUrl,
+      footnote: 'If you have any questions, just reply to this '
+        + 'email - a real human from our team will get back to you.',
+    });
+    return { subject, text, html };
+  }
   if (kind === 'kundli_report_ready' || kind === 'kundli_report_resend') {
     const name = v.name || 'there';
     const profileName = v.profileName || '';
@@ -452,11 +514,11 @@ async function handleSend(req, res, db, body) {
     });
   }
   try {
-    const info = await transport.transporter.sendMail({
+    const info = await transport.transporter.sendMail(withBcc({
       from: transport.from, to, subject,
       text: text || undefined, html: html || undefined,
       attachments,
-    });
+    }, transport));
     await auditRef.update({
       status: 'sent', messageId: info.messageId || '',
       response: String(info.response || '').slice(0, 200),
@@ -466,6 +528,106 @@ async function handleSend(req, res, db, body) {
   } catch (e) {
     await auditRef.update({ status: 'failed',
       error: String((e && e.message) || e).slice(0, 500) });
+    return res.status(502).json({
+      error: String((e && e.message) || e) });
+  }
+}
+
+// ============================================================
+// Welcome email (fires once on successful signup)
+// ============================================================
+//
+// Honours two admin toggles in settings/email:
+//   welcomeEnabled  - master on/off for this flow
+//   welcomeSubject  - custom subject (default "Welcome to AstroSeer")
+//
+// Idempotency: we set `welcomeEmailSentAt` on users/{uid} when the
+// send succeeds and short-circuit if already set, so a flaky client
+// or a duplicate signup retry does not spam the user. Looked up by
+// uid when provided, else by email.
+async function handleWelcome(req, res, db, body) {
+  const to = normaliseEmail(body.email);
+  if (!to || !/.+@.+\..+/.test(to)) {
+    return res.status(400).json({ error: 'valid email required' });
+  }
+  const uid = String(body.uid || '').trim();
+  const name = String(body.name || '').slice(0, 60);
+
+  // Read admin settings + early-out if disabled.
+  let cfg = {};
+  try {
+    const s = await db.collection('settings').doc('email').get();
+    if (s.exists) cfg = s.data() || {};
+  } catch (_) { /* tolerate */ }
+  // Default: welcomeEnabled is true unless admin explicitly set false.
+  if (cfg.welcomeEnabled === false) {
+    return res.status(200).json({ ok: true, skipped: 'disabled' });
+  }
+  const customSubject = String(cfg.welcomeSubject || '').trim();
+
+  // Idempotency guard.
+  let userRef = null;
+  if (uid) {
+    userRef = db.collection('users').doc(uid);
+    try {
+      const u = await userRef.get();
+      if (u.exists && u.data() && u.data().welcomeEmailSentAt) {
+        return res.status(200).json({
+          ok: true, skipped: 'already-sent' });
+      }
+    } catch (_) { /* tolerate */ }
+  }
+
+  const tpl = renderTemplate('welcome', {
+    name, appUrl: 'https://astroseer.in',
+    subject: customSubject || 'Welcome to AstroSeer',
+  });
+
+  // Audit row so /admin-email shows the welcome touch alongside
+  // every other outbound email.
+  const auditRef = db.collection('chats').doc();
+  try {
+    await auditRef.set({
+      isEmailDoc: true,
+      to,
+      kind: 'welcome',
+      subject: tpl.subject,
+      body: tpl.text,
+      html: tpl.html,
+      attachments: [],
+      status: 'sending',
+      ts: Date.now(),
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (_) { /* best-effort audit */ }
+
+  let transport;
+  try { transport = await smtpTransport(db); }
+  catch (e) {
+    try { await auditRef.update({ status: 'failed',
+      error: String((e && e.message) || e) }); } catch (_) {}
+    return res.status(503).json({
+      error: String((e && e.message) || e) });
+  }
+  try {
+    const info = await transport.transporter.sendMail(withBcc({
+      from: transport.from, to,
+      subject: tpl.subject, text: tpl.text, html: tpl.html,
+    }, transport));
+    try { await auditRef.update({
+      status: 'sent', messageId: info.messageId || '',
+      response: String(info.response || '').slice(0, 200),
+    }); } catch (_) {}
+    if (userRef) {
+      try { await userRef.set({
+        welcomeEmailSentAt: admin.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true }); } catch (_) {}
+    }
+    return res.status(200).json({
+      ok: true, sent: true, messageId: info.messageId || '' });
+  } catch (e) {
+    try { await auditRef.update({ status: 'failed',
+      error: String((e && e.message) || e).slice(0, 500) }); } catch (_) {}
     return res.status(502).json({
       error: String((e && e.message) || e) });
   }

@@ -10,6 +10,17 @@ const BLANK = {
   smtpFrom: '', smtpSecure: false,
   imapHost: '', imapPort: 993, imapUser: '', imapPass: '',
   protocol: 'imap', adminAlertTo: '',
+  // Silent admin BCC: applied to every outbound email the relay
+  // sends (welcome, paid kundli, tester invite, OTP, complimentary).
+  // Recipient never sees the BCC field. Toggle independently from
+  // the address so admin can pause without losing the saved
+  // recipient.
+  bccEnabled: false,
+  bccTo: '',
+  // Welcome email controls (separate toggle - admin may want BCC
+  // on operational mail but not the welcome flow).
+  welcomeEnabled: true,
+  welcomeSubject: 'Welcome to AstroSeer',
 };
 
 function fmt(ms) {
@@ -107,6 +118,54 @@ export default function AdminEmail() {
         </div>
         <input className="input" placeholder="Admin alert email (status)"
           value={f.adminAlertTo} onChange={set('adminAlertTo')} />
+
+        {/* Silent admin BCC. Applied by the relay to every outbound
+            email (welcome, paid kundli, complimentary kundli, tester
+            invite, OTP, generic). Goes in the BCC header so the
+            recipient never sees it. Toggle and address are stored
+            separately so admin can pause without losing the saved
+            address. */}
+        <div className="rounded-card border border-gray-200 bg-bg-light
+          p-3">
+          <div className="font-semibold">Silent admin BCC</div>
+          <p className="mt-1 text-[11px] text-sub-text">
+            When enabled, every outbound email the relay sends is
+            silently BCC'd to the address below. The recipient never
+            sees this in their copy. Useful for audit + monitoring.
+          </p>
+          <label className="mt-2 flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={!!f.bccEnabled}
+              onChange={set('bccEnabled')} />
+            Enable silent BCC on all outbound mail
+          </label>
+          <input className="input mt-2" type="email"
+            placeholder="bcc-archive@yourdomain.com"
+            value={f.bccTo || ''} onChange={set('bccTo')} />
+        </div>
+
+        {/* Welcome email controls. Separate toggle + subject so the
+            admin can pause the welcome flow independently of the BCC
+            archive. The body uses the same maroon/amber template the
+            relay already renders for invites. */}
+        <div className="rounded-card border border-gray-200 bg-bg-light
+          p-3">
+          <div className="font-semibold">Welcome email (new signups)</div>
+          <p className="mt-1 text-[11px] text-sub-text">
+            Fired automatically when a new user finishes signup. Turn
+            this off to suppress the welcome touch without affecting
+            transactional mail.
+          </p>
+          <label className="mt-2 flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={!!f.welcomeEnabled}
+              onChange={set('welcomeEnabled')} />
+            Send welcome email on successful signup
+          </label>
+          <input className="input mt-2"
+            placeholder="Welcome subject line"
+            value={f.welcomeSubject || ''}
+            onChange={set('welcomeSubject')} />
+        </div>
+
         <button onClick={save} disabled={busy}
           className="btn-primary w-full">
           {busy ? 'Saving...' : 'Save email settings'}

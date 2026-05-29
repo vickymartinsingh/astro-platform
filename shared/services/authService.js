@@ -11,6 +11,7 @@ import {
   signInWithRedirect,
   getRedirectResult,
   signInWithCredential,
+  getAdditionalUserInfo,
   EmailAuthProvider,
   reauthenticateWithCredential,
   updatePassword,
@@ -49,7 +50,31 @@ export async function signupUser(name, email, password, extra = {}) {
   }
   // Compliance: log the signup with IP + device (admin-only).
   try { logAudit('signup', { method: 'email', email }); } catch (_) {}
+  // Fire-and-forget the welcome email through the relay. The relay
+  // is idempotent (writes welcomeEmailSentAt on users/{uid}) and
+  // honours the admin toggle, so safe to call from every signup
+  // path without coordination.
+  sendWelcomeEmail({
+    uid: cred.user.uid, email, name: full,
+  }).catch(() => {});
   return cred.user;
+}
+
+// Fires the welcome email via the relay. Idempotent + honors the
+// admin toggle on settings/email server-side, so the client is just
+// the trigger. Used both for email/password signup and for first-
+// time Google sign-in (when the user doc was just created).
+export async function sendWelcomeEmail({ uid, email, name }) {
+  try {
+    const r = await fetch(otpEndpoint(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'welcome', uid, email, name,
+      }),
+    });
+    return r.json().catch(() => ({}));
+  } catch (_) { return { ok: false }; }
 }
 
 export async function loginUser(email, password) {
@@ -146,6 +171,18 @@ async function finishGoogle(idToken) {
     auth, GoogleAuthProvider.credential(idToken));
   try { logAudit('login', { method: 'google',
     email: cred.user && cred.user.email }); } catch (_) {}
+  // First-time Google user: send the welcome touch through the relay
+  // (server-side idempotency makes a repeat call safe).
+  try {
+    const info = getAdditionalUserInfo(cred);
+    if (info && info.isNewUser && cred.user && cred.user.email) {
+      sendWelcomeEmail({
+        uid: cred.user.uid,
+        email: cred.user.email,
+        name: cred.user.displayName || '',
+      }).catch(() => {});
+    }
+  } catch (_) { /* tolerate */ }
   return cred.user;
 }
 
@@ -221,6 +258,16 @@ export async function loginWithGoogle() {
     const cred = await signInWithPopup(auth, provider);
     try { logAudit('login', { method: 'google-popup',
       email: cred.user && cred.user.email }); } catch (_) {}
+    try {
+      const info = getAdditionalUserInfo(cred);
+      if (info && info.isNewUser && cred.user && cred.user.email) {
+        sendWelcomeEmail({
+          uid: cred.user.uid,
+          email: cred.user.email,
+          name: cred.user.displayName || '',
+        }).catch(() => {});
+      }
+    } catch (_) { /* tolerate */ }
     return cred.user;
   } catch (e) {
     const code = e && e.code;

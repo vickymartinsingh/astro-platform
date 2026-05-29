@@ -169,20 +169,43 @@ async function smtpTransport() {
     }
   } catch (_) { /* */ }
   cfg = cfg || {};
-  const host = cfg.host || process.env.SMTP_HOST;
-  const port = Number(cfg.port || process.env.SMTP_PORT || 587);
-  const user = cfg.user || process.env.SMTP_USER;
-  const pass = cfg.pass || process.env.SMTP_PASS;
-  const from = cfg.from || process.env.SMTP_FROM
+  // Read both the new (smtp*) and legacy (host/user/pass/from) field
+  // names so we stay compatible with what admin-email.js actually
+  // writes today plus any older docs still hanging around.
+  const host = cfg.smtpHost || cfg.host || process.env.SMTP_HOST;
+  const port = Number(cfg.smtpPort || cfg.port
+    || process.env.SMTP_PORT || 587);
+  const user = cfg.smtpUser || cfg.user || process.env.SMTP_USER;
+  const pass = cfg.smtpPass || cfg.pass || process.env.SMTP_PASS;
+  const secure = typeof cfg.smtpSecure === 'boolean'
+    ? cfg.smtpSecure : port === 465;
+  const from = cfg.smtpFrom || cfg.fromAddress || cfg.from
+    || process.env.SMTP_FROM || process.env.MAIL_FROM
     || 'AstroSeer <support@astroseer.in>';
+  // Silent admin BCC: included on every send (invite, etc.) when
+  // toggled on in /admin-email. Stripped from recipient copy by SMTP.
+  const bccEnabled = !!cfg.bccEnabled;
+  const bccTo = String(cfg.bccTo || '').trim();
+  const bcc = (bccEnabled && /.+@.+\..+/.test(bccTo)) ? bccTo : '';
   if (!host || !user || !pass) return null;
   return {
     transporter: nodemailer.createTransport({
-      host, port, secure: port === 465,
+      host, port, secure,
       auth: { user, pass },
     }),
     from,
+    bcc,
+    cfg,
   };
+}
+
+// Merge silent BCC into a nodemailer mailOptions object. Caller
+// passes the transport object (which carries the resolved bcc).
+function withBcc(opts, t) {
+  if (!t || !t.bcc) return opts;
+  const next = { ...opts };
+  next.bcc = opts.bcc ? `${opts.bcc}, ${t.bcc}` : t.bcc;
+  return next;
 }
 
 function inviteHtml({ optInUrl, packageName, track }) {
@@ -231,12 +254,12 @@ async function sendInvite({ toEmail, optInUrl, packageName, track }) {
   if (!toEmail || !optInUrl) return { ok: false, error: 'missing fields' };
   const t = await smtpTransport();
   if (!t) return { ok: false, error: 'SMTP not configured' };
-  await t.transporter.sendMail({
+  await t.transporter.sendMail(withBcc({
     from: t.from,
     to: toEmail,
     subject: 'You\'re invited to test AstroSeer',
     html: inviteHtml({ optInUrl, packageName, track }),
-  });
+  }, t));
   return { ok: true };
 }
 
