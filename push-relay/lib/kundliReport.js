@@ -364,27 +364,29 @@ async function callAstroSeerPdf({ base, key, body }) {
   return buf;
 }
 
-// Storage backend (tiered, ZERO setup required):
+// Storage backend (tiered, automatic fallback):
 //
-//   1. Vercel Blob - used IF BLOB_READ_WRITE_TOKEN is set on the
-//      relay. Best path: permanent CDN URL, no Firestore read on
-//      re-download. Only kicks in if the operator has actually
-//      created + connected a Blob store in the Vercel dashboard.
+//   1. Vercel Blob - if BLOB_READ_WRITE_TOKEN set. Vercel-managed
+//      CDN URL, free on Hobby plan (1 GB storage + 100 GB BW/month).
 //
-//   2. Firebase Storage - default path when no Blob token.
-//      We already init the admin SDK with storageBucket set so
-//      this works on every install without any extra setup.
-//      Uploads to gs://<bucket>/reports/{uid}/{ts}_{kind}.pdf,
-//      marks the object public, returns the firebaseapp.com URL.
-//      AstroSeer PDFs can be 1-4 MB which is too big for the
-//      inline path below, so this tier is the workhorse.
+//   2. Cloudflare R2 - if R2_ACCOUNT_ID + R2_ACCESS_KEY_ID +
+//      R2_SECRET_ACCESS_KEY + R2_BUCKET set. S3-compatible
+//      object storage with 10 GB free + UNLIMITED bandwidth.
+//      Backed by Cloudflare's CDN. Recommended for production.
+//      Optional R2_PUBLIC_URL overrides the default <bucket>.r2.dev.
 //
-//   3. Firestore inline base64 (last-resort fallback) - only for
-//      PDFs under ~950 KB (Firestore 1 MB doc cap minus headroom
-//      for the other order fields). Writes the PDF base64 onto
-//      users/{uid}/orders/{id}.pdfBase64 and returns a
-//      `data:application/pdf;base64,...` URL. The /orders page
-//      re-builds the data URL from the same field on re-download.
+//   3. Firebase Storage - if admin SDK has bucket access. Initially
+//      the workhorse but the relay's service account often lacks
+//      Storage permissions; we still try as a fallback.
+//
+//   4. Chunked Firestore - the bulletproof always-works tier.
+//      Writes PDF base64 as N x 800 KB docs in
+//      users/{uid}/orders/{id}/pdfChunks/. Client-side
+//      resolveOrderPdfUrl reassembles. Costs Firestore reads on
+//      every download (~5 per PDF), so this should be the last
+//      resort - prefer R2 or Vercel Blob.
+//
+//   5. Firestore inline base64 - only for PDFs under ~950 KB.
 //
 // Caller gets back { url, storagePath, bucketUsed } as before so
 // the rest of handleReport doesn't change. inline === true on the
@@ -409,11 +411,58 @@ async function uploadPdf(uid, kind, buf) {
         inline: false,
       };
     } catch (e) {
-      // Don't fail the whole report on a Blob blip - fall through
-      // to the Firebase Storage path so the user always gets their PDF.
       // eslint-disable-next-line no-console
       console.warn('Vercel Blob upload failed, falling back to '
-        + 'Firebase Storage:', (e && e.message) || e);
+        + 'Cloudflare R2 / Firebase Storage:',
+        (e && e.message) || e);
+    }
+  }
+  // CLOUDFLARE R2 TIER (free 10 GB storage, unlimited bandwidth,
+  // S3-compatible API). Activates when all four env vars are set:
+  //   R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
+  // Optional: R2_PUBLIC_URL (custom domain or r2.dev subdomain). When
+  // unset we fall back to the default <bucket>.r2.dev pattern, which
+  // requires "Public Access" toggled on in the R2 bucket settings.
+  if (process.env.R2_ACCOUNT_ID && process.env.R2_ACCESS_KEY_ID
+      && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET) {
+    try {
+      // Lazy require so cold starts that don't need R2 don't pay
+      // the ~3MB @aws-sdk/client-s3 unzip cost.
+      const { S3Client, PutObjectCommand } = require(
+        '@aws-sdk/client-s3');
+      const client = new S3Client({
+        region: 'auto',                                         // R2 ignores region
+        endpoint: `https://${process.env.R2_ACCOUNT_ID}.`
+          + 'r2.cloudflarestorage.com',
+        credentials: {
+          accessKeyId: process.env.R2_ACCESS_KEY_ID,
+          secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+        },
+        // Required for R2: signed payloads, force-pathstyle URLs.
+        forcePathStyle: true,
+      });
+      const ts = Date.now();
+      const path = `reports/${uid}/${ts}_${kind}.pdf`;
+      await client.send(new PutObjectCommand({
+        Bucket: process.env.R2_BUCKET,
+        Key: path,
+        Body: buf,
+        ContentType: 'application/pdf',
+        CacheControl: 'public, max-age=31536000, immutable',
+      }));
+      const publicBase = process.env.R2_PUBLIC_URL
+        || `https://${process.env.R2_BUCKET}.r2.dev`;
+      return {
+        storagePath: path,
+        bucketUsed: `cloudflare-r2:${process.env.R2_BUCKET}`,
+        url: `${publicBase.replace(/\/+$/, '')}/${path}`,
+        inline: false,
+      };
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('Cloudflare R2 upload failed, falling back to '
+        + 'Firebase Storage / chunked Firestore:',
+        (e && e.message) || e);
     }
   }
   // Firebase Storage tier. Requires admin SDK to have been
