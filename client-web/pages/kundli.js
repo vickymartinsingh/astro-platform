@@ -1900,7 +1900,7 @@ function VimshottariNarrativeSection({ r, raw }) {
                 <span className="ml-2 text-[11px] font-semibold
                   text-sub-text">
                   {startYear}{startYear && endYear
-                    ? `–${endYear}` : ''}
+                    ? `-${endYear}` : ''}
                   {d.current ? ' · current' : ''}
                 </span>
               </div>

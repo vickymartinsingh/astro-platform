@@ -414,7 +414,7 @@ body: { profileId, kind: 'free' | 'forecast12' | 'careerFinance' | 'lifetime' }
 - Spacing scale: 4, 8, 12, 16, 24, 32px (Tailwind 1/2/3/4/6/8)
 
 **Hard rules on copy**:
-- **NO em-dashes ( - ) or en-dashes (–) ANYWHERE** in user-visible text. Use
+- **NO em-dashes ( - ) or en-dashes (-) ANYWHERE** in user-visible text. Use
   commas, periods, parentheses, "and" instead. This is strict.
 - **NO colourful emojis** (🪐 🕉️ ⚠️ 📊 etc). A small `·` separator dot is
   fine. Numbered pills are fine. Decorative emojis are not.

@@ -32,12 +32,10 @@ function walk(dir) {
     scanned += 1;
     let txt;
     try { txt = readFileSync(p, 'utf8'); } catch (_) { continue; }
-    if (txt.indexOf('-') === -1 && txt.indexOf('-') === -1) {
-      continue;
-    }
-    const out = txt
-      .replace(/-/g, '-')   // em dash
-      .replace(/-/g, '-');  // en dash
+    // Detect any of: em dash (U+2014), en dash (U+2013), horizontal
+    // bar (U+2015), figure dash (U+2012), minus sign (U+2212).
+    if (!/[-----]/.test(txt)) continue;
+    const out = txt.replace(/[-----]/g, '-');
     if (out !== txt) { writeFileSync(p, out); changed += 1;
       console.log('fixed', p.replace(ROOT, '.')); }
   }

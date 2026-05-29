@@ -77,7 +77,12 @@ export default function TopNav() {
   const [open, setOpen] = useState(false);
   const [prof, setProf] = useState(false);
   const [unread, setUnread] = useState(0);
-  const [brand, setBrand] = useState({ logo: '', name: 'AstroSeer' });
+  // Default to the static /logo.png so the first paint NEVER shows the
+  // text fallback. The live brand fetch overrides this if admin has
+  // uploaded a custom logo in settings/branding.
+  const [brand, setBrand] = useState({
+    logo: '/logo.png', name: 'AstroSeer',
+  });
   const [menu, setMenu] = useState(menuService.DEFAULT_CLIENT_MENU);
   const [menuMobile, setMenuMobile] = useState(
     menuService.DEFAULT_CLIENT_MENU);
@@ -122,7 +127,7 @@ export default function TopNav() {
   }, [user]);
 
   useEffect(() => brandingService.watchBranding((b) =>
-    setBrand({ logo: b.logo || '',
+    setBrand({ logo: b.logo || '/logo.png',
       name: b.name || 'AstroSeer' })), []);
 
   useEffect(() => { setOpen(false); setProf(false); }, [router.asPath]);
@@ -153,21 +158,20 @@ export default function TopNav() {
           </button>
         )}
         <Link href="/dashboard" className="flex items-center gap-2">
-          {brand.logo ? (
-            <img src={brand.logo} alt={brand.name}
-              className="h-9 max-w-[150px] object-contain" />
-          ) : (
-            <>
-              <span className="flex h-9 w-9 items-center justify-center
-                               rounded-xl bg-gradient-to-br from-primary
-                               to-[#8B5CF6] font-bold text-white">A</span>
-              <span className="leading-tight">
-                <span className="block font-bold">{brand.name}</span>
-                <span className="block text-[10px] uppercase
-                  tracking-wide text-sub-text">Trusted Astrologers</span>
-              </span>
-            </>
-          )}
+          {/* Always render the logo image. Static /logo.png ships with
+              the app so first-paint never falls back to text. If the
+              admin replaces it via the live brand fetch, the new URL
+              swaps in seamlessly. The onError fallback below handles
+              the rare case where the URL 404s - shows the brand mark
+              SVG instead, NOT a text fallback. */}
+          <img src={brand.logo || '/logo.png'} alt={brand.name}
+            className="h-9 max-w-[150px] object-contain"
+            onError={(e) => {
+              if (e.currentTarget.src !== '/logo.png'
+                && !e.currentTarget.src.endsWith('/logo.png')) {
+                e.currentTarget.src = '/logo.png';
+              }
+            }} />
         </Link>
 
         <nav className="hidden items-center gap-1 md:flex">

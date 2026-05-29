@@ -25,7 +25,16 @@ export const DEFAULT_CLIENT_MENU = [
 //  - Activity: history + orders
 //  - Account: review + notifications
 //  - Help: support (always last, never missed)
+// Default profile menu shown in BOTH desktop dropdown and mobile
+// profile sheet. Updated 2026-05-29 to match the mobile section
+// exactly - desktop users had no way to reach Edit Profile, Wallet,
+// Orders, or Favorites from the header. Now the desktop dropdown
+// surfaces the same set as the mobile profile page.
 export const DEFAULT_CLIENT_PROFILE = [
+  { href: '/profile', label: 'Edit Profile', seg: 'Account' },
+  { href: '/wallet', label: 'Wallet', seg: 'Account' },
+  { href: '/orders', label: 'My Orders', seg: 'Account' },
+  { href: '/favorites', label: 'Favorites', seg: 'Activity' },
   { href: '/following', label: 'Following', seg: 'Activity' },
   { href: '/chat-history', label: 'Consultation history', seg: 'Activity' },
   { href: '/call-history', label: 'Call history', seg: 'Activity' },

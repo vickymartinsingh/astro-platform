@@ -1872,7 +1872,7 @@ Example: ₹30/min ÷ 60 = ₹0.50 per second
 Cloud Function runs every second for each active session:
 Step 1: Fetch current wallet from Firestore
 Step 2: If wallet ≤ 0 → call endSession(sessionId) → STOP
-Step 3: Else → newWallet = wallet − ratePerSecond
+Step 3: Else → newWallet = wallet - ratePerSecond
 Step 4: Update wallet in Firestore (atomic transaction)
 Step 5: Create debit transaction record
 CRITICAL: Billing runs in Firebase Cloud Functions (server-side) only. NEVER in the browser. User cannot manipulate it.
@@ -1881,7 +1881,7 @@ CRITICAL: Billing runs in Firebase Cloud Functions (server-side) only. NEVER in 
 After every session ends:
 sessionCost = ratePerSecond × durationInSeconds
 adminEarning = sessionCost × (commissionPercent ÷ 100)
-astrologerEarning = sessionCost − adminEarning
+astrologerEarning = sessionCost - adminEarning
 Example: User spends ₹100 | Commission 30% | Admin earns ₹30 | Astrologer earns ₹70
 Commission applies on DISCOUNTED price:
 If priceChat=₹40, discount=50%: client pays ₹20. Commission applies on ₹20.

@@ -51,3 +51,8 @@ bedrock-long-term*
 
 # Play Store release artifacts
 playstore/
+
+# Google Play Console service-account keys (NEVER commit)
+play-publisher/
+play-service-account*.json
+*service-account*.json

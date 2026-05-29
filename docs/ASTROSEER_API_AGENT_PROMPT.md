@@ -671,7 +671,7 @@ body: { birth, kind: 'free'|'forecast12'|'careerFinance'|'lifetime' }
 
 # Hard copy rules (strict, brand voice)
 
-1. **No em-dashes ( - ) or en-dashes (–) ANYWHERE** in user-visible text.
+1. **No em-dashes ( - ) or en-dashes (-) ANYWHERE** in user-visible text.
    Use commas, periods, parentheses, "and" instead.
 2. **No colourful emojis** (🪐 🕉️ ⚠️ 📊 etc). Numbered pills (1, 2, 3) and
    plain text. A small `·` separator dot is fine.

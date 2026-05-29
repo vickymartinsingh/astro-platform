@@ -41,6 +41,25 @@ export function AuthProvider({ children }) {
         userService.ensureUserDoc(u).catch(() => {});
         // Native apps only: register for lock-screen push (no-op on web).
         pushService.registerForPush(u.uid).catch(() => {});
+        // Track which app version this user is on so the admin can
+        // see who needs to update + fan-out the "new version" push
+        // only to users still on older builds.
+        (async () => {
+          try {
+            const { APP_BUILD, APP_VERSION } = await import(
+              '@astro/shared/appVersion.js');
+            const isNative = typeof window !== 'undefined'
+              && window.Capacitor
+              && window.Capacitor.isNativePlatform
+              && window.Capacitor.isNativePlatform();
+            await userService.updateUser(u.uid, {
+              appBuild: Number(APP_BUILD) || 0,
+              appVersion: String(APP_VERSION || ''),
+              appPlatform: isNative ? 'native' : 'web',
+              lastSeenAt: new Date().toISOString(),
+            });
+          } catch (_) { /* best-effort */ }
+        })();
         // Profile listen has its OWN safety: don't block the UI for
         // ever if the first Firestore snapshot is slow on iOS WKWebView.
         const profSafety = setTimeout(() => {
