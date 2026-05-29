@@ -429,7 +429,7 @@ async function uploadPdf(uid, kind, buf) {
     bucketName(sa),
     legacyBucketName(sa),
   ].filter((n, i, a) => a.indexOf(n) === i);
-  const lastErr = { firebase: null, bucket: null };
+  const attempts = []; // collects every bucket attempt for diagnostics
   for (const candidate of candidates) {
     try {
       const bucket = admin.storage().bucket(candidate);
@@ -442,11 +442,6 @@ async function uploadPdf(uid, kind, buf) {
         resumable: false,
         validation: false,
       });
-      // Try makePublic for the simple firebaseapp.com download URL.
-      // If the relay's service account lacks the storage.objects
-      // setIamPolicy permission, fall back to a 100-year signed URL
-      // which uses the service account's signBlob permission
-      // instead (much more commonly granted).
       let url = null;
       try {
         await file.makePublic();
@@ -466,13 +461,15 @@ async function uploadPdf(uid, kind, buf) {
         inline: false,
       };
     } catch (e) {
-      lastErr.bucket = candidate;
-      lastErr.firebase = (e && e.message) || String(e);
+      const msg = (e && e.message) || String(e);
+      attempts.push(`${candidate}: ${msg}`);
       // eslint-disable-next-line no-console
-      console.warn(`Firebase Storage upload to bucket "${candidate}" `
-        + `failed: ${lastErr.firebase}`);
+      console.warn(`Firebase Storage upload to "${candidate}" `
+        + `failed: ${msg}`);
     }
   }
+  const lastErr = { bucket: candidates[candidates.length - 1],
+    firebase: attempts.join(' | ') };
   // Last-resort inline path: encode the PDF bytes as base64 and
   // return a data URL the browser can download directly. Only
   // works for sub-megabyte PDFs.
