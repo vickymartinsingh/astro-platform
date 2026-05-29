@@ -32,32 +32,51 @@ function initAdmin() {
   } catch (_) { return false; }
 }
 
+// Pick the best fallback provider when we can't read settings from
+// Firestore. AstroSeer needs nothing more than its env-var base URL
+// to function, so it's the safest default whenever
+// ASTROSEER_API_URL is present (which it is on this relay). The old
+// fallback was Prokerala, which throws if creds aren't set.
+function envFallbackProvider() {
+  if (process.env.ASTROSEER_API_URL || process.env.ASTROSEER_API_KEY) {
+    return 'astroseer';
+  }
+  if (process.env.PROKERALA_CLIENT_ID
+      && process.env.PROKERALA_CLIENT_SECRET) {
+    return 'prokerala';
+  }
+  return 'astroseer'; // last-resort - has a built-in default URL too
+}
+
 async function readProviderConfig() {
   const adminOk = initAdmin();
+  const fallbackProvider = envFallbackProvider();
   if (!adminOk) {
-    return { provider: 'prokerala', creds: {},
+    return { provider: fallbackProvider, creds: {},
       adminInit: false,
       providerNote: 'FIREBASE_SERVICE_ACCOUNT env var not set on the '
-        + 'relay - cannot read settings/kundliApi from Firestore. '
-        + 'Falling back to Prokerala env credentials.' };
+        + `relay - using ${fallbackProvider} env credentials.` };
   }
   try {
     const s = await admin.firestore()
       .collection('settings').doc('kundliApi').get();
     const d = s.exists ? (s.data() || {}) : {};
-    const provider = d.provider || 'prokerala';
+    const provider = d.provider || fallbackProvider;
     const creds = d[provider] || {};
     const note = (!creds.key && !creds.secret
-      && provider !== 'prokerala')
+      && provider !== 'prokerala' && provider !== 'astroseer')
       ? `Provider ${provider} is selected but has no key saved in `
         + 'settings/kundliApi.' + provider + '.key - cannot use it.'
       : '';
     return { provider, creds, adminInit: true, providerNote: note };
   } catch (e) {
-    return { provider: 'prokerala', creds: {},
+    // Firestore at quota / unreachable. AstroSeer (or whatever the
+    // env-var fallback is) keeps working without Firestore creds.
+    return { provider: fallbackProvider, creds: {},
       adminInit: true,
-      providerNote: 'Firestore read failed: '
-        + String((e && e.message) || e) };
+      providerNote: `Firestore read failed (${(e && e.message)
+        || e}); using ${fallbackProvider} env credentials as `
+        + 'fallback so chart still loads.' };
   }
 }
 
@@ -782,7 +801,7 @@ module.exports = async (req, res) => {
       },
     };
     return res.status(200).json({
-      relayBuild: 'rescue-with-regen-2026-05-29T04:10',
+      relayBuild: 'astroseer-fallback-2026-05-29T04:30',
       provider: pc.provider,
       adminInit: pc.adminInit,
       hasKey: !!(pc.creds && (pc.creds.key || pc.creds.secret))
