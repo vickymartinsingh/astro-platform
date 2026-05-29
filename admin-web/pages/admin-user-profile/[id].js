@@ -996,8 +996,8 @@ function ComplimentaryProgressPopup({ p, email, onClose, onRetry }) {
       'AstroSeer is rendering the kundli'],
     ['emailing', 'Sending email',
       'Attaching PDF and dispatching over SMTP'],
-    ['done', 'Delivered',
-      `Customer received the email at ${email || 'their inbox'}`],
+    ['done', 'Sent',
+      `Email dispatched to ${email || 'their inbox'}`],
   ];
   const stageIdx = ['generating', 'emailing', 'done']
     .indexOf(p.step);
@@ -1021,8 +1021,14 @@ function ComplimentaryProgressPopup({ p, email, onClose, onRetry }) {
 
         <div className="mt-3 space-y-2">
           {STAGES.map(([key, title, sub], i) => {
-            const active = !failed && i === stageIdx;
-            const past = !failed && i < stageIdx;
+            // Once the whole flow finishes (step==='done'), treat EVERY
+            // stage as complete -> green. Previously the final 'Sent'
+            // step was rendered as 'active' (maroon brand colour),
+            // making a successful send visually look like an in-progress
+            // step. Now all three rows turn green on success.
+            const isComplete = done;
+            const active = !failed && !isComplete && i === stageIdx;
+            const past = !failed && (isComplete || i < stageIdx);
             const cls = failed && i === stageIdx
               ? 'border-danger bg-danger/5 text-danger'
               : active ? 'border-primary bg-primary/5 text-primary'
