@@ -1,5 +1,68 @@
 import { Html, Head, Main, NextScript } from 'next/document';
 
+// Global error handler injected on every admin page. Special-cases
+// Firestore quota errors with a friendly banner instead of the raw
+// "Unhandled promise: FirebaseError: Quota exceeded." stack trace.
+// Built via template literal so quote escaping stays readable.
+function adminErrorHandler() {
+  const friendlyQuotaHtml = '<div style="max-width:640px;margin:60px '
+    + 'auto;text-align:center;color:#7F2020;font-family:system-ui,'
+    + 'Inter,Arial,sans-serif"><div style="font-size:22px;'
+    + 'font-weight:700;margin-bottom:12px">Firebase daily quota '
+    + 'reached</div><div style="color:#444;line-height:1.6">'
+    + 'The admin panel uses Firestore for every read. We have hit '
+    + 'the Spark plan daily cap of 50,000 reads. The quota resets '
+    + 'at <b>midnight Pacific (about 1:30 PM IST)</b>.<br/><br/>'
+    + 'Real-time data will resume automatically at that time. The '
+    + 'customer-facing app continues to work via the Firestore-free '
+    + 'rescue path.</div><div style="margin-top:24px;font-size:11px;'
+    + 'color:#999">If you need this resolved sooner, enable Firebase '
+    + 'Blaze plan ($0 at your scale; the daily cap goes away).</div>'
+    + '</div>';
+  const html = JSON.stringify(friendlyQuotaHtml);
+  return `(function(){
+    function bad(m){
+      if(!m) return true;
+      var s = String(m).trim();
+      return s === '' || s === 'Script error.' || s === 'Script error'
+        || /^ResizeObserver/.test(s);
+    }
+    function isQuota(m){
+      var s = String(m||'');
+      return /RESOURCE_EXHAUSTED|Quota exceeded|FirebaseError:[^\\n]*[Qq]uota/.test(s);
+    }
+    function show(m){
+      try{
+        var b = document.body || document.documentElement;
+        var d = document.getElementById('__bootErr');
+        if(!d){
+          d = document.createElement('div');
+          d.id = '__bootErr';
+          d.style.cssText = 'position:fixed;left:0;top:0;right:0;bottom:0;margin:0;padding:20px;background:#fff;overflow:auto;z-index:2147483647';
+          b.appendChild(d);
+        }
+        if(isQuota(m)){
+          d.innerHTML = ${html};
+          return;
+        }
+        d.style.cssText += ';padding:14px;color:#b00020;font:12px/1.45 monospace;white-space:pre-wrap;word-break:break-word';
+        d.textContent = 'APP ERROR (screenshot this):\\n\\n' + m;
+      }catch(e){}
+    }
+    window.addEventListener('error', function(e){
+      var m = (e && e.error && (e.error.stack || e.error.message)) || (e && e.message) || '';
+      if(bad(m)) return;
+      show(m);
+    });
+    window.addEventListener('unhandledrejection', function(e){
+      var r = e && e.reason;
+      var m = (r && (r.stack || r.message)) || '';
+      if(bad(m)) return;
+      show('Unhandled promise:\\n' + m);
+    });
+  })();`;
+}
+
 export default function Document() {
   return (
     <Html lang="en">
@@ -8,52 +71,7 @@ export default function Document() {
             "Script error." / benign noise. Real React crashes ->
             ErrorBoundary (full detail). */}
         <script
-          dangerouslySetInnerHTML={{
-            __html: "(function(){function bad(m){if(!m)return true;"
-              + 'var s=String(m).trim();return s===""||s==='
-              + '"Script error."||s==="Script error"||'
-              + '/^ResizeObserver/.test(s);}'
-              // Detect Firestore quota / unreachable errors and show a
-              // friendly banner instead of the raw stack trace. Quota
-              // resets at midnight Pacific (~1:30 PM IST).
-              + 'function isQuota(m){var s=String(m||"");return '
-              + '/RESOURCE_EXHAUSTED|Quota exceeded|FirebaseError:[^\\n]'
-              + '*[Qq]uota/.test(s);}'
-              + 'function show(m){try{var b='
-              + 'document.body||document.documentElement;var d='
-              + "document.getElementById('__bootErr');if(!d){d="
-              + "document.createElement('div');d.id='__bootErr';"
-              + "d.style.cssText='position:fixed;left:0;top:0;right:0;"
-              + 'bottom:0;margin:0;padding:20px;background:#fff;'
-              + 'font:14px/1.5 system-ui,Inter,Arial,sans-serif;'
-              + 'overflow:auto;z-index:2147483647';b.appendChild(d);}'
-              + 'if(isQuota(m)){d.innerHTML="<div style=\\"max-width:'
-              + '640px;margin:60px auto;text-align:center;color:#7F2020"'
-              + '+"\\"><div style=\\"font-size:22px;font-weight:700;"'
-              + '+"margin-bottom:12px\\">Firebase daily quota reached'
-              + '</div><div style=\\"color:#444;line-height:1.6\\">'
-              + 'The admin panel uses Firestore for every read. We have'
-              + ' hit the Spark plan daily cap of 50,000 reads. The'
-              + ' quota resets at <b>midnight Pacific (about 1:30 PM'
-              + ' IST)</b>.<br/><br/>Real-time data will resume'
-              + ' automatically at that time. The customer-facing app'
-              + ' continues to work via the Firestore-free rescue path.'
-              + '</div><div style=\\"margin-top:24px;font-size:11px;'
-              + 'color:#999\\">If you need this resolved sooner, enable'
-              + ' Firebase Blaze plan ($0 at your scale; the daily cap'
-              + ' goes away).</div></div>";return;}'
-              + "d.style.cssText+=';padding:14px;color:#b00020;font:"
-              + '12px/1.45 monospace;white-space:pre-wrap;word-break:'
-              + "break-word';d.textContent='APP ERROR (screenshot this)"
-              + ":\\n\\n'+m;}catch(e){}}"
-              + "window.addEventListener('error',function(e){var m=(e&&"
-              + 'e.error&&(e.error.stack||e.error.message))||(e&&'
-              + "e.message)||'';if(bad(m))return;show(m);});window."
-              + "addEventListener('unhandledrejection',function(e){"
-              + 'var r=e&&e.reason;var m=(r&&(r.stack||r.message))||'
-              + "'';if(bad(m))return;show('Unhandled promise:\\n'+m);"
-              + '});})();',
-          }}
+          dangerouslySetInnerHTML={{ __html: adminErrorHandler() }}
         />
         {/* Apply theme colours SYNCHRONOUSLY before the first paint
             so the UI never flashes the old PURPLE for a single frame
