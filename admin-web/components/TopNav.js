@@ -62,6 +62,7 @@ const GROUPS = [
     ['/admin-features', 'Feature Toggles'],
     ['/admin-free', 'Free Sessions'],
     ['/admin-appupdate', 'App Update & Splash'],
+    ['/admin-testers', 'Invite Tester (Play)'],
     ['/admin-sounds', 'Notification & Ringtone'],
     ['/admin-theme', 'App Theme'],
     ['/admin-ai', 'AI Assistant'],
