@@ -1549,6 +1549,23 @@ async function loadUserContact(db, uid) {
 }
 
 async function handleReportStatus(req, res) {
+  try {
+    return await _handleReportStatusInner(req, res);
+  } catch (e) {
+    const msg = String((e && e.message) || e);
+    // Graceful failure (rather than FUNCTION_INVOCATION_FAILED) so
+    // the customer-side polling keeps showing "generating" instead
+    // of breaking the UI. The actual error is surfaced in the
+    // warning field for admin inspection.
+    return res.status(200).json({
+      ok: true,
+      status: 'generating',
+      warning: `Status check transient error: ${msg.slice(0, 240)}`,
+    });
+  }
+}
+
+async function _handleReportStatusInner(req, res) {
   try { init(); } catch (e) {
     return res.status(503).json({
       error: String((e && e.message) || e) });
