@@ -45,6 +45,7 @@ export async function signupUser(name, email, password, extra = {}) {
   if (full) patch.name = full;
   if (extra && extra.phone) patch.phone = String(extra.phone).trim();
   if (extra && extra.dob) patch.dob = extra.dob;
+  if (extra && extra.gender) patch.gender = String(extra.gender).trim();
   if (Object.keys(patch).length) {
     try { await updateUser(cred.user.uid, patch); } catch (_) {}
   }

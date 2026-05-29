@@ -162,18 +162,39 @@ export default function Discover() {
 
   return (
     <Layout>
-      <div className="mb-3 flex flex-wrap items-end justify-between
-        gap-2">
-        <div>
-          <h1 className="text-2xl font-bold">Discover</h1>
-          <p className="text-xs text-sub-text">
-            Every Vedic reading we offer - tap a card to see what it
-            includes and the price.
-          </p>
+      {/* Hero header. Royal palette gradient + counter chips so the
+          first-time customer sees at a glance: what this page is, how
+          many features live here, and what each group covers. Mobile-
+          first: scales down to a single column on small screens; the
+          counter row wraps onto two lines instead of overflowing. */}
+      <div className="mb-3 overflow-hidden rounded-2xl
+        bg-gradient-to-br from-[#7F2020] to-[#D4A12A] p-4 text-white
+        shadow-md">
+        <div className="text-[11px] font-bold uppercase tracking-widest
+          opacity-90">
+          AstroSeer Library
         </div>
-        {/* Wallet pill removed per user request - it duplicated the
-            Wallet icon already present in the top nav and added
-            visual noise to the Discover header. */}
+        <h1 className="mt-1 text-2xl font-bold leading-tight">
+          Discover
+        </h1>
+        <p className="mt-1 text-[13px] leading-relaxed opacity-95">
+          Every Vedic reading we offer in one place. Tap any tile to see
+          what is inside, the price, and to download a personal report.
+        </p>
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          <span className="rounded-full bg-white/15 px-2.5 py-1
+            text-[10.5px] font-bold backdrop-blur-sm">
+            {FEATURES.length} readings
+          </span>
+          <span className="rounded-full bg-white/15 px-2.5 py-1
+            text-[10.5px] font-bold backdrop-blur-sm">
+            {FEATURE_GROUPS.length} categories
+          </span>
+          <span className="rounded-full bg-white/15 px-2.5 py-1
+            text-[10.5px] font-bold backdrop-blur-sm">
+            Instant PDF
+          </span>
+        </div>
       </div>
 
       <div className="mb-3 flex flex-wrap gap-1.5">
@@ -199,33 +220,48 @@ export default function Discover() {
         placeholder="Search readings (e.g. palmistry, numerology)…"
         value={search} onChange={(e) => setSearch(e.target.value)} />
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3
+      {/* Tile grid - mobile-first dashboard. Each tile is a tap target
+          at least 88px tall, with a Royal-palette gradient icon badge,
+          a bold title, a one-line blurb, and a price chip. Two columns
+          on phone, three on small tablet, four on desktop. */}
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3
         md:grid-cols-4">
         {filtered.map((f) => {
           const price = featurePrice(f, cfg);
+          const isFree = price <= 0;
           return (
             <button key={f.id} type="button"
               onClick={() => setActiveId(f.id)}
-              className="group flex flex-col items-start gap-1
-                rounded-card border border-gray-200 bg-white p-3
-                text-left transition hover:border-primary
+              className="group relative flex flex-col items-start
+                gap-1.5 overflow-hidden rounded-2xl border
+                border-gray-200 bg-white p-3 text-left shadow-sm
+                transition active:scale-[0.98] hover:border-[#7F2020]
                 hover:shadow-md">
-              <span className="grid h-10 w-10 place-items-center
-                rounded-full bg-bg-light text-xl text-primary
-                group-hover:bg-primary group-hover:text-white">
+              {/* Royal palette icon badge: maroon -> amber gradient.
+                  Bigger than the old 40px circle so it reads as a real
+                  icon on mobile. */}
+              <span className="grid h-12 w-12 place-items-center
+                rounded-xl bg-gradient-to-br from-[#7F2020]
+                to-[#D4A12A] text-[22px] text-white shadow-sm">
                 {ICON[f.icon] || '·'}
               </span>
-              <div className="mt-1 text-[12px] font-bold
-                text-dark-text">
+              <div className="text-[13px] font-bold leading-tight
+                text-dark-text line-clamp-2">
                 {f.title}
               </div>
-              <div className="text-[10px] text-sub-text line-clamp-2">
+              <div className="text-[11px] leading-snug text-sub-text
+                line-clamp-2">
                 {f.blurb}
               </div>
-              <div className="mt-auto text-[10.5px] font-bold
-                text-primary">
-                {price > 0 ? `₹${price}` : 'Free'}
-              </div>
+              {/* Price chip in the bottom-right - so the user sees what
+                  it costs without opening the detail panel. */}
+              <span className={`mt-auto rounded-full px-2 py-0.5
+                text-[10.5px] font-bold
+                ${isFree
+                  ? 'bg-emerald-100 text-emerald-700'
+                  : 'bg-[#FBF7EE] text-[#7F2020]'}`}>
+                {isFree ? 'Free' : `₹${price}`}
+              </span>
             </button>
           );
         })}

@@ -1,9 +1,32 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
-import { emailService, authService } from '@astro/shared';
+import { emailService, authService, adminService, db } from '@astro/shared';
+import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
 import { flash } from '../lib/flash';
+
+// Default HTML for the beta invite (Royal palette only - maroon /
+// amber). Editable on this page; saved to settings/email so the
+// relay can render it from Firestore at send time.
+const DEFAULT_BETA_HTML = `<div style="font-family:system-ui,Inter,Arial,sans-serif;max-width:560px;margin:24px auto;color:#1a1a1a;line-height:1.6">
+  <div style="background:linear-gradient(135deg,#D4A12A,#7F2020);color:#fff;padding:24px;border-radius:14px 14px 0 0">
+    <div style="font-size:22px;font-weight:700">AstroSeer Beta</div>
+    <div style="opacity:.9;margin-top:4px;font-size:13px">You're personally invited to test the app</div>
+  </div>
+  <div style="background:#fff;padding:24px;border:1px solid #eee;border-top:0;border-radius:0 0 14px 14px">
+    <p>Namaste {{name}},</p>
+    <p>We have hand-picked you to try the early build of <b>AstroSeer</b> - your home for Vedic kundli, daily horoscope, tarot, numerology and 1:1 consultations with verified astrologers.</p>
+    <p>Tap the button below to install on Android:</p>
+    <p style="text-align:center;margin:24px 0">
+      <a href="https://play.google.com/store/apps/details?id=com.astroseer.mobile"
+        style="display:inline-block;background:#7F2020;color:#fff;padding:12px 24px;border-radius:999px;text-decoration:none;font-weight:700">
+        Install AstroSeer (Beta)
+      </a>
+    </p>
+    <p>Prefer the web? Open <a href="https://astroseer.in" style="color:#7F2020">astroseer.in</a>.</p>
+    <p style="font-size:12px;color:#666;margin-top:20px">Thanks for being one of the first to try us out.<br>- The AstroSeer team</p>
+  </div></div>`;
 
 const BLANK = {
   smtpHost: '', smtpPort: 587, smtpUser: '', smtpPass: '',
@@ -21,6 +44,12 @@ const BLANK = {
   // on operational mail but not the welcome flow).
   welcomeEnabled: true,
   welcomeSubject: 'Welcome to AstroSeer',
+  // Beta invite template: admin can rewrite both subject and HTML
+  // body. The body supports {{name}} which the relay substitutes per
+  // recipient. The Play Store + web URLs are baked into the default
+  // template (admin can change them in the HTML directly).
+  betaInviteSubject: "You're invited to try AstroSeer (Beta)",
+  betaInviteHtml: DEFAULT_BETA_HTML,
 };
 
 function fmt(ms) {
@@ -37,10 +66,20 @@ export default function AdminEmail() {
   const [emails, setEmails] = useState([]);
   const [open, setOpen] = useState(null);
   const [busy, setBusy] = useState(false);
+  // Mirror of settings/features.email_verification so admin can flip
+  // OTP-on-signup from this page without leaving for /admin-features.
+  // We persist back into settings/features through adminService.
+  const [otpRequired, setOtpRequired] = useState(false);
 
   useEffect(() => {
     emailService.getEmailConfig().then((c) =>
       setF((p) => ({ ...p, ...c }))).catch(() => {});
+    // Pull the current OTP toggle from settings/features.
+    getDoc(doc(db, 'settings', 'features')).then((s) => {
+      if (s.exists() && s.data()) {
+        setOtpRequired(!!s.data().email_verification);
+      }
+    }).catch(() => {});
     return emailService.listenEmails(setEmails);
   }, []);
 
@@ -57,6 +96,12 @@ export default function AdminEmail() {
     setBusy(true);
     try {
       await emailService.saveEmailConfig(f);
+      // Also push the OTP toggle into settings/features so the client
+      // form picks it up (it reads features.email_verification).
+      try {
+        await adminService.updateSettings('features',
+          { email_verification: !!otpRequired });
+      } catch (_) { /* best-effort */ }
       flash('Email settings saved');
     } catch (_) { flash('Could not save'); } finally { setBusy(false); }
   }
@@ -143,6 +188,28 @@ export default function AdminEmail() {
             value={f.bccTo || ''} onChange={set('bccTo')} />
         </div>
 
+        {/* OTP-on-signup enforcement. Mirrors the toggle that already
+            lives on /admin-features so the operator can flip OTP gating
+            from this page too. When ON, /signup creates the user in
+            Firebase, immediately signs them out, sends a 6-digit code
+            to their inbox, and only completes login after verify. When
+            OFF, signup grants login instantly. */}
+        <div className="rounded-card border border-gray-200 bg-bg-light
+          p-3">
+          <div className="font-semibold">Email OTP on signup</div>
+          <p className="mt-1 text-[11px] text-sub-text">
+            When enabled, every new signup must enter a 6-digit code
+            emailed to their address before they are signed in.
+            Disable to let signups complete instantly. (Synced with
+            /admin-features &gt; "Require email verification on signup".)
+          </p>
+          <label className="mt-2 flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={!!otpRequired}
+              onChange={(e) => setOtpRequired(e.target.checked)} />
+            Require email OTP verification on every new signup
+          </label>
+        </div>
+
         {/* Welcome email controls. Separate toggle + subject so the
             admin can pause the welcome flow independently of the BCC
             archive. The body uses the same maroon/amber template the
@@ -166,6 +233,35 @@ export default function AdminEmail() {
             onChange={set('welcomeSubject')} />
         </div>
 
+        {/* Beta invite template. Admin can change subject + HTML body
+            here and Save - the relay reads betaInviteSubject +
+            betaInviteHtml from settings/email when sending an invite,
+            so changes take effect on the very next send (no redeploy).
+            Use {{name}} in the HTML to personalise the salutation. */}
+        <div className="rounded-card border border-gray-200 bg-bg-light
+          p-3">
+          <div className="font-semibold">Beta invite template</div>
+          <p className="mt-1 text-[11px] text-sub-text">
+            Used by the "Send beta invite" panel below. The HTML body
+            supports the <b>{'{{name}}'}</b> placeholder which gets
+            substituted with the recipient's name at send time. The
+            Play Store URL is already embedded; change it in the HTML
+            if needed.
+          </p>
+          <input className="input mt-2"
+            placeholder="Subject line"
+            value={f.betaInviteSubject || ''}
+            onChange={set('betaInviteSubject')} />
+          <textarea className="input mt-2 min-h-[180px] font-mono
+            text-[11px]"
+            placeholder="HTML body"
+            value={f.betaInviteHtml || ''}
+            onChange={set('betaInviteHtml')} />
+          <p className="mt-1 text-[10px] text-sub-text">
+            Tip: leave this empty to fall back to the relay's default.
+          </p>
+        </div>
+
         <button onClick={save} disabled={busy}
           className="btn-primary w-full">
           {busy ? 'Saving...' : 'Save email settings'}
@@ -177,6 +273,13 @@ export default function AdminEmail() {
           nothing is lost.
         </p>
       </div>
+
+      {/* Beta invite sender. Admin enters a single email (or pastes a
+          list), the relay renders the template above, sends from
+          support@astroseer.in, and the configured silent BCC archives
+          a copy for admin. No Play Console step - this path is for
+          inviting people directly without adding them as testers. */}
+      <BetaInvitePanel />
 
       {/* Send a real test of any template through the relay's SMTP
           so we can verify the polished kundli email + signature
@@ -389,6 +492,80 @@ function TestSendPanel() {
       <button onClick={send} disabled={busy}
         className="btn-primary w-full">
         {busy ? 'Sending…' : `Send test to ${to}`}
+      </button>
+      {msg.text && (
+        <div className={`rounded-card p-2 text-xs ${msg.kind === 'ok'
+          ? 'bg-success/10 text-success'
+          : 'bg-danger/10 text-danger'}`}>
+          {msg.text}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Beta invite sender. Reads the editable template from settings/email
+// (betaInviteSubject + betaInviteHtml) via the relay's `send` action -
+// we pass kind:'betaInvite' so the relay can apply the template at
+// send time and substitute {{name}}. Falls back to a sensible default
+// if the admin has not customised one.
+function BetaInvitePanel() {
+  const [to, setTo] = useState('');
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState({ text: '', kind: '' });
+
+  async function send() {
+    setMsg({ text: '', kind: '' });
+    const target = String(to || '').trim();
+    if (!/.+@.+\..+/.test(target)) {
+      setMsg({ text: 'Enter a valid email.', kind: 'err' }); return;
+    }
+    setBusy(true);
+    try {
+      const res = await emailService.sendEmail({
+        to: target,
+        kind: 'betaInvite',
+        vars: { name: name.trim() || 'there' },
+      });
+      setMsg({
+        text: `Invite sent. messageId=${res.messageId || '(none)'}. `
+          + 'A BCC copy was archived to your admin address.',
+        kind: 'ok',
+      });
+      setTo(''); setName('');
+    } catch (e) {
+      setMsg({ text: (e && e.message) || 'Send failed.', kind: 'err' });
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="surface mb-4 space-y-3 p-4">
+      <div className="font-semibold">Send beta invite</div>
+      <p className="text-xs text-sub-text">
+        Sends the beta-invite email above to a single recipient
+        directly from support@astroseer.in. No Play Console step. The
+        recipient gets the official template (with the Play Store +
+        web links) and the configured silent BCC gives you a copy.
+        Recipient never sees the BCC.
+      </p>
+      <div className="grid gap-2 md:grid-cols-2">
+        <label className="block text-sm">
+          Recipient email
+          <input className="input mt-1" type="email"
+            placeholder="friend@example.com" value={to}
+            onChange={(e) => setTo(e.target.value)} />
+        </label>
+        <label className="block text-sm">
+          Recipient name (optional)
+          <input className="input mt-1"
+            placeholder="Friend's first name" value={name}
+            onChange={(e) => setName(e.target.value)} />
+        </label>
+      </div>
+      <button onClick={send} disabled={busy}
+        className="btn-primary w-full">
+        {busy ? 'Sending…' : 'Send beta invite'}
       </button>
       {msg.text && (
         <div className={`rounded-card p-2 text-xs ${msg.kind === 'ok'

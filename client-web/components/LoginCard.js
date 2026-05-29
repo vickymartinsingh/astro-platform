@@ -12,6 +12,7 @@ export default function LoginCard({ onDone, compact, initialMode }) {
     initialMode === 'signup' ? 'signup' : 'login'); // login | signup
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [gender, setGender] = useState('');
   const [dob, setDob] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -70,12 +71,22 @@ export default function LoginCard({ onDone, compact, initialMode }) {
     // Validate BEFORE flipping busy, so a bad field never traps the
     // button in the "Please wait..." state.
     if (mode === 'signup') {
-      if (!name.trim()) { setErr('Enter your name.'); return; }
-      if (phone.replace(/\D/g, '').length < 10) {
-        setErr('Enter a valid 10-digit mobile number.'); return;
+      if (!name.trim()) { setErr('Enter your full name.'); return; }
+      // Indian mobile numbers are exactly 10 digits. The form strips
+      // anything non-digit (spaces, dashes, leading +91 if user typed
+      // it) before checking the length.
+      const digits = phone.replace(/\D/g, '').replace(/^91/, '');
+      if (digits.length !== 10) {
+        setErr('Mobile number must be exactly 10 digits.'); return;
+      }
+      if (!gender) {
+        setErr('Please select your gender.'); return;
       }
       if (!/^\d{2}-\d{2}-\d{4}$/.test(dob)) {
         setErr('Please select your date of birth.'); return;
+      }
+      if (!email.trim() || !/.+@.+\..+/.test(email.trim())) {
+        setErr('Enter a valid email.'); return;
       }
       if (password.length < 6) {
         setErr('Password must be at least 6 characters.'); return;
@@ -87,7 +98,8 @@ export default function LoginCard({ onDone, compact, initialMode }) {
       if (mode === 'signup') {
         user = await withTimeout(
           authService.signupUser(name.trim(), email.trim(),
-            password, { phone: phone.trim(), dob }),
+            password, { phone: phone.replace(/\D/g, '').replace(/^91/, ''),
+              dob, gender }),
           25000, 'Signup');
         // Admin-toggled email verification:
         // settings/features.email_verification === true forces a
@@ -306,9 +318,37 @@ export default function LoginCard({ onDone, compact, initialMode }) {
                 <input className="input" placeholder="Full name"
                   value={name}
                   onChange={(e) => setName(e.target.value)} required />
-                <input className="input" type="tel"
-                  placeholder="Mobile number" value={phone}
-                  onChange={(e) => setPhone(e.target.value)} required />
+                {/* Indian mobile only - +91 stamped as a non-editable
+                    prefix chip so the user just types their 10 digits.
+                    The submit handler strips anything non-digit (and a
+                    leading 91 if the user pastes it). */}
+                <div className="flex items-stretch gap-2">
+                  <div className="flex items-center rounded-xl border
+                    border-gray-200 bg-bg-light px-3 text-sm font-bold
+                    text-sub-text">+91</div>
+                  <input className="input flex-1" type="tel"
+                    inputMode="numeric" maxLength={10}
+                    placeholder="10-digit mobile number"
+                    value={phone}
+                    onChange={(e) => setPhone(
+                      e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    required />
+                </div>
+                {/* Gender is mandatory so we can offer the right
+                    pronouns + a sensibly defaulted kundli profile. */}
+                <div className="flex gap-2">
+                  {['Male', 'Female', 'Other'].map((g) => (
+                    <button key={g} type="button"
+                      onClick={() => setGender(g)}
+                      className={`flex-1 rounded-xl border px-3 py-2
+                        text-sm font-semibold transition
+                        ${gender === g
+                          ? 'border-primary bg-primary text-white'
+                          : 'border-gray-200 bg-white text-sub-text'}`}>
+                      {g}
+                    </button>
+                  ))}
+                </div>
                 <DateField value={dob} onChange={setDob}
                   label="Date of birth" />
               </>

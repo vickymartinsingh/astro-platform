@@ -275,9 +275,60 @@ export default function Kundli() {
 
   return (
     <Layout>
+      {/* Hero header. Royal palette gradient + a one-line explainer so
+          a brand-new customer immediately understands what the page
+          does and what it costs. Renders on every mode (pick / add /
+          view) so navigation never lands on a header-less screen. */}
+      <div className="mb-3 overflow-hidden rounded-2xl
+        bg-gradient-to-br from-[#7F2020] to-[#D4A12A] p-4 text-white
+        shadow-md">
+        <div className="text-[11px] font-bold uppercase tracking-widest
+          opacity-90">Vedic Kundli</div>
+        <div className="mt-1 text-2xl font-bold leading-tight">
+          {mode === 'add'
+            ? (editingId ? 'Edit your kundli' : 'New kundli profile')
+            : mode === 'view' ? 'Your kundli chart'
+              : 'Your saved profiles'}
+        </div>
+        <p className="mt-1 text-[12.5px] leading-relaxed opacity-95">
+          Birth chart, dashas, yogas and remedies - generated from your
+          birth details. Free to view, premium PDFs available.
+        </p>
+        {/* Quick-action chips so the user can jump to the most common
+            tasks without scrolling through the picker. */}
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {mode !== 'add' && (
+            <button type="button"
+              onClick={() => { setEditingId(null);
+                setForm({ ...EMPTY, name: profile?.name || '',
+                  gender: profile?.gender || '' });
+                setMode('add'); }}
+              className="rounded-full bg-white/20 px-3 py-1
+                text-[10.5px] font-bold backdrop-blur-sm
+                hover:bg-white/30">
+              + Add new profile
+            </button>
+          )}
+          {mode !== 'pick' && list && list.length > 0 && (
+            <button type="button" onClick={openPicker}
+              className="rounded-full bg-white/20 px-3 py-1
+                text-[10.5px] font-bold backdrop-blur-sm
+                hover:bg-white/30">
+              ☰ Switch profile
+            </button>
+          )}
+          {list && list.length > 0 && (
+            <span className="rounded-full bg-white/15 px-3 py-1
+              text-[10.5px] font-bold backdrop-blur-sm">
+              {list.length} profile{list.length === 1 ? '' : 's'}
+            </span>
+          )}
+        </div>
+      </div>
+
       <div className="mb-3 flex flex-wrap items-center justify-between
         gap-2">
-        <h1 className="text-xl font-bold">
+        <h1 className="sr-only">
           {mode === 'add'
             ? (editingId ? 'Edit kundli' : 'Add new kundli')
             : mode === 'view' ? 'Kundli'

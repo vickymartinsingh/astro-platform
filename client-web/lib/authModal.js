@@ -5,6 +5,7 @@ import {
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/router';
 import dynamic from 'next/dynamic';
+import { auth as firebaseAuth } from '@astro/shared';
 import { useAuth } from './useAuth';
 
 // LoginCard is the single biggest chrome dep on the boot path (~140 KB
@@ -79,11 +80,23 @@ export function AuthModalProvider({ children }) {
   }, [router.events]);
 
   const openLogin = useCallback((onSuccess, opts = {}) => {
-    // Already signed in: never show the popup, just run the action.
+    // Already signed in (React state): never show the popup, just run
+    // the gated action.
     if (userRef.current) {
       if (typeof onSuccess === 'function') onSuccess();
       return;
     }
+    // SECOND defence against the post-signup race: even when React
+    // state hasn't hydrated yet, Firebase Auth itself already knows
+    // the user is signed in. Check `auth.currentUser` directly so a
+    // page that mounts in the brief gap between Firebase sign-in and
+    // our useAuth listener firing does NOT pop the login modal again.
+    try {
+      if (firebaseAuth && firebaseAuth.currentUser) {
+        if (typeof onSuccess === 'function') onSuccess();
+        return;
+      }
+    } catch (_) { /* defensive */ }
     // Already open: do NOT reopen / reset (kills the flicker loop).
     if (openRef.current) return;
     cbRef.current = typeof onSuccess === 'function' ? onSuccess : null;

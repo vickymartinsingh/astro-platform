@@ -1,9 +1,17 @@
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import TopNav from './TopNav';
 import BottomNav from './BottomNav';
 import AnnouncementBanner from './AnnouncementBanner';
 import UpdateBanner from './UpdateBanner';
 import PullToRefresh from './PullToRefresh';
+
+// First-login onboarding popup that collects birth details so the
+// fresh signup can generate their kundli right away. Dynamic import
+// keeps it off the boot path - it only loads when the user is past
+// the tour AND has no kundli profiles.
+const BirthDetailsPopup = dynamic(() => import('./BirthDetailsPopup'),
+  { ssr: false });
 
 // Global layout. Desktop: top nav. Mobile: top nav + Astrotalk-style
 // fixed bottom tab bar. Content gets bottom padding on mobile so it is
@@ -30,6 +38,7 @@ export default function Layout({ children, nav = true }) {
         <div className="mt-1">© {new Date().getFullYear()} AstroSeer</div>
       </footer>
       {nav && <BottomNav />}
+      {nav && <BirthDetailsPopup />}
     </div>
   );
 }

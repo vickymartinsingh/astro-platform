@@ -355,8 +355,50 @@ function renderHtmlEmail({
 </td></tr></table>
 </body></html>`;
 }
-function renderTemplate(kind, v) {
+// Lightweight {{name}}-style substitution used by templates that are
+// edited by admin in /admin-email (so the relay can drop the chosen
+// recipient name in at send time without giving admin raw JS access).
+function fillVars(tpl, vars) {
+  if (!tpl) return '';
+  return String(tpl).replace(/\{\{\s*(\w+)\s*\}\}/g,
+    (_, key) => {
+      const v = vars && vars[key];
+      return v == null ? '' : escapeHtml(String(v));
+    });
+}
+
+function renderTemplate(kind, v, cfg) {
   v = v || {};
+  cfg = cfg || {};
+  if (kind === 'betaInvite') {
+    // Pull the editable subject + HTML from settings/email. Admin sets
+    // them on /admin-email > "Beta invite template"; the body supports
+    // {{name}} substitution which we apply here. If admin has not
+    // saved a custom template we ship a sensible default in plain
+    // text (the HTML default lives client-side in admin-email.js and
+    // gets saved to Firestore on first save).
+    const subject = String(cfg.betaInviteSubject || '').trim()
+      || "You're invited to try AstroSeer (Beta)";
+    const html = fillVars(cfg.betaInviteHtml || '', v)
+      || `<p>Namaste ${escapeHtml(v.name || 'there')},</p>`
+        + '<p>We have hand-picked you to try the early build of '
+        + 'AstroSeer - Vedic kundli, daily horoscope, tarot and 1:1 '
+        + 'consultations with verified astrologers.</p>'
+        + '<p>Install on Android: '
+        + '<a href="https://play.google.com/store/apps/details'
+        + '?id=com.astroseer.mobile">Open Play Store</a></p>'
+        + '<p>Or open on the web: <a href="https://astroseer.in">'
+        + 'astroseer.in</a></p>'
+        + '<p>- The AstroSeer team</p>';
+    const text = `Namaste ${v.name || 'there'},\n\n`
+      + 'We have hand-picked you to try AstroSeer (Beta).\n\n'
+      + 'Install on Android: '
+      + 'https://play.google.com/store/apps/details'
+      + '?id=com.astroseer.mobile\n'
+      + 'Or open on the web: https://astroseer.in\n\n'
+      + '- The AstroSeer team';
+    return { subject, text, html };
+  }
   if (kind === 'welcome') {
     const name = v.name || 'there';
     // Play Store install link is the primary CTA so new signups land
@@ -466,11 +508,19 @@ async function handleSend(req, res, db, body) {
   if (!to || !/.+@.+\..+/.test(to)) {
     return res.status(400).json({ error: 'valid `to` required' });
   }
+  // Read admin-managed email config so templates that pull their
+  // subject/body from settings/email (e.g. betaInvite) can render
+  // with the current admin-edited content.
+  let cfg = {};
+  try {
+    const s = await db.collection('settings').doc('email').get();
+    if (s.exists) cfg = s.data() || {};
+  } catch (_) { /* tolerate */ }
   let subject = body.subject || '';
   let html = body.html || '';
   let text = body.text || '';
   if (body.kind) {
-    const out = renderTemplate(body.kind, body.vars || {});
+    const out = renderTemplate(body.kind, body.vars || {}, cfg);
     if (!subject && out.subject) subject = out.subject;
     if (!html && out.html) html = out.html;
     if (!text && out.text) text = out.text;
