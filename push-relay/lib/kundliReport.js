@@ -470,18 +470,31 @@ async function uploadPdf(uid, kind, buf) {
   }
   const lastErr = { bucket: candidates[candidates.length - 1],
     firebase: attempts.join(' | ') };
-  // Last-resort inline path: encode the PDF bytes as base64 and
-  // return a data URL the browser can download directly. Only
-  // works for sub-megabyte PDFs.
+  // Single-doc inline path: encode the PDF bytes as base64 and
+  // return a data URL the browser can download directly. Works
+  // for sub-megabyte PDFs without any subcollection write.
   const b64 = Buffer.from(buf).toString('base64');
   const dataUrl = `data:application/pdf;base64,${b64}`;
   if (b64.length > 950 * 1024) {
-    throw new Error('PDF is too large to store inline '
-      + `(${(b64.length / 1024).toFixed(0)} KB base64) and Firebase `
-      + `Storage upload failed (bucket=${lastErr.bucket || 'unknown'}, `
-      + `error=${lastErr.firebase || 'unknown'}). Check that the `
-      + 'relay service account has Storage Object Admin on the '
-      + 'bucket, or set BLOB_READ_WRITE_TOKEN for Vercel Blob.');
+    // CHUNKED FIRESTORE STORAGE - the bulletproof fallback. Splits
+    // the base64 string across N x 800 KB docs in the
+    // users/{uid}/orders/{orderId}/pdfChunks subcollection. The
+    // customer-side service reads all chunks ordered by idx, joins
+    // them, and re-builds the data URL. No storage bucket needed,
+    // no env vars, no IAM grants - just Firestore writes the relay
+    // can always do.
+    //
+    // Caller is responsible for telling Firestore the chunk count;
+    // we mark the return value with chunked:true so handleReport
+    // writes pdfChunkCount onto the order doc instead of pdfBase64.
+    return {
+      storagePath: null,                     // no file path - chunks
+      bucketUsed: 'firestore-chunked',
+      url: 'chunked',                        // sentinel; client reassembles
+      inline: false,
+      chunked: true,
+      pdfBuf: buf,                           // caller writes chunks
+    };
   }
   return {
     storagePath: `inline:${uid}:${Date.now()}_${kind}`,
@@ -926,9 +939,18 @@ async function handleReport(req, res) {
           }
           throw e;
         }
-        const realUrl = prepaid.pdfBase64
-          ? `data:application/pdf;base64,${prepaid.pdfBase64}`
-          : prepaid.pdfUrl;
+        // Resolve URL across every storage tier - including the
+        // chunked tier (pdfChunked + pdfChunkCount on the doc).
+        // For chunked we surface a sentinel; the customer's
+        // resolveOrderPdfUrl reads the subcollection client-side.
+        let realUrl;
+        if (prepaid.pdfBase64) {
+          realUrl = `data:application/pdf;base64,${prepaid.pdfBase64}`;
+        } else if (prepaid.pdfChunked && prepaid.pdfChunkCount > 0) {
+          realUrl = 'chunked';
+        } else {
+          realUrl = prepaid.pdfUrl;
+        }
         // Per user requirement 2026-05-28: paid kundlis MUST email
         // the customer when they're delivered. The prepaid pipeline
         // skipped email at generation time (PDF was free at that
@@ -1988,6 +2010,30 @@ async function handleReportStatus(req, res) {
   }
   if (uploaded.inline && uploaded.pdfBase64) {
     orderPatch.pdfBase64 = uploaded.pdfBase64;
+  }
+  // CHUNKED FIRESTORE STORAGE: the bulletproof tier from uploadPdf.
+  // Write each 800 KB chunk as users/{uid}/orders/{orderId}/pdfChunks/{idx}.
+  // The customer-side service reassembles + builds the data URL on
+  // download. No storage bucket needed, no env vars, no IAM grants.
+  if (uploaded.chunked && uploaded.pdfBuf) {
+    const CHUNK = 800 * 1024;
+    const b64 = uploaded.pdfBuf.toString('base64');
+    const chunks = [];
+    for (let i = 0; i < b64.length; i += CHUNK) {
+      chunks.push(b64.slice(i, i + CHUNK));
+    }
+    const chunksRef = orderRef.collection('pdfChunks');
+    // Firestore batches cap at 500 ops - PDFs would need to be
+    // 400 MB+ to hit that. Single batch is safe.
+    const batch = db.batch();
+    for (let i = 0; i < chunks.length; i += 1) {
+      batch.set(chunksRef.doc(String(i).padStart(4, '0')), {
+        idx: i, data: chunks[i],
+      });
+    }
+    await batch.commit();
+    orderPatch.pdfChunkCount = chunks.length;
+    orderPatch.pdfChunked = true;
   }
   await orderRef.update(orderPatch);
 

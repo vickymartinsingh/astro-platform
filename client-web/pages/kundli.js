@@ -3452,13 +3452,21 @@ function ApiPdfHero({ kundli }) {
               return bt - at;
             });
           const ready = docs.find((d) => d.status === 'ready'
-            && (d.pdfUrl || d.pdfBase64));
+            && (d.pdfUrl || d.pdfBase64
+              || (d.pdfChunked && d.pdfChunkCount > 0)));
           if (ready) {
-            const url = ready.pdfBase64
-              ? `data:application/pdf;base64,${ready.pdfBase64}`
-              : ready.pdfUrl;
-            setAutoGen({ status: 'ready', order: ready, url,
-              name: ready.pdfName || 'AstroSeer-Kundli.pdf' });
+            // Resolve URL across every storage tier (Vercel Blob,
+            // Firebase Storage, inline base64, chunked Firestore).
+            // Chunked PDFs require an async read of the subcollection;
+            // resolveOrderPdfUrl handles that and returns a data URL.
+            (async () => {
+              const url = await kundliService.resolveOrderPdfUrl(
+                kundli.userId, ready);
+              if (url) {
+                setAutoGen({ status: 'ready', order: ready, url,
+                  name: ready.pdfName || 'AstroSeer-Kundli.pdf' });
+              }
+            })();
             return;
           }
           const gen = docs.find((d) => d.status === 'paid_generating'

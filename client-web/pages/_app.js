@@ -81,6 +81,27 @@ export default function App({ Component, pageProps }) {
       } catch (_) { /* OTA is best-effort, never crash boot */ }
     })();
   }, []);
+  // ASTROSEER RENDER DYNO KEEP-ALIVE: ping /health every 4 minutes
+  // while the app is open so the free-tier dyno never enters its
+  // 15-minute idle sleep. The kundli chart fetch (which needs that
+  // dyno awake) then never sees a cold-start 30-60s delay. Also
+  // fires once on mount so the very first chart request is warm.
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    let cancelled = false;
+    const ping = () => {
+      if (cancelled) return;
+      import('@astro/shared').then((m) => {
+        if (m && m.kundliService
+          && typeof m.kundliService.wakeAstroSeer === 'function') {
+          m.kundliService.wakeAstroSeer().catch(() => { /* fine */ });
+        }
+      }).catch(() => { /* */ });
+    };
+    ping();                                          // immediate
+    const id = setInterval(ping, 4 * 60 * 1000);     // every 4 min
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
   // Compliance: log every route change (deduped per uid+path) so admin
   // can see what each user clicked / browsed in their activity log.
   useEffect(() => {

@@ -315,6 +315,53 @@ function isNativeApp() {
 //                                 navigation actually works (iOS
 //                                 WKWebView blocks data: navigation)
 // Returns true on a best-effort attempt, false only on an exception
+// CHUNKED FIRESTORE STORAGE: when the relay couldn't reach Vercel
+// Blob OR Firebase Storage, it writes the PDF base64 as N x 800 KB
+// docs at users/{uid}/orders/{orderId}/pdfChunks/{idx}. The order
+// doc carries pdfChunkCount + pdfChunked:true so we know to read
+// the subcollection here, join the chunks in idx order, and
+// rebuild the data URL. Returns 'data:application/pdf;base64,...'.
+export async function loadChunkedPdfUrl(uid, orderId, expectedCount) {
+  const {
+    collection, query, orderBy, getDocs,
+  } = await import('firebase/firestore');
+  const ref = collection(db, 'users', uid, 'orders', orderId,
+    'pdfChunks');
+  const q = query(ref, orderBy('idx'));
+  const snap = await getDocs(q);
+  if (!snap.size) return null;
+  if (expectedCount && snap.size !== expectedCount) {
+    // Some chunks missing; treat as not-yet-ready instead of
+    // returning a corrupted PDF.
+    return null;
+  }
+  const parts = snap.docs.map((d) => d.data().data || '');
+  return `data:application/pdf;base64,${parts.join('')}`;
+}
+
+// Resolves an order doc's effective downloadable PDF URL. Handles
+// every storage tier the relay might have used:
+//   - direct pdfUrl (Vercel Blob, Firebase Storage)
+//   - inline pdfBase64
+//   - chunked Firestore subcollection (pdfChunked + pdfChunkCount)
+// Returns the URL string or null if nothing usable is on the doc.
+export async function resolveOrderPdfUrl(uid, order) {
+  if (!order) return null;
+  if (order.pdfChunked && order.pdfChunkCount > 0 && order.id) {
+    const url = await loadChunkedPdfUrl(uid, order.id,
+      order.pdfChunkCount).catch(() => null);
+    if (url) return url;
+  }
+  if (order.pdfBase64) {
+    return `data:application/pdf;base64,${order.pdfBase64}`;
+  }
+  if (order.pdfUrl && order.pdfUrl !== 'inline'
+      && order.pdfUrl !== 'chunked') {
+    return order.pdfUrl;
+  }
+  return null;
+}
+
 // (typically a popup blocker). The popup the kundli flow uses
 // continues to show "Open in My Orders" as a fallback for either case.
 export function downloadPdfFromUrl(url, filename) {
@@ -395,32 +442,54 @@ export function downloadPdfFromUrl(url, filename) {
 export async function getProkeralaKundli(birth) {
   const url = kundliEndpoint();
   if (!url || !birth || !birth.dob) return null;
-  try {
-    const body = {
-      dob: birth.dob, tob: birth.tob, ampm: birth.ampm,
-      place: birth.place,
-    };
-    // Forward locked lat / lng / tz when the profile has them so
-    // the relay skips its (sometimes flaky) geocoder + uses the
-    // exact Google/OSM-confirmed coordinates the user picked.
-    if (birth.lat != null && Number(birth.lat) !== 0) {
-      body.lat = Number(birth.lat);
+  const body = {
+    dob: birth.dob, tob: birth.tob, ampm: birth.ampm,
+    place: birth.place,
+  };
+  if (birth.lat != null && Number(birth.lat) !== 0) {
+    body.lat = Number(birth.lat);
+  }
+  if (birth.lng != null && Number(birth.lng) !== 0) {
+    body.lng = Number(birth.lng);
+  }
+  if (birth.tz != null && Number.isFinite(Number(birth.tz))) {
+    body.tz = Number(birth.tz);
+  }
+  // RESILIENT FETCH: up to 3 attempts with a wake ping between each.
+  // The first attempt usually hits a warm Render dyno (kept warm by
+  // the keep-alive ping in _app.js); if AstroSeer cold-started or
+  // crashed mid-request, we wake it and retry. Each attempt has a
+  // generous 75s budget so a cold-start (30-40s) plus full kundli
+  // generation (15-25s) still fits.
+  async function attempt(timeoutMs) {
+    const ac = new AbortController();
+    const tid = setTimeout(() => ac.abort(), timeoutMs);
+    try {
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: ac.signal,
+      });
+      if (!r.ok) return null;
+      const j = await r.json();
+      return j && !j.error ? j : null;
+    } finally { clearTimeout(tid); }
+  }
+  for (let i = 0; i < 3; i += 1) {
+    try {
+      const result = await attempt(i === 0 ? 75000 : 60000);
+      if (result) return result;
+    } catch (_) { /* fall through to retry */ }
+    // Between attempts: fire a wake ping so the dyno is hot for the
+    // next try. Don't await; the next attempt's own timeout covers
+    // any residual cold-start latency.
+    if (i < 2) {
+      try { wakeAstroSeer(); } catch (_) { /* */ }
+      await new Promise((r) => setTimeout(r, 1500));
     }
-    if (birth.lng != null && Number(birth.lng) !== 0) {
-      body.lng = Number(birth.lng);
-    }
-    if (birth.tz != null && Number.isFinite(Number(birth.tz))) {
-      body.tz = Number(birth.tz);
-    }
-    const r = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!r.ok) return null;
-    const j = await r.json();
-    return j && !j.error ? j : null;
-  } catch (_) { return null; }
+  }
+  return null;
 }
 
 // Signature of the birth inputs - the report is regenerated ONLY when
