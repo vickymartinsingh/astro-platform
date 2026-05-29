@@ -3546,7 +3546,8 @@ function ApiPdfHero({ kundli }) {
       if (autoGen.order && autoGen.order.id) {
         (async () => {
           const rescued = await kundliService.rescuePdfByOrderId(
-            autoGen.order.id);
+            autoGen.order.id,
+            { profile: kundli, uid: kundli.userId, kind: 'free' });
           if (rescued && rescued.pdfUrl) {
             setResult({ ok: true, pdfUrl: rescued.pdfUrl,
               pdfName: `AstroSeer-Kundli-${autoGen.order.id}.pdf` });
@@ -3619,7 +3620,8 @@ function ApiPdfHero({ kundli }) {
       if (autoGen.order && autoGen.order.id) {
         (async () => {
           const rescued = await kundliService.rescuePdfByOrderId(
-            autoGen.order.id);
+            autoGen.order.id,
+            { profile: kundli, uid: kundli.userId, kind: 'free' });
           if (rescued && rescued.pdfUrl) {
             kundliService.downloadPdfFromUrl(rescued.pdfUrl,
               `AstroSeer-Kundli-${autoGen.order.id}.pdf`);

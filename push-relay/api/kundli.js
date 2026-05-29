@@ -782,7 +782,7 @@ module.exports = async (req, res) => {
       },
     };
     return res.status(200).json({
-      relayBuild: 'firestore-free-rescue-2026-05-29T03:50',
+      relayBuild: 'rescue-with-regen-2026-05-29T04:10',
       provider: pc.provider,
       adminInit: pc.adminInit,
       hasKey: !!(pc.creds && (pc.creds.key || pc.creds.secret))

@@ -416,28 +416,48 @@ async function _isUrlAlive(url) {
 // URL. Triggered automatically by ApiPdfHero when the order has
 // been generating for more than a couple of minutes - covers the
 // case where Firebase quota / outage blocks the normal flip path.
-export async function rescuePdfByOrderId(orderId) {
+// Optionally pass birth details so the rescue path can REGENERATE
+// from scratch if AstroSeer has lost the order (Render free-tier
+// ephemeral disk wipes its SQLite on every restart). The customer's
+// app passes the kundli profile it already has loaded.
+export async function rescuePdfByOrderId(orderId, opts = {}) {
   if (!orderId) return null;
-  // Reach the same /api/kundli endpoint as everything else; this
-  // is just a new action.
   const base = (typeof process !== 'undefined' && process.env
     && process.env.NEXT_PUBLIC_KUNDLI_ENDPOINT) || '';
   const url = base ? base.replace(/\/api\/kundli$/, '/api/kundli')
     : '/api/kundli';
+  const payload = { action: 'rescueByOrderId',
+    orderId: String(orderId) };
+  if (opts.profile) {
+    const p = opts.profile;
+    payload.birth = {
+      name: p.name || '',
+      dob: p.dob || '',
+      tob: p.tob || '',
+      ampm: p.ampm || '',
+      place: p.place || '',
+      lat: p.lat,
+      lng: p.lng,
+      tz: p.tz,
+      kind: opts.kind || 'free',
+    };
+  }
+  if (opts.uid) payload.uid = String(opts.uid);
   try {
     const r = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'rescueByOrderId',
-        orderId: String(orderId) }),
+      body: JSON.stringify(payload),
     });
     const j = await r.json().catch(() => null);
-    if (!j || !j.ok) return null;
+    if (!j || !j.ok) return j; // surface error shape too
     return {
       pdfUrl: j.pdfUrl,
       status: j.status,
       pdfReady: !!j.pdfUrl,
       rescue: !!j.rescue,
+      recreated: !!j.recreated,
+      hint: j.hint || null,
       source: j.source || null,
     };
   } catch (_) { return null; }

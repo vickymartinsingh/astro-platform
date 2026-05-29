@@ -2612,17 +2612,90 @@ async function _handleRescueByOrderIdInner(req, res) {
   const base = process.env.ASTROSEER_API_URL
     || 'https://astroseer-api.onrender.com';
   let astroStatus = null;
+  let astroHttp = null;
   try {
     const sr = await fetch(`${base}/api/orders/`
       + `${encodeURIComponent(orderId)}/status`, { method: 'GET' });
+    astroHttp = sr.status;
     if (sr.ok) astroStatus = await sr.json().catch(() => null);
-  } catch (_) { /* */ }
+  } catch (_) { /* network blip - fall through to retry */ }
+  // Birth params (optional) - the customer's app passes these when
+  // calling rescue so we can regenerate from scratch if AstroSeer
+  // lost the order (Render free-tier ephemeral disk wipes its SQLite
+  // DB on every restart). Without birth params we can only probe;
+  // with them we can recreate.
+  const birth = body.birth || {};
+  const hasBirth = !!(birth.dob && birth.tob
+    && (birth.place || (birth.lat && birth.lng)));
+  // AstroSeer 404 / status not 'sent' + we have birth params ->
+  // KICK OFF a fresh generation. AstroSeer accepts an upsert on
+  // /api/orders/log so re-POSTing with the same order_id is safe.
+  if ((astroHttp === 404
+        || !astroStatus
+        || astroStatus.status !== 'sent'
+        || !astroStatus.pdf_ready)
+      && hasBirth) {
+    try {
+      // Parse dob "01-11-1995" or "01/11/1995" -> y/m/d.
+      const dobParts = String(birth.dob).split(/[-/]/).map(Number);
+      let bd; let bm; let by;
+      if (dobParts[0] > 31) [by, bm, bd] = dobParts;
+      else [bd, bm, by] = dobParts;
+      // Parse tob "12:21" + optional ampm.
+      const [tH, tM] = String(birth.tob).split(':').map(Number);
+      let hh = tH || 12;
+      const mm = tM || 0;
+      const ap = String(birth.ampm || '').toUpperCase();
+      if (ap === 'PM' && hh < 12) hh += 12;
+      if (ap === 'AM' && hh === 12) hh = 0;
+      // Map our kind -> AstroSeer report_type.
+      const REPORT_TYPE = {
+        free: 'basic', forecast12: 'yearly',
+        careerFinance: 'career', lifetime: 'full_life',
+      };
+      const reportType = REPORT_TYPE[birth.kind || 'free'] || 'basic';
+      const tz = Number.isFinite(Number(birth.tz)) ? Number(birth.tz) : 5.5;
+      const kickoffBody = {
+        order_id: orderId,
+        status: 'generating',
+        report_type: reportType,
+        customer_name: birth.name || '',
+        customer_email: birth.email || '',
+        customer_uid: uid,
+        place: birth.place || '',
+        birth_year: by, birth_month: bm, birth_day: bd,
+        birth_hour: hh, birth_minute: mm, birth_second: 0,
+        tz_offset: tz,
+        latitude: Number(birth.lat) || 0,
+        longitude: Number(birth.lng) || 0,
+      };
+      const kr = await fetch(`${base}/api/orders/log`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(kickoffBody),
+      });
+      if (kr.ok) {
+        return res.status(200).json({
+          ok: true,
+          orderId,
+          status: 'generating',
+          pdfReady: false,
+          recreated: true,
+          hint: 'AstroSeer lost this order. We re-queued it for '
+            + 'generation; check back in 1-3 minutes.',
+        });
+      }
+    } catch (e) {
+      // fall through to the generic "still generating" return
+    }
+  }
   if (!astroStatus) {
     return res.status(502).json({
       ok: false,
       orderId,
       status: 'generating',
       error: 'AstroSeer status unreachable; try again in a moment.',
+      astroseerHttp: astroHttp,
     });
   }
   if (astroStatus.status !== 'sent' || !astroStatus.pdf_ready) {
