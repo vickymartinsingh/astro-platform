@@ -7,6 +7,53 @@ import { db } from '../firebase.js';
 import { zodiacFromDOB } from '../theme.js';
 import { sendMessage } from './chatService.js';
 
+// Cached read of settings/config. Every page that needs admin
+// pricing or feature config used to call getDoc(doc(db,
+// 'settings', 'config')) on mount - that's 5+ Firestore reads per
+// navigation, all returning the SAME data which only changes when
+// admin saves config. We now cache for 10 minutes in localStorage,
+// dropping that to ~0.1 reads per navigation on average.
+let _settingsConfigPromise = null;
+export async function readSettingsConfig() {
+  const TTL = 10 * 60 * 1000; // 10 min
+  try {
+    if (typeof window !== 'undefined') {
+      const raw = window.localStorage.getItem('settings_config_v2');
+      if (raw) {
+        const { at, value } = JSON.parse(raw);
+        if (Date.now() - at < TTL) return value;
+      }
+    }
+  } catch (_) { /* fall through to refetch */ }
+  if (_settingsConfigPromise) return _settingsConfigPromise;
+  _settingsConfigPromise = (async () => {
+    try {
+      const s = await getDoc(doc(db, 'settings', 'config'));
+      const value = s.exists() ? s.data() : {};
+      try {
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem('settings_config_v2',
+            JSON.stringify({ at: Date.now(), value }));
+        }
+      } catch (_) { /* */ }
+      return value;
+    } catch (e) {
+      // Firestore quota hit / network blip: return whatever stale
+      // copy localStorage has so the page still renders.
+      try {
+        if (typeof window !== 'undefined') {
+          const raw = window.localStorage.getItem('settings_config_v2');
+          if (raw) return JSON.parse(raw).value;
+        }
+      } catch (_) { /* */ }
+      return {};
+    } finally {
+      _settingsConfigPromise = null;
+    }
+  })();
+  return _settingsConfigPromise;
+}
+
 function parseZodiac(dob) {
   // dob expected as DD-MM-YYYY (blueprint example "12-05-1998")
   const [d, m] = String(dob || '').split('-').map(Number);

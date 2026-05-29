@@ -74,8 +74,11 @@ export default function Kundli() {
     setForm((f) => ({ ...f, name: profile?.name || '',
       gender: profile?.gender || f.gender || '' }));
     refresh();
-    getDoc(doc(db, 'settings', 'config')).then((s) =>
-      setToolUrl(s.exists() ? (s.data().kundliToolUrl || '') : ''));
+    // Cached read - returns instantly from localStorage when the
+    // config was fetched within the last 10 min. Drops 5 redundant
+    // Firestore reads per /kundli mount.
+    kundliService.readSettingsConfig().then((cfg) =>
+      setToolUrl(cfg.kundliToolUrl || ''));
     // eslint-disable-next-line
   }, [user, profile]);
 
@@ -3060,8 +3063,7 @@ function ReportButtons({ kundli }) {
   useEffect(() => {
     (async () => {
       try {
-        const s = await getDoc(doc(db, 'settings', 'config'));
-        const cfg = (s.exists() && s.data()) || {};
+        const cfg = await kundliService.readSettingsConfig();
         const next = {};
         REPORT_TYPES.forEach((t) => {
           next[t.id] = resolvePrice(t.id, cfg);
@@ -4044,8 +4046,7 @@ function PremiumReportsTab({ kundli }) {
   useEffect(() => {
     (async () => {
       try {
-        const s = await getDoc(doc(db, 'settings', 'config'));
-        const cfg = (s.exists() && s.data()) || {};
+        const cfg = await kundliService.readSettingsConfig();
         const next = {};
         REPORT_TYPES.forEach((t) => {
           next[t.id] = resolvePrice(t.id, cfg);

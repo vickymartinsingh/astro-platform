@@ -50,8 +50,9 @@ export default function Discover() {
   useEffect(() => {
     // settings/config supplies admin price overrides for every
     // feature; we read once and merge through featurePrice().
-    getDoc(doc(db, 'settings', 'config')).then((s) =>
-      setCfg(s.exists() ? s.data() : {})).catch(() => {});
+    // Cached read (10 min TTL in localStorage) - drops 2 reads
+    // per /discover mount.
+    kundliService.readSettingsConfig().then(setCfg).catch(() => {});
   }, []);
   useEffect(() => {
     if (!user) return;

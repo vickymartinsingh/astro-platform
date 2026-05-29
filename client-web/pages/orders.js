@@ -74,10 +74,14 @@ export default function Orders() {
         } catch (_) { /* */ }
       }
     };
-    // First tick after 5s so the relay has time to update
-    // Firestore from the prior poll. Subsequent ticks every 15s.
-    const t1 = setTimeout(tick, 5000);
-    const t2 = setInterval(tick, 15000);
+    // First tick after 8s. Subsequent ticks every 60s (was 15s).
+    // The customer's onSnapshot listener picks up status flips the
+    // moment the relay writes them, so this poll is the "kick the
+    // relay" trigger - not the freshness mechanism. 4x slower
+    // cadence saves ~3x Firestore reads on /orders without any
+    // user-visible delay.
+    const t1 = setTimeout(tick, 8000);
+    const t2 = setInterval(tick, 60000);
     return () => { clearTimeout(t1); clearInterval(t2); };
   }, [user, rows]);
 
