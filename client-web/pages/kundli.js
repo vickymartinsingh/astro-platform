@@ -3701,29 +3701,16 @@ function ApiPdfHero({ kundli }) {
           </p>
         </div>
       </div>
-      {/* Strictly two CTAs on the free report card:
-            VIEW PDF      -> opens an in-app PDF viewer popup if the
-                             auto-generated PDF is ready; otherwise
-                             shows the "kundli is being generated"
-                             friendly popup with the wait copy.
-            DOWNLOAD PDF  -> triggers an in-app download if ready;
-                             otherwise shows the same "still
-                             generating" popup so the customer never
-                             clicks an empty action.
-          The buttons are always labelled "View PDF" / "Download PDF"
-          - we never show a "Check status" / "Re-open PDF" string per
-          user requirement 2026-05-28 (the click handler decides what
-          to do at the moment of the tap based on autoGen.status). */}
-      <div className="mt-3 flex flex-wrap gap-2">
+      {/* Single CTA on the free report card (user requirement
+          2026-05-29): VIEW REPORT opens the in-app PDF viewer which
+          already exposes its own Download button. No separate
+          Download PDF button needed - the customer downloads from
+          inside the viewer once it's open. */}
+      <div className="mt-3 flex">
         <button type="button" onClick={open} disabled={busy}
-          className="rounded-full bg-primary px-4 py-2 text-xs
+          className="rounded-full bg-primary px-5 py-2 text-xs
             font-bold text-white disabled:opacity-60">
-          {busy ? 'Opening...' : 'View PDF'}
-        </button>
-        <button type="button" onClick={downloadNow} disabled={busy}
-          className="rounded-full border border-primary px-4 py-2
-            text-xs font-bold text-primary disabled:opacity-60">
-          Download PDF
+          {busy ? 'Opening...' : 'View Report'}
         </button>
       </div>
       {/* Permanent inline generating notice (no modal). Persists
