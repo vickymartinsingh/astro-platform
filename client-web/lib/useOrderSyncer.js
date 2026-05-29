@@ -38,8 +38,16 @@ export function useOrderSyncer({ enabled = true } = {}) {
       if (!alive) return;
       kundliService.triggerSweepPending().catch(() => { /* */ });
     };
-    const t1 = setTimeout(tick, 3000);
-    const t2 = setInterval(tick, 60000);
+    // Sweep cadence dropped from 60s -> 5min on 2026-05-29 to
+    // protect Firestore quota. At 60s, the sweep was reading 500
+    // docs/minute = ~720K reads/day, easily blowing the Spark plan
+    // 50K/day cap. At 5min it's ~144K/day. Combined with the docs
+    // being capped at 100 per sweep (was 500), total reads drop
+    // ~25x. The webhook from AstroSeer API (when env vars are set)
+    // makes most orders flip to ready WITHOUT needing the sweep at
+    // all, so this slower cadence is purely the safety net.
+    const t1 = setTimeout(tick, 5000);
+    const t2 = setInterval(tick, 5 * 60 * 1000);
     return () => {
       alive = false;
       clearTimeout(t1);

@@ -778,6 +778,32 @@ async function emailReport({
 // (we keep ONE serverless function for the kundli surface to stay
 // under Vercel Hobby's 12-function limit).
 async function handleReport(req, res) {
+  try {
+    return await _handleReportInner(req, res);
+  } catch (e) {
+    const msg = String((e && e.message) || e);
+    // Always include CORS so the browser sees the JSON instead of
+    // a "Failed to fetch" wall. Common throw causes:
+    //   - Firestore RESOURCE_EXHAUSTED (Spark plan daily quota)
+    //   - Network blip to Astrology API
+    //   - Vercel cold-start hit > 60s
+    try {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    } catch (_) { /* */ }
+    return res.status(503).json({
+      ok: false,
+      error: /quota/i.test(msg)
+        ? 'Report service is at quota right now. Please try again '
+          + 'in a few minutes.'
+        : `Report service hiccup: ${msg.slice(0, 200)}`,
+      detail: msg.slice(0, 500),
+    });
+  }
+}
+
+async function _handleReportInner(req, res) {
   try { init(); } catch (e) {
     return res.status(503).json({
       error: String((e && e.message) || e) });
@@ -2111,6 +2137,20 @@ async function _handleReportStatusInner(req, res) {
 // when Vercel Blob is configured, the PDF lives there forever and
 // the client just hits the public CDN URL directly).
 async function handleReportPdf(req, res) {
+  try {
+    return await _handleReportPdfInner(req, res);
+  } catch (e) {
+    try {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+    } catch (_) { /* */ }
+    return res.status(503).json({
+      ok: false,
+      error: String((e && e.message) || e).slice(0, 400),
+    });
+  }
+}
+
+async function _handleReportPdfInner(req, res) {
   try { init(); } catch (e) {
     return res.status(503).json({
       error: String((e && e.message) || e) });
@@ -2181,6 +2221,22 @@ async function handleWake(req, res) {
 // Returns: { ok, checked, ready, failed, stillGenerating, errors }
 // ====================================================================
 async function handleSweepPending(req, res) {
+  try {
+    return await _handleSweepPendingInner(req, res);
+  } catch (e) {
+    try {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+    } catch (_) { /* */ }
+    const msg = String((e && e.message) || e);
+    return res.status(503).json({
+      ok: false,
+      error: msg.slice(0, 400),
+      quotaExceeded: /quota|RESOURCE_EXHAUSTED/i.test(msg),
+    });
+  }
+}
+
+async function _handleSweepPendingInner(req, res) {
   try { init(); } catch (e) {
     return res.status(503).json({
       error: String((e && e.message) || e) });
@@ -2211,9 +2267,14 @@ async function handleSweepPending(req, res) {
   // created. The naked query uses the implicit __name__ ASC order
   // which doesn't need an exemption, so it works out of the box.
   // We pull a generous 500-doc batch and filter in memory.
+  // Cap dropped from 500 -> 100 on 2026-05-29 to protect Firestore
+  // read quota. With this batch size + the 5-minute client cadence
+  // the sweep burns ~28K reads/day (well under Spark's 50K). Once
+  // the API->relay webhook env vars are set, the sweep is purely a
+  // safety net for orders that miss the push notification anyway.
   let snap;
   try {
-    snap = await db.collectionGroup('orders').limit(500).get();
+    snap = await db.collectionGroup('orders').limit(100).get();
   } catch (e) {
     return res.status(500).json({
       error: 'collectionGroup query failed',
