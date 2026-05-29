@@ -762,17 +762,27 @@ module.exports = async (req, res) => {
         extras.healthError = String((e && e.message) || e);
       }
     }
+    // Storage backend env-var visibility (so operator can confirm
+    // R2 / Vercel Blob credentials picked up by the deploy).
+    const storage = {
+      vercelBlob: !!process.env.BLOB_READ_WRITE_TOKEN,
+      r2: {
+        accountId: !!process.env.R2_ACCOUNT_ID,
+        accessKeyId: !!process.env.R2_ACCESS_KEY_ID,
+        secretAccessKey: !!process.env.R2_SECRET_ACCESS_KEY,
+        bucket: process.env.R2_BUCKET || null,
+        publicUrl: process.env.R2_PUBLIC_URL || null,
+      },
+    };
     return res.status(200).json({
-      // Build marker - bumped on every deploy so admin can verify
-      // exactly which relay version is live (especially when chasing
-      // a stuck Vercel build).
-      relayBuild: 'dual-write-r2-blob-2026-05-29T02:55',
+      relayBuild: 'r2-env-vars-set-2026-05-29T03:20',
       provider: pc.provider,
       adminInit: pc.adminInit,
       hasKey: !!(pc.creds && (pc.creds.key || pc.creds.secret))
         || (pc.provider === 'astroseer'
           && !!process.env.ASTROSEER_API_KEY),
       providerNote: pc.providerNote || '',
+      storage,
       ...extras,
     });
   }
