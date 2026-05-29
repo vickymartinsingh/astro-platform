@@ -388,12 +388,31 @@ export async function loadChunkedPdfUrl(uid, orderId, expectedCount) {
 
 // Resolves an order doc's effective downloadable PDF URL. Handles
 // every storage tier the relay might have used:
-//   - direct pdfUrl (Vercel Blob, Firebase Storage)
+//   - direct pdfUrl (Vercel Blob, Cloudflare R2, Firebase Storage)
+//   - dual-write backup pdfBackupUrl (used if pdfUrl is unreachable)
 //   - inline pdfBase64
 //   - chunked Firestore subcollection (pdfChunked + pdfChunkCount)
 // Returns the URL string or null if nothing usable is on the doc.
+//
+// DUAL-WRITE FAILOVER: when both Vercel Blob and Cloudflare R2 are
+// configured, the relay writes to BOTH and saves the secondary on
+// pdfBackupUrl. We HEAD-probe the primary first; if it 4xx/5xx /
+// network errors, we return the backup URL automatically. This
+// guards against a future Vercel outage or a deleted blob without
+// any operator intervention.
+async function _isUrlAlive(url) {
+  if (!url || typeof url !== 'string') return false;
+  if (url.startsWith('data:')) return true;
+  try {
+    const r = await fetch(url, { method: 'HEAD',
+      mode: 'cors', cache: 'no-store' });
+    return r.ok;
+  } catch (_) { return false; }
+}
+
 export async function resolveOrderPdfUrl(uid, order) {
   if (!order) return null;
+  // Chunked path - reassembly from Firestore subcollection.
   if (order.pdfChunked && order.pdfChunkCount > 0 && order.id) {
     const url = await loadChunkedPdfUrl(uid, order.id,
       order.pdfChunkCount).catch(() => null);
@@ -402,10 +421,26 @@ export async function resolveOrderPdfUrl(uid, order) {
   if (order.pdfBase64) {
     return `data:application/pdf;base64,${order.pdfBase64}`;
   }
+  // Direct URL with optional backup failover.
   if (order.pdfUrl && order.pdfUrl !== 'inline'
       && order.pdfUrl !== 'chunked') {
+    if (order.pdfBackupUrl) {
+      // Both configured - probe primary, fall back to backup if dead.
+      const aliveP = await _isUrlAlive(order.pdfUrl);
+      if (aliveP) return order.pdfUrl;
+      // eslint-disable-next-line no-console
+      console.warn('Primary PDF URL is dead, falling back to backup',
+        order.pdfUrl, '->', order.pdfBackupUrl);
+      const aliveB = await _isUrlAlive(order.pdfBackupUrl);
+      if (aliveB) return order.pdfBackupUrl;
+      // Both dead - return primary anyway so the user sees the
+      // error from the browser instead of a silent null.
+      return order.pdfUrl;
+    }
     return order.pdfUrl;
   }
+  // Last resort: just the backup URL if that's all we have.
+  if (order.pdfBackupUrl) return order.pdfBackupUrl;
   return null;
 }
 

@@ -766,7 +766,7 @@ module.exports = async (req, res) => {
       // Build marker - bumped on every deploy so admin can verify
       // exactly which relay version is live (especially when chasing
       // a stuck Vercel build).
-      relayBuild: 'r2-tier-2026-05-29T02:40',
+      relayBuild: 'dual-write-r2-blob-2026-05-29T02:55',
       provider: pc.provider,
       adminInit: pc.adminInit,
       hasKey: !!(pc.creds && (pc.creds.key || pc.creds.secret))

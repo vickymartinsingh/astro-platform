@@ -392,78 +392,110 @@ async function callAstroSeerPdf({ base, key, body }) {
 // the rest of handleReport doesn't change. inline === true on the
 // return value tells the caller to also write pdfBase64 onto the
 // order doc.
-async function uploadPdf(uid, kind, buf) {
-  if (process.env.BLOB_READ_WRITE_TOKEN) {
-    try {
-      const { put } = require('@vercel/blob');
-      const ts = Date.now();
-      const path = `reports/${uid}/${ts}_${kind}.pdf`;
-      const blob = await put(path, buf, {
-        access: 'public',
-        contentType: 'application/pdf',
-        cacheControlMaxAge: 31536000,
-        addRandomSuffix: false,
-      });
-      return {
-        storagePath: blob.pathname || path,
-        bucketUsed: 'vercel-blob',
-        url: blob.url,
-        inline: false,
-      };
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.warn('Vercel Blob upload failed, falling back to '
-        + 'Cloudflare R2 / Firebase Storage:',
-        (e && e.message) || e);
-    }
+// Upload helpers exposed so the dual-write coordinator below can
+// call each backend independently. Each returns the same shape as
+// uploadPdf or null if that backend is not configured / fails.
+async function _putToVercelBlob(uid, kind, buf) {
+  if (!process.env.BLOB_READ_WRITE_TOKEN) return null;
+  try {
+    const { put } = require('@vercel/blob');
+    const ts = Date.now();
+    const path = `reports/${uid}/${ts}_${kind}.pdf`;
+    const blob = await put(path, buf, {
+      access: 'public',
+      contentType: 'application/pdf',
+      cacheControlMaxAge: 31536000,
+      addRandomSuffix: false,
+    });
+    return {
+      storagePath: blob.pathname || path,
+      bucketUsed: 'vercel-blob',
+      url: blob.url,
+      inline: false,
+    };
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn('Vercel Blob upload failed:', (e && e.message) || e);
+    return null;
   }
-  // CLOUDFLARE R2 TIER (free 10 GB storage, unlimited bandwidth,
-  // S3-compatible API). Activates when all four env vars are set:
-  //   R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET
-  // Optional: R2_PUBLIC_URL (custom domain or r2.dev subdomain). When
-  // unset we fall back to the default <bucket>.r2.dev pattern, which
-  // requires "Public Access" toggled on in the R2 bucket settings.
-  if (process.env.R2_ACCOUNT_ID && process.env.R2_ACCESS_KEY_ID
-      && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET) {
-    try {
-      // Lazy require so cold starts that don't need R2 don't pay
-      // the ~3MB @aws-sdk/client-s3 unzip cost.
-      const { S3Client, PutObjectCommand } = require(
-        '@aws-sdk/client-s3');
-      const client = new S3Client({
-        region: 'auto',                                         // R2 ignores region
-        endpoint: `https://${process.env.R2_ACCOUNT_ID}.`
-          + 'r2.cloudflarestorage.com',
-        credentials: {
-          accessKeyId: process.env.R2_ACCESS_KEY_ID,
-          secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
-        },
-        // Required for R2: signed payloads, force-pathstyle URLs.
-        forcePathStyle: true,
-      });
-      const ts = Date.now();
-      const path = `reports/${uid}/${ts}_${kind}.pdf`;
-      await client.send(new PutObjectCommand({
-        Bucket: process.env.R2_BUCKET,
-        Key: path,
-        Body: buf,
-        ContentType: 'application/pdf',
-        CacheControl: 'public, max-age=31536000, immutable',
-      }));
-      const publicBase = process.env.R2_PUBLIC_URL
-        || `https://${process.env.R2_BUCKET}.r2.dev`;
+}
+
+async function _putToR2(uid, kind, buf) {
+  if (!(process.env.R2_ACCOUNT_ID && process.env.R2_ACCESS_KEY_ID
+      && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET)) {
+    return null;
+  }
+  try {
+    const { S3Client, PutObjectCommand } = require(
+      '@aws-sdk/client-s3');
+    const client = new S3Client({
+      region: 'auto',
+      endpoint: `https://${process.env.R2_ACCOUNT_ID}.`
+        + 'r2.cloudflarestorage.com',
+      credentials: {
+        accessKeyId: process.env.R2_ACCESS_KEY_ID,
+        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+      },
+      forcePathStyle: true,
+    });
+    const ts = Date.now();
+    const path = `reports/${uid}/${ts}_${kind}.pdf`;
+    await client.send(new PutObjectCommand({
+      Bucket: process.env.R2_BUCKET,
+      Key: path,
+      Body: buf,
+      ContentType: 'application/pdf',
+      CacheControl: 'public, max-age=31536000, immutable',
+    }));
+    const publicBase = process.env.R2_PUBLIC_URL
+      || `https://${process.env.R2_BUCKET}.r2.dev`;
+    return {
+      storagePath: path,
+      bucketUsed: `cloudflare-r2:${process.env.R2_BUCKET}`,
+      url: `${publicBase.replace(/\/+$/, '')}/${path}`,
+      inline: false,
+    };
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn('Cloudflare R2 upload failed:', (e && e.message) || e);
+    return null;
+  }
+}
+
+async function uploadPdf(uid, kind, buf) {
+  // DUAL-WRITE COORDINATOR. When both Vercel Blob AND R2 are
+  // configured, write to BOTH in parallel and return the primary
+  // URL with the backup URL attached on the side. The caller
+  // saves both onto the order doc so the customer can fail over
+  // at DOWNLOAD time too - not just upload time.
+  const dualConfigured = !!process.env.BLOB_READ_WRITE_TOKEN
+    && !!(process.env.R2_ACCOUNT_ID && process.env.R2_ACCESS_KEY_ID
+      && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET);
+  if (dualConfigured) {
+    const [blobRes, r2Res] = await Promise.all([
+      _putToVercelBlob(uid, kind, buf),
+      _putToR2(uid, kind, buf),
+    ]);
+    // Pick whichever succeeded as primary (preferring Blob), expose
+    // the other as backupUrl. If both failed we fall through to
+    // Firebase / chunked Firestore below.
+    if (blobRes && r2Res) {
       return {
-        storagePath: path,
-        bucketUsed: `cloudflare-r2:${process.env.R2_BUCKET}`,
-        url: `${publicBase.replace(/\/+$/, '')}/${path}`,
-        inline: false,
+        ...blobRes,
+        backupUrl: r2Res.url,
+        backupStoragePath: r2Res.storagePath,
+        backupBucket: r2Res.bucketUsed,
       };
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.warn('Cloudflare R2 upload failed, falling back to '
-        + 'Firebase Storage / chunked Firestore:',
-        (e && e.message) || e);
     }
+    if (blobRes) return blobRes;
+    if (r2Res) return r2Res;
+    // both null -> fall through to Firebase + chunks below
+  } else if (process.env.BLOB_READ_WRITE_TOKEN) {
+    const blobRes = await _putToVercelBlob(uid, kind, buf);
+    if (blobRes) return blobRes;
+  } else if (process.env.R2_ACCOUNT_ID) {
+    const r2Res = await _putToR2(uid, kind, buf);
+    if (r2Res) return r2Res;
   }
   // Firebase Storage tier. Requires admin SDK to have been
   // initialised with storageBucket - init() above does that using
@@ -2086,6 +2118,16 @@ async function _handleReportStatusInner(req, res) {
     validUntil,
     deliveredAt: admin.firestore.FieldValue.serverTimestamp(),
   };
+  // Dual-write backup: when both Vercel Blob AND R2 are configured,
+  // uploadPdf wrote to BOTH and exposed the second URL as backupUrl.
+  // Save it on the order so the customer-side resolveOrderPdfUrl
+  // can fall back to it if the primary URL is unreachable at
+  // download time (CDN outage, deleted blob, etc.).
+  if (uploaded.backupUrl) {
+    orderPatch.pdfBackupUrl = uploaded.backupUrl;
+    orderPatch.backupStoragePath = uploaded.backupStoragePath || null;
+    orderPatch.backupBucket = uploaded.backupBucket || '';
+  }
   // RESCUE: order was previously marked failed_refunded (we
   // refunded the wallet too eagerly), but AstroSeer ultimately
   // delivered the PDF. Flip to ready_rescued so admin can
