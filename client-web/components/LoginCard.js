@@ -67,18 +67,29 @@ export default function LoginCard({ onDone, compact, initialMode }) {
     setStepLabel('Loading profile…');
     // Drop from 15s to 8s so an iOS Firestore hang surfaces as a real
     // error fast instead of leaving the user staring at "Signing in…".
-    const p = await withTimeout(userService.getUser(user.uid), 8000,
-      'Profile lookup');
-    if (p && p.isBlocked) {
+    // Best-effort: a timeout/network error here must NOT block sign-in.
+    // We treat profile-lookup failure as "no profile yet" and let the
+    // user through; the AuthProvider's listener will fill it in later.
+    let p = null;
+    try {
+      p = await withTimeout(userService.getUser(user.uid), 8000,
+        'Profile lookup');
+    } catch (_) { p = null; }
+    if (p && p.isBlocked === true) {
       await authService.logoutUser();
       setErr('Your account has been suspended. Contact support.');
       return;
     }
-    if (p && (p.role === 'astrologer' || p.role === 'admin')) {
-      await authService.logoutUser();
-      setErr(`Please use the ${p.role} portal to sign in.`);
-      return;
-    }
+    // IMPORTANT: do NOT sign admin / astrologer users out of the
+    // customer app. They are allowed to use it (they may be testing
+    // the customer experience, or genuinely also be a customer of
+    // their own platform). The previous role-based forced sign-out
+    // was the root cause of the "logged out on every click" loop -
+    // the user would log in, finish() would force-signOut because
+    // role was 'admin', useRequireClient on the next page would see
+    // no session and pop the login modal again, repeat forever. The
+    // admin / astrologer portals each have their OWN role gate on
+    // login; the customer app does not need a counter-gate.
     onDone && onDone(user);
   }
 
