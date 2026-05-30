@@ -7,5 +7,6 @@
   "ignoreCommand": "git diff --quiet HEAD^ HEAD -- .",
   "functions": {
     "api/*.js": { "maxDuration": 60 }
-  }
+  },
+  "_lastForcedDeploy": "2026-05-30-reset-otp-endpoints"
 }

@@ -185,6 +185,9 @@ module.exports = async (req, res) => {
   if (action === 'resetrequest') {
     return handleResetRequest(req, res, db, body);
   }
+  if (action === 'resetcheckotp') {
+    return handleResetCheckOtp(req, res, db, body);
+  }
   if (action === 'resetverify') {
     return handleResetVerify(req, res, db, body);
   }
@@ -954,5 +957,56 @@ async function handleResetVerify(req, res, db, body) {
     }, { merge: true });
   } catch (_) {}
   return res.status(200).json({ ok: true, updated: true });
+}
+
+// Verify the OTP WITHOUT consuming it. Used by the UI when the user
+// wants to confirm the code matches BEFORE asking them to pick a new
+// password (the requested "if OTP matches then show password" UX).
+// Still bumps the wrong-attempt counter on a bad code so brute force
+// is capped, but on a correct code leaves used:false so the eventual
+// resetVerify call (with the new password) is what actually marks
+// the doc consumed. Caller flow:
+//   1. resetCheckOtp(email, code) -> { ok, valid } | error
+//   2. resetVerify(email, code, newPassword) -> consumes + sets pw
+async function handleResetCheckOtp(req, res, db, body) {
+  const email = normaliseEmail(body.email);
+  const code = String(body.code || '').trim();
+  if (!email || !/.+@.+\..+/.test(email)) {
+    return res.status(400).json({ error: 'valid email required' });
+  }
+  if (!/^\d{6}$/.test(code)) {
+    return res.status(400).json({ error: 'Code must be 6 digits.' });
+  }
+  const otpRef = db.collection('passwordResetOtps').doc(email);
+  const snap = await otpRef.get();
+  if (!snap.exists) {
+    return res.status(400).json({
+      error: 'No reset code on file. Request a new one.' });
+  }
+  const o = snap.data() || {};
+  if (o.used) {
+    return res.status(400).json({
+      error: 'This code has already been used. Request a new one.' });
+  }
+  const expMs = (o.expiresAt && o.expiresAt.toMillis
+    && o.expiresAt.toMillis()) || 0;
+  if (expMs && Date.now() > expMs) {
+    return res.status(410).json({
+      error: 'This code has expired. Request a new one.' });
+  }
+  if (Number(o.attempts || 0) >= MAX_ATTEMPTS) {
+    return res.status(429).json({
+      error: 'Too many wrong tries. Request a new code.' });
+  }
+  if (String(o.code) !== code) {
+    await otpRef.update({
+      attempts: admin.firestore.FieldValue.increment(1),
+    });
+    return res.status(400).json({
+      error: 'Incorrect code.',
+      remaining: Math.max(0, MAX_ATTEMPTS - 1 - Number(o.attempts || 0)),
+    });
+  }
+  return res.status(200).json({ ok: true, valid: true });
 }
 

@@ -190,6 +190,24 @@ export async function verifyPasswordResetOtp(email, code, newPassword) {
   return j;
 }
 
+// Verify the OTP only - do NOT consume it. Lets the UI show "OTP
+// matched, now pick a new password" before the password is even
+// chosen. Returns { ok: true, valid: true } on success or throws
+// with the relay's user-readable error.
+export async function checkPasswordResetOtp(email, code) {
+  const r = await fetch(otpEndpoint(), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      action: 'resetCheckOtp', email, code,
+    }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error
+    || `Code check failed (HTTP ${r.status}).`);
+  return j;
+}
+
 export async function logoutUser() {
   // Log BEFORE signing out so the audit POST still has a fresh ID token.
   try { await logAudit('logout', {}); } catch (_) {}

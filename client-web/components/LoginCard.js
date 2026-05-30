@@ -33,15 +33,18 @@ export default function LoginCard({ onDone, compact, initialMode }) {
   const [otpCode, setOtpCode] = useState('');
   const [otpInfo, setOtpInfo] = useState('');
   // Forgot-password flow state. resetStep:
-  //   'email'  -> ask email (after click on "Forgot password?")
-  //   'code'   -> email accepted, ask OTP + new password
-  //   null     -> not in reset flow
-  // resetEmail carries the email between the two steps; resetInfo and
-  // resetCode are local form state for the OTP screen.
+  //   'email'     -> ask email (after click on "Forgot password?")
+  //   'code'      -> email accepted, ask for the 6-digit OTP only
+  //   'password'  -> OTP verified, ask for new + confirm password
+  //   'linkonly'  -> relay unavailable, Firebase reset link only sent
+  //   null        -> not in reset flow
+  // resetEmail carries the email through the whole flow; resetCode +
+  // resetNewPass + resetConfirm are step-local form state.
   const [resetStep, setResetStep] = useState(null);
   const [resetEmail, setResetEmail] = useState('');
   const [resetCode, setResetCode] = useState('');
   const [resetNewPass, setResetNewPass] = useState('');
+  const [resetConfirm, setResetConfirm] = useState('');
   const [resetInfo, setResetInfo] = useState('');
 
   // Hard timeout for any auth promise. Firebase Auth occasionally hangs
@@ -294,16 +297,21 @@ export default function LoginCard({ onDone, compact, initialMode }) {
   function openForgot() {
     setErr(''); setResetInfo('');
     setResetEmail(email.trim()); // pre-fill if they had typed one
-    setResetCode(''); setResetNewPass('');
+    setResetCode(''); setResetNewPass(''); setResetConfirm('');
     setResetStep('email');
   }
   function closeForgot() {
     setResetStep(null); setResetInfo(''); setErr('');
+    setResetCode(''); setResetNewPass(''); setResetConfirm('');
   }
 
-  // Step 1: send the combined link + OTP. The relay tells us whether
-  // the email is registered; if not, we show a clear "no account"
-  // error instead of the silent "sent" Firebase ships by default.
+  // Step 1: ask the relay to email a combined link + OTP. The relay
+  // tells us whether the email is registered (so we can show "no
+  // account" instead of Firebase's silent always-200) AND whether it
+  // actually shipped an OTP - because while Vercel is mid-deploy the
+  // client falls back to Firebase's native reset link, which has NO
+  // OTP at all. In that case we skip the code-entry step entirely and
+  // tell the user to just click the link in their email.
   async function submitForgotEmail(e) {
     if (e && e.preventDefault) e.preventDefault();
     if (busy) return;
@@ -320,8 +328,20 @@ export default function LoginCard({ onDone, compact, initialMode }) {
           + 'Check the spelling or create a new account.');
         return;
       }
-      setResetInfo(`We just emailed a reset link AND a 6-digit code `
-        + `to ${addr}. Use either to set a new password.`);
+      if (r && r.fallback) {
+        // Firebase sent a plain reset LINK only - no OTP. Land the
+        // user on the "linkonly" screen so they don't sit staring at
+        // an OTP box waiting for a code that will never arrive.
+        setResetInfo(`We emailed a password-reset link to `
+          + `${addr}. Open the link to set a new password. `
+          + `If it's not in your inbox, please check the Spam / `
+          + `Junk folder.`);
+        setResetStep('linkonly');
+        return;
+      }
+      setResetInfo(`We just emailed a 6-digit verification code AND `
+        + `a reset link to ${addr}. Paste the code below to set a `
+        + `new password, OR click the link in the email instead.`);
       setResetStep('code');
     } catch (e2) {
       setErr(e2 && e2.message
@@ -329,9 +349,11 @@ export default function LoginCard({ onDone, compact, initialMode }) {
     } finally { setBusy(false); }
   }
 
-  // Step 2: verify the OTP + set the new password in one shot. On
-  // success we sign the user back in immediately so they land on
-  // Home without having to log in again.
+  // Step 2: verify the 6-digit OTP only. We do NOT consume the OTP
+  // here - resetCheckOtp on the relay leaves the doc reusable so the
+  // final resetVerify call (after the password is picked) is what
+  // actually marks it used. This gives the requested UX: "if the OTP
+  // matches, show the new-password fields".
   async function submitForgotCode(e) {
     if (e && e.preventDefault) e.preventDefault();
     if (busy) return;
@@ -340,13 +362,41 @@ export default function LoginCard({ onDone, compact, initialMode }) {
     if (!/^\d{6}$/.test(code)) {
       setErr('Enter the 6-digit code from the email.'); return;
     }
+    setBusy(true);
+    try {
+      const r = await authService.checkPasswordResetOtp(
+        resetEmail.trim(), code);
+      if (r && r.ok && r.valid) {
+        setResetInfo('Code verified. Now pick a new password.');
+        setResetStep('password');
+        return;
+      }
+      setErr('Incorrect or expired code. Please try again or '
+        + 'request a new one.');
+    } catch (e2) {
+      setErr(e2 && e2.message
+        ? e2.message : 'Could not verify the code.');
+    } finally { setBusy(false); }
+  }
+
+  // Step 3: take new password + confirm password, validate they
+  // match, send to relay's resetVerify, then auto-sign-in so the
+  // user lands on Home without having to log in again.
+  async function submitForgotPassword(e) {
+    if (e && e.preventDefault) e.preventDefault();
+    if (busy) return;
+    setErr('');
     if (resetNewPass.length < 6) {
       setErr('New password must be at least 6 characters.'); return;
+    }
+    if (resetNewPass !== resetConfirm) {
+      setErr('Passwords do not match. Please re-type to confirm.');
+      return;
     }
     setBusy(true);
     try {
       await authService.verifyPasswordResetOtp(
-        resetEmail.trim(), code, resetNewPass);
+        resetEmail.trim(), resetCode.trim(), resetNewPass);
       // Auto-sign-in with the new password.
       const user = await withTimeout(
         authService.loginUser(resetEmail.trim(), resetNewPass),
@@ -458,9 +508,8 @@ export default function LoginCard({ onDone, compact, initialMode }) {
           ) : resetStep === 'code' ? (
             <form onSubmit={submitForgotCode} className="space-y-3">
               <p className="text-sm text-sub-text">
-                Paste the 6-digit code from the email AND pick a new
-                password. Or click the link inside the email to reset
-                in your browser instead.
+                Paste the 6-digit code from the email below. Once it
+                matches, we will ask you to pick a new password.
               </p>
               <input className="input text-center tracking-[0.4em]
                 font-mono text-2xl" inputMode="numeric"
@@ -469,15 +518,9 @@ export default function LoginCard({ onDone, compact, initialMode }) {
                 onChange={(e) => setResetCode(
                   e.target.value.replace(/\D/g, '').slice(0, 6))}
                 autoFocus />
-              <input className="input" type="password"
-                placeholder="New password (min 6 characters)"
-                value={resetNewPass}
-                onChange={(e) => setResetNewPass(e.target.value)} />
               <button className="btn-grad w-full justify-center py-3"
-                disabled={busy
-                  || resetCode.length !== 6
-                  || resetNewPass.length < 6}>
-                {busy ? 'Please wait…' : 'Set new password & sign in'}
+                disabled={busy || resetCode.length !== 6}>
+                {busy ? 'Verifying…' : 'Verify code'}
               </button>
               <button type="button" onClick={submitForgotEmail}
                 disabled={busy}
@@ -489,6 +532,57 @@ export default function LoginCard({ onDone, compact, initialMode }) {
                 Back to login
               </button>
             </form>
+          ) : resetStep === 'password' ? (
+            <form onSubmit={submitForgotPassword} className="space-y-3">
+              <p className="text-sm text-sub-text">
+                Code verified. Now pick a new password and re-enter
+                it to confirm.
+              </p>
+              <input className="input" type="password"
+                placeholder="New password (min 6 characters)"
+                value={resetNewPass}
+                onChange={(e) => setResetNewPass(e.target.value)}
+                autoFocus />
+              <input className="input" type="password"
+                placeholder="Confirm new password"
+                value={resetConfirm}
+                onChange={(e) => setResetConfirm(e.target.value)} />
+              {resetConfirm && resetNewPass
+                && resetConfirm !== resetNewPass && (
+                <div className="rounded-xl bg-rose-50 p-2 text-xs
+                  text-rose-700">
+                  Passwords do not match.
+                </div>
+              )}
+              <button className="btn-grad w-full justify-center py-3"
+                disabled={busy
+                  || resetNewPass.length < 6
+                  || resetNewPass !== resetConfirm}>
+                {busy ? 'Please wait…' : 'Set new password & sign in'}
+              </button>
+              <button type="button" onClick={closeForgot}
+                className="w-full text-sm text-sub-text">
+                Back to login
+              </button>
+            </form>
+          ) : resetStep === 'linkonly' ? (
+            <div className="space-y-3">
+              <p className="text-sm text-sub-text">
+                We sent a password-reset link to{' '}
+                <b>{resetEmail}</b>. Open the link from your inbox
+                to set a new password. If you don&apos;t see it in
+                a minute, please check the Spam / Junk folder.
+              </p>
+              <button type="button" onClick={submitForgotEmail}
+                disabled={busy}
+                className="btn-grad w-full justify-center py-3">
+                {busy ? 'Sending…' : 'Resend reset link'}
+              </button>
+              <button type="button" onClick={closeForgot}
+                className="w-full text-sm text-sub-text">
+                Back to login
+              </button>
+            </div>
           ) : otpUser ? (
             <form onSubmit={verifyOtp} className="space-y-3">
               <input className="input text-center tracking-[0.4em]
