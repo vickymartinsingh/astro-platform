@@ -47,39 +47,9 @@ export default function LoginCard({ onDone, compact, initialMode }) {
   const [resetConfirm, setResetConfirm] = useState('');
   const [resetInfo, setResetInfo] = useState('');
 
-  // Re-open the OTP screen automatically when the card mounts and the
-  // Firebase user is signed in but NOT yet email-verified AND the admin
-  // requires verification. Without this, dismissing the OTP modal and
-  // clicking any gated nav would re-open the card showing the regular
-  // "Welcome back" login form - which is exactly the bypass the user
-  // reported. Now the OTP screen is the FIRST thing they see again.
-  useEffect(() => {
-    if (otpUser) return; // already on OTP screen
-    if (resetStep) return; // password reset is its own flow
-    try {
-      const fb = firebaseAuth && firebaseAuth.currentUser;
-      if (!fb) return;
-      if (fb.emailVerified) return;
-      const f = JSON.parse(
-        (typeof localStorage !== 'undefined'
-          && localStorage.getItem('settings_features')) || '{}');
-      if (!(f && f.email_verification === true)) return;
-      // Trigger a fresh code so the screen is actionable; if the send
-      // fails we still force the OTP screen up so the customer cannot
-      // sneak past with the regular login form.
-      authService.requestEmailOtp(
-        fb.email || '', fb.displayName || '').catch(() => {});
-      setOtpUser({
-        email: fb.email || '',
-        password: '', // unknown - resend flow uses the email only
-        displayName: fb.displayName || '',
-      });
-      setOtpInfo(`Verification required. We just emailed a 6-digit `
-        + `code to ${fb.email || 'your inbox'}. Enter it below to `
-        + 'unlock the app.');
-    } catch (_) { /* tolerate */ }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // (Removed) Auto-OTP on mount. Per user: OTP is asked ONLY at
+  // signup, never again on subsequent logins. The login flow does
+  // not re-check emailVerified.
 
   // Hard timeout for any auth promise. Firebase Auth occasionally hangs
   // (flaky network, IndexedDB lock, popup race) and never resolves OR
@@ -102,32 +72,9 @@ export default function LoginCard({ onDone, compact, initialMode }) {
 
   async function finish(user) {
     setStepLabel('Loading profile…');
-    // GATE A: if admin requires OTP verification AND this user has
-    // not verified their email yet, send a fresh code and switch to
-    // the OTP screen instead of letting them in. This catches the
-    // "logged in but never verified" bypass case where the customer
-    // closed the modal mid-signup. Re-checked on every login attempt.
-    try {
-      const s = await getDoc(doc(db, 'settings', 'features'));
-      const otpRequired = s.exists()
-        && s.data() && s.data().email_verification === true;
-      const verified = !!(user && user.emailVerified);
-      if (otpRequired && !verified) {
-        try {
-          await authService.requestEmailOtp(user.email || '',
-            user.displayName || '');
-        } catch (_) { /* even if send fails, force the screen */ }
-        setOtpUser({
-          email: user.email || '',
-          password,
-          displayName: user.displayName || '',
-        });
-        setOtpInfo(`Verification required. We just emailed a 6-digit `
-          + `code to ${user.email || 'your inbox'}. Enter it below to `
-          + 'unlock the app.');
-        return;
-      }
-    } catch (_) { /* network blip - fall through */ }
+    // (Removed) Login-time OTP re-check. Per user: OTP is enforced
+    // ONLY at signup; login never re-asks even if the previous
+    // signup didn't complete verification.
     let p = null;
     try {
       p = await withTimeout(userService.getUser(user.uid), 8000,

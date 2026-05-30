@@ -55,27 +55,19 @@ export function AuthModalProvider({ children }) {
   // the popup and run any pending action. This guarantees the login
   // popup never lingers once the user is signed in.
   //
-  // HARD BLOCK: if the user is signed in but their email is NOT yet
-  // verified AND the admin requires email verification, we do NOT
-  // close the modal. LoginCard's verifyOtp() runs inside the still-
-  // open modal; once it succeeds it reloads the Firebase user (so
-  // user.emailVerified flips to true) and THIS effect fires again
-  // with the now-verified user. That second pass closes the modal
-  // normally. This is what stops the "logged in mid-signup, modal
-  // closed before OTP" bypass.
+  // Note: OTP is enforced ONLY at signup time, inside LoginCard's
+  // signup path. We do NOT block the modal close on emailVerified
+  // for login - per user, OTP must not be re-asked on login.
   useEffect(() => {
-    if (!open || !user) return;
-    const verified = !!user.emailVerified;
-    const otpRequired = !!(settingsFeatures
-      && settingsFeatures.email_verification === true);
-    if (otpRequired && !verified) return; // keep modal open for OTP
-    const cb = cbRef.current;
-    cbRef.current = null; dismissRef.current = null;
-    setShown(false);
-    setTimeout(() => setOpen(false), 150);
-    if (cb) setTimeout(cb, 380);
-    else setTimeout(() => router.replace('/dashboard'), 380);
-  }, [open, user, router, settingsFeatures]);
+    if (open && user) {
+      const cb = cbRef.current;
+      cbRef.current = null; dismissRef.current = null;
+      setShown(false);
+      setTimeout(() => setOpen(false), 150);
+      if (cb) setTimeout(cb, 380);
+      else setTimeout(() => router.replace('/dashboard'), 380);
+    }
+  }, [open, user, router]);
 
   // Smoothly animate in after mount.
   useEffect(() => {
