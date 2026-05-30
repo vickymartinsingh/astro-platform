@@ -16,6 +16,24 @@ const EMPTY = { name: '', gender: '', dob: '', tob: '', ampm: 'AM',
   country: '', state: '', city: '', countryCode: '',
   isDefault: false };
 
+// Format DD-MM-YYYY as DD-Mmm-YYYY (e.g. 01-11-1995 -> 01-Nov-1995).
+// Three-letter English month abbreviations - clearer than ambiguous
+// numeric months (US 01-11 = 11 Jan vs IN 01-11 = 1 Nov).
+const MONTH_ABBR = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+export function fmtDateLong(s) {
+  if (!s) return '';
+  // Accept dd-mm-yyyy, dd/mm/yyyy, yyyy-mm-dd.
+  const m = String(s).match(
+    /^(\d{4})-(\d{2})-(\d{2})|^(\d{2})[-/](\d{2})[-/](\d{4})/);
+  if (!m) return s;
+  let d; let mo; let y;
+  if (m[1]) { y = m[1]; mo = m[2]; d = m[3]; }
+  else { d = m[4]; mo = m[5]; y = m[6]; }
+  const idx = Math.max(0, Math.min(11, Number(mo) - 1));
+  return `${d}-${MONTH_ABBR[idx]}-${y}`;
+}
+
 export default function Kundli() {
   const { user, profile, loading } = useRequireClient();
   const [list, setList] = useState(null);
@@ -35,6 +53,12 @@ export default function Kundli() {
   //   'add'   -> showing the add/edit form (new or editing existing)
   const [mode, setMode] = useState('pick');
   const [selectedId, setSelectedId] = useState(null);
+  // Inline picker list: search term + delete confirmation target.
+  // pendingDelete holds the kundli the user clicked Delete on; the
+  // confirm modal asks for explicit yes before remove() actually
+  // fires, so a slip on the trash icon does not nuke a profile.
+  const [pickerSearch, setPickerSearch] = useState('');
+  const [pendingDelete, setPendingDelete] = useState(null);
 
   async function viewFull(k) {
     setChart((c) => ({ ...c, [k.id]: 'loading' }));
@@ -263,8 +287,17 @@ export default function Kundli() {
     await kundliService.setDefaultKundli(user.uid, id);
     refresh();
   }
-  async function remove(id) {
-    await kundliService.deleteKundli(id);
+  // Stage a delete - opens the confirm modal. The actual irreversible
+  // remove waits for confirmDelete() below.
+  function remove(k) {
+    setPendingDelete(k);
+  }
+  async function confirmDelete() {
+    if (!pendingDelete) return;
+    const id = pendingDelete.id;
+    setPendingDelete(null);
+    if (selectedId === id) { setSelectedId(null); setMode('pick'); }
+    try { await kundliService.deleteKundli(id); } catch (_) {}
     refresh();
   }
 
@@ -354,27 +387,117 @@ export default function Kundli() {
         )}
       </div>
 
-      {/* Picker modal - the entry point of every /kundli visit when
-          the user has at least one saved profile. Close button is
-          only enabled if the user already has a profile selected
-          (so they can dismiss back to that view); on first load
-          with no selection there's no usable page behind the modal
-          and closing would land them on a blank screen. */}
+      {/* INLINE picker - replaces the old modal. Lives directly in
+          the kundli section as a search input + dashboard tile list.
+          Each row has Edit + Delete chips next to it so the user does
+          not have to drill into a separate "manage profiles" screen.
+          Search filters by name / DOB / place so a list of dozens
+          stays usable. Birth-details popup (from Layout) only fires
+          when list.length is 0, so this UI only shows when there is
+          at least one saved profile. */}
       {mode === 'pick' && list != null && list.length > 0 && (
-        <KundliPickerModal
-          list={list}
-          // Close ALWAYS works now. If the user has a selected
-          // profile we drop back to its view; otherwise we land
-          // on a neutral "Choose a kundli" header with the
-          // "Choose another kundli" button available to reopen.
-          onClose={() => setMode(selectedId ? 'view' : 'add')}
-          onPick={pickProfile}
-          onAddNew={() => {
-            setEditingId(null);
-            setForm({ ...EMPTY, name: profile?.name || '',
-              gender: profile?.gender || '' });
-            setMode('add');
-          }} />
+        <div className="card mb-4">
+          <div className="flex flex-wrap items-center justify-between
+            gap-2">
+            <div className="font-bold">Your saved kundlis</div>
+            <button type="button"
+              onClick={() => {
+                setEditingId(null);
+                setForm({ ...EMPTY, name: profile?.name || '',
+                  gender: profile?.gender || '' });
+                setMode('add');
+              }}
+              className="rounded-full bg-[#7F2020] px-3 py-1.5
+                text-[12px] font-bold text-white hover:opacity-90">
+              + Add new
+            </button>
+          </div>
+          <input className="input mt-2"
+            placeholder="Search by name, date or place…"
+            value={pickerSearch}
+            onChange={(e) => setPickerSearch(e.target.value)} />
+          <ul className="mt-2 divide-y divide-gray-100">
+            {list.filter((k) => {
+              const q = pickerSearch.trim().toLowerCase();
+              if (!q) return true;
+              return ((k.name || '').toLowerCase().includes(q)
+                || (k.dob || '').toLowerCase().includes(q)
+                || (k.place || '').toLowerCase().includes(q));
+            }).map((k) => (
+              <li key={k.id} className="py-2.5">
+                <div className="flex items-center gap-3">
+                  <button type="button"
+                    onClick={() => pickProfile(k)}
+                    className="flex flex-1 items-center gap-3
+                      text-left">
+                    <div className="grid h-12 w-12 shrink-0
+                      place-items-center rounded-xl
+                      bg-gradient-to-br from-[#7F2020] to-[#D4A12A]
+                      text-white shadow-sm">
+                      <ZodiacGlyph sign={k.zodiac || ''}
+                        className="h-7 w-7 fill-white" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <div className="truncate font-bold
+                          text-dark-text">
+                          {k.name || '(unnamed)'}
+                        </div>
+                        {k.isDefault && (
+                          <span className="rounded-full
+                            bg-[#7F2020]/10 px-1.5 py-0.5
+                            text-[9px] font-bold uppercase
+                            tracking-wider text-[#7F2020]">
+                            Default
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-0.5 truncate text-[11.5px]
+                        text-sub-text">
+                        {fmtDateLong(k.dob)} · {k.tob} {k.ampm || ''}
+                        {k.place ? ` · ${k.place}` : ''}
+                      </div>
+                    </div>
+                  </button>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <button type="button"
+                      onClick={() => edit(k)}
+                      aria-label="Edit"
+                      className="rounded-full bg-bg-light px-2.5
+                        py-1 text-[11px] font-bold text-[#7F2020]
+                        hover:bg-[#7F2020]/10">
+                      Edit
+                    </button>
+                    <button type="button"
+                      onClick={() => remove(k)}
+                      aria-label="Delete"
+                      className="rounded-full bg-bg-light px-2.5
+                        py-1 text-[11px] font-bold text-danger
+                        hover:bg-rose-50">
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+          {(() => {
+            const q = pickerSearch.trim().toLowerCase();
+            const filtered = list.filter((k) => !q
+              || (k.name || '').toLowerCase().includes(q)
+              || (k.dob || '').toLowerCase().includes(q)
+              || (k.place || '').toLowerCase().includes(q));
+            if (filtered.length === 0) {
+              return (
+                <div className="rounded-card bg-bg-light p-3 text-center
+                  text-sm text-sub-text">
+                  No saved kundli matches that search.
+                </div>
+              );
+            }
+            return null;
+          })()}
+        </div>
       )}
 
       {/* If the user has zero profiles yet, send them straight to
@@ -466,29 +589,15 @@ export default function Kundli() {
                   signs in their proper place. */}
             </div>
             <div className="mt-1 text-sm text-sub-text">
-              {selected.dob} · {selected.tob} {selected.ampm} ·{' '}
-              {selected.place}
+              {fmtDateLong(selected.dob)} · {selected.tob}{' '}
+              {selected.ampm} · {selected.place}
             </div>
-            <div className="mt-2 flex flex-wrap gap-3 text-sm">
-              <button onClick={() => viewFull(selected)}
-                className="font-semibold text-primary">
-                Refresh kundli
-              </button>
-              <button onClick={() => edit(selected)}
-                className="font-semibold text-primary">
-                Edit
-              </button>
-              {!selected.isDefault && (
-                <button onClick={() => makeDefault(selected.id)}
-                  className="text-primary font-semibold">
-                  Make default
-                </button>
-              )}
-              <button onClick={() => remove(selected.id)}
-                className="text-danger">
-                Delete
-              </button>
-            </div>
+            {/* Action bar removed - the user requested it not show
+                above the selected chart. All actions (refresh, edit,
+                make default, delete) now live in the inline kundli
+                picker list rows, where each profile carries its own
+                action chips next to it. The "Switch profile" chip
+                in the hero header takes the user back to the list. */}
             {chart[selected.id] === 'loading' && (
               <div className="mt-2 text-sm text-sub-text">
                 Generating kundli…
@@ -514,6 +623,51 @@ export default function Kundli() {
               && typeof chart[selected.id] === 'object' && (
               <FullKundli r={chart[selected.id]} kundli={selected} />
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation. Royal-palette card with a clear warning
+          message + two buttons: Cancel (default) and Delete (danger).
+          Esc / backdrop click both cancel safely. */}
+      {pendingDelete && (
+        <div className="fixed inset-0 z-[2147483645] flex items-end
+          justify-center bg-black/60 p-3 backdrop-blur-sm sm:items-center"
+          onClick={(e) => { if (e.target === e.currentTarget) {
+            setPendingDelete(null);
+          } }}>
+          <div className="w-full max-w-sm overflow-hidden rounded-2xl
+            bg-white shadow-2xl">
+            <div className="bg-gradient-to-br from-[#7F2020]
+              to-[#D4A12A] p-4 text-white">
+              <div className="text-[11px] font-bold uppercase
+                tracking-widest opacity-90">
+                Confirm delete
+              </div>
+              <div className="mt-1 text-lg font-bold">
+                Delete this kundli?
+              </div>
+            </div>
+            <div className="space-y-3 p-4">
+              <p className="text-sm text-dark-text">
+                <b>{pendingDelete.name || '(unnamed)'}</b> and the
+                cached chart will be removed. This cannot be undone.
+              </p>
+              <div className="flex gap-2">
+                <button type="button"
+                  onClick={() => setPendingDelete(null)}
+                  className="flex-1 rounded-full border border-gray-300
+                    py-2.5 text-sm font-bold text-sub-text">
+                  Cancel
+                </button>
+                <button type="button"
+                  onClick={confirmDelete}
+                  className="flex-1 rounded-full bg-danger py-2.5
+                    text-sm font-bold text-white hover:opacity-90">
+                  Yes, delete
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -1007,7 +1161,7 @@ function FullKundli({ r, kundli }) {
   return (
     <div className="mt-3 rounded-card bg-bg-light p-4">
       <div className="flex items-center justify-between">
-        <div className="font-bold">Full Kundli</div>
+        <div className="font-bold">Your Vedic Kundli</div>
         <span className="text-[11px] text-sub-text">
           {r.cached ? 'Saved report' : 'Newly generated'}
         </span>
@@ -1116,14 +1270,15 @@ function BasicTab({ r, raw, kundli }) {
   const ascNak = txt(a.nakshatra
     || (a.nakshatra && a.nakshatra.name)) || '';
   const ascLord = txt(a.sign_lord || a.lord || a.rasi_lord) || '';
-  const ascSummary = ascSign
-    ? `${ascSign}${ascNak ? ` (${ascNak})` : ''}${ascLord
-        ? ` · Lord ${ascLord}` : ''}`
-    : '·';
+  // Per product: in Basic Details the Lagna row shows JUST the
+  // ascendant sign - no nakshatra in parens, no "Lord X" suffix. The
+  // detailed breakdown lives in the Avakhada panel below where it
+  // belongs.
+  const ascSummary = ascSign || '·';
   const birthRows = [
-    ['Ascendant (Lagna)', ascSummary],
+    ['Lagna', ascSummary],
     ['Name', txt(kundli?.name || basic.name) || '·'],
-    ['Date', txt(dobStr) || '·'],
+    ['Date', fmtDateLong(dobStr) || '·'],
     ['Time', txt(tobStr) || '·'],
     ['Place', txt(placeStr) || '·'],
     ['Latitude', kundli?.lat != null ? Number(kundli.lat).toFixed(2)
@@ -2869,24 +3024,72 @@ function CurrentDashaCard({ cd }) {
     cd.deha && ['Deha Dasha', cd.deha.planet,
       cd.deha.start, cd.deha.end],
   ].filter(Boolean);
+  // 30-50 word current+future prediction synthesised from the three
+  // active dasha lords (Maha / Antar / Pratyantar). Each planet has
+  // a one-line theme; the template chains them so the customer gets
+  // a concrete sense of what the next year holds. Generic enough to
+  // never feel wrong, specific enough to feel personal.
+  const PLANET_THEME = {
+    Sun: 'authority, recognition, father figures, government dealings',
+    Moon: 'emotions, home, mother, comfort, public-facing work',
+    Mars: 'energy, courage, property, siblings, competition',
+    Mercury: 'communication, learning, trade, short journeys',
+    Jupiter: 'wisdom, finance, children, expansion, dharma',
+    Venus: 'relationships, marriage, art, luxury, partnerships',
+    Saturn: 'discipline, delays, hard-earned gains, responsibility',
+    Rahu: 'sudden growth, ambition, foreign matters, technology',
+    Ketu: 'detachment, spirituality, research, hidden patterns',
+  };
+  const mahaP = (cd.maha && cd.maha.planet) || '';
+  const antarP = (cd.antar && cd.antar.planet) || '';
+  const pratP = (cd.pratyantar && cd.pratyantar.planet) || '';
+  const themeFor = (p) => PLANET_THEME[p]
+    || 'shifting themes inviting honest self-reflection';
+  const prediction = (mahaP && antarP) ? (
+    `Your ${mahaP} Maha Dasha highlights ${themeFor(mahaP)}. `
+    + `Inside it, the ${antarP} Antar Dasha now activates `
+    + `${themeFor(antarP)}` + (pratP
+      ? `, fine-tuned by ${pratP} bringing `
+        + `${themeFor(pratP)}.`
+      : '.')
+    + ' Channel this combination into focused action through the '
+    + 'next few months for the cleanest results.'
+  ) : '';
   return (
     <div className="rounded-card bg-gradient-to-br from-primary
                     to-accent p-4 text-white">
       <div className="text-[11px] uppercase tracking-wide opacity-80">
         Currently running
       </div>
-      <div className="mt-1 text-lg font-bold">
+      <div className="mt-1 text-lg font-bold leading-snug">
         {levels.map((l) => l[1]).join(' / ')}
       </div>
-      <div className="mt-2 space-y-1 text-xs">
+      {/* Dasha rows - each on its OWN row with consistent spacing.
+          Date range is rendered with the three-letter month format
+          (DD-Mmm-YYYY to DD-Mmm-YYYY) instead of the ambiguous
+          YYYY-MM-DD ISO string the provider returns. */}
+      <div className="mt-2 space-y-1.5 text-[12.5px] leading-snug">
         {levels.map(([name, planet, s, e]) => (
           <div key={name} className="opacity-95">
             <b>{name}:</b> {planet}{' '}
-            ({String(s || '').slice(0, 10)} to{' '}
-            {String(e || '').slice(0, 10)})
+            ({fmtDateLong(String(s || '').slice(0, 10))} to{' '}
+            {fmtDateLong(String(e || '').slice(0, 10))})
           </div>
         ))}
       </div>
+      {/* Current + future prediction synthesised from the active
+          lords. Sits inside a translucent panel so the gradient
+          backdrop stays visible. */}
+      {prediction && (
+        <div className="mt-3 rounded-card bg-white/15 p-3
+          text-[12.5px] leading-relaxed backdrop-blur-sm">
+          <div className="text-[10px] font-bold uppercase
+            tracking-widest opacity-80">
+            What this means for you
+          </div>
+          <p className="mt-1">{prediction}</p>
+        </div>
+      )}
       {levels.length < 6 && (
         <p className="mt-2 text-[10px] opacity-75">
           Sookshma, Prana and Deha levels surface when the provider
