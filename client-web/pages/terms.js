@@ -19,7 +19,7 @@ export default function Terms() {
   return (
     <>
       <Head>
-        <title>Terms of Service - AstroSeer Connect</title>
+        <title>Terms of Service - AstroSeer</title>
         <meta name="robots" content="index,follow" />
         <meta name="viewport"
           content="width=device-width, initial-scale=1" />
@@ -32,11 +32,11 @@ export default function Terms() {
           Terms of Service
         </h1>
         <p style={{ color: '#6B7280', marginTop: 6 }}>
-          AstroSeer Connect · Last updated {UPDATED}
+          AstroSeer · Last updated {UPDATED}
         </p>
 
         <S title="1. Acceptance">
-          By creating an account or using AstroSeer Connect you agree to
+          By creating an account or using AstroSeer you agree to
           these Terms and our Privacy Policy. If you do not agree, do not
           use the service.
         </S>
@@ -92,7 +92,7 @@ export default function Terms() {
         </S>
 
         <p style={{ marginTop: 40, fontSize: 12, color: '#9CA3AF' }}>
-          © {new Date().getFullYear()} AstroSeer Connect. All rights
+          © {new Date().getFullYear()} AstroSeer. All rights
           reserved.
         </p>
       </main>

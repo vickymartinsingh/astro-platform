@@ -20,7 +20,7 @@ import { flash } from '../lib/flash';
 // Server endpoint: /api/playTesters (push-relay).
 
 const APPS = [
-  { id: 'com.astroseer.mobile', name: 'AstroSeer Connect (Customer)' },
+  { id: 'com.astroseer.mobile', name: 'AstroSeer (Customer)' },
   { id: 'com.astroseer.astrologer',
     name: 'AstroSeer for Astrologers' },
   { id: 'com.astroseer.admin', name: 'AstroSeer Admin' },

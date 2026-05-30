@@ -21,7 +21,7 @@ export default function Privacy() {
   return (
     <>
       <Head>
-        <title>Privacy Policy - AstroSeer Connect</title>
+        <title>Privacy Policy - AstroSeer</title>
         <meta name="robots" content="index,follow" />
         <meta name="viewport"
           content="width=device-width, initial-scale=1" />
@@ -34,11 +34,11 @@ export default function Privacy() {
           Privacy Policy
         </h1>
         <p style={{ color: '#6B7280', marginTop: 6 }}>
-          AstroSeer Connect · Last updated {UPDATED}
+          AstroSeer · Last updated {UPDATED}
         </p>
 
         <S title="1. Introduction">
-          AstroSeer Connect (“AstroSeer”, “we”, “us”) provides an
+          AstroSeer (“we”, “us”) provides an
           astrology marketplace connecting users with astrologers via
           chat, voice and video, plus horoscope, kundli and related
           content. This policy explains what we collect, why, and your
@@ -138,7 +138,7 @@ export default function Privacy() {
         </S>
 
         <p style={{ marginTop: 40, fontSize: 12, color: '#9CA3AF' }}>
-          © {new Date().getFullYear()} AstroSeer Connect. All rights
+          © {new Date().getFullYear()} AstroSeer. All rights
           reserved.
         </p>
       </main>

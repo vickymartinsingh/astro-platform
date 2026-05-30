@@ -1,4 +1,4 @@
-// Fill Google Play's Data Safety CSV template for AstroSeer Connect.
+// Fill Google Play's Data Safety CSV template for AstroSeer.
 // Reads C:\Users\Work\Downloads\data_safety_sample.csv, sets every
 // 'Response value' that matches our actual data collection profile,
 // writes the filled CSV to the Desktop.
@@ -10,7 +10,7 @@ const OUT_DIR = 'C:\\Users\\Work\\Desktop\\AstroSeer_PlayStoreListing';
 mkdirSync(OUT_DIR, { recursive: true });
 const OUT = join(OUT_DIR, 'data_safety_AstroSeer.csv');
 
-// ---- AstroSeer Connect data profile ----------------------------------
+// ---- AstroSeer data profile ----------------------------------
 // What we DO collect (each maps to a PSL data item).
 const COLLECTED = new Set([
   // Personal info

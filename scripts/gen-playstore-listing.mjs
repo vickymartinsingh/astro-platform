@@ -73,14 +73,14 @@ APP DETAILS
 ==============================================
 
 App name (30 char max):
-AstroSeer Connect
+AstroSeer
 
 Short description (80 char max, 73 used):
 Talk to trusted Vedic astrologers - chat, call & video. Kundli, horoscope.
 
 Full description (paste below, ~2900 char):
 ----------------------------------------------
-AstroSeer Connect brings you trusted Vedic astrologers, real-time guidance, and personalised astrology content - all in one beautifully crafted app.
+AstroSeer brings you trusted Vedic astrologers, real-time guidance, and personalised astrology content - all in one beautifully crafted app.
 
 WHAT YOU GET
 • Live chat, voice and video consultations with verified astrologers
@@ -118,7 +118,7 @@ Astrology content and consultations are for guidance and entertainment purposes;
 NEED HELP?
 support@astroseer.in - we usually reply within a business day.
 
-Welcome to AstroSeer Connect - your trusted home for personal astrology.
+Welcome to AstroSeer - your trusted home for personal astrology.
 ----------------------------------------------
 
 ==============================================

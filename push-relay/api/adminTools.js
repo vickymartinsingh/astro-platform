@@ -210,7 +210,7 @@ function withBcc(opts, t) {
 
 function inviteHtml({ optInUrl, packageName, track }) {
   const appName = packageName === 'com.astroseer.mobile'
-    ? 'AstroSeer Connect'
+    ? 'AstroSeer'
     : packageName === 'com.astroseer.astrologer'
       ? 'AstroSeer for Astrologers'
       : packageName === 'com.astroseer.admin'

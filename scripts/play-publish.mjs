@@ -1,4 +1,4 @@
-// Automated Google Play release for AstroSeer Connect.
+// Automated Google Play release for AstroSeer.
 //
 // What it does in one run:
 //   1. Authenticates via your Google service account JSON.
@@ -97,7 +97,7 @@ const publisher = google.androidpublisher({ version: 'v3', auth });
   if (PUSH_LISTING) {
     const listingPath = join(process.cwd(), '..',
       'AstroSeer_PlayStoreListing', 'STORE-LISTING.txt');
-    let title = 'AstroSeer Connect';
+    let title = 'AstroSeer';
     let shortDesc = 'Talk to trusted Vedic astrologers - chat, '
       + 'call & video. Kundli, horoscope.';
     let fullDesc = title;

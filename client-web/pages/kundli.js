@@ -157,8 +157,14 @@ export default function Kundli() {
         + '(dd/mm/yyyy).');
       return;
     }
-    if (!form.tob || !/^\d{1,2}:\d{2}$/.test(form.tob)) {
-      window.alert('Please enter the time of birth.');  // eslint-disable-line
+    // Blank time of birth = "I don't know". Default to 12:00 PM so
+    // the chart still generates. Only reject if the user typed a
+    // value but it isn't a valid h:mm.
+    if (!form.tob || !form.tob.trim()) {
+      form.tob = '12:00';
+      form.ampm = 'PM';
+    } else if (!/^\d{1,2}:\d{2}$/.test(form.tob)) {
+      window.alert('Please enter the time of birth as h:mm.'); // eslint-disable-line
       return;
     }
     if (!form.place || !form.place.trim()) {
@@ -302,9 +308,19 @@ export default function Kundli() {
     refresh();
   }
   // Stage a delete - opens the confirm modal. The actual irreversible
-  // remove waits for confirmDelete() below.
+  // remove waits for confirmDelete() below. We also try to enrich
+  // the staged kundli with its MOON SIGN (chandra rasi) so the modal
+  // can show it instead of the DOB-derived sun zodiac. If the chart
+  // hasn't been loaded yet for this kundli, we fall back to whatever
+  // sign label the saved profile carries.
   function remove(k) {
-    setPendingDelete(k);
+    const c = chart[k.id];
+    const moonSign = (c && typeof c === 'object')
+      ? (c.chandra_rasi || c.moonSign
+        || (c.raw && c.raw.moon_sign
+          && (c.raw.moon_sign.name || c.raw.moon_sign))
+        || '') : '';
+    setPendingDelete({ ...k, moonSign: String(moonSign || '') });
   }
   async function confirmDelete() {
     if (!pendingDelete) return;
@@ -323,10 +339,12 @@ export default function Kundli() {
 
   return (
     <Layout>
-      {/* Hero header. Royal palette gradient + a one-line explainer so
-          a brand-new customer immediately understands what the page
-          does and what it costs. Renders on every mode (pick / add /
-          view) so navigation never lands on a header-less screen. */}
+      {/* Hero header. Shown ONLY on the picker (saved-profiles list)
+          and the add / edit form. Hidden in 'view' mode once the
+          customer has opened a kundli, so the chart itself gets the
+          full screen. A small "Switch profile" chip still appears
+          above the kundli card in view mode for navigation. */}
+      {mode !== 'view' && (
       <div className="mb-3 overflow-hidden rounded-2xl
         bg-gradient-to-br from-[#7F2020] to-[#D4A12A] p-4 text-white
         shadow-md">
@@ -373,6 +391,7 @@ export default function Kundli() {
           )}
         </div>
       </div>
+      )}
 
       <div className="mb-3 flex flex-wrap items-center justify-between
         gap-2">
@@ -439,62 +458,97 @@ export default function Kundli() {
               if (!q) return true;
               return (k.name || '').toLowerCase().includes(q);
             }).map((k) => (
-              <li key={k.id} className="py-2.5">
-                <div className="flex items-center gap-3">
-                  <button type="button"
-                    onClick={() => pickProfile(k)}
-                    className="flex flex-1 items-center gap-3
-                      text-left">
-                    <div className="grid h-12 w-12 shrink-0
-                      place-items-center rounded-xl
-                      bg-gradient-to-br from-[#7F2020] to-[#D4A12A]
-                      text-white shadow-sm">
-                      <ZodiacGlyph sign={k.zodiac || ''}
-                        className="h-7 w-7 fill-white" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <div className="truncate font-bold
-                          text-dark-text">
-                          {k.name || '(unnamed)'}
-                        </div>
-                        {k.isDefault && (
-                          <span className="rounded-full
-                            bg-[#7F2020]/10 px-1.5 py-0.5
-                            text-[9px] font-bold uppercase
-                            tracking-wider text-[#7F2020]">
-                            Default
-                          </span>
-                        )}
+              <li key={k.id} className="overflow-hidden py-3">
+                {/* min-w-0 must cascade ALL the way up the flex chain
+                    or the inner truncate has nothing to truncate
+                    against (the flex item grows to fit the unbroken
+                    text and overflows its parent). Every ancestor in
+                    the flex tree gets min-w-0 here. */}
+                <button type="button"
+                  onClick={() => pickProfile(k)}
+                  className="flex w-full min-w-0 items-center gap-3
+                    overflow-hidden text-left">
+                  {(() => {
+                    // Prefer the chart's MOON SIGN (chandra rasi) for
+                    // the avatar glyph when we already have the chart
+                    // loaded. Falls back to the saved sun zodiac for
+                    // kundlis we haven't drawn yet, so the row always
+                    // shows a sign.
+                    const c = chart[k.id];
+                    const moonSign = (c && typeof c === 'object')
+                      ? (c.chandra_rasi || c.moonSign || '') : '';
+                    const sign = moonSign || k.zodiac || '';
+                    return (
+                      <div className="grid h-12 w-12 shrink-0
+                        place-items-center rounded-xl
+                        bg-gradient-to-br from-[#7F2020]
+                        to-[#D4A12A] text-white shadow-sm">
+                        <ZodiacGlyph sign={sign}
+                          className="h-7 w-7 fill-white" />
                       </div>
-                      <div className="mt-0.5 truncate text-[11.5px]
+                    );
+                  })()}
+                  <div className="min-w-0 flex-1 overflow-hidden">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <div className="min-w-0 truncate font-bold
+                        text-dark-text">
+                        {k.name || '(unnamed)'}
+                      </div>
+                      {k.isDefault && (
+                        <span className="shrink-0 rounded-full
+                          bg-[#7F2020]/10 px-1.5 py-0.5
+                          text-[9px] font-bold uppercase
+                          tracking-wider text-[#7F2020]">
+                          Default
+                        </span>
+                      )}
+                    </div>
+                    {/* DOB+TOB on one line, place on its own line
+                        below so a long city name does not push the
+                        DOB into a truncation. */}
+                    <div className="mt-0.5 truncate text-[11.5px]
+                      text-sub-text">
+                      {fmtDateLong(k.dob)} · {k.tob} {k.ampm || ''}
+                    </div>
+                    {k.place && (
+                      <div className="truncate text-[11.5px]
                         text-sub-text">
-                        {fmtDateLong(k.dob)} · {k.tob} {k.ampm || ''}
-                        {k.place ? ` · ${k.place}` : ''}
+                        {k.place}
                       </div>
-                    </div>
-                  </button>
-                  <div className="flex shrink-0 flex-col items-stretch
-                    gap-1 sm:flex-row sm:items-center sm:gap-1.5">
-                    <button type="button"
-                      onClick={(e) => { e.stopPropagation(); edit(k); }}
-                      aria-label="Edit"
-                      className="rounded-full bg-bg-light px-2.5
-                        py-1 text-[10.5px] font-bold text-[#7F2020]
-                        hover:bg-[#7F2020]/10">
-                      Edit
-                    </button>
-                    <button type="button"
-                      onClick={(e) => {
-                        e.stopPropagation(); remove(k);
-                      }}
-                      aria-label="Delete"
-                      className="rounded-full bg-bg-light px-2.5
-                        py-1 text-[10.5px] font-bold text-danger
-                        hover:bg-rose-50">
-                      Delete
-                    </button>
+                    )}
                   </div>
+                </button>
+                {/* Action chips - own row, full width, can't be hidden
+                    by overflow. Big tap targets (~36px). Inline icons
+                    so they read clearly even at small font sizes. */}
+                <div className="mt-2 ml-[60px] grid grid-cols-3
+                  gap-1.5">
+                  <button type="button"
+                    onClick={(e) => {
+                      e.stopPropagation(); pickProfile(k);
+                    }}
+                    className="rounded-full bg-[#7F2020] px-2.5 py-1.5
+                      text-[11px] font-bold text-white hover:opacity-90">
+                    Open
+                  </button>
+                  <button type="button"
+                    onClick={(e) => { e.stopPropagation(); edit(k); }}
+                    className="flex items-center justify-center gap-1
+                      rounded-full bg-bg-light px-2.5 py-1.5
+                      text-[11px] font-bold text-[#7F2020]
+                      hover:bg-[#7F2020]/10">
+                    <span aria-hidden>✎</span> Edit
+                  </button>
+                  <button type="button"
+                    onClick={(e) => {
+                      e.stopPropagation(); remove(k);
+                    }}
+                    className="flex items-center justify-center gap-1
+                      rounded-full bg-rose-50 px-2.5 py-1.5
+                      text-[11px] font-bold text-danger
+                      hover:bg-rose-100">
+                    <span aria-hidden>🗑</span> Delete
+                  </button>
                 </div>
               </li>
             ))}
@@ -520,7 +574,116 @@ export default function Kundli() {
           the add form so /kundli isn't an empty modal. The effect
           below switches mode out of 'pick' when list arrives empty. */}
 
-      {mode === 'add' && (() => {
+      {/* EDIT mode = single full form. The wizard below is reserved
+          for ADD. Users editing an existing kundli see every field
+          at once so they can change just the bit they want without
+          clicking Next four times. Time of birth defaults to 12:00
+          PM when left blank ("I don't know" case). Submit becomes
+          "Update". After save we drop straight back into the chart
+          view of the just-edited kundli. */}
+      {mode === 'add' && editingId && (
+        <form onSubmit={save} className="card mb-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-[11px] font-bold uppercase
+                tracking-widest text-sub-text">
+                Edit
+              </div>
+              <div className="text-base font-bold text-dark-text">
+                {form.name || 'Edit kundli'}
+              </div>
+            </div>
+            <button type="button" onClick={cancelEdit}
+              className="rounded-full bg-bg-light px-3 py-1
+                text-[11px] font-bold text-sub-text">
+              Cancel
+            </button>
+          </div>
+          <label className="block text-sm">
+            Name
+            <input className="input mt-1" placeholder="Full name"
+              value={form.name}
+              onChange={(e) => setForm({
+                ...form, name: e.target.value,
+              })} required />
+          </label>
+          <div>
+            <label className="block text-sm">Gender</label>
+            <div className="mt-1 grid grid-cols-3 gap-2">
+              {[['male', 'Male'], ['female', 'Female'],
+                ['other', 'Other']].map(([v, l]) => (
+                <button key={v} type="button"
+                  onClick={() => setForm({ ...form, gender: v })}
+                  className={`rounded-xl border px-3 py-2.5 text-sm
+                    font-bold transition
+                    ${form.gender === v
+                      ? 'border-[#7F2020] bg-[#7F2020] text-white'
+                      : 'border-gray-200 bg-white text-sub-text'}`}>
+                  {l}
+                </button>
+              ))}
+            </div>
+          </div>
+          <label className="block text-sm">
+            Date of birth
+            <div className="mt-1">
+              <DateField value={form.dob}
+                onChange={(dob) => setForm({ ...form, dob })} />
+            </div>
+          </label>
+          <label className="block text-sm">
+            Time of birth
+            <div className="mt-1">
+              <TimeField value={form.tob} ampm={form.ampm}
+                onChange={(tob, ampm) =>
+                  setForm({ ...form, tob, ampm })} />
+            </div>
+            <p className="mt-1 text-[11px] text-sub-text">
+              Don&apos;t know the exact time? Leave blank - we
+              will use 12:00 PM.
+            </p>
+          </label>
+          <label className="block text-sm">
+            Place of birth
+            <div className="mt-1">
+              <CityField
+                value={form.lat ? {
+                  place: form.place, lat: form.lat,
+                  lng: form.lng, tz: form.tz,
+                  country: form.country, state: form.state,
+                  city: form.city,
+                  countryCode: form.countryCode,
+                  label: form.place,
+                } : form.place}
+                onChange={(loc) => setForm((f) => ({
+                  ...f,
+                  place: loc.place || '',
+                  lat: loc.lat != null ? loc.lat : null,
+                  lng: loc.lng != null ? loc.lng : null,
+                  tz: loc.tz != null ? loc.tz : null,
+                  country: loc.country || '',
+                  state: loc.state || '',
+                  city: loc.city || '',
+                  countryCode: loc.countryCode || '',
+                }))} />
+            </div>
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={form.isDefault}
+              onChange={(e) =>
+                setForm({ ...form, isDefault: e.target.checked })} />
+            Set as default profile
+          </label>
+          <button className="w-full rounded-full
+            bg-gradient-to-br from-[#7F2020] to-[#D4A12A] py-2.5
+            text-sm font-bold text-white shadow-sm
+            disabled:opacity-50"
+            disabled={busy}>
+            {busy ? 'Updating…' : 'Update'}
+          </button>
+        </form>
+      )}
+      {mode === 'add' && !editingId && (() => {
         // Per-step validation. Returns false to block the Next button.
         const stepOk = (() => {
           if (addStep === 0) return form.name.trim().length > 0;
@@ -713,10 +876,17 @@ export default function Kundli() {
                   Overview tab inside FullKundli show Moon + Sun
                   signs in their proper place. */}
             </div>
+            {/* DOB+TOB on line 1, place on line 2 - so a long city
+                name does not push other info into a truncation. */}
             <div className="mt-1 text-sm text-sub-text">
               {fmtDateLong(selected.dob)} · {selected.tob}{' '}
-              {selected.ampm} · {selected.place}
+              {selected.ampm}
             </div>
+            {selected.place && (
+              <div className="text-sm text-sub-text">
+                {selected.place}
+              </div>
+            )}
             {/* Action bar removed - the user requested it not show
                 above the selected chart. All actions (refresh, edit,
                 make default, delete) now live in the inline kundli
@@ -754,31 +924,83 @@ export default function Kundli() {
 
       {/* Delete confirmation. Royal-palette card with a clear warning
           message + two buttons: Cancel (default) and Delete (danger).
-          Esc / backdrop click both cancel safely. */}
+          Esc / backdrop click both cancel safely. Always CENTERED on
+          every viewport (was sliding up from the bottom on mobile,
+          which the user did not want). */}
       {pendingDelete && (
-        <div className="fixed inset-0 z-[2147483645] flex items-end
-          justify-center bg-black/60 p-3 backdrop-blur-sm sm:items-center"
+        <div className="fixed inset-0 z-[2147483645] flex items-center
+          justify-center bg-black/60 p-4 backdrop-blur-sm"
           onClick={(e) => { if (e.target === e.currentTarget) {
             setPendingDelete(null);
           } }}>
           <div className="w-full max-w-sm overflow-hidden rounded-2xl
             bg-white shadow-2xl">
             <div className="bg-gradient-to-br from-[#7F2020]
-              to-[#D4A12A] p-4 text-white">
-              <div className="text-[11px] font-bold uppercase
-                tracking-widest opacity-90">
-                Confirm delete
-              </div>
-              <div className="mt-1 text-lg font-bold">
-                Delete this kundli?
+              to-[#D4A12A] p-4 text-center text-white">
+              <div className="text-lg font-bold leading-snug">
+                Are you sure?
               </div>
             </div>
             <div className="space-y-3 p-4">
-              <p className="text-sm text-dark-text">
-                <b>{pendingDelete.name || '(unnamed)'}</b> and the
-                cached chart will be removed. This cannot be undone.
+              {/* Identity card so the user can visually confirm they
+                  are deleting the right profile - avatar + birth
+                  meta laid out as labeled rows. Helps when there are
+                  several similarly-named kundlis. */}
+              <div className="flex items-center gap-3 rounded-card
+                bg-bg-light p-3">
+                <div className="grid h-12 w-12 shrink-0
+                  place-items-center rounded-xl
+                  bg-gradient-to-br from-[#7F2020] to-[#D4A12A]
+                  text-white shadow-sm">
+                  {/* Glyph draws the MOON SIGN only - we never
+                      substitute the sun zodiac and pretend it is
+                      the moon sign. If moon data isn't loaded the
+                      avatar shows a neutral kundli icon instead. */}
+                  {pendingDelete.moonSign ? (
+                    <ZodiacGlyph sign={pendingDelete.moonSign}
+                      className="h-7 w-7 fill-white" />
+                  ) : (
+                    <span className="text-[22px]">☸</span>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1 text-[12.5px]
+                  leading-relaxed">
+                  {/* Name on top so the user reads "who" before the
+                      meta. The avatar glyph to the left already IS
+                      the moon-sign signal - we drop the textual
+                      "Moon sign: X" label to keep the card lean. */}
+                  <div className="truncate text-[14px] font-bold
+                    text-dark-text">
+                    {pendingDelete.name || '(unnamed)'}
+                  </div>
+                  <div className="text-sub-text">
+                    <b>Born:</b>{' '}
+                    {fmtDateLong(pendingDelete.dob)} ·{' '}
+                    {pendingDelete.tob} {pendingDelete.ampm || ''}
+                  </div>
+                  {pendingDelete.place && (
+                    <div className="truncate text-sub-text">
+                      <b>Place:</b> {pendingDelete.place}
+                    </div>
+                  )}
+                  {pendingDelete.isDefault && (
+                    <div className="mt-1 inline-block rounded-full
+                      bg-[#7F2020]/10 px-2 py-0.5 text-[10px]
+                      font-bold uppercase tracking-wider
+                      text-[#7F2020]">
+                      Currently default
+                    </div>
+                  )}
+                </div>
+              </div>
+              <p className="text-[12.5px] text-sub-text
+                leading-relaxed">
+                Once you delete this kundli, it cannot be undone.
+                However, you can add a new profile any time for
+                free by just tapping <b>+ Add new</b> on the
+                kundli page.
               </p>
-              <div className="flex gap-2">
+              <div className="flex gap-2 pt-1">
                 <button type="button"
                   onClick={() => setPendingDelete(null)}
                   className="flex-1 rounded-full border border-gray-300
@@ -789,7 +1011,7 @@ export default function Kundli() {
                   onClick={confirmDelete}
                   className="flex-1 rounded-full bg-danger py-2.5
                     text-sm font-bold text-white hover:opacity-90">
-                  Yes, delete
+                  Yes, remove
                 </button>
               </div>
             </div>
@@ -1261,17 +1483,19 @@ function FullKundli({ r, kundli }) {
   // Older tabs (transits / yogas / doshas / compat / numerology) are
   // folded into the relevant new tab as a sub-section so nothing is
   // lost - just reorganised to match the reference layout.
+  // Labels kept SHORT (single word) so every tab fits on one line
+  // at the same height across the 4-column phone grid.
   const TABS = [
     ['basic', 'Basic'],
     ['kundli', 'Kundli'],
     ['kp', 'KP'],
-    ['ashtakvarga', 'Ashtakvarga'],
+    ['ashtakvarga', 'AV'],
     ['charts', 'Charts'],
     ['dasha', 'Dasha'],
-    ['freeReport', 'Free Report'],
+    ['freeReport', 'Report'],
     // NEW (user-requested): a dashboard tab listing every paid
     // kundli report with a monochrome icon, demo link, and buy CTA.
-    ['premium', 'Premium Reports'],
+    ['premium', 'Premium'],
   ];
 
   // Coerce older saved tab keys to the new schema so the bookmarked
@@ -1302,15 +1526,19 @@ function FullKundli({ r, kundli }) {
           so the user does not have to swipe sideways to see "Premium
           Reports". On desktop they collapse into one row. The native
           scrollbar that was appearing on mobile is gone. */}
-      <div className="mt-3 grid grid-cols-4 gap-1 rounded-card
-        bg-white p-1 sm:flex sm:flex-wrap">
+      {/* All tabs share the SAME height + are vertically centred so
+          the selected pill never looks taller than the others. Two
+          rows of 4 on phone; flow-wraps to a single row on sm+. */}
+      <div className="mt-3 grid grid-cols-4 gap-1.5 rounded-2xl
+        bg-white p-1.5 shadow-sm sm:flex sm:flex-wrap">
         {TABS.map(([k, label]) => (
           <button key={k} type="button" onClick={() => setTab(k)}
-            className={`rounded-card px-2 py-1.5 text-center
-              text-[11px] font-bold leading-tight transition
-              sm:px-3 sm:text-[12px] ${activeTab === k
+            className={`flex h-10 items-center justify-center
+              rounded-xl px-2 text-center text-[12px] font-bold
+              leading-none transition sm:h-11 sm:px-4
+              sm:text-[13px] ${activeTab === k
                 ? 'bg-[#7F2020] text-white shadow-sm'
-                : 'text-sub-text hover:text-dark-text'}`}>
+                : 'bg-bg-light text-sub-text hover:text-dark-text'}`}>
             {label}
           </button>
         ))}
@@ -1338,7 +1566,8 @@ function FullKundli({ r, kundli }) {
         <PremiumReportsTab kundli={kundli} />
       )}
 
-      <TalkChatCTA />
+      {/* Removed: the "Connect with an Astrologer" CTA strip - the
+          user did not want it under every tab. */}
       {/* Download banner intentionally NOT rendered globally any more.
           It now lives at the bottom of the Free Report tab (relocated
           per user request) so it is not duplicated under every other
@@ -1518,9 +1747,25 @@ function KundliMainTab({ r, raw, kundli,
       <Banner title="Planets" />
       {/* MOBILE: stacked card list - every field visible without any
           horizontal scrolling. Each planet is its own card with a
-          colored header and a 2-column data grid below. */}
+          colored header and a 2-column data grid below. Sorted by
+          HOUSE NUMBER (1 -> 12) so the customer reads the cards in
+          chart order; Ascendant stays at the very top regardless
+          because it anchors the whole chart. */}
       <div className="mt-2 grid gap-2 md:hidden">
-        {planetsWithAscendant(r).map((p) => {
+        {(() => {
+          const all = planetsWithAscendant(r);
+          const asc = all.filter((p) => p.isAscendant);
+          const rest = all.filter((p) => !p.isAscendant)
+            .slice()
+            .sort((a, b) => {
+              const ha = Number(a.house);
+              const hb = Number(b.house);
+              const va = Number.isFinite(ha) ? ha : 99;
+              const vb = Number.isFinite(hb) ? hb : 99;
+              return va - vb;
+            });
+          return [...asc, ...rest];
+        })().map((p) => {
           const dignityClass = txt(p.dignity) === 'Debilitated'
             ? 'text-danger' : txt(p.dignity) === 'Exalted'
               ? 'text-success' : 'text-dark-text';
@@ -1789,10 +2034,17 @@ function KpTab({ r, raw }) {
 
 // ---------- Tab: Ashtakvarga (grid of 8 mini-charts) ---------------
 function AshtakvargaTab({ r, raw }) {
-  // Use raw.ashtakvarga from AstroSeer when present (a map keyed by
-  // planet -> 12 house numbers). Fall back to a placeholder layout
-  // that still renders the structure the user is asking for.
-  const av = raw?.ashtakvarga || raw?.ashtakvarga_full || null;
+  // Try every shape AstroSeer / providers use for ashtakvarga:
+  //   raw.ashtakvarga            { sarvashtaka: {...}, sun: {...} }
+  //   raw.ashtakvarga_full       same
+  //   raw.bhinnashtakvarga       { sun: {...}, moon: {...}, ... }
+  //   raw.sarvashtakvarga        12-key map for SAV
+  //   r.ashtakvarga              top-level (some providers flatten)
+  const av = raw?.ashtakvarga || raw?.ashtakvarga_full
+    || r?.ashtakvarga || raw?.bhinnashtakvarga || null;
+  const sav = raw?.sarvashtakvarga || raw?.sarvashtaka
+    || (av && (av.sarvashtaka || av.sarvashtakvarga || av.sav))
+    || null;
   const ENTRIES = [
     ['Sav', 'Sarvashtaka'],
     ['Asc', 'Ascendant'],
@@ -1804,12 +2056,40 @@ function AshtakvargaTab({ r, raw }) {
     ['Sun', 'Sun'],
     ['Venus', 'Venus'],
   ];
-  function bindu(key) {
-    if (!av) return null;
-    return av[key] || av[key.toLowerCase()]
-      || av[(key === 'Sav' ? 'sarvashtaka' : key.toLowerCase())]
-      || null;
+  // Pull house bindus out of whatever shape the provider returned.
+  // Accepts: array indexed 0..11 OR 1..12, object keyed "1".."12",
+  // or nested under .bindus / .houses.
+  function normaliseHouseMap(node) {
+    if (!node) return null;
+    let raw0 = node;
+    if (node.bindus) raw0 = node.bindus;
+    else if (node.houses) raw0 = node.houses;
+    const out = {};
+    if (Array.isArray(raw0)) {
+      // Either 12 entries (0-indexed: house 1 at idx 0) or 13 (1-indexed).
+      const offset = raw0.length === 13 ? 0 : -1;
+      for (let h = 1; h <= 12; h += 1) {
+        const v = raw0[h + offset];
+        if (v != null && v !== '') out[h] = Number(v);
+      }
+    } else if (typeof raw0 === 'object') {
+      for (let h = 1; h <= 12; h += 1) {
+        const v = raw0[h] ?? raw0[String(h)] ?? raw0[`house_${h}`];
+        if (v != null && v !== '') out[h] = Number(v);
+      }
+    }
+    return Object.keys(out).length ? out : null;
   }
+  function bindu(key) {
+    if (key === 'Sav') return normaliseHouseMap(sav);
+    if (!av) return null;
+    const node = av[key] || av[key.toLowerCase()]
+      || av[key.toUpperCase()] || null;
+    return normaliseHouseMap(node);
+  }
+  // Detect "no data at all" so we can show a single clear message
+  // instead of nine blank chart skeletons.
+  const hasAny = ENTRIES.some(([k]) => bindu(k));
   return (
     <>
       <Banner title="Ashtakvarga Chart" />
@@ -1819,17 +2099,34 @@ function AshtakvargaTab({ r, raw }) {
         per house; the total across all 8 BAVs are overlaid here. A
         score of 4 or less indicates the house should be 30+.
       </p>
-      <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3">
-        {ENTRIES.map(([key, label]) => (
-          <div key={key}
-            className="rounded-card bg-bg-light p-2 text-center">
-            <div className="mb-1 text-[12px] font-bold text-dark-text">
-              {label}
-            </div>
-            <AshtakvargaMiniChart bindus={bindu(key)} />
+      {!hasAny ? (
+        <div className="mt-3 rounded-card border border-dashed
+          border-gray-300 bg-white p-6 text-center text-sm
+          text-sub-text">
+          <div className="mb-1 text-2xl">⋮</div>
+          <div className="font-bold text-dark-text">
+            Ashtakvarga data is not available yet
           </div>
-        ))}
-      </div>
+          <p className="mt-1 text-xs">
+            The provider has not returned bindu scores for this
+            chart. Tap <b>Refresh kundli</b> at the top to retry,
+            or try a different profile.
+          </p>
+        </div>
+      ) : (
+        <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-3">
+          {ENTRIES.map(([key, label]) => (
+            <div key={key}
+              className="rounded-card bg-bg-light p-2 text-center">
+              <div className="mb-1 text-[12px] font-bold
+                text-dark-text">
+                {label}
+              </div>
+              <AshtakvargaMiniChart bindus={bindu(key)} />
+            </div>
+          ))}
+        </div>
+      )}
     </>
   );
 }
@@ -2853,7 +3150,7 @@ function DashaTab({ r }) {
         ))}
       </div>
       {sub === 'current' && (
-        <CurrentDashaCard cd={r.currentDasha} />
+        <CurrentDashaCard cd={r.currentDasha} r={r} />
       )}
       {sub === 'drilldown' && (
         <DashaDrilldown dasha={r.dasha || []} />
@@ -3131,95 +3428,187 @@ function DashaDrilldown({ dasha }) {
   );
 }
 
-function CurrentDashaCard({ cd }) {
+// Vedic planetary themes - what the planet typically governs.
+const PLANET_THEME = {
+  Sun: 'authority and self-confidence',
+  Moon: 'emotions and inner comfort',
+  Mars: 'energy, courage and drive',
+  Mercury: 'communication and intellect',
+  Jupiter: 'wisdom, expansion and good fortune',
+  Venus: 'relationships, art and material comfort',
+  Saturn: 'discipline, patience and slow but lasting gains',
+  Rahu: 'ambition, sudden change and foreign opportunities',
+  Ketu: 'detachment, spirituality and quiet introspection',
+};
+
+// What each Vedic house signifies in plain language.
+const HOUSE_MEANING = {
+  1: 'your sense of self and outward identity',
+  2: 'finances, family and personal values',
+  3: 'siblings, courage and short travels',
+  4: 'home, mother and emotional security',
+  5: 'children, creativity and intelligence',
+  6: 'health, daily routine and competition',
+  7: 'partnerships and marriage',
+  8: 'transformation, research and hidden matters',
+  9: 'fortune, higher learning and dharma',
+  10: 'career, public standing and authority',
+  11: 'gains, friendships and goals',
+  12: 'release, foreign lands and spiritual retreat',
+};
+
+// Look up which house a planet sits in. Returns 0 when the chart
+// has no data for that planet (Sookshma+ are sometimes absent).
+function houseOf(rPlanets, planetName) {
+  const want = String(planetName || '').toLowerCase();
+  const p = (rPlanets || []).find((x) =>
+    String(x.name || '').toLowerCase() === want);
+  const h = p && Number(p.house);
+  return Number.isFinite(h) && h >= 1 && h <= 12 ? h : 0;
+}
+
+function CurrentDashaCard({ cd, r }) {
   if (!cd || !cd.planet) {
     return <div className="rounded-card bg-white p-3 text-sm
       text-sub-text">No current period data yet.</div>;
   }
   const levels = [
-    ['Maha Dasha', cd.planet, cd.start, cd.end],
-    cd.antar && ['Antar Dasha', cd.antar.planet,
+    ['Maha', cd.planet, cd.start, cd.end],
+    cd.antar && ['Antar', cd.antar.planet,
       cd.antar.start, cd.antar.end],
-    cd.pratyantar && ['Pratyantar Dasha', cd.pratyantar.planet,
+    cd.pratyantar && ['Pratyantar', cd.pratyantar.planet,
       cd.pratyantar.start, cd.pratyantar.end],
-    cd.sookshma && ['Sookshma Dasha', cd.sookshma.planet,
-      cd.sookshma.start, cd.sookshma.end],
-    cd.prana && ['Prana Dasha', cd.prana.planet,
-      cd.prana.start, cd.prana.end],
-    cd.deha && ['Deha Dasha', cd.deha.planet,
-      cd.deha.start, cd.deha.end],
   ].filter(Boolean);
-  // 30-50 word current+future prediction synthesised from the three
-  // active dasha lords (Maha / Antar / Pratyantar). Each planet has
-  // a one-line theme; the template chains them so the customer gets
-  // a concrete sense of what the next year holds. Generic enough to
-  // never feel wrong, specific enough to feel personal.
-  const PLANET_THEME = {
-    Sun: 'authority, recognition, father figures, government dealings',
-    Moon: 'emotions, home, mother, comfort, public-facing work',
-    Mars: 'energy, courage, property, siblings, competition',
-    Mercury: 'communication, learning, trade, short journeys',
-    Jupiter: 'wisdom, finance, children, expansion, dharma',
-    Venus: 'relationships, marriage, art, luxury, partnerships',
-    Saturn: 'discipline, delays, hard-earned gains, responsibility',
-    Rahu: 'sudden growth, ambition, foreign matters, technology',
-    Ketu: 'detachment, spirituality, research, hidden patterns',
+
+  // CHART-BACKED prediction. We look up the actual house each of the
+  // three active dasha lords occupies in the user's natal chart, then
+  // string them together with each planet's traditional significations
+  // PLUS what those houses govern. Result: a prediction grounded in
+  // the user's real positions (not just a generic planet-theme line).
+  const rPlanets = (r && r.planets) || [];
+  const lord = (label) => {
+    const planet = (levels.find((l) => l[0] === label) || [])[1] || '';
+    const house = houseOf(rPlanets, planet);
+    return {
+      planet,
+      house,
+      theme: PLANET_THEME[planet] || 'shifting themes',
+      houseSig: house ? HOUSE_MEANING[house] : '',
+    };
   };
-  const mahaP = (cd.maha && cd.maha.planet) || '';
-  const antarP = (cd.antar && cd.antar.planet) || '';
-  const pratP = (cd.pratyantar && cd.pratyantar.planet) || '';
-  const themeFor = (p) => PLANET_THEME[p]
-    || 'shifting themes inviting honest self-reflection';
-  const prediction = (mahaP && antarP) ? (
-    `Your ${mahaP} Maha Dasha highlights ${themeFor(mahaP)}. `
-    + `Inside it, the ${antarP} Antar Dasha now activates `
-    + `${themeFor(antarP)}` + (pratP
-      ? `, fine-tuned by ${pratP} bringing `
-        + `${themeFor(pratP)}.`
-      : '.')
-    + ' Channel this combination into focused action through the '
-    + 'next few months for the cleanest results.'
-  ) : '';
+  const M = lord('Maha');
+  const A = lord('Antar');
+  const P = lord('Pratyantar');
+
+  const sentence = (x, prefix) => {
+    if (!x.planet) return '';
+    if (x.house) {
+      return `${prefix} ${x.planet} sits in your ${x.house}th house, `
+        + `so its ${x.theme} flows through ${x.houseSig}.`;
+    }
+    return `${prefix} ${x.planet} brings ${x.theme}.`;
+  };
+
+  // Deduplicate: when two or three levels share the same planet (very
+  // common at the very start of a new Maha period when Antar +
+  // Pratyantar are also that lord), the old code printed the same
+  // sentence two or three times. Detect the duplicates and write
+  // one stronger, consolidated sentence instead.
+  let prediction = '';
+  if (M.planet) {
+    const ordinal = (n) => `${n}${n === 1 ? 'st' : n === 2 ? 'nd'
+      : n === 3 ? 'rd' : 'th'}`;
+    const allSame = M.planet && M.planet === A.planet
+      && M.planet === P.planet;
+    const mEqualsA = M.planet && M.planet === A.planet
+      && M.planet !== P.planet;
+    const aEqualsP = A.planet && A.planet === P.planet
+      && A.planet !== M.planet;
+    if (allSame) {
+      // Triple alignment - say it once, hard.
+      prediction = `All three active periods are ruled by ${M.planet}, `
+        + `so this window is doubly weighted toward ${M.theme}`
+        + (M.house ? `, with ${ordinal(M.house)}-house themes of `
+          + `${M.houseSig} clearly in focus. ` : '. ')
+        + 'Channel this concentrated energy into one or two clear '
+        + 'priorities for the cleanest results.';
+    } else if (mEqualsA) {
+      // Maha + Antar share a lord, Pratyantar differs.
+      prediction = `Both your major and sub-period lords are `
+        + `${M.planet}`
+        + (M.house ? `, sitting in your ${ordinal(M.house)} house `
+          + `of ${M.houseSig}` : '')
+        + `. Its ${M.theme} is the dominant note right now. `
+        + sentence(P, 'Within that, the active inner lord')
+        + ' Lean into these themes for the smoothest results.';
+    } else if (aEqualsP) {
+      prediction = sentence(M, 'Your major-period lord')
+        + ` Both your sub-period and inner lords are ${A.planet}`
+        + (A.house ? `, in your ${ordinal(A.house)} house of `
+          + `${A.houseSig}` : '')
+        + `, so its ${A.theme} colours the months ahead. `
+        + 'Lean into these themes for the smoothest results.';
+    } else {
+      // Three distinct lords - original three-sentence template.
+      prediction = [
+        sentence(M, 'Your major-period lord'),
+        A.planet && sentence(A, 'The current sub-period lord'),
+        P.planet && sentence(P, 'Within that, the active inner lord'),
+        'Lean into these themes through this window for the '
+        + 'smoothest results.',
+      ].filter(Boolean).join(' ');
+    }
+  }
+
   return (
-    <div className="rounded-card bg-gradient-to-br from-primary
-                    to-accent p-4 text-white">
-      <div className="text-[11px] uppercase tracking-wide opacity-80">
-        Currently running
+    <div className="overflow-hidden rounded-2xl
+      bg-gradient-to-br from-[#7F2020] to-[#B45309] text-white
+      shadow-md">
+      {/* Header strip - eyebrow only, no big duplicated title row */}
+      <div className="px-4 pt-4">
+        <div className="text-[11px] font-bold uppercase
+          tracking-[0.18em] opacity-85">
+          Currently running
+        </div>
       </div>
-      <div className="mt-1 text-lg font-bold leading-snug">
-        {levels.map((l) => l[1]).join(' / ')}
-      </div>
-      {/* Dasha rows - each on its OWN row with consistent spacing.
-          Date range is rendered with the three-letter month format
-          (DD-Mmm-YYYY to DD-Mmm-YYYY) instead of the ambiguous
-          YYYY-MM-DD ISO string the provider returns. */}
-      <div className="mt-2 space-y-1.5 text-[12.5px] leading-snug">
-        {levels.map(([name, planet, s, e]) => (
-          <div key={name} className="opacity-95">
-            <b>{name}:</b> {planet}{' '}
-            ({fmtDateLong(String(s || '').slice(0, 10))} to{' '}
-            {fmtDateLong(String(e || '').slice(0, 10))})
+
+      {/* Three clean rows, one per active level. Planet name first
+          (bold) so the eye lands on "Jupiter" before the dates. */}
+      <div className="space-y-2 px-4 py-3">
+        {levels.map(([label, planet, s, e]) => (
+          <div key={label}
+            className="rounded-xl bg-white/10 p-2.5
+              backdrop-blur-sm">
+            <div className="flex items-center justify-between
+              gap-2">
+              <div className="text-[14px] font-bold leading-tight">
+                {planet}
+              </div>
+              <span className="rounded-full bg-white/20 px-2
+                py-0.5 text-[10px] font-bold uppercase
+                tracking-wider">
+                {label}
+              </span>
+            </div>
+            <div className="mt-0.5 text-[11.5px] opacity-85">
+              {fmtDateLong(String(s || '').slice(0, 10))}{' '}
+              <span className="opacity-60">to</span>{' '}
+              {fmtDateLong(String(e || '').slice(0, 10))}
+            </div>
           </div>
         ))}
       </div>
-      {/* Current + future prediction synthesised from the active
-          lords. Sits inside a translucent panel so the gradient
-          backdrop stays visible. */}
+
+      {/* Prediction tied to actual chart houses */}
       {prediction && (
-        <div className="mt-3 rounded-card bg-white/15 p-3
-          text-[12.5px] leading-relaxed backdrop-blur-sm">
+        <div className="border-t border-white/15 bg-black/15 p-4
+          text-[12.5px] leading-relaxed">
           <div className="text-[10px] font-bold uppercase
-            tracking-widest opacity-80">
+            tracking-[0.18em] opacity-85">
             What this means for you
           </div>
-          <p className="mt-1">{prediction}</p>
+          <p className="mt-1.5">{prediction}</p>
         </div>
-      )}
-      {levels.length < 6 && (
-        <p className="mt-2 text-[10px] opacity-75">
-          Sookshma, Prana and Deha levels surface when the provider
-          returns them.
-        </p>
       )}
     </div>
   );

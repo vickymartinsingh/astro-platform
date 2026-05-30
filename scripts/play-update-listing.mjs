@@ -5,7 +5,7 @@
 //
 // Usage:
 //   node scripts/play-update-listing.mjs --package com.astroseer.mobile \
-//        --title "AstroSeer Connect" \
+//        --title "AstroSeer" \
 //        --short "Talk to verified Vedic astrologers - chat call video" \
 //        --fullFile "path/to/full-description.txt" \
 //        --icon "path/to/icon-512.png" \

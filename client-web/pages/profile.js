@@ -485,20 +485,48 @@ export default function Profile() {
             ? VIEWS.HOME : VIEWS.LEGAL)}
           icon="📄" label="Legal &amp; help"
           sub="Terms, Privacy, Support">
+          {/* Top 4 stay as a 2-col grid. Below them, the deletion
+              policy + delete-account tiles render FULL-WIDTH stacked,
+              matching the bottom-of-page "Log out" button style. */}
           <div className="grid grid-cols-2 gap-2">
-            <Link href="/terms" className="rounded-card bg-bg-light
-              px-3 py-2 text-center text-sm font-semibold">Terms</Link>
-            <Link href="/privacy" className="rounded-card bg-bg-light
-              px-3 py-2 text-center text-sm font-semibold">Privacy</Link>
-            <Link href="/page/refund" className="rounded-card bg-bg-light
-              px-3 py-2 text-center text-sm font-semibold">
+            <Link href="/terms"
+              className="flex h-12 items-center justify-center
+                rounded-card bg-bg-light px-3 text-center
+                text-sm font-semibold">
+              Terms
+            </Link>
+            <Link href="/privacy"
+              className="flex h-12 items-center justify-center
+                rounded-card bg-bg-light px-3 text-center
+                text-sm font-semibold">
+              Privacy
+            </Link>
+            <Link href="/page/refund"
+              className="flex h-12 items-center justify-center
+                rounded-card bg-bg-light px-3 text-center
+                text-sm font-semibold">
               Refund policy
             </Link>
-            <Link href="/support" className="rounded-card bg-bg-light
-              px-3 py-2 text-center text-sm font-semibold">
+            <Link href="/support"
+              className="flex h-12 items-center justify-center
+                rounded-card bg-bg-light px-3 text-center
+                text-sm font-semibold">
               Help &amp; support
             </Link>
           </div>
+          <Link href="/account-deletion"
+            className="mt-2 flex h-12 w-full items-center
+              justify-center rounded-card bg-bg-light px-3
+              text-center text-sm font-semibold">
+            Account deletion policy
+          </Link>
+          <button type="button" onClick={deleteAccount}
+            className="mt-2 flex h-12 w-full items-center
+              justify-center rounded-card border border-danger
+              bg-white px-3 text-center text-sm font-bold
+              text-danger hover:bg-danger/5">
+            Delete my account permanently
+          </button>
         </Row>
 
         <Row open={view === VIEWS.VERSION}
@@ -525,24 +553,15 @@ export default function Profile() {
         </Row>
       </div>
 
-      {/* Logout - primary danger action */}
+      {/* Logout - primary danger action. The deletion links that
+          used to sit below this button have been moved to the
+          Legal &amp; help section above so they no longer
+          duplicate. */}
       <button onClick={logout}
         className="mt-3 w-full rounded-card border border-danger py-3
           text-sm font-bold text-danger hover:bg-danger/5">
         Log out
       </button>
-
-      {/* De-emphasised delete account - small text link */}
-      <div className="mt-4 text-center text-[11px] text-sub-text">
-        <Link href="/account-deletion" className="underline">
-          Account deletion policy
-        </Link>
-        {' · '}
-        <button onClick={deleteAccount}
-          className="text-[11px] underline opacity-50 hover:opacity-90">
-          Delete my account
-        </button>
-      </div>
     </Layout>
   );
 }

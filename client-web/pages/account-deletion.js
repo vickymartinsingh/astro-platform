@@ -1,5 +1,6 @@
 import Head from 'next/head';
 import Link from 'next/link';
+import { useRouter } from 'next/router';
 
 // Public, always-reachable Account & Data Deletion page required by
 // Google Play (App content -> "Web link to request account deletion").
@@ -19,28 +20,50 @@ const S = ({ title, children }) => (
 );
 
 export default function AccountDeletion() {
+  const router = useRouter();
+  // Back navigation: if there's a referrer inside the app, just pop
+  // the history stack; otherwise route to /profile so the user is
+  // never stranded on this page.
+  const goBack = () => {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push('/profile');
+    }
+  };
   return (
     <>
       <Head>
-        <title>Delete your account - AstroSeer Connect</title>
+        <title>Delete your account - AstroSeer</title>
         <meta name="robots" content="index,follow" />
         <meta name="viewport"
           content="width=device-width, initial-scale=1" />
       </Head>
       <main style={{
-        maxWidth: 820, margin: '0 auto', padding: '40px 20px 80px',
+        maxWidth: 820, margin: '0 auto', padding: '20px 20px 80px',
         fontFamily: 'Inter, system-ui, Arial, sans-serif',
       }}>
+        <button type="button" onClick={goBack}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            marginBottom: 20, padding: '8px 14px',
+            border: '1px solid #E5E7EB', borderRadius: 999,
+            background: '#FBF7EE', color: '#7F2020',
+            fontWeight: 700, fontSize: 13, cursor: 'pointer',
+          }}>
+          <span aria-hidden style={{ fontSize: 16 }}>‹</span> Back
+        </button>
         <h1 style={{ fontSize: 28, fontWeight: 800, color: '#0F0A23' }}>
           Delete your AstroSeer account
         </h1>
         <p style={{ color: '#6B7280', marginTop: 6 }}>
-          AstroSeer Connect · Last updated {UPDATED}
+          AstroSeer · Last updated {UPDATED}
         </p>
 
         <S title="1. Two ways to delete your account">
-          <p><b>A. Inside the app (fastest)</b>: open the app, go to{' '}
-            <b>Profile → Delete my account</b>, and confirm. Your
+          <p><b>A. Inside the app (fastest)</b>: open the app and
+            go to <b>Profile → Legal &amp; help → Delete my
+            account permanently</b>. Confirm on the popup. Your
             request is registered immediately and your account is
             deactivated; the data purge follows within 30 days
             (see retention below).</p>
@@ -89,12 +112,16 @@ export default function AccountDeletion() {
 
         <S title="4. Timeline">
           <ul style={{ paddingLeft: 18 }}>
-            <li><b>Day 0:</b> You request deletion (in-app or email).
-              Account is deactivated; you can no longer sign in.</li>
+            <li><b>In-app request:</b> Account is deactivated{' '}
+              <b>instantly</b> the moment you tap Confirm. You can
+              no longer sign in.</li>
+            <li><b>Email request:</b> We verify and deactivate your
+              account within <b>2 business days</b> of receiving
+              your message at support@astroseer.in.</li>
             <li><b>Within 30 days:</b> Personal data is purged from
               live systems and backups.</li>
-            <li>Confirmation email is sent to your registered address
-              when purge completes.</li>
+            <li>A confirmation email is sent to your registered
+              address when the purge completes.</li>
           </ul>
         </S>
 
@@ -121,7 +148,7 @@ export default function AccountDeletion() {
           </Link>
         </p>
         <p style={{ marginTop: 24, fontSize: 12, color: '#9CA3AF' }}>
-          © {new Date().getFullYear()} AstroSeer Connect.
+          © {new Date().getFullYear()} AstroSeer.
         </p>
       </main>
     </>
