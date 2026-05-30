@@ -14,9 +14,9 @@ export function AuthProvider({ children }) {
   // Seed user from Firebase's CURRENT auth state at first render. On
   // route changes (and HMR reloads in dev) the AuthProvider remounts
   // and useState(null) would briefly publish `user=null` before
-  // onAuthStateChanged fires - that brief null is what was popping
-  // the login modal on every click. Seeding from auth.currentUser
-  // means signed-in users see `user=X` from frame 1.
+  // onAuthStateChanged fires - that brief null was popping the login
+  // modal on every click. Seeding from auth.currentUser means signed-
+  // in users see `user=X` from frame 1.
   const [user, setUser] = useState(() => {
     try {
       return (typeof firebaseAuth !== 'undefined'
@@ -24,14 +24,12 @@ export function AuthProvider({ children }) {
     } catch (_) { return null; }
   });
   const [profile, setProfile] = useState(null);
-  // If we already have a user at boot, loading is false from the
-  // start - no spinner flash.
-  const [loading, setLoading] = useState(() => {
-    try {
-      return !(typeof firebaseAuth !== 'undefined'
-        && firebaseAuth && firebaseAuth.currentUser);
-    } catch (_) { return true; }
-  });
+  // Loading STAYS true until the Firestore profile listener confirms
+  // it has a snapshot (success or "doc-doesn't-exist-null") so pages
+  // that gate on `if (loading || !profile)` don't flash skeleton
+  // placeholders forever. Setting this false on the user-seed alone
+  // was the bug that left /profile permanently skeletonised.
+  const [loading, setLoading] = useState(true);
 
   // Register this device for push on every launch, even before / without
   // sign-in, so broadcast and announcement pushes always deliver.
@@ -79,14 +77,40 @@ export function AuthProvider({ children }) {
             });
           } catch (_) { /* best-effort */ }
         })();
-        // Profile listen has its OWN safety: don't block the UI for
-        // ever if the first Firestore snapshot is slow on iOS WKWebView.
+        // Profile listen has its OWN safety. Two failure modes we
+        // protect against:
+        //  1. iOS WKWebView Firestore hang -> snapshot never fires
+        //  2. users/{uid} doc doesn't exist yet (ensureUserDoc still
+        //     in flight, or Spark plan write failed) -> snapshot
+        //     fires with null
+        // In either case, after 2.5s we synthesize a MINIMAL profile
+        // from the Firebase Auth user (uid + email + displayName) so
+        // pages that gate on `if (loading || !profile)` don't sit on
+        // skeletons forever. The real listener still wins when it
+        // arrives - it'll overwrite the stub.
         const profSafety = setTimeout(() => {
-          try { setLoading(false); } catch (_) {}
-        }, 3000);
+          try {
+            setProfile((cur) => cur || ({
+              uid: u.uid,
+              email: u.email || '',
+              name: u.displayName || '',
+              role: 'client',
+              _stub: true,
+            }));
+            setLoading(false);
+          } catch (_) {}
+        }, 2500);
         unsubProfile = userService.listenUser(u.uid, (p) => {
           clearTimeout(profSafety);
-          setProfile(p);
+          // If Firestore returns null (doc missing) keep / synthesize
+          // the stub so the page still renders.
+          setProfile(p || ({
+            uid: u.uid,
+            email: u.email || '',
+            name: u.displayName || '',
+            role: 'client',
+            _stub: true,
+          }));
           setLoading(false);
         });
       } else {
