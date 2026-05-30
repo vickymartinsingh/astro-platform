@@ -4,15 +4,34 @@ import {
 import { useRouter } from 'next/router';
 import {
   authService, userService, presenceService, pushService,
+  auth as firebaseAuth,
 } from '@astro/shared';
 import { useAuthModal } from './authModal';
 
 const AuthCtx = createContext({ user: null, profile: null, loading: true });
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
+  // Seed user from Firebase's CURRENT auth state at first render. On
+  // route changes (and HMR reloads in dev) the AuthProvider remounts
+  // and useState(null) would briefly publish `user=null` before
+  // onAuthStateChanged fires - that brief null is what was popping
+  // the login modal on every click. Seeding from auth.currentUser
+  // means signed-in users see `user=X` from frame 1.
+  const [user, setUser] = useState(() => {
+    try {
+      return (typeof firebaseAuth !== 'undefined'
+        && firebaseAuth && firebaseAuth.currentUser) || null;
+    } catch (_) { return null; }
+  });
   const [profile, setProfile] = useState(null);
-  const [loading, setLoading] = useState(true);
+  // If we already have a user at boot, loading is false from the
+  // start - no spinner flash.
+  const [loading, setLoading] = useState(() => {
+    try {
+      return !(typeof firebaseAuth !== 'undefined'
+        && firebaseAuth && firebaseAuth.currentUser);
+    } catch (_) { return true; }
+  });
 
   // Register this device for push on every launch, even before / without
   // sign-in, so broadcast and announcement pushes always deliver.
@@ -105,6 +124,15 @@ export function useRequireClient() {
   useEffect(() => {
     if (loading) return;
     if (!user) {
+      // Ground-truth check: if Firebase Auth itself thinks the user
+      // is signed in but our React state hasn't caught up yet (which
+      // happens during route changes on web - the new page mounts a
+      // beat before useAuth re-publishes its context), DO NOT pop the
+      // login modal. That spurious popup is what makes "every click
+      // logs me out" feel like a real logout. Wait one tick for the
+      // state to catch up; the AuthProvider listener will fire and
+      // re-render with the real user.
+      if (firebaseAuth && firebaseAuth.currentUser) return;
       if (asked.current) return;
       asked.current = true;
       // Popup login; if dismissed, leave to the public home (no blink).

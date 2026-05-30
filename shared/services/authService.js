@@ -130,15 +130,50 @@ export async function verifyEmailOtp(email, code) {
 // Returns the server response shape so the UI can branch on
 // exists:false (no account) vs sent:true (email exists, code sent).
 export async function requestPasswordReset(email) {
-  const r = await fetch(otpEndpoint(), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'resetRequest', email }),
-  });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.error
-    || `Reset request failed (HTTP ${r.status}).`);
-  return j;
+  // Primary path: relay's combined link + OTP email (knows whether
+  // the account exists, sends both options in one email).
+  try {
+    const r = await fetch(otpEndpoint(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'resetRequest', email }),
+    });
+    const j = await r.json().catch(() => ({}));
+    // Only treat as success if the relay actually accepted the
+    // action. The OLD relay returns 400 with this exact string when
+    // it does not recognise resetRequest yet (Vercel deploy lagging).
+    const unknownAction = j && j.error
+      && /action must be/i.test(String(j.error));
+    if (!r.ok || unknownAction) {
+      throw new Error(unknownAction
+        ? 'relay-not-deployed'
+        : (j.error || `HTTP ${r.status}`));
+    }
+    return j;
+  } catch (e1) {
+    // Fallback: Firebase's built-in password reset. Loses the OTP
+    // option (link only) and cannot tell us if the account exists
+    // (Firebase always returns 200). But it always WORKS, even when
+    // our relay is down or mid-deploy. Better than a dead button.
+    try {
+      await sendPasswordResetEmail(auth, String(email).trim());
+      return {
+        ok: true,
+        exists: true, // Firebase doesn't tell us; assume yes.
+        sent: true,
+        fallback: true,
+      };
+    } catch (e2) {
+      // Map Firebase codes back to readable errors.
+      if (e2 && e2.code === 'auth/user-not-found') {
+        return { ok: true, exists: false };
+      }
+      throw new Error(e1.message === 'relay-not-deployed'
+        ? 'Password reset is temporarily unavailable. Please try '
+          + 'again in a minute.'
+        : (e2 && e2.message) || 'Could not send reset email.');
+    }
+  }
 }
 
 export async function verifyPasswordResetOtp(email, code, newPassword) {
