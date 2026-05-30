@@ -62,12 +62,22 @@ export function useSettings() {
   const features = useDoc('features');
   // Default: every new user gets the first 5 minutes free, shown on all
   // astrologers, UNLESS the admin explicitly sets the value (incl. 0).
+  //
+  // CRITICAL: also respect the master toggles features.free_chat_enabled
+  // and features.free_call_enabled. When admin turns these OFF on
+  // /admin-features, freeChatMin / freeCallMin become 0 - no more
+  // "First 5 min FREE" badges on any astrologer card. The change
+  // propagates instantly through the existing onSnapshot listener.
   const fc = cfg.free_chat_seconds;
   const fl = cfg.free_call_seconds;
+  const chatOn = features.free_chat_enabled !== false; // opt-out default
+  const callOn = features.free_call_enabled !== false;
   return {
     cfg,
     features,
-    freeChatMin: fc == null || fc === '' ? 5 : Math.round(Number(fc) / 60),
-    freeCallMin: fl == null || fl === '' ? 5 : Math.round(Number(fl) / 60),
+    freeChatMin: !chatOn ? 0
+      : (fc == null || fc === '' ? 5 : Math.round(Number(fc) / 60)),
+    freeCallMin: !callOn ? 0
+      : (fl == null || fl === '' ? 5 : Math.round(Number(fl) / 60)),
   };
 }

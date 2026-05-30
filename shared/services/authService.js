@@ -193,6 +193,15 @@ export async function verifyPasswordResetOtp(email, code, newPassword) {
 export async function logoutUser() {
   // Log BEFORE signing out so the audit POST still has a fresh ID token.
   try { await logAudit('logout', {}); } catch (_) {}
+  // Trace EVERY logout call with a stack so we can find the culprit
+  // when the user reports "I keep getting logged out". Production
+  // builds can be patched to comment this out if it gets noisy.
+  try {
+    if (typeof console !== 'undefined' && console.warn) {
+      console.warn('[authService.logoutUser] called from:',
+        new Error('stack').stack);
+    }
+  } catch (_) {}
   await signOut(auth);
 }
 

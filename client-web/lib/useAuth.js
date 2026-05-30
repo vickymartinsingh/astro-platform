@@ -164,7 +164,12 @@ export function useRequireClient() {
       return;
     }
     asked.current = false;
-    if (profile && profile.isBlocked) {
+    // Only auto-logout on isBlocked when we have a REAL profile from
+    // Firestore (not the stub we synthesise during loading delays).
+    // The stub never carries isBlocked so this check would already
+    // be falsy, but the explicit guard documents intent + prevents a
+    // future stub change from accidentally signing the user out.
+    if (profile && !profile._stub && profile.isBlocked === true) {
       authService.logoutUser();
       router.replace('/dashboard?blocked=1');
     }
@@ -182,7 +187,9 @@ export function useOptionalClient() {
   const router = useRouter();
   useEffect(() => {
     if (loading || !user || !profile) return;
-    if (profile.isBlocked) {
+    // Same guard as useRequireClient: never auto-logout based on a
+    // stub profile (synthesised when Firestore is slow / missing).
+    if (!profile._stub && profile.isBlocked === true) {
       authService.logoutUser();
       router.replace('/login?blocked=1');
     }
