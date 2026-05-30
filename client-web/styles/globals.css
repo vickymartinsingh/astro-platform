@@ -4,6 +4,13 @@
 
 :root {
   color-scheme: light;
+  /* CSS accent-color drives the native form-control selection colour
+     in Chrome 93+, Safari 15.4+, Firefox 92+. This is what tints the
+     selected hour / minute / AM-PM cell in the time picker dropdown,
+     the highlighted date in the date picker, the checkbox tick, the
+     radio dot, etc. Setting it to brand maroon means the OS pickers
+     are no longer Chrome's default blue. */
+  accent-color: #7F2020;
   /* Royal palette - Maroon / Amber / Olive (the only approved
      brand colours). Purple #6C2BD9 / #8B5CF6 is STRICTLY
      prohibited and must never render anywhere. */
@@ -18,6 +25,15 @@
   --c-warning: 212 161 42;  /* Amber */
   --c-danger: 192 57 43;
   --c-verify: 127 32 32;    /* Maroon */
+}
+
+/* Belt-and-braces: explicitly retint every native form control so
+   even older browsers that ignore the :root accent-color above pick
+   up the maroon on individual inputs. */
+input[type="date"], input[type="time"], input[type="datetime-local"],
+input[type="month"], input[type="week"], input[type="checkbox"],
+input[type="radio"], input[type="range"], progress, meter {
+  accent-color: #7F2020;
 }
 
 html, body, #__next { height: 100%; }

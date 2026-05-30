@@ -1018,14 +1018,19 @@ function FullKundli({ r, kundli }) {
           confused the layout. Premium reports now have their own
           dedicated tab; the free PDF lives at the top of Free Report. */}
 
-      {/* Pill tabs, matching the AstroTalk web view. */}
-      <div className="mt-3 flex flex-nowrap gap-1 overflow-x-auto
-        rounded-card bg-white p-1">
+      {/* Pill tabs - mobile-first WRAPPING grid instead of a horizontal
+          scroller. On phone all 8 tabs are visible at once (4 per row),
+          so the user does not have to swipe sideways to see "Premium
+          Reports". On desktop they collapse into one row. The native
+          scrollbar that was appearing on mobile is gone. */}
+      <div className="mt-3 grid grid-cols-4 gap-1 rounded-card
+        bg-white p-1 sm:flex sm:flex-wrap">
         {TABS.map(([k, label]) => (
           <button key={k} type="button" onClick={() => setTab(k)}
-            className={`shrink-0 rounded-card px-3 py-1.5
-              text-[12px] font-bold transition ${activeTab === k
-                ? 'bg-primary text-white shadow-sm'
+            className={`rounded-card px-2 py-1.5 text-center
+              text-[11px] font-bold leading-tight transition
+              sm:px-3 sm:text-[12px] ${activeTab === k
+                ? 'bg-[#7F2020] text-white shadow-sm'
                 : 'text-sub-text hover:text-dark-text'}`}>
             {label}
           </button>
@@ -1231,7 +1236,66 @@ function KundliMainTab({ r, raw, kundli,
       </div>
 
       <Banner title="Planets" />
-      <div className="mt-2 overflow-x-auto rounded-card bg-white p-2">
+      {/* MOBILE: stacked card list - every field visible without any
+          horizontal scrolling. Each planet is its own card with a
+          colored header and a 2-column data grid below. */}
+      <div className="mt-2 grid gap-2 md:hidden">
+        {planetsWithAscendant(r).map((p) => {
+          const dignityClass = txt(p.dignity) === 'Debilitated'
+            ? 'text-danger' : txt(p.dignity) === 'Exalted'
+              ? 'text-success' : 'text-dark-text';
+          const cells = [
+            ['Sign', txt(p.sign) || '·'],
+            ['Sign Lord', txt(p.sign_lord) || '·'],
+            ['Nakshatra', txt(p.nakshatra) || '·'],
+            ['Naksh Lord', txt(p.nakshatra_lord) || '·'],
+            ['Degree', txt(p.degree) || '·'],
+            ['Retrograde', p.isAscendant ? '-'
+              : (p.retrograde ? 'Retro' : 'Direct')],
+            ['Combust', p.isAscendant ? '-'
+              : (p.combust ? 'Yes' : 'No')],
+            ['Avastha', txt(p.avastha) || '·'],
+            ['House', txt(p.house) || '·'],
+          ];
+          return (
+            <div key={txt(p.name)}
+              className="overflow-hidden rounded-2xl border
+                border-gray-200 bg-white shadow-sm">
+              <div className="flex items-center justify-between
+                gap-2 bg-gradient-to-r from-[#7F2020] to-[#D4A12A]
+                px-3 py-2 text-white">
+                <div className="text-[13px] font-bold">
+                  {txt(p.name)}
+                </div>
+                <span className={`rounded-full bg-white/20 px-2
+                  py-0.5 text-[10px] font-bold ${dignityClass
+                    === 'text-danger' ? 'text-rose-100'
+                    : dignityClass === 'text-success'
+                      ? 'text-emerald-100' : ''}`}>
+                  {txt(p.dignity) || txt(p.status) || '·'}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1
+                p-3 text-[11.5px]">
+                {cells.map(([k, v]) => (
+                  <div key={k} className="flex justify-between
+                    gap-2 border-b border-gray-100 pb-1
+                    last:border-0">
+                    <span className="text-sub-text">{k}</span>
+                    <span className="text-right font-semibold
+                      text-dark-text">{v}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {/* DESKTOP: original full-width table - the horizontal scroll is
+          fine on a wide viewport and keeps the side-by-side comparison
+          experience that astrologers prefer. */}
+      <div className="mt-2 hidden overflow-x-auto rounded-card
+        bg-white p-2 md:block">
         <table className="w-full text-[11px]">
           <thead className="bg-bg-light text-left text-dark-text">
             <tr>
