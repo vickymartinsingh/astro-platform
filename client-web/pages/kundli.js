@@ -59,6 +59,13 @@ export default function Kundli() {
   // fires, so a slip on the trash icon does not nuke a profile.
   const [pickerSearch, setPickerSearch] = useState('');
   const [pendingDelete, setPendingDelete] = useState(null);
+  // Wizard step for the add / edit form. 0..4 maps to:
+  //   0 = name, 1 = gender, 2 = DOB, 3 = TOB, 4 = place. Resets to 0
+  //   whenever the user enters add mode fresh; if they enter via Edit
+  //   we jump straight to step 0 too (all fields are pre-filled, the
+  //   user can advance with Next without re-typing).
+  const [addStep, setAddStep] = useState(0);
+  const ADD_STEPS = 5;
 
   async function viewFull(k) {
     setChart((c) => ({ ...c, [k.id]: 'loading' }));
@@ -117,6 +124,13 @@ export default function Kundli() {
       setMode('add');
     }
   }, [list, mode]);
+
+  // Reset the add wizard back to step 0 every time the user enters
+  // the add form, so a previous half-finished flow does not leave
+  // them stranded on step 4.
+  useEffect(() => {
+    if (mode === 'add') setAddStep(0);
+  }, [mode, editingId]);
 
   async function save(e) {
     e.preventDefault();
@@ -413,16 +427,17 @@ export default function Kundli() {
             </button>
           </div>
           <input className="input mt-2"
-            placeholder="Search by name, date or place…"
+            placeholder="Search by name…"
             value={pickerSearch}
             onChange={(e) => setPickerSearch(e.target.value)} />
           <ul className="mt-2 divide-y divide-gray-100">
             {list.filter((k) => {
+              // Name-only search per user request - simpler than the
+              // earlier name/date/place fuzzy match. Case-insensitive
+              // substring; empty query returns everything.
               const q = pickerSearch.trim().toLowerCase();
               if (!q) return true;
-              return ((k.name || '').toLowerCase().includes(q)
-                || (k.dob || '').toLowerCase().includes(q)
-                || (k.place || '').toLowerCase().includes(q));
+              return (k.name || '').toLowerCase().includes(q);
             }).map((k) => (
               <li key={k.id} className="py-2.5">
                 <div className="flex items-center gap-3">
@@ -459,20 +474,23 @@ export default function Kundli() {
                       </div>
                     </div>
                   </button>
-                  <div className="flex shrink-0 items-center gap-1.5">
+                  <div className="flex shrink-0 flex-col items-stretch
+                    gap-1 sm:flex-row sm:items-center sm:gap-1.5">
                     <button type="button"
-                      onClick={() => edit(k)}
+                      onClick={(e) => { e.stopPropagation(); edit(k); }}
                       aria-label="Edit"
                       className="rounded-full bg-bg-light px-2.5
-                        py-1 text-[11px] font-bold text-[#7F2020]
+                        py-1 text-[10.5px] font-bold text-[#7F2020]
                         hover:bg-[#7F2020]/10">
                       Edit
                     </button>
                     <button type="button"
-                      onClick={() => remove(k)}
+                      onClick={(e) => {
+                        e.stopPropagation(); remove(k);
+                      }}
                       aria-label="Delete"
                       className="rounded-full bg-bg-light px-2.5
-                        py-1 text-[11px] font-bold text-danger
+                        py-1 text-[10.5px] font-bold text-danger
                         hover:bg-rose-50">
                       Delete
                     </button>
@@ -484,9 +502,7 @@ export default function Kundli() {
           {(() => {
             const q = pickerSearch.trim().toLowerCase();
             const filtered = list.filter((k) => !q
-              || (k.name || '').toLowerCase().includes(q)
-              || (k.dob || '').toLowerCase().includes(q)
-              || (k.place || '').toLowerCase().includes(q));
+              || (k.name || '').toLowerCase().includes(q));
             if (filtered.length === 0) {
               return (
                 <div className="rounded-card bg-bg-light p-3 text-center
@@ -504,68 +520,177 @@ export default function Kundli() {
           the add form so /kundli isn't an empty modal. The effect
           below switches mode out of 'pick' when list arrives empty. */}
 
-      {mode === 'add' && (
-      <form onSubmit={save} className="card mb-4 space-y-3">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr,150px]">
-          <input className="input" placeholder="Name" value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            required />
-          <select className="input" value={form.gender || ''} required
-            onChange={(e) => setForm({ ...form, gender: e.target.value })}>
-            <option value="">Gender…</option>
-            <option value="male">Male</option>
-            <option value="female">Female</option>
-            <option value="other">Other</option>
-          </select>
-        </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <DateField value={form.dob}
-            onChange={(dob) => setForm({ ...form, dob })} />
-          <TimeField value={form.tob} ampm={form.ampm}
-            onChange={(tob, ampm) => setForm({ ...form, tob, ampm })} />
-          <div className="sm:col-span-2">
-            <CityField
-              value={form.lat ? {
-                place: form.place, lat: form.lat, lng: form.lng,
-                tz: form.tz, country: form.country, state: form.state,
-                city: form.city, countryCode: form.countryCode,
-                label: form.place,
-              } : form.place}
-              onChange={(loc) => setForm((f) => ({
-                ...f,
-                place: loc.place || '',
-                lat: loc.lat != null ? loc.lat : null,
-                lng: loc.lng != null ? loc.lng : null,
-                tz: loc.tz != null ? loc.tz : null,
-                country: loc.country || '',
-                state: loc.state || '',
-                city: loc.city || '',
-                countryCode: loc.countryCode || '',
-              }))} />
-          </div>
-        </div>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={form.isDefault}
-            onChange={(e) =>
-              setForm({ ...form, isDefault: e.target.checked })} />
-          Set as default profile (auto-shared at session start)
-        </label>
-        <div className="flex gap-2">
-          <button className="btn-primary flex-1" disabled={busy}>
-            {busy
-              ? 'Saving…'
-              : editingId ? 'Save changes' : 'Save Kundli'}
-          </button>
-          {editingId && (
-            <button type="button" onClick={cancelEdit}
-              className="rounded-full border border-gray-300 px-4
-                py-2 text-sm font-semibold text-sub-text">
-              Cancel
-            </button>
-          )}
-        </div>
-      </form>
-      )}
+      {mode === 'add' && (() => {
+        // Per-step validation. Returns false to block the Next button.
+        const stepOk = (() => {
+          if (addStep === 0) return form.name.trim().length > 0;
+          if (addStep === 1) return !!form.gender;
+          if (addStep === 2) return /^\d{2}-\d{2}-\d{4}$/.test(form.dob);
+          if (addStep === 3) return !!form.tob;
+          if (addStep === 4) return !!form.place && form.lat != null;
+          return true;
+        })();
+        const isLast = addStep === ADD_STEPS - 1;
+        const STEP_LABELS = ['Name', 'Gender', 'Date of birth',
+          'Time of birth', 'Place of birth'];
+        return (
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            if (!stepOk) return;
+            if (isLast) { save(e); return; }
+            setAddStep((s) => Math.min(ADD_STEPS - 1, s + 1));
+          }} className="card mb-4 space-y-4">
+            {/* Wizard header: step counter + progress bar. The user
+                sees "Step 2 of 5" and a maroon-amber fill bar that
+                grows as they advance, so each Next click feels like
+                visible progress. */}
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-bold uppercase
+                  tracking-widest text-sub-text">
+                  Step {addStep + 1} of {ADD_STEPS}
+                </div>
+                <div className="text-base font-bold text-dark-text">
+                  {STEP_LABELS[addStep]}
+                </div>
+              </div>
+              <button type="button" onClick={cancelEdit}
+                className="rounded-full bg-bg-light px-3 py-1
+                  text-[11px] font-bold text-sub-text">
+                Cancel
+              </button>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full
+              bg-bg-light">
+              <div className="h-full rounded-full
+                bg-gradient-to-r from-[#7F2020] to-[#D4A12A]
+                transition-all"
+                style={{ width: `${((addStep + 1) / ADD_STEPS) * 100}%` }} />
+            </div>
+
+            {/* STEP CONTENTS - only one renders at a time so the
+                customer never sees a wall of fields. */}
+            {addStep === 0 && (
+              <div>
+                <label className="block text-sm text-sub-text">
+                  Whose kundli are we making?
+                </label>
+                <input className="input mt-2"
+                  placeholder="Full name" value={form.name} autoFocus
+                  onChange={(e) =>
+                    setForm({ ...form, name: e.target.value })} />
+              </div>
+            )}
+            {addStep === 1 && (
+              <div>
+                <label className="block text-sm text-sub-text">
+                  Pick a gender (used for kundli matching and
+                  prediction tone).
+                </label>
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  {[['male', 'Male'], ['female', 'Female'],
+                    ['other', 'Other']].map(([v, l]) => (
+                    <button key={v} type="button"
+                      onClick={() => setForm({ ...form, gender: v })}
+                      className={`rounded-xl border px-3 py-2.5
+                        text-sm font-bold transition
+                        ${form.gender === v
+                          ? 'border-[#7F2020] bg-[#7F2020] text-white'
+                          : 'border-gray-200 bg-white text-sub-text'}`}>
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {addStep === 2 && (
+              <div>
+                <label className="block text-sm text-sub-text">
+                  Pick the date of birth.
+                </label>
+                <div className="mt-2">
+                  <DateField value={form.dob}
+                    onChange={(dob) => setForm({ ...form, dob })} />
+                </div>
+              </div>
+            )}
+            {addStep === 3 && (
+              <div>
+                <label className="block text-sm text-sub-text">
+                  Enter the time of birth and confirm AM / PM.
+                </label>
+                <div className="mt-2">
+                  <TimeField value={form.tob} ampm={form.ampm}
+                    onChange={(tob, ampm) =>
+                      setForm({ ...form, tob, ampm })} />
+                </div>
+              </div>
+            )}
+            {addStep === 4 && (
+              <div>
+                <label className="block text-sm text-sub-text">
+                  Pick the city of birth. Coordinates auto-lock.
+                </label>
+                <div className="mt-2">
+                  <CityField
+                    value={form.lat ? {
+                      place: form.place, lat: form.lat,
+                      lng: form.lng, tz: form.tz,
+                      country: form.country, state: form.state,
+                      city: form.city,
+                      countryCode: form.countryCode,
+                      label: form.place,
+                    } : form.place}
+                    onChange={(loc) => setForm((f) => ({
+                      ...f,
+                      place: loc.place || '',
+                      lat: loc.lat != null ? loc.lat : null,
+                      lng: loc.lng != null ? loc.lng : null,
+                      tz: loc.tz != null ? loc.tz : null,
+                      country: loc.country || '',
+                      state: loc.state || '',
+                      city: loc.city || '',
+                      countryCode: loc.countryCode || '',
+                    }))} />
+                </div>
+                <label className="mt-3 flex items-center gap-2
+                  text-sm">
+                  <input type="checkbox" checked={form.isDefault}
+                    onChange={(e) =>
+                      setForm({
+                        ...form, isDefault: e.target.checked,
+                      })} />
+                  Set as default profile (auto-shared at session
+                  start)
+                </label>
+              </div>
+            )}
+
+            {/* Nav buttons - Back is hidden on the first step so the
+                customer never sees a dead button. */}
+            <div className="flex gap-2 pt-1">
+              {addStep > 0 && (
+                <button type="button"
+                  onClick={() => setAddStep((s) => Math.max(0, s - 1))}
+                  className="flex-1 rounded-full border
+                    border-gray-300 py-2.5 text-sm font-bold
+                    text-sub-text">
+                  Back
+                </button>
+              )}
+              <button className="flex-1 rounded-full
+                bg-gradient-to-br from-[#7F2020] to-[#D4A12A]
+                py-2.5 text-sm font-bold text-white shadow-sm
+                disabled:opacity-50"
+                disabled={busy || !stepOk}>
+                {busy ? 'Saving…' : isLast
+                  ? (editingId ? 'Save changes' : 'Generate kundli')
+                  : 'Next'}
+              </button>
+            </div>
+          </form>
+        );
+      })()}
 
       {/* Single-profile view. Renders ONLY the selected kundli; no
           other saved profile is visible until the user reopens the
