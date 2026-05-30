@@ -197,29 +197,60 @@ export default function Discover() {
         </div>
       </div>
 
-      <div className="mb-3 flex flex-wrap gap-1.5">
-        <button type="button" onClick={() => setGroupFilter('all')}
-          className={`rounded-full px-3 py-1 text-[11px] font-bold
-            ${groupFilter === 'all'
-              ? 'bg-primary text-white'
-              : 'bg-bg-light text-sub-text'}`}>
-          All
-        </button>
-        {FEATURE_GROUPS.map(([g, label]) => (
-          <button key={g} type="button"
-            onClick={() => setGroupFilter(g)}
-            className={`rounded-full px-3 py-1 text-[11px] font-bold
-              ${groupFilter === g
-                ? 'bg-primary text-white'
-                : 'bg-bg-light text-sub-text'}`}>
-            {label}
-          </button>
-        ))}
-      </div>
-      <input className="input mb-3"
-        placeholder="Search readings (e.g. palmistry, numerology)…"
+      {/* Filter row + search bar. Mobile-first: search comes FIRST so
+          the user's thumb can reach it, then horizontal-scroll category
+          chips below so all categories stay visible without wrapping
+          to multiple rows on a narrow screen. */}
+      <input className="input mb-2.5"
+        placeholder="🔍 Search readings (palmistry, numerology…)"
         value={search} onChange={(e) => setSearch(e.target.value)} />
+      <div className="mb-3 -mx-1 flex gap-1.5 overflow-x-auto px-1
+        pb-1 [scrollbar-width:none] [-ms-overflow-style:none]
+        [&amp;::-webkit-scrollbar]:hidden">
+        <button type="button" onClick={() => setGroupFilter('all')}
+          className={`shrink-0 rounded-full px-3.5 py-1.5 text-[11.5px]
+            font-bold transition
+            ${groupFilter === 'all'
+              ? 'bg-[#7F2020] text-white shadow-sm'
+              : 'bg-bg-light text-sub-text'}`}>
+          All ({FEATURES.length})
+        </button>
+        {FEATURE_GROUPS.map(([g, label]) => {
+          const count = FEATURES.filter((f) => f.group === g).length;
+          return (
+            <button key={g} type="button"
+              onClick={() => setGroupFilter(g)}
+              className={`shrink-0 rounded-full px-3.5 py-1.5
+                text-[11.5px] font-bold transition
+                ${groupFilter === g
+                  ? 'bg-[#7F2020] text-white shadow-sm'
+                  : 'bg-bg-light text-sub-text'}`}>
+              {label} ({count})
+            </button>
+          );
+        })}
+      </div>
 
+      {/* Empty state when search/filter has no matches - so the user
+          doesn't get a confusing blank grid. */}
+      {filtered.length === 0 && (
+        <div className="rounded-2xl border border-dashed
+          border-gray-300 bg-white p-6 text-center text-sm
+          text-sub-text">
+          <div className="mb-1 text-2xl">🔍</div>
+          <div className="font-bold text-dark-text">
+            No readings match that
+          </div>
+          <div className="mt-1 text-xs">
+            Try a different word, or pick "All" above.
+          </div>
+        </div>
+      )}
+      {filtered.length > 0 && (search || groupFilter !== 'all') && (
+        <div className="mb-2 text-[11px] font-semibold text-sub-text">
+          Showing {filtered.length} of {FEATURES.length} readings
+        </div>
+      )}
       {/* Tile grid - mobile-first dashboard. Each tile is a tap target
           at least 88px tall, with a Royal-palette gradient icon badge,
           a bold title, a one-line blurb, and a price chip. Two columns

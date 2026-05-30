@@ -6,6 +6,7 @@ import Layout from '../components/Layout';
 import { SkeletonList } from '../components/Skeleton';
 import { useRequireClient } from '../lib/useAuth';
 import { DateField, TimeField, CityField } from '../components/BirthInputs';
+import ZodiacGlyph from '../components/ZodiacGlyph';
 
 // Form shape. lat/lng/tz are captured at place-pick time so the
 // relay always has the right coordinates + timezone - fixes the
@@ -622,41 +623,69 @@ function KundliPickerModal({ list, onPick, onAddNew, onClose }) {
             profile + a quiet "DEFAULT" chip flag it. Hover state
             uses brand maroon outline so it reads as a primary CTA
             even before click. */}
-        <div className="max-h-[55vh] space-y-2 overflow-y-auto p-3">
+        {/* Saved profiles list - dashboard tile style. Each card now
+            shows a zodiac glyph avatar (computed from DOB), the name,
+            zodiac sign, and the birth meta as soft chips. Bigger tap
+            target (min ~88px tall), clearer visual hierarchy. The
+            default profile gets a maroon left rail + tinted badge. */}
+        <div className="max-h-[60vh] space-y-2 overflow-y-auto p-3">
           {list.map((k) => (
             <button key={k.id} type="button"
               onClick={() => onPick(k)}
-              className={`block w-full rounded-card border bg-white
-                p-3 text-left transition hover:border-primary
+              className={`flex w-full items-center gap-3 rounded-2xl
+                border bg-white p-3 text-left transition
+                active:scale-[0.98] hover:border-[#7F2020]
                 hover:shadow-md ${k.isDefault
-                  ? 'border-primary/40 border-l-4 border-l-primary'
+                  ? 'border-l-4 border-l-[#7F2020] border-[#7F2020]/30'
                   : 'border-gray-200'}`}>
-              <div className="flex items-center justify-between gap-2">
-                <div className="font-bold text-dark-text">
-                  {k.name || '(unnamed)'}
-                </div>
-                {k.isDefault && (
-                  <span className="rounded-full bg-primary/10
-                    px-2 py-0.5 text-[10px] font-bold uppercase
-                    tracking-wider text-primary">
-                    Default
-                  </span>
-                )}
+              {/* Royal-palette zodiac avatar so the profile is
+                  visually identifiable at a glance (vs reading text). */}
+              <div className="grid h-14 w-14 shrink-0 place-items-center
+                rounded-xl bg-gradient-to-br from-[#7F2020]
+                to-[#D4A12A] text-white shadow-sm">
+                <ZodiacGlyph sign={k.zodiac || ''}
+                  className="h-8 w-8 fill-white" />
               </div>
-              <div className="mt-1 flex flex-wrap items-center gap-1
-                text-[11px] text-sub-text">
-                {k.dob && (
-                  <span className="rounded-full bg-bg-light px-2
-                    py-0.5">{k.dob}</span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between
+                  gap-2">
+                  <div className="truncate text-[14px] font-bold
+                    text-dark-text">
+                    {k.name || '(unnamed)'}
+                  </div>
+                  {k.isDefault && (
+                    <span className="shrink-0 rounded-full
+                      bg-[#7F2020]/10 px-2 py-0.5 text-[9.5px]
+                      font-bold uppercase tracking-wider
+                      text-[#7F2020]">
+                      Default
+                    </span>
+                  )}
+                </div>
+                {k.zodiac && (
+                  <div className="mt-0.5 text-[11px] font-semibold
+                    text-[#7F2020]">
+                    {k.zodiac}
+                  </div>
                 )}
-                {k.tob && (
-                  <span className="rounded-full bg-bg-light px-2
-                    py-0.5">{k.tob} {k.ampm || ''}</span>
-                )}
-                {k.place && (
-                  <span className="truncate rounded-full bg-bg-light
-                    px-2 py-0.5">{k.place}</span>
-                )}
+                <div className="mt-1 flex flex-wrap items-center
+                  gap-1 text-[10.5px] text-sub-text">
+                  {k.dob && (
+                    <span className="rounded-full bg-bg-light
+                      px-1.5 py-0.5">{k.dob}</span>
+                  )}
+                  {k.tob && (
+                    <span className="rounded-full bg-bg-light
+                      px-1.5 py-0.5">{k.tob} {k.ampm || ''}</span>
+                  )}
+                  {k.place && (
+                    <span className="truncate rounded-full
+                      bg-bg-light px-1.5 py-0.5">{k.place}</span>
+                  )}
+                </div>
+              </div>
+              <div className="shrink-0 text-[18px] text-sub-text">
+                ›
               </div>
             </button>
           ))}

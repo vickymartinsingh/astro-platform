@@ -50,7 +50,14 @@ export default function App({ Component, pageProps }) {
         if (typeof window === 'undefined') return;
         if (!window.Capacitor || !window.Capacitor.isNativePlatform
           || !window.Capacitor.isNativePlatform()) return;
-        const mod = await import('@capacitor/splash-screen');
+        // Hide dynamic import from webpack so the web/Vercel build
+        // (which does NOT have @capacitor/splash-screen installed)
+        // doesn't fail with "Module not found". See client-web/_app.js
+        // for the full explanation of the new-Function workaround.
+        const dynImport = new Function('p', 'return import(p)');
+        const mod = await dynImport('@capacitor/splash-screen')
+          .catch(() => null);
+        if (!mod) return;
         setTimeout(() => {
           try { mod.SplashScreen.hide({ fadeOutDuration: 300 }); }
           catch (_) { /* tolerate */ }

@@ -53,10 +53,19 @@ function WithProviders({ children }) {
       try {
         const C = (typeof window !== 'undefined') && window.Capacitor;
         if (!C || !C.isNativePlatform || !C.isNativePlatform()) return;
-        const mod = await import('@capacitor/splash-screen');
-        if (cancelled) return;
-        // 200ms gentle delay so the first paint is fully on screen
-        // (avoids the "splash blinks off before logo lands" jitter).
+        // Hide the dynamic import from webpack's static analyser via
+        // `new Function`. The web/Vercel build does NOT have the
+        // @capacitor/splash-screen package installed and would fail
+        // with "Module not found" if webpack tried to bundle it.
+        // String concatenation alone is not enough - webpack 5 follows
+        // it. `new Function` is opaque, so webpack leaves the call
+        // alone and we get a true runtime-only import that only fires
+        // inside the native bundle where the package actually exists.
+        const dynImport = new Function('p', 'return import(p)');
+        const mod = await dynImport('@capacitor/splash-screen')
+          .catch(() => null);
+        if (cancelled || !mod) return;
+        // 200ms gentle delay so the first paint is fully on screen.
         setTimeout(() => {
           try { mod.SplashScreen.hide({ fadeOutDuration: 300 }); }
           catch (_) { /* tolerate */ }
