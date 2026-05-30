@@ -173,6 +173,24 @@ export function useRequireClient() {
       authService.logoutUser();
       router.replace('/dashboard?blocked=1');
     }
+    // OTP enforcement: if admin requires email verification AND this
+    // user has not verified yet, force the login modal back open.
+    // LoginCard sees the unverified user inside finish() and routes
+    // straight to the OTP screen. No gated page becomes usable until
+    // emailVerified flips true. Skips the check until profile has
+    // loaded so we do not double-fire during the first paint.
+    if (user && !user.emailVerified) {
+      try {
+        const features = JSON.parse(
+          (typeof localStorage !== 'undefined'
+            && localStorage.getItem('settings_features')) || '{}');
+        if (features && features.email_verification === true) {
+          if (asked.current) return;
+          asked.current = true;
+          openLogin();
+        }
+      } catch (_) { /* tolerate */ }
+    }
   }, [user, profile, loading, router, openLogin]);
   // Keep "loading" until signed in so the page shows a skeleton behind
   // the popup instead of erroring on a missing user/profile.

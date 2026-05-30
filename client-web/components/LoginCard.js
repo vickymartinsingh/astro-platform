@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { authService, userService, db } from '@astro/shared';
+import { authService, userService, db, auth as firebaseAuth } from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
 import { DateField } from './BirthInputs';
 import { useSettings } from '../lib/useSettings';
@@ -47,6 +47,40 @@ export default function LoginCard({ onDone, compact, initialMode }) {
   const [resetConfirm, setResetConfirm] = useState('');
   const [resetInfo, setResetInfo] = useState('');
 
+  // Re-open the OTP screen automatically when the card mounts and the
+  // Firebase user is signed in but NOT yet email-verified AND the admin
+  // requires verification. Without this, dismissing the OTP modal and
+  // clicking any gated nav would re-open the card showing the regular
+  // "Welcome back" login form - which is exactly the bypass the user
+  // reported. Now the OTP screen is the FIRST thing they see again.
+  useEffect(() => {
+    if (otpUser) return; // already on OTP screen
+    if (resetStep) return; // password reset is its own flow
+    try {
+      const fb = firebaseAuth && firebaseAuth.currentUser;
+      if (!fb) return;
+      if (fb.emailVerified) return;
+      const f = JSON.parse(
+        (typeof localStorage !== 'undefined'
+          && localStorage.getItem('settings_features')) || '{}');
+      if (!(f && f.email_verification === true)) return;
+      // Trigger a fresh code so the screen is actionable; if the send
+      // fails we still force the OTP screen up so the customer cannot
+      // sneak past with the regular login form.
+      authService.requestEmailOtp(
+        fb.email || '', fb.displayName || '').catch(() => {});
+      setOtpUser({
+        email: fb.email || '',
+        password: '', // unknown - resend flow uses the email only
+        displayName: fb.displayName || '',
+      });
+      setOtpInfo(`Verification required. We just emailed a 6-digit `
+        + `code to ${fb.email || 'your inbox'}. Enter it below to `
+        + 'unlock the app.');
+    } catch (_) { /* tolerate */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Hard timeout for any auth promise. Firebase Auth occasionally hangs
   // (flaky network, IndexedDB lock, popup race) and never resolves OR
   // rejects, which used to leave the button stuck on "Please wait..."
@@ -68,11 +102,32 @@ export default function LoginCard({ onDone, compact, initialMode }) {
 
   async function finish(user) {
     setStepLabel('Loading profile…');
-    // Drop from 15s to 8s so an iOS Firestore hang surfaces as a real
-    // error fast instead of leaving the user staring at "Signing in…".
-    // Best-effort: a timeout/network error here must NOT block sign-in.
-    // We treat profile-lookup failure as "no profile yet" and let the
-    // user through; the AuthProvider's listener will fill it in later.
+    // GATE A: if admin requires OTP verification AND this user has
+    // not verified their email yet, send a fresh code and switch to
+    // the OTP screen instead of letting them in. This catches the
+    // "logged in but never verified" bypass case where the customer
+    // closed the modal mid-signup. Re-checked on every login attempt.
+    try {
+      const s = await getDoc(doc(db, 'settings', 'features'));
+      const otpRequired = s.exists()
+        && s.data() && s.data().email_verification === true;
+      const verified = !!(user && user.emailVerified);
+      if (otpRequired && !verified) {
+        try {
+          await authService.requestEmailOtp(user.email || '',
+            user.displayName || '');
+        } catch (_) { /* even if send fails, force the screen */ }
+        setOtpUser({
+          email: user.email || '',
+          password,
+          displayName: user.displayName || '',
+        });
+        setOtpInfo(`Verification required. We just emailed a 6-digit `
+          + `code to ${user.email || 'your inbox'}. Enter it below to `
+          + 'unlock the app.');
+        return;
+      }
+    } catch (_) { /* network blip - fall through */ }
     let p = null;
     try {
       p = await withTimeout(userService.getUser(user.uid), 8000,
@@ -167,12 +222,21 @@ export default function LoginCard({ onDone, compact, initialMode }) {
           }
         } catch (_) { /* network blip - keep cached */ }
         if (liveFeatures && liveFeatures.email_verification === true) {
+          // NEW: do NOT sign the freshly-created user out. The bypass
+          // bug ("after a flash logout, re-login completes without
+          // OTP") was a direct consequence of that flow. Instead we:
+          //   1. Send the OTP.
+          //   2. Show the OTP screen inside the modal.
+          //   3. Let useRequireClient + AuthModalProvider keep the
+          //      OTP modal open until emailVerified flips true on the
+          //      Firebase Auth user, which only happens after a
+          //      successful verifyEmailOtp.
+          // If the user closes the modal, on the next gated click
+          // useRequireClient will detect the unverified state and
+          // re-open the OTP modal. No nav, no purchase, nothing the
+          // app does works until OTP completes.
           try {
-            // Sign the freshly-created user OUT immediately so the
-            // AuthModalProvider's auto-close-on-login effect does NOT
-            // fire and yank the modal away from us. We re-sign-in
-            // with the same email/password after the OTP verifies.
-            try { await authService.logoutUser(); } catch (_) { /* ignore */ }
+            setStepLabel('Sending verification code…');
             await authService.requestEmailOtp(email.trim(), name.trim());
             setOtpUser({
               email: email.trim(),
@@ -180,21 +244,22 @@ export default function LoginCard({ onDone, compact, initialMode }) {
               displayName: name.trim(),
             });
             setOtpInfo(`We just emailed a 6-digit code to ${email.trim()}.`
-              + ' Please enter it below to finish signing up.');
+              + ' Enter it below to finish signing up - the rest of the '
+              + 'app stays locked until you verify.');
+            setBusy(false);
             return;
           } catch (e3) {
-            // OTP send failed - keep the user logged in so they aren't
-            // locked out, but surface the error.
+            // OTP SEND FAILED - this is a HARD STOP. We do not let the
+            // user through unverified just because SMTP hiccuped. Show
+            // a clear error + offer Retry / Cancel. They can also try
+            // again later from the login screen which will re-trigger
+            // the OTP send because the Firebase user is still flagged
+            // emailVerified:false.
             setErr('Could not send the verification email: '
-              + (e3 && e3.message || 'unknown') + '. You can still '
-              + 'continue but the operator has been notified.');
-            // Try to re-login so the user lands on home (we logged out
-            // above as part of the OTP path).
-            try {
-              user = await authService.loginUser(email.trim(), password);
-            } catch (_) { /* user can log in manually */ }
-            // Fall through to finish() so the user lands on home
-            // rather than being trapped on a non-functional OTP screen.
+              + (e3 && e3.message || 'unknown')
+              + '. Please tap Sign up again to retry.');
+            setBusy(false);
+            return;
           }
         }
       } else {
@@ -420,12 +485,24 @@ export default function LoginCard({ onDone, compact, initialMode }) {
     setBusy(true);
     try {
       await authService.verifyEmailOtp(otpUser.email, code);
-      // Sign back in with the credentials we held on otpUser - the
-      // signup path signed out so the modal would stay open. Now that
-      // the email is verified we can finish login normally.
-      const user = await withTimeout(
-        authService.loginUser(otpUser.email, otpUser.password),
-        25000, 'Login');
+      // The relay flipped emailVerified:true on the server side via
+      // Admin SDK. The local Firebase Auth user object is still stale
+      // until we reload() it - without this the next finish() call
+      // sees emailVerified:false and bounces the user back to the
+      // OTP screen in an infinite loop.
+      let user = firebaseAuth && firebaseAuth.currentUser;
+      if (user && user.reload) {
+        try { await user.reload(); } catch (_) {}
+        user = firebaseAuth.currentUser;
+      }
+      // If we got here from signup with no current Firebase Auth
+      // user (rare - they may have closed the tab between signup
+      // and verify), do a fresh login with the stored credentials.
+      if (!user) {
+        user = await withTimeout(
+          authService.loginUser(otpUser.email, otpUser.password),
+          25000, 'Login');
+      }
       setOtpUser(null); setOtpCode(''); setOtpInfo('');
       await finish(user);
     } catch (e2) {

@@ -7,6 +7,7 @@ import { useRouter } from 'next/router';
 import dynamic from 'next/dynamic';
 import { auth as firebaseAuth } from '@astro/shared';
 import { useAuth } from './useAuth';
+import { useSettings } from './useSettings';
 
 // LoginCard is the single biggest chrome dep on the boot path (~140 KB
 // minified - it pulls Firebase Auth flows, OTP plumbing, Google sign-in
@@ -39,6 +40,7 @@ export function AuthModalProvider({ children }) {
   const dismissRef = useRef(null);
   const router = useRouter();
   const { user } = useAuth();
+  const { features: settingsFeatures } = useSettings();
   // Latest values for the STABLE callbacks below (so openLogin's identity
   // never changes -> gated pages do not re-fire it in a loop -> the
   // login popup no longer flickers open/closed during sign-in).
@@ -52,18 +54,28 @@ export function AuthModalProvider({ children }) {
   // The instant auth succeeds (email, Google, redirect, anything) close
   // the popup and run any pending action. This guarantees the login
   // popup never lingers once the user is signed in.
+  //
+  // HARD BLOCK: if the user is signed in but their email is NOT yet
+  // verified AND the admin requires email verification, we do NOT
+  // close the modal. LoginCard's verifyOtp() runs inside the still-
+  // open modal; once it succeeds it reloads the Firebase user (so
+  // user.emailVerified flips to true) and THIS effect fires again
+  // with the now-verified user. That second pass closes the modal
+  // normally. This is what stops the "logged in mid-signup, modal
+  // closed before OTP" bypass.
   useEffect(() => {
-    if (open && user) {
-      const cb = cbRef.current;
-      cbRef.current = null; dismissRef.current = null;
-      setShown(false);
-      setTimeout(() => setOpen(false), 150);
-      // Always land on Home after a fresh sign-in / sign-up, unless a
-      // specific gated action is pending (then run that instead).
-      if (cb) setTimeout(cb, 380);
-      else setTimeout(() => router.replace('/dashboard'), 380);
-    }
-  }, [open, user, router]);
+    if (!open || !user) return;
+    const verified = !!user.emailVerified;
+    const otpRequired = !!(settingsFeatures
+      && settingsFeatures.email_verification === true);
+    if (otpRequired && !verified) return; // keep modal open for OTP
+    const cb = cbRef.current;
+    cbRef.current = null; dismissRef.current = null;
+    setShown(false);
+    setTimeout(() => setOpen(false), 150);
+    if (cb) setTimeout(cb, 380);
+    else setTimeout(() => router.replace('/dashboard'), 380);
+  }, [open, user, router, settingsFeatures]);
 
   // Smoothly animate in after mount.
   useEffect(() => {
@@ -80,19 +92,34 @@ export function AuthModalProvider({ children }) {
   }, [router.events]);
 
   const openLogin = useCallback((onSuccess, opts = {}) => {
-    // Already signed in (React state): never show the popup, just run
-    // the gated action.
-    if (userRef.current) {
+    // Helper: is this signed-in user blocked by the OTP gate? When the
+    // admin requires email verification AND the Firebase user has not
+    // verified yet, the customer is treated as NOT signed in for the
+    // purpose of running the gated action - we MUST show the modal so
+    // they can complete OTP. Otherwise an unverified click would skip
+    // straight past verification.
+    const otpBlocked = (u) => {
+      try {
+        const f = JSON.parse(
+          (typeof localStorage !== 'undefined'
+            && localStorage.getItem('settings_features')) || '{}');
+        return !!(f && f.email_verification === true
+          && u && !u.emailVerified);
+      } catch (_) { return false; }
+    };
+    // Already signed in (React state) AND verified: run the gated
+    // action without showing the popup.
+    if (userRef.current && !otpBlocked(userRef.current)) {
       if (typeof onSuccess === 'function') onSuccess();
       return;
     }
-    // SECOND defence against the post-signup race: even when React
-    // state hasn't hydrated yet, Firebase Auth itself already knows
-    // the user is signed in. Check `auth.currentUser` directly so a
-    // page that mounts in the brief gap between Firebase sign-in and
-    // our useAuth listener firing does NOT pop the login modal again.
+    // SECOND defence: even when React state has not hydrated yet,
+    // Firebase Auth itself already knows the user is signed in.
+    // Still check the OTP gate so we never let an unverified user
+    // through.
     try {
-      if (firebaseAuth && firebaseAuth.currentUser) {
+      const fbUser = firebaseAuth && firebaseAuth.currentUser;
+      if (fbUser && !otpBlocked(fbUser)) {
         if (typeof onSuccess === 'function') onSuccess();
         return;
       }
