@@ -5,6 +5,7 @@ import Layout from '../../components/Layout';
 import RateModal from '../../components/RateModal';
 import { useRequireClient } from '../../lib/useAuth';
 import { useSession } from '../../lib/useSession';
+import { useSettings } from '../../lib/useSettings';
 import { usePendingSession } from '../../lib/pendingSession';
 
 export default function CallScreen() {
@@ -15,6 +16,7 @@ export default function CallScreen() {
   const { astro, session, wallet, countdown, end, sessionId } =
     useSession({ astroId, type: callType, uid: user?.uid,
       clientName: profile?.name });
+  const { cfg } = useSettings();
 
   const { track } = usePendingSession();
   const [muted, setMuted] = useState(false);
@@ -42,7 +44,25 @@ export default function CallScreen() {
     return () => soundService.stopRing();
   }, [ringing]);
   const ratePerSec = session?.ratePerSecond || 0;
-  const lowBalance = active && wallet > 0 && wallet < ratePerSec * 60;
+  // FREE SECONDS: when the session was created with freeEligible the
+  // user gets cfg.free_call_seconds (default 5 min) of FREE call before
+  // the wallet is touched - mirroring the end-billing logic. Before
+  // this fix call/[id].js auto-hung-up the moment wallet hit 0 even
+  // for free-eligible users, disconnecting every free call instantly.
+  const freeSecsAllowed = (session && session.freeEligible)
+    ? Number(cfg.free_call_seconds || 300) : 0;
+  const startMs = session?.startTime?.toMillis
+    ? session.startTime.toMillis()
+    : (session?.startTime instanceof Date
+      ? session.startTime.getTime() : 0);
+  const freeSecsRemaining = active && startMs > 0
+    ? Math.max(0, freeSecsAllowed - elapsed) : freeSecsAllowed;
+  const walletSecsLeft = ratePerSec > 0
+    ? Math.max(0, Math.floor(wallet / ratePerSec))
+    : Number.POSITIVE_INFINITY;
+  const totalSecsLeft = freeSecsRemaining + walletSecsLeft;
+  const lowBalance = active && ratePerSec > 0
+    && totalSecsLeft > 0 && totalSecsLeft <= 60;
 
   // Join Agora once the session is live; channel = sessionId.
   useEffect(() => {
@@ -76,10 +96,21 @@ export default function CallScreen() {
     return () => clearInterval(t);
   }, [active]);
 
+  // Auto-hang only when BOTH the free-time window has elapsed AND the
+  // wallet is exhausted. Free-eligible users with wallet=0 stay
+  // connected for their freeSecsAllowed window first; paid users with
+  // freeSecsAllowed=0 fall through to the wallet check immediately.
   useEffect(() => {
-    if (active && wallet <= 0) hangUp();
+    if (!active) return;
+    if (ratePerSec <= 0) return; // free chat (zero rate) never hangs
+    if (totalSecsLeft <= 0) hangUp();
     // eslint-disable-next-line
-  }, [wallet, active]);
+  }, [totalSecsLeft, active, ratePerSec]);
+
+  // Low-balance threshold: 60 seconds of TOTAL remaining time (free
+  // + wallet). The existing "Call will end soon, recharge now" banner
+  // already fires automatically on this flag - the user sees it
+  // BEFORE the auto-hangUp fires when totalSecsLeft hits 0.
 
   useEffect(() => {
     if (session?.status === 'ended') {

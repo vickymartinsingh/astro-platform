@@ -8,6 +8,7 @@ import RateModal from '../../components/RateModal';
 import VerifiedBadge from '../../components/VerifiedBadge';
 import { useRequireClient } from '../../lib/useAuth';
 import { useSession } from '../../lib/useSession';
+import { useSettings } from '../../lib/useSettings';
 import { usePendingSession } from '../../lib/pendingSession';
 import { confirmModal } from '../../components/ConfirmModal';
 
@@ -30,6 +31,7 @@ export default function ChatScreen() {
   const { astro, session, wallet, countdown, chatId, end } =
     useSession({ astroId, type: 'chat', uid: user?.uid,
       clientName: profile?.name, view: isView });
+  const { cfg } = useSettings();
 
   const { track } = usePendingSession();
   const [messages, setMessages] = useState([]);
@@ -250,15 +252,46 @@ export default function ChatScreen() {
   const active = acceptedStatus && !!session?.startTime;
   const ratePerSec = session?.ratePerSecond || 0;
   const ratePerMin = Math.round(ratePerSec * 60);
-  const broke = active && wallet <= 0;
-  // Seconds the wallet can still afford at this rate.
-  const secsLeft = ratePerSec > 0
-    ? Math.max(0, Math.floor(wallet / ratePerSec)) : 0;
-
-  // Smooth 1-second countdown. Re-syncs whenever the real wallet figure
-  // changes (the server/end settlement deducts), then ticks down locally
-  // so the client always sees a live "time remaining" clock.
-  useEffect(() => { setLiveSecs(secsLeft); }, [secsLeft]);
+  // FREE SECONDS: when the session was created the admin's free-session
+  // rule was snapshotted onto the doc as session.freeEligible. If true,
+  // the user has cfg.free_chat_seconds (default 5 min) of FREE chat
+  // before the wallet starts being charged - mirroring the end-billing
+  // logic in shared/services/sessionService.js. Before this fix the
+  // chat UI ignored freeEligible entirely and treated wallet=0 as
+  // "broke" the second the session went active, which disconnected
+  // every free user one second after the astrologer accepted.
+  const freeSecsAllowed = (session && session.freeEligible)
+    ? Number(cfg.free_chat_seconds || 300) : 0;
+  // Seconds elapsed since startTime. Tick locally for a smooth display
+  // and a precise broke flip.
+  const startMs = session?.startTime?.toMillis
+    ? session.startTime.toMillis()
+    : (session?.startTime instanceof Date
+      ? session.startTime.getTime() : 0);
+  const [nowMs, setNowMs] = useState(Date.now());
+  useEffect(() => {
+    if (!active || isView) return undefined;
+    const t = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [active, isView]);
+  const elapsedSecs = active && startMs > 0
+    ? Math.max(0, Math.floor((nowMs - startMs) / 1000)) : 0;
+  const freeSecsRemaining = Math.max(0, freeSecsAllowed - elapsedSecs);
+  // Seconds the wallet can still afford at this rate (Infinity when
+  // the chat is free, i.e. no per-minute cost set).
+  const walletSecsLeft = ratePerSec > 0
+    ? Math.max(0, Math.floor(wallet / ratePerSec))
+    : Number.POSITIVE_INFINITY;
+  // TOTAL time still affordable = remaining free seconds + wallet seconds.
+  // broke ONLY when both are exhausted.
+  const totalSecsLeft = freeSecsRemaining + walletSecsLeft;
+  const broke = active && ratePerMin > 0 && totalSecsLeft <= 0;
+  // Per-tick live display: re-sync whenever the real wallet figure
+  // changes (server-end settlement deducts) and tick down locally.
+  const secsLeft = freeSecsRemaining + walletSecsLeft;
+  useEffect(() => {
+    setLiveSecs(secsLeft === Number.POSITIVE_INFINITY ? 0 : secsLeft);
+  }, [secsLeft]);
   useEffect(() => {
     if (!active || ratePerMin <= 0 || isView) return undefined;
     const t = setInterval(
@@ -269,9 +302,13 @@ export default function ChatScreen() {
   const showSecs = ratePerMin > 0 ? liveSecs : 0;
   const clock = `${String(Math.floor(showSecs / 60)).padStart(2, '0')}:` +
     `${String(showSecs % 60).padStart(2, '0')}`;
-  // Warn the client when ~3 minutes of balance is left.
+  // Low-balance threshold: 60 seconds of TOTAL remaining time (free +
+  // wallet). The existing inline yellow banner above the input fires
+  // automatically on this flag - the user sees "Low balance, about
+  // X min left" before the broke flip ends the session, giving them
+  // time to recharge.
   const lowBalance = active && ratePerMin > 0
-    && showSecs > 0 && showSecs <= 180;
+    && showSecs > 0 && showSecs <= 60;
 
   async function send() {
     if (!text.trim() || !active || broke) return;
@@ -406,7 +443,7 @@ export default function ChatScreen() {
                 hover:underline">{astro.name}</span>
               {astro.approved && <VerifiedBadge size={15} />}
             </div>
-            <div className="text-xs text-sub-text">
+            <div className="truncate text-xs text-sub-text">
               {otherTyping ? (
                 <span className="font-semibold text-primary">
                   typing...
@@ -439,21 +476,23 @@ export default function ChatScreen() {
       </div>
 
       {waiting && (
-        <div className="flex items-center gap-3 bg-bg-light px-4 py-3">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2
+                        bg-bg-light px-4 py-3">
           <span className="h-6 w-6 shrink-0 animate-spin rounded-full
                            border-2 border-primary border-t-transparent" />
-          <div className="flex-1 text-sm">
+          <div className="min-w-0 flex-1 text-sm leading-snug">
             <div className="font-semibold text-dark-text">
-              Please wait until {astro.name} accepts your chat
+              Waiting for {astro.name} to accept
             </div>
-            <div className="text-sub-text">
+            <div className="text-xs text-sub-text">
               Your details have been shared. Time left {mmss}
             </div>
           </div>
           <button onClick={goBack}
-            className="shrink-0 rounded-full bg-primary px-3 py-2
-                       text-xs font-semibold text-white">
-            Continue browsing
+            className="ml-auto shrink-0 whitespace-nowrap rounded-full
+                       bg-primary px-3 py-1.5 text-xs font-semibold
+                       text-white">
+            Cancel
           </button>
           <button onClick={cancelRequest}
             className="shrink-0 rounded-full border border-gray-300

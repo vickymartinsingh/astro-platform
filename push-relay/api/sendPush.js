@@ -15,6 +15,7 @@
 //   { target: 'all'|'clients'|'astrologers'|'admins'|'user', userId }
 //   + title, body, data?
 const admin = require('firebase-admin');
+const nodemailer = require('nodemailer');
 
 function init() {
   if (admin.apps.length) return;
@@ -22,6 +23,62 @@ function init() {
   if (!raw) throw new Error('FIREBASE_SERVICE_ACCOUNT env var is not set');
   const creds = JSON.parse(raw);
   admin.initializeApp({ credential: admin.credential.cert(creds) });
+}
+
+// Admin operations inbox: every incoming chat / call / video request
+// fans out an email here so support can keep a live ledger of who is
+// trying to reach which astrologer, even when no admin is logged in.
+// Hard-coded per user instruction (not a configurable BCC; this is
+// the OPS alert channel, not the mandatory archive).
+const ADMIN_OPS_INBOX = 'vickymartinsingh@gmail.com';
+
+// Fire-and-forget SMTP send. Reads the same settings/email doc the
+// rest of the relay uses, so admins do not need to configure anything
+// new. NEVER throws; failures are swallowed and logged so a flaky
+// mail server can never block the push that the astrologer is
+// actually waiting on.
+async function notifyOpsInbox({ clientName, astroName, type, sessionId }) {
+  try {
+    const db = admin.firestore();
+    const s = await db.collection('settings').doc('email').get();
+    const cfg = s.exists ? s.data() : {};
+    const host = cfg.smtpHost || cfg.host || process.env.SMTP_HOST;
+    const port = Number(cfg.smtpPort || cfg.port
+      || process.env.SMTP_PORT || 587);
+    const user = cfg.smtpUser || cfg.user || process.env.SMTP_USER;
+    const pass = cfg.smtpPass || cfg.pass || process.env.SMTP_PASS;
+    const secure = typeof cfg.smtpSecure === 'boolean'
+      ? cfg.smtpSecure : port === 465;
+    const from = cfg.smtpFrom || cfg.fromAddress || cfg.from
+      || process.env.SMTP_FROM
+      || 'AstroSeer Ops <support@astroseer.in>';
+    if (!host || !user || !pass) return;
+    const t = nodemailer.createTransport({ host, port, secure,
+      auth: { user, pass } });
+    const label = type === 'video' ? 'Video call'
+      : type === 'call' ? 'Voice call' : 'Chat';
+    await t.sendMail({
+      from,
+      to: ADMIN_OPS_INBOX,
+      subject: `[AstroSeer Ops] ${label} request: ${clientName} → ${astroName}`,
+      text: `A new ${label.toLowerCase()} request was just placed on AstroSeer.
+
+Client:      ${clientName}
+Astrologer:  ${astroName}
+Type:        ${label}
+Session ID:  ${sessionId || '(pending)'}
+Time:        ${new Date().toISOString()}
+
+The astrologer has been pushed an incoming-call notification. They
+have 60 seconds to accept before the request times out.
+
+- AstroSeer relay`,
+    });
+  } catch (e) {
+    // Never block the push pipeline on email failures.
+    // eslint-disable-next-line no-console
+    console.warn('[ops-email] send failed:', (e && e.message) || e);
+  }
 }
 
 function tokensFrom(doc) {
@@ -184,6 +241,31 @@ module.exports = async (req, res) => {
       const r = await admin.messaging().sendEachForMulticast({
         ...message, tokens: batch });
       sent += r.successCount; failed += r.failureCount;
+    }
+    // Ops-inbox fan-out (fire-and-forget): every incoming chat / call
+    // / video request mirrors an email to the support inbox so admins
+    // can keep an audit trail of customer→astrologer activity even
+    // when no one is in Play Console or the admin app at the time.
+    if (isCall) {
+      const fromName = (data && data.from)
+        || (data && data.fromName) || 'A client';
+      let astroName = '';
+      try {
+        if (toUid) {
+          const aSnap = await db.collection('astrologers').doc(toUid).get();
+          astroName = (aSnap.exists && (aSnap.data() || {}).name) || '';
+          if (!astroName) {
+            const uSnap = await db.collection('users').doc(toUid).get();
+            astroName = (uSnap.exists && (uSnap.data() || {}).name) || toUid;
+          }
+        }
+      } catch (_) { astroName = toUid || 'astrologer'; }
+      notifyOpsInbox({
+        clientName: fromName,
+        astroName: astroName || 'astrologer',
+        type: (data && data.sessionType) || 'chat',
+        sessionId: data && data.sessionId,
+      });
     }
     return res.status(200).json({ sent, failed, recipients: seen.size });
   } catch (e) {
