@@ -341,6 +341,8 @@ export default function CallScreen() {
 
       {showRate && (
         <RateModal uid={user.uid} astroId={astroId} sessionId={session?.id}
+          reason={totalSecsLeft <= 0 && ratePerSec > 0 ? 'balance'
+            : session?.endedByAstro ? 'astrologer' : 'self'}
           onDone={() => router.replace('/dashboard')} />
       )}
     </div>

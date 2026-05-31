@@ -129,6 +129,33 @@ export default function ChatScreen() {
     if (session?.status === 'ended') setShowRate(true);
   }, [session?.status]);
 
+  // Auto-end the chat session the moment BOTH the free-time window and
+  // the wallet are fully exhausted. Without this the session stayed
+  // in 'active' status indefinitely, the "Ongoing - Chat / Join /
+  // End" floating banner on every page kept showing, and the customer
+  // had no clear notification the consultation was over. We let one
+  // full second pass after broke flips so a recharge that lands in
+  // the same tick (e.g. autopay) can prevent the end. The rate modal
+  // pops automatically when status flips to 'ended' (existing effect
+  // above), giving the customer a clear "session ended" popup.
+  const endedRef = useRef(false);
+  useEffect(() => {
+    if (isView) return undefined;
+    if (!broke || endedRef.current) return undefined;
+    if (session?.status !== 'active' && session?.status !== 'accepted') {
+      return undefined;
+    }
+    const t = setTimeout(() => {
+      if (broke && !endedRef.current
+        && (session?.status === 'active'
+          || session?.status === 'accepted')) {
+        endedRef.current = true;
+        try { end(); } catch (_) {}
+      }
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [broke, session?.status, isView, end]);
+
   // Keep a global "active session" handle so the rejoin bar shows from
   // ANY screen (even when the user leaves via the bottom tab bar, not
   // just the back button). The bar auto-hides while on this screen.
@@ -701,6 +728,8 @@ export default function ChatScreen() {
       {showRate && (
         <RateModal uid={user.uid} astroId={astroId}
           sessionId={session?.id}
+          reason={endedRef.current ? 'balance'
+            : session?.endedByAstro ? 'astrologer' : 'self'}
           onDone={() => router.replace('/dashboard')} />
       )}
     </div>
