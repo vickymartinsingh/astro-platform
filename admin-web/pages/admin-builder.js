@@ -249,6 +249,29 @@ export default function AdminBuilder() {
               value={content.homeHeroSubtitle || ''}
               onChange={(e) => setContent({
                 ...content, homeHeroSubtitle: e.target.value })} />
+            {/* Per-device visibility for the hero banner. Same pattern
+                as the stats strip below. Live: Firestore listener
+                pushes the change instantly. */}
+            <div className="flex flex-wrap items-center gap-4
+              rounded-md bg-bg-light/60 px-2 py-1 text-xs">
+              <span className="font-semibold text-sub-text">Hero banner:</span>
+              <label className="flex items-center gap-2">
+                <input type="checkbox"
+                  checked={content.home_hero_show_mobile !== false}
+                  onChange={(e) => setContent({
+                    ...content,
+                    home_hero_show_mobile: e.target.checked })} />
+                Show on mobile
+              </label>
+              <label className="flex items-center gap-2">
+                <input type="checkbox"
+                  checked={content.home_hero_show_desktop !== false}
+                  onChange={(e) => setContent({
+                    ...content,
+                    home_hero_show_desktop: e.target.checked })} />
+                Show on desktop
+              </label>
+            </div>
             <div className="pt-1 text-xs font-semibold text-sub-text">
               Sections to show
             </div>
@@ -272,6 +295,7 @@ export default function AdminBuilder() {
                 change instantly with no app reload. */}
             <div className="flex flex-wrap items-center gap-4
               rounded-md bg-bg-light/60 px-2 py-1 text-xs">
+              <span className="font-semibold text-sub-text">Stats strip:</span>
               <label className="flex items-center gap-2">
                 <input type="checkbox"
                   checked={content.home_stats_show_mobile !== false}

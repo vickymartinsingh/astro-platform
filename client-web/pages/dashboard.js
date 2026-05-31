@@ -95,8 +95,12 @@ export default function Dashboard() {
         categories: d.sec_categories !== false,
         topRated: d.sec_topRated !== false,
         reviews: d.sec_reviews !== false,
-        // Master toggles for the home stats strip - independently
-        // controllable for mobile and desktop. Default ON for both.
+        // Per-device master toggles for the home hero banner ("The
+        // stars have answers") and the stats strip. All four default
+        // ON. The Firestore snapshot pushes any flip live with no
+        // reload required.
+        heroMobile: d.home_hero_show_mobile !== false,
+        heroDesktop: d.home_hero_show_desktop !== false,
         statsMobile: d.home_stats_show_mobile !== false,
         statsDesktop: d.home_stats_show_desktop !== false,
       });
@@ -183,31 +187,45 @@ export default function Dashboard() {
       {/* Hero. On desktop we cap the inner content to max-w-2xl so the
           gradient panel still spans the layout column but the title /
           subtitle / CTAs sit comfortably on the left instead of
-          reading as "empty right half." */}
-      <div className="hero-grad rounded-2xl p-6 text-white md:px-8 md:py-8
-        lg:px-10 lg:py-10">
-        <div className="max-w-2xl">
-        <h1 className="text-2xl font-bold md:text-3xl lg:text-4xl">
-          {hero.title}
-        </h1>
-        <p className="mt-2 max-w-lg text-sm opacity-90 md:text-base">
-          {hero.subtitle}
-        </p>
-        <div className="mt-5 flex flex-wrap gap-2">
-          <Link href="/astrologers"
-            className="rounded-full bg-white px-5 py-2.5 font-semibold
-                       text-primary">
-            {T('home.browseCta', 'Browse astrologers')}
-          </Link>
-          {!user && (
-            <button onClick={() => openLogin(undefined, { mode: 'signup' })}
-              className="rounded-full bg-white/20 px-5 py-2.5 font-semibold">
-              {T('home.getStarted', 'Get started')}
-            </button>
-          )}
-        </div>
-        </div>
-      </div>
+          reading as "empty right half." Visibility is gated on two
+          independent admin master toggles (settings/content
+          .home_hero_show_mobile and .home_hero_show_desktop) so the
+          banner can be hidden on one form factor without affecting
+          the other - live, no reload. */}
+      {(sec.heroMobile !== false || sec.heroDesktop !== false) && (() => {
+        const showMobile = sec.heroMobile !== false;
+        const showDesktop = sec.heroDesktop !== false;
+        const visibility = showMobile && showDesktop ? ''
+          : showMobile ? 'md:hidden' : 'hidden md:block';
+        return (
+          <div className={`hero-grad rounded-2xl p-6 text-white
+            md:px-8 md:py-8 lg:px-10 lg:py-10 ${visibility}`}>
+            <div className="max-w-2xl">
+              <h1 className="text-2xl font-bold md:text-3xl lg:text-4xl">
+                {hero.title}
+              </h1>
+              <p className="mt-2 max-w-lg text-sm opacity-90 md:text-base">
+                {hero.subtitle}
+              </p>
+              <div className="mt-5 flex flex-wrap gap-2">
+                <Link href="/astrologers"
+                  className="rounded-full bg-white px-5 py-2.5
+                             font-semibold text-primary">
+                  {T('home.browseCta', 'Browse astrologers')}
+                </Link>
+                {!user && (
+                  <button
+                    onClick={() => openLogin(undefined, { mode: 'signup' })}
+                    className="rounded-full bg-white/20 px-5 py-2.5
+                               font-semibold">
+                    {T('home.getStarted', 'Get started')}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Quick actions (Tarot is front and centre on the home page) */}
       {sec.quickActions !== false && (
