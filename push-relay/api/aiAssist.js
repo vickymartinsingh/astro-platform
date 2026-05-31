@@ -316,12 +316,20 @@ module.exports = async (req, res) => {
   }
 
   // -------- 5. Load recent messages -----------------------------------
+  // CRITICAL: query in DESCENDING order so we always get the NEWEST 40
+  // messages. The previous .orderBy('asc').limit(40) returned the
+  // OLDEST 40, so any chat with >40 lifetime messages had the
+  // customer's most recent messages SILENTLY CUT OFF - the relay then
+  // saw an AI bubble as the last message and skipped every follow-up
+  // with reason "last-is-astro." That's the "AI stopped responding
+  // after the first reply" bug. We pull desc + reverse to restore the
+  // chronological order the rest of the function expects.
   const cutoffMs = Date.now() - 30 * 60 * 1000;
   let msgs = [];
   try {
     const q = await db.collection(`chats/${chatId}/messages`)
-      .orderBy('createdAt', 'asc').limit(40).get();
-    msgs = q.docs.map((d) => ({ id: d.id, ...d.data() }));
+      .orderBy('createdAt', 'desc').limit(40).get();
+    msgs = q.docs.map((d) => ({ id: d.id, ...d.data() })).reverse();
   } catch (_) { /* empty */ }
   const recent = msgs.filter((m) => m.senderId && m.senderId !== 'system'
     && m.text && String(m.text).trim()).filter((m) => {
