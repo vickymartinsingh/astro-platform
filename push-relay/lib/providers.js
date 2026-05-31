@@ -312,12 +312,21 @@ function scrubReply(raw) {
   const openerStripped = s.replace(
     /^\s*(arre|ah|oh)\b[^.!?\n]{0,40}[,!.]\s*/i, '');
   if (openerStripped.trim().length >= 6) s = openerStripped;
-  // 2. Replace dash characters (hyphen-minus, en-dash, em-dash) when
-  // used as separators (space-dash-space) with a comma. Standalone
-  // hyphens inside words ("e-mail", "21-year-old") are left alone.
-  s = s.replace(/\s+[ - --]\s+/g, ', ');
-  // Kill any remaining em-dash / en-dash anywhere.
-  s = s.replace(/[ - -]/g, ',');
+  // 2. Replace dash characters (hyphen-minus, en-dash U+2013, em-dash
+  // U+2014) when used as SEPARATORS (space-dash-space) with a comma.
+  // Standalone hyphens inside words ("e-mail", "21-year-old") are
+  // left alone. Use Unicode escapes so the regex still targets en/em
+  // dashes even though the source file itself contains none (the
+  // "no literal em-dashes anywhere in source" project rule).
+  s = s.replace(/\s+[-\u2013\u2014]\s+/g, ', ');
+  // Kill any remaining en-dash or em-dash anywhere. Plain hyphens
+  // are preserved so phone numbers / dates / compound words read
+  // normally. THIS regex previously read /[ - -]/g which the engine
+  // parsed as "space OR hyphen" (em/en chars had been stripped) and
+  // replaced every space in the AI reply with a comma, producing
+  // "Hmm,let's,see,your,chart" instead of "Hmm, let's see your
+  // chart." Restored with explicit Unicode escapes.
+  s = s.replace(/[\u2013\u2014]/g, ',');
   // 3. Collapse any double spaces or double commas the scrubs created.
   s = s.replace(/\s{2,}/g, ' ').replace(/,\s*,/g, ',').trim();
   // Final safety net: never return empty. If our scrubbing accidentally
