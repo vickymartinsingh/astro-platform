@@ -246,3 +246,155 @@ export function fullReport({ name, dob } = {}) {
     luckyNumbers: luckySet,
   };
 }
+
+// Compact "lucky set" for a person - the unique single digits derived
+// from life path, destiny and birthday. Used by every check / suggest
+// helper below as the source of truth for "what numbers favour you".
+// Falls back to an empty array if neither name nor dob is provided.
+export function luckyNumbersFor({ name, dob } = {}) {
+  const candidates = [];
+  if (dob) {
+    const lp = lifePath(dob); if (lp) candidates.push(lp);
+    const bd = birthdayNumber(dob); if (bd) candidates.push(bd);
+  }
+  if (name) {
+    const d = destinyNumber(name); if (d) candidates.push(d);
+  }
+  // Reduce master numbers (11/22/33) to their roots for digit-level
+  // checks against a phone / vehicle / name sum.
+  const root = (n) => (n > 9 ? reduce(reduce(n)) : n);
+  return Array.from(new Set(candidates.map(root))).slice(0, 5);
+}
+
+// Digit-sum any string of digits down to its root (e.g. mobile or
+// vehicle number). Non-digits are ignored. Returns 0 for empty input.
+export function digitRoot(numericLike) {
+  const digits = String(numericLike || '').replace(/\D/g, '');
+  if (!digits) return 0;
+  let total = 0;
+  for (const ch of digits) total += Number(ch);
+  return reduce(total);
+}
+
+// Check whether a phone / vehicle number is "lucky" for this person.
+// Returns { ok, root, luckySet, message }. ok=true means the digit
+// root of `numericLike` matches one of the person's lucky numbers.
+export function checkNumberLuck(numericLike, { name, dob } = {}) {
+  const root = digitRoot(numericLike);
+  const luckySet = luckyNumbersFor({ name, dob });
+  if (!root) {
+    return { ok: false, root: 0, luckySet,
+      message: 'Enter at least one digit to check.' };
+  }
+  if (!luckySet.length) {
+    return { ok: false, root, luckySet,
+      message: 'Add your name and date of birth to compute lucky '
+        + 'numbers first.' };
+  }
+  const traits = traitsFor(root);
+  const friendly = (traits && traits.lucky && traits.lucky.friendly) || [];
+  const luckyMatch = luckySet.includes(root);
+  const friendlyMatch = luckySet.some((n) => friendly.includes(n));
+  let message;
+  if (luckyMatch) {
+    message = `Great pick - this number reduces to ${root}, one of `
+      + 'your lucky numbers.';
+  } else if (friendlyMatch) {
+    message = `Reasonable - it reduces to ${root} which is friendly `
+      + `to your lucky numbers (${luckySet.join(', ')}).`;
+  } else {
+    message = `Not aligned - it reduces to ${root}; your lucky `
+      + `numbers are ${luckySet.join(', ')}. Try a different number.`;
+  }
+  return { ok: luckyMatch, friendly: friendlyMatch,
+    root, luckySet, friendlyTo: friendly, message };
+}
+
+// Generate up to N candidate "lucky" trailing digit pairs for the
+// person. Used by the mobile-number / vehicle-number helpers to
+// suggest replacements when the user's current number doesn't align.
+// Returns an array of strings like ['11', '28', '46', ...].
+export function suggestLuckyPairs({ name, dob } = {}, count = 10) {
+  const luckySet = luckyNumbersFor({ name, dob });
+  if (!luckySet.length) return [];
+  const out = [];
+  for (let n = 10; n < 100 && out.length < count; n += 1) {
+    if (luckySet.includes(digitRoot(String(n)))) {
+      out.push(String(n).padStart(2, '0'));
+    }
+  }
+  return out;
+}
+
+// Name correction helper. Computes the current name's destiny number
+// and, when it doesn't already match the person's life path, suggests
+// small spelling tweaks (add / drop / change a vowel) that land on
+// the target destiny. Returns:
+//   {
+//     ok,                            // already matches life path
+//     current: { name, destiny },
+//     target,                        // life-path number to aim for
+//     suggestions: [{ name, destiny }] // up to 6 candidates
+//   }
+export function suggestNameCorrection(name, dob) {
+  const lp = lifePath(dob);
+  if (!lp) {
+    return { ok: false, error: 'Enter your date of birth first.' };
+  }
+  const current = { name, destiny: destinyNumber(name) };
+  if (!name || !current.destiny) {
+    return { ok: false, error: 'Enter your full name first.' };
+  }
+  if (current.destiny === lp) {
+    return { ok: true, current, target: lp, suggestions: [],
+      message: `Your name "${name}" already aligns with your `
+        + `life path ${lp}. No change needed.` };
+  }
+  const target = lp;
+  const tweaks = new Set();
+  const trimmed = name.trim();
+  // Strategy 1: add a vowel at the end of the first name.
+  ['A', 'I', 'E', 'Y', 'U'].forEach((v) => {
+    const parts = trimmed.split(/\s+/);
+    parts[0] = parts[0] + v.toLowerCase();
+    tweaks.add(parts.join(' '));
+  });
+  // Strategy 2: double the last letter of the first word.
+  const first = trimmed.split(/\s+/)[0] || '';
+  if (first.length > 1) {
+    tweaks.add(`${first}${first.slice(-1)}${trimmed.slice(first.length)}`);
+  }
+  // Strategy 3: try alternate single-letter swaps near the end.
+  ['a', 'e', 'i', 'h', 'y'].forEach((c) => {
+    if (first.length > 2) {
+      tweaks.add(first.slice(0, -1) + c + trimmed.slice(first.length));
+    }
+  });
+  const suggestions = Array.from(tweaks)
+    .map((n) => ({ name: n, destiny: destinyNumber(n) }))
+    .filter((x) => x.destiny === target)
+    .slice(0, 6);
+  return { ok: false, current, target, suggestions,
+    message: suggestions.length
+      ? `Your current name reduces to ${current.destiny}. These small `
+        + `tweaks land on your life path ${target}:`
+      : `Your name destiny ${current.destiny} doesn't match your life `
+        + `path ${target}. No simple spelling tweak gets you to ${target}; `
+        + 'consider a Vedic numerologist for a deeper rework.' };
+}
+
+// Lucky day / colour / gemstone for a person (derived from life path).
+// Convenience wrapper over traitsFor so the UI can render them as
+// stand-alone cards without re-computing.
+export function luckyContext({ name, dob } = {}) {
+  const lp = lifePath(dob);
+  const traits = traitsFor(lp);
+  return {
+    lifePath: lp,
+    color: traits?.lucky?.color || '-',
+    day: traits?.lucky?.day || '-',
+    stone: traits?.lucky?.stone || '-',
+    planet: traits?.lucky?.planet || '-',
+    luckySet: luckyNumbersFor({ name, dob }),
+  };
+}

@@ -165,9 +165,24 @@ export default function Dashboard() {
   const topRated = [...(list || [])]
     .sort((a, b) => (b.rating || 0) - (a.rating || 0)).slice(0, 8);
   const reading = horoscopeService.resolveHoroscope(sign, when, horo);
-  const iconNode = (slot) => (iconsService.isImage(icons[slot])
-    ? <img src={icons[slot]} alt="" className="h-8 w-8 object-contain" />
-    : <span className="text-2xl leading-none">{icons[slot]}</span>);
+  // Default per-tile emoji so a fresh install (no admin icon overrides
+  // in settings/icons) doesn't render "undefined" for the new Vedic /
+  // Numerology / Palm / Face tiles. Admin can still upload a custom
+  // image via /admin-icons - the override always wins.
+  const DEFAULT_EMOJI = {
+    'qa:tarot': '🃏', 'qa:kundli': '📜', 'qa:matching': '💞',
+    'qa:horoscope': '🌞', 'qa:vedic': '🕉️', 'qa:numerology': '🔢',
+    'qa:palm': '🖐️', 'qa:face': '👁️',
+  };
+  const iconNode = (slot) => {
+    if (iconsService.isImage(icons[slot])) {
+      return (
+        <img src={icons[slot]} alt="" className="h-8 w-8 object-contain" />
+      );
+    }
+    const glyph = icons[slot] || DEFAULT_EMOJI[slot] || '✨';
+    return <span className="text-2xl leading-none">{glyph}</span>;
+  };
   // Category icon: admin image/emoji override, else the built-in
   // monochrome SVG (single theme colour, never a colour emoji).
   const catIcon = (key) => {
@@ -227,7 +242,14 @@ export default function Dashboard() {
         );
       })()}
 
-      {/* Quick actions (Tarot is front and centre on the home page) */}
+      {/* Quick actions. 4-column grid wraps to two rows of four when
+          we have 8+ tiles. Tarot / Kundli / Matching / Horoscope are
+          the originals; Vedic / Numerology / Palm / Face are the new
+          tiles the user asked for, each pointing at the right entry
+          (Vedic + Palm + Face deep-link into /discover so they share
+          the AstroSeer feature catalog; Numerology routes to the
+          free, on-device Chaldean tool extended with lucky-number,
+          name-correction, lucky-day / colour helpers). */}
       {sec.quickActions !== false && (
       <div className="mt-4 grid grid-cols-4 gap-3">
         {[
@@ -235,6 +257,10 @@ export default function Dashboard() {
           ['/kundli', 'Kundli', 'qa:kundli'],
           ['/matching', 'Matching', 'qa:matching'],
           ['/horoscope', 'Horoscope', 'qa:horoscope'],
+          ['/vedic', 'Vedic', 'qa:vedic'],
+          ['/numerology', 'Numerology', 'qa:numerology'],
+          ['/palm-reading', 'Palm', 'qa:palm'],
+          ['/face-reading', 'Face', 'qa:face'],
         ].map(([href, label, slot]) => (
           <Link key={href} href={href}
             className="surface flex flex-col items-center gap-1 p-3

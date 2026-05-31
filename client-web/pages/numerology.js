@@ -49,6 +49,11 @@ export default function Numerology() {
 
       {report && (
         <div className="space-y-3">
+          {/* Quick tools - lucky number checker, name correction,
+              lucky day/colour - all derived from the just-computed
+              report so the user doesn't enter their name + dob a
+              second time. */}
+          <ToolStrip name={name} dob={dob} />
           {/* Headline numbers */}
           <div className="card">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -158,3 +163,163 @@ const Chip = ({ label, v }) => (
     <div className="font-semibold">{v || '-'}</div>
   </div>
 );
+
+// Sub-tool strip - shown right under the headline numbers so the
+// customer can jump straight into the practical helpers (mobile
+// number checker, vehicle number checker, name correction). Each
+// tool is collapsed into a one-row card; tapping expands it.
+function ToolStrip({ name, dob }) {
+  const ctx = numerologyService.luckyContext({ name, dob });
+  const [tool, setTool] = useState('');
+  const TOOLS = [
+    { id: 'mobile', label: 'Lucky Mobile' },
+    { id: 'vehicle', label: 'Lucky Vehicle' },
+    { id: 'name', label: 'Name Correction' },
+    { id: 'check', label: 'Lucky Name Check' },
+  ];
+  return (
+    <div className="card space-y-2 p-3">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-bold uppercase tracking-wider
+          text-sub-text">Your lucky basics</div>
+        <div className="text-[10px] text-sub-text">
+          From life path {ctx.lifePath || '-'}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+        <Chip label="Lucky day" v={ctx.day} />
+        <Chip label="Lucky colour" v={ctx.color} />
+        <Chip label="Lucky stone" v={ctx.stone} />
+        <Chip label="Lucky numbers"
+          v={ctx.luckySet.join(', ') || '-'} />
+      </div>
+      <div className="flex flex-wrap gap-1.5 pt-1">
+        {TOOLS.map((t) => (
+          <button key={t.id}
+            onClick={() => setTool(tool === t.id ? '' : t.id)}
+            className={`rounded-full px-3 py-1 text-[11px] font-semibold ${
+              tool === t.id
+                ? 'bg-primary text-white'
+                : 'border border-gray-200 bg-white text-dark-text'}`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+      {tool === 'mobile' && (
+        <NumberChecker label="Enter mobile number"
+          placeholder="98765 43210"
+          name={name} dob={dob} />
+      )}
+      {tool === 'vehicle' && (
+        <NumberChecker label="Enter vehicle number / digits"
+          placeholder="DL01AB 1234"
+          name={name} dob={dob} />
+      )}
+      {tool === 'name' && (
+        <NameCorrection name={name} dob={dob} />
+      )}
+      {tool === 'check' && (
+        <LuckyNameCheck name={name} dob={dob} />
+      )}
+    </div>
+  );
+}
+
+function NumberChecker({ label, placeholder, name, dob }) {
+  const [val, setVal] = useState('');
+  const result = val
+    ? numerologyService.checkNumberLuck(val, { name, dob }) : null;
+  const suggestions = numerologyService.suggestLuckyPairs(
+    { name, dob }, 6);
+  return (
+    <div className="space-y-1.5 pt-1">
+      <label className="block text-xs font-semibold text-sub-text">
+        {label}
+        <input className="input mt-1" value={val} placeholder={placeholder}
+          onChange={(e) => setVal(e.target.value)} />
+      </label>
+      {result && (
+        <div className={`rounded-card p-2 text-xs ${result.ok
+          ? 'bg-success/10 text-success'
+          : result.friendly
+            ? 'bg-amber-50 text-amber-800'
+            : 'bg-danger/10 text-danger'}`}>
+          {result.message}
+        </div>
+      )}
+      {suggestions.length > 0 && (
+        <div className="pt-1 text-[11px] text-sub-text">
+          Lucky trailing pairs: <b>{suggestions.join(' · ')}</b>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NameCorrection({ name, dob }) {
+  const [input, setInput] = useState(name || '');
+  useEffect(() => { setInput(name || ''); }, [name]);
+  const r = numerologyService.suggestNameCorrection(input, dob);
+  return (
+    <div className="space-y-1.5 pt-1">
+      <label className="block text-xs font-semibold text-sub-text">
+        Name to check / adjust
+        <input className="input mt-1" value={input}
+          placeholder="Full name"
+          onChange={(e) => setInput(e.target.value)} />
+      </label>
+      {r.error && (
+        <div className="rounded-card bg-bg-light p-2 text-xs
+          text-sub-text">{r.error}</div>
+      )}
+      {!r.error && (
+        <div className={`rounded-card p-2 text-xs ${r.ok
+          ? 'bg-success/10 text-success' : 'bg-amber-50 text-amber-800'}`}>
+          {r.message}
+        </div>
+      )}
+      {r.suggestions && r.suggestions.length > 0 && (
+        <ul className="space-y-1 pt-1">
+          {r.suggestions.map((s) => (
+            <li key={s.name}
+              className="flex items-center justify-between rounded-card
+                bg-bg-light px-3 py-2 text-sm">
+              <span className="font-semibold">{s.name}</span>
+              <span className="text-xs text-sub-text">
+                destiny <b className="text-primary">{s.destiny}</b>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function LuckyNameCheck({ name, dob }) {
+  const [input, setInput] = useState('');
+  const lp = numerologyService.lifePath(dob);
+  const d = input ? numerologyService.destinyNumber(input) : null;
+  const match = d && lp && d === lp;
+  return (
+    <div className="space-y-1.5 pt-1">
+      <label className="block text-xs font-semibold text-sub-text">
+        Any name (yours, child, brand, business)
+        <input className="input mt-1" value={input}
+          placeholder="e.g. Aarav Sharma"
+          onChange={(e) => setInput(e.target.value)} />
+      </label>
+      {input && (
+        <div className={`rounded-card p-2 text-xs ${match
+          ? 'bg-success/10 text-success' : 'bg-amber-50 text-amber-800'}`}>
+          {match
+            ? `Destiny ${d} matches your life path ${lp} - this name `
+              + 'is auspicious for you.'
+            : `Destiny ${d} vs your life path ${lp || '-'} - this name `
+              + 'is workable but not perfectly aligned. Try a small '
+              + 'tweak in the Name Correction tool above.'}
+        </div>
+      )}
+    </div>
+  );
+}
