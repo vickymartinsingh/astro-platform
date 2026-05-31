@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
-import { callService, sessionService, soundService } from '@astro/shared';
+import {
+  callService, sessionService, soundService, recordService,
+} from '@astro/shared';
 import Layout from '../../components/Layout';
 import RateModal from '../../components/RateModal';
 import { useRequireClient } from '../../lib/useAuth';
@@ -85,9 +87,23 @@ export default function CallScreen() {
         if (callType === 'video' && tracks.video && localRef.current) {
           tracks.video.play(localRef.current);
         }
+        // Customer-side recording (mandatory for monitoring +
+        // playback). The astrologer side ALSO calls startRecording
+        // when present, but they often aren't (AI auto-accept, web
+        // browser closed, etc.) - so the customer is the reliable
+        // recorder. The deterministic Storage path in recordService
+        // means both sides writing for the same session collapse to
+        // ONE file. Best-effort: failures (no mic perm, no codec)
+        // are swallowed by recordService - the call never breaks.
+        recordService.startRecording({
+          sessionId,
+          type: callType,                  // 'call' | 'video'
+          astroId,
+          userId: user.uid,
+        }).catch(() => {});
       } catch (e) { console.error('agora join failed', e); }
     })();
-  }, [active, sessionId, callType, user]);
+  }, [active, sessionId, callType, user, astroId]);
 
   // Timer + auto-end when wallet hits zero (blueprint 4.9).
   useEffect(() => {
@@ -114,6 +130,9 @@ export default function CallScreen() {
 
   useEffect(() => {
     if (session?.status === 'ended') {
+      // Same order as hangUp: finalise recording BEFORE we tear
+      // down Agora. Fire-and-forget upload.
+      recordService.stopRecording().catch(() => {});
       callService.leaveAgoraChannel();
       setShowRate(true);
     }
@@ -130,6 +149,12 @@ export default function CallScreen() {
   }, [session?.id, session?.status, astroId, astro?.name, callType, track]);
 
   async function hangUp() {
+    // Finalise + upload the recording BEFORE leaving Agora so the
+    // remote tracks are still in the mixer for any tail audio.
+    // Fire-and-forget - the upload happens in parallel with
+    // leaveAgoraChannel + end() so a slow network never holds the
+    // customer on a hung-up screen.
+    recordService.stopRecording().catch(() => {});
     await callService.leaveAgoraChannel();
     await end();
   }

@@ -1,14 +1,23 @@
 // Call / Video / Live recording for admin monitoring.
 //
-// Runs on the ASTROLOGER side only (so a session is recorded once). It
-// mixes the astrologer mic + every remote audio track via WebAudio into
-// one stream and, for video / live, also captures a video track. The
-// finished clip is uploaded to Firebase Storage (media/ is writable by
-// any signed-in user) and indexed as a doc in the chats collection
-// (isRecordingDoc) so admin can list and play it back with NO Firestore
-// rules redeploy. Audio is always captured so admin can at least listen.
+// Runs on EITHER side (customer or astrologer). Both end up writing
+// to the same deterministic Storage path + the same indexed Firestore
+// doc (id = `recording_${sessionId}`), so duplicate writes overwrite
+// instead of cluttering the bucket. In practice the customer side is
+// the reliable recorder because the AI auto-accept path never opens
+// an astrologer browser - if we only recorded on the astro side, AI-
+// accepted sessions had no recording at all.
+//
+// Implementation: mixes the local mic + every remote audio track via
+// WebAudio into one stream. For video / live, also captures a video
+// track. The finished clip uploads to Firebase Storage (media/ is
+// writable by any signed-in user) and indexes as a doc in the chats
+// collection (isRecordingDoc) so admin can list and play back with NO
+// Firestore rules redeploy. Audio is always captured so admin can at
+// least listen.
 import {
-  collection, addDoc, query, where, onSnapshot, serverTimestamp,
+  collection, addDoc, doc, setDoc, query, where, onSnapshot,
+  serverTimestamp,
 } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { db, getStorageLazy } from '../firebase.js';
@@ -178,28 +187,36 @@ export async function stopRecording() {
   }
   log('uploading', { size: blob.size, hasVideo, type: m.type });
   try {
-    const ts = Date.now();
+    // DETERMINISTIC path + index doc, so customer+astro both writing
+    // for the same session produce ONE file in Storage and ONE entry
+    // in the admin recordings list. Last writer wins; either side
+    // alone still works. Without this we accumulated stale duplicates
+    // per call.
+    if (!m.sessionId) { log('skip: no sessionId on meta'); return; }
     const path = `media/recordings/${m.type || 'session'}/`
-      + `${m.sessionId || 's'}-${ts}.webm`;
+      + `${m.sessionId}.webm`;
     const storage = await getStorageLazy();
     if (!storage) { log('skip: storage not available'); return; }
     const sref = ref(storage, path);
     await uploadBytes(sref, blob,
       { contentType: blob.type || 'audio/webm' });
     const url = await getDownloadURL(sref);
-    await addDoc(collection(db, 'chats'), {
+    // Index doc id = deterministic too, so two writers for the same
+    // session don't create two index rows the admin has to clean up.
+    await setDoc(doc(db, 'chats', `recording_${m.sessionId}`), {
       isRecordingDoc: true,
-      sessionId: m.sessionId || '',
+      sessionId: m.sessionId,
       type: m.type || 'session',
       astroId: m.astroId || '',
       userId: m.userId || '',
       kind: hasVideo ? 'video' : 'audio',
       url,
       sizeKB: Math.round(blob.size / 1024),
-      ts,
+      ts: Date.now(),
       createdAt: serverTimestamp(),
-    });
-    log('upload OK', { url: url.slice(0, 80), kB: Math.round(blob.size / 1024) });
+    }, { merge: true });
+    log('upload OK', { url: url.slice(0, 80),
+      kB: Math.round(blob.size / 1024), path });
   } catch (e) {
     log('upload FAILED', String((e && e.message) || e));
   }
