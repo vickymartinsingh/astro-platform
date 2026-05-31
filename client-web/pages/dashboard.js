@@ -95,6 +95,10 @@ export default function Dashboard() {
         categories: d.sec_categories !== false,
         topRated: d.sec_topRated !== false,
         reviews: d.sec_reviews !== false,
+        // Master toggles for the home stats strip - independently
+        // controllable for mobile and desktop. Default ON for both.
+        statsMobile: d.home_stats_show_mobile !== false,
+        statsDesktop: d.home_stats_show_desktop !== false,
       });
     };
     if (CONTENT_CACHE) apply(CONTENT_CACHE);
@@ -176,9 +180,14 @@ export default function Dashboard() {
   return (
     <Layout>
 
-      {/* Hero */}
-      <div className="hero-grad rounded-2xl p-6 text-white md:p-10">
-        <h1 className="text-2xl font-bold md:text-4xl">
+      {/* Hero. On desktop we cap the inner content to max-w-2xl so the
+          gradient panel still spans the layout column but the title /
+          subtitle / CTAs sit comfortably on the left instead of
+          reading as "empty right half." */}
+      <div className="hero-grad rounded-2xl p-6 text-white md:px-8 md:py-8
+        lg:px-10 lg:py-10">
+        <div className="max-w-2xl">
+        <h1 className="text-2xl font-bold md:text-3xl lg:text-4xl">
           {hero.title}
         </h1>
         <p className="mt-2 max-w-lg text-sm opacity-90 md:text-base">
@@ -196,6 +205,7 @@ export default function Dashboard() {
               {T('home.getStarted', 'Get started')}
             </button>
           )}
+        </div>
         </div>
       </div>
 
@@ -221,7 +231,13 @@ export default function Dashboard() {
       )}
 
       {/* Stats (admin-editable: settings/content.home_stats). Use the
-          {experts} placeholder to show the live astrologer count. */}
+          {experts} placeholder to show the live astrologer count.
+          The strip is gated on TWO independent admin master toggles:
+          home_stats_show_mobile (default ON) and home_stats_show_desktop
+          (default ON). We render the strip twice with responsive
+          visibility classes so admins can hide it on one form factor
+          without affecting the other - the Firestore snapshot pushes
+          the change instantly. */}
       {(() => {
         const DEF = [
           { n: '{experts}+', l: 'Verified Experts' },
@@ -235,8 +251,12 @@ export default function Dashboard() {
             && (s.l || s.n));
         if (!rows.length) return null;
         const cnt = (list || []).length || 0;
-        return (
-          <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+        const showMobile = sec.statsMobile !== false;
+        const showDesktop = sec.statsDesktop !== false;
+        if (!showMobile && !showDesktop) return null;
+        const StatGrid = ({ visibility }) => (
+          <div className={`mt-4 grid grid-cols-2 gap-3
+            md:grid-cols-4 ${visibility}`}>
             {rows.map((s) => (
               <Stat key={`${s.l || ''}|${s.n || ''}`}
                 n={String(s.n || '').replace('{experts}', String(cnt))}
@@ -244,6 +264,12 @@ export default function Dashboard() {
             ))}
           </div>
         );
+        // Mobile-only render when desktop is off, desktop-only when
+        // mobile is off, render once with no visibility class when both
+        // are on (saves a duplicate DOM tree).
+        if (showMobile && showDesktop) return <StatGrid visibility="" />;
+        if (showMobile) return <StatGrid visibility="md:hidden" />;
+        return <StatGrid visibility="hidden md:grid" />;
       })()}
 
       {/* Personalised stars (from the user's kundli) + generic

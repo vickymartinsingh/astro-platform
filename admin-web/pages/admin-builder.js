@@ -265,6 +265,30 @@ export default function AdminBuilder() {
               Stats row (label + value, or hide). Use {'{experts}'} for
               the live astrologer count.
             </div>
+            {/* Master visibility for the entire stats strip. Two
+                independent toggles let admins hide the strip on one
+                form factor without affecting the other. Live: the
+                Firestore listener on the home page reflects this
+                change instantly with no app reload. */}
+            <div className="flex flex-wrap items-center gap-4
+              rounded-md bg-bg-light/60 px-2 py-1 text-xs">
+              <label className="flex items-center gap-2">
+                <input type="checkbox"
+                  checked={content.home_stats_show_mobile !== false}
+                  onChange={(e) => setContent({
+                    ...content,
+                    home_stats_show_mobile: e.target.checked })} />
+                Show on mobile
+              </label>
+              <label className="flex items-center gap-2">
+                <input type="checkbox"
+                  checked={content.home_stats_show_desktop !== false}
+                  onChange={(e) => setContent({
+                    ...content,
+                    home_stats_show_desktop: e.target.checked })} />
+                Show on desktop
+              </label>
+            </div>
             {(() => {
               const stats = Array.isArray(content.home_stats)
                 && content.home_stats.length
