@@ -15,15 +15,18 @@ import { useAstroActions } from '../lib/useAstroActions';
 // /chat-history + /call-history screens. One row per ended session
 // regardless of channel (chat / voice / video), tagged with a small
 // icon so the customer can scan their full history at a glance.
+// dd-Mmm-Yyyy (e.g. "31-May-2026"). Matches the format the user
+// asked for - full four-digit year, hyphen-separated, locale-stable.
 function fmtDate(ts) {
   try {
     const d = ts?.toDate ? ts.toDate()
       : ts?.seconds ? new Date(ts.seconds * 1000)
       : ts instanceof Date ? ts : null;
     if (!d) return '';
-    return d.toLocaleDateString([], {
-      day: '2-digit', month: 'short', year: '2-digit',
-    });
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mmm = d.toLocaleString('en-US', { month: 'short' });
+    const yyyy = d.getFullYear();
+    return `${dd}-${mmm}-${yyyy}`;
   } catch (_) { return ''; }
 }
 function fmtTime(ts) {
@@ -99,21 +102,26 @@ export default function Consultations() {
           const bt = b.startTime?.toMillis?.() || 0;
           return bt - at;
         });
-      // Pull every recording owned by this user in ONE query, then
-      // index by sessionId so each row that needs a player has the
-      // URL ready.
+      // Pull every recording for THIS user in ONE query. We filter by
+      // userId only (single equality - no composite index needed),
+      // then post-filter for isRecordingDoc in JS. The previous
+      // double-equality query silently failed for any project
+      // without a composite index on (userId, isRecordingDoc),
+      // which is exactly why the recording player wasn't showing
+      // up on call rows.
       let recsBySession = {};
       try {
         const recSnap = await getDocs(query(
           collection(db, 'chats'),
-          where('isRecordingDoc', '==', true),
           where('userId', '==', user.uid)));
         recsBySession = recSnap.docs.reduce((acc, d) => {
           const r = d.data();
-          if (r && r.sessionId && r.url) acc[r.sessionId] = r;
+          if (r && r.isRecordingDoc && r.sessionId && r.url) {
+            acc[r.sessionId] = r;
+          }
           return acc;
         }, {});
-      } catch (_) { /* best-effort */ }
+      } catch (_) { /* best-effort - hide player if rules deny */ }
       const enriched = await Promise.all(ended.map(async (s) => {
         const rec = recsBySession[s.id];
         return {
@@ -179,19 +187,22 @@ export default function Consultations() {
                     then Duration|Amount. Player slides in below
                     when this is a call/video with a recording. */}
                 <div className="min-w-0 flex-1 leading-tight">
-                  <div className="flex items-center gap-1.5">
+                  {/* Name row: fully visible (no truncate). Name wraps
+                      to a second line if needed; the type chip moves
+                      below the name on narrow rows so it never pushes
+                      the name into ellipsis. */}
+                  <div className="flex flex-wrap items-center gap-1.5">
                     <span className="grid h-5 w-5 shrink-0
                       place-items-center rounded-full bg-bg-light
                       text-primary">
                       <TypeIcon type={s.type} />
                     </span>
-                    <span className="truncate text-sm font-bold
-                      text-dark-text">
+                    <span className="break-words text-sm font-bold
+                      leading-tight text-dark-text">
                       {s.astro?.name || 'Astrologer'}
                     </span>
-                    <span className="ml-1 shrink-0 text-[10px]
-                      font-semibold uppercase tracking-wide
-                      text-sub-text">
+                    <span className="shrink-0 text-[10px] font-semibold
+                      uppercase tracking-wide text-sub-text">
                       {TYPE_LABEL[s.type] || 'Session'}
                     </span>
                   </div>
@@ -230,15 +241,27 @@ export default function Consultations() {
                     </div>
                   </div>
                   {/* Recording player only for calls / videos. Chat
-                      has no audio - we never auto-record text chats. */}
-                  {isCall && s.recordingUrl && (
+                      has no audio - we never auto-record text chats.
+                      When this is a call but no recording landed
+                      (call older than the recording feature, or the
+                      astrologer was on a browser that did not support
+                      MediaRecorder), show a small "no recording yet"
+                      hint so the user knows the row isn't bugged. */}
+                  {isCall && (
                     <div className="mt-2">
-                      {s.recordingKind === 'video' ? (
-                        <video src={s.recordingUrl} controls
-                          preload="none"
-                          className="w-full rounded-card bg-black" />
+                      {s.recordingUrl ? (
+                        s.recordingKind === 'video' ? (
+                          <video src={s.recordingUrl} controls
+                            preload="none"
+                            className="w-full rounded-card bg-black" />
+                        ) : (
+                          <AudioPlayer src={s.recordingUrl} />
+                        )
                       ) : (
-                        <AudioPlayer src={s.recordingUrl} />
+                        <div className="rounded-full bg-bg-light px-3
+                          py-1 text-[11px] text-sub-text">
+                          Recording not available for this call
+                        </div>
                       )}
                     </div>
                   )}
