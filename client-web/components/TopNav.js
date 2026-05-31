@@ -23,7 +23,8 @@ const TOUR_HREF_MAP = {
   '/kundli': 'menu-kundli', '/numerology': 'menu-numerology',
   '/matching': 'menu-matching', '/remedies': 'menu-remedies',
   '/following': 'menu-following',
-  '/chat-history': 'menu-history', '/call-history': 'menu-calls',
+  '/consultations': 'menu-history',
+  '/chat-history': 'menu-history', '/call-history': 'menu-history',
   '/transactions': 'menu-orders', '/review': 'menu-review',
   '/notifications': 'menu-notifications', '/support': 'menu-support',
 };
