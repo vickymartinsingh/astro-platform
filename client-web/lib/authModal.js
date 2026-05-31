@@ -5,7 +5,7 @@ import {
 import { createPortal } from 'react-dom';
 import { useRouter } from 'next/router';
 import dynamic from 'next/dynamic';
-import { auth as firebaseAuth } from '@astro/shared';
+import { auth as firebaseAuth, authService } from '@astro/shared';
 import { useAuth } from './useAuth';
 import { useSettings } from './useSettings';
 
@@ -55,19 +55,43 @@ export function AuthModalProvider({ children }) {
   // the popup and run any pending action. This guarantees the login
   // popup never lingers once the user is signed in.
   //
-  // Note: OTP is enforced ONLY at signup time, inside LoginCard's
-  // signup path. We do NOT block the modal close on emailVerified
-  // for login - per user, OTP must not be re-asked on login.
+  // EXCEPTION: when the modal is in SIGNUP mode AND the freshly-
+  // created Firebase user is not yet email-verified, we keep the
+  // modal OPEN so LoginCard's OTP screen has time to render. The
+  // user types the OTP, verifyOtp() reloads the user (flipping
+  // emailVerified to true), this effect re-fires, and the modal
+  // closes normally. For LOGIN mode we never block - the user said
+  // OTP must not be re-asked on subsequent logins.
   useEffect(() => {
-    if (open && user) {
-      const cb = cbRef.current;
-      cbRef.current = null; dismissRef.current = null;
-      setShown(false);
-      setTimeout(() => setOpen(false), 150);
-      if (cb) setTimeout(cb, 380);
-      else setTimeout(() => router.replace('/dashboard'), 380);
-    }
-  }, [open, user, router]);
+    if (!open || !user) return;
+    // HARD BLOCK on OTP-in-progress. LoginCard sets the
+    // window.__pendingSignupOtp flag the instant it starts the
+    // signup OTP send and clears it only on successful verify. The
+    // flag is the most reliable signal because it bypasses every
+    // race with useSettings hydration / Firestore snapshot timing.
+    // If the flag is set AND the Firebase user matches it AND that
+    // user is not yet verified, we KEEP THE MODAL OPEN.
+    try {
+      if (typeof window !== 'undefined') {
+        const flag = window.__pendingSignupOtp;
+        // Accept the flag even when uid is empty (LoginCard sets
+        // the flag BEFORE signupUser returns so the auto-close race
+        // is lost otherwise) OR when it matches the current user's
+        // uid. In either case, if the Firebase user is not verified,
+        // keep the modal open until OTP completes.
+        if (flag && !user.emailVerified
+          && (!flag.uid || flag.uid === user.uid)) {
+          return; // wait for OTP verify
+        }
+      }
+    } catch (_) { /* tolerate */ }
+    const cb = cbRef.current;
+    cbRef.current = null; dismissRef.current = null;
+    setShown(false);
+    setTimeout(() => setOpen(false), 150);
+    if (cb) setTimeout(cb, 380);
+    else setTimeout(() => router.replace('/dashboard'), 380);
+  }, [open, user, router, mode]);
 
   // Smoothly animate in after mount.
   useEffect(() => {
@@ -137,6 +161,26 @@ export function AuthModalProvider({ children }) {
   function dismiss() {
     const d = dismissRef.current;
     cbRef.current = null; dismissRef.current = null;
+    // SIGNUP-OTP ROLLBACK: when the customer dismisses the modal in
+    // the middle of an OTP-gated signup, delete the freshly-created
+    // Firebase user so the signup is truly atomic. Per user rule:
+    // "without OTP signup should not be processed."
+    try {
+      const flag = (typeof window !== 'undefined')
+        && window.__pendingSignupOtp;
+      const fb = firebaseAuth && firebaseAuth.currentUser;
+      if (flag && fb && fb.uid === flag.uid && !fb.emailVerified) {
+        // Fire-and-forget. delete() on a freshly-created user
+        // succeeds without re-auth because the credential is recent.
+        fb.delete().catch(() => {
+          // Best-effort: if delete fails (token expired etc.) at
+          // least sign them out so the modal does not keep
+          // re-opening behind their back.
+          try { authService.logoutUser(); } catch (_) {}
+        });
+        try { delete window.__pendingSignupOtp; } catch (_) {}
+      }
+    } catch (_) {}
     setShown(false);
     setTimeout(() => setOpen(false), 180);
     if (d) setTimeout(d, 200);

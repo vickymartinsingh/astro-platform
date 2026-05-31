@@ -44,6 +44,14 @@ export default function Profile() {
   const { cfg } = useSettings();
   const [pw, setPw] = useState({ cur: '', next: '', conf: '' });
   const [pwMsg, setPwMsg] = useState('');
+  // Account-deletion OTP modal state. delOtp:
+  //   null         -> not in delete flow
+  //   {step:'send'}    -> sending OTP (button spinner)
+  //   {step:'enter'}   -> OTP input visible
+  //   {step:'verify'}  -> verifying / submitting deletion
+  const [delOtp, setDelOtp] = useState(null);
+  const [delOtpCode, setDelOtpCode] = useState('');
+  const [delOtpErr, setDelOtpErr] = useState('');
 
   useEffect(() => {
     if (profile) {
@@ -125,23 +133,67 @@ export default function Profile() {
     try { await authService.logoutUser(); } catch (_) {}
     router.replace('/login');
   }
+  // Account deletion is a TWO-STEP process: first the customer
+  // confirms intent, then we send a 6-digit OTP to their registered
+  // email and require them to type it back in before we actually
+  // submit the deletion. This catches accidental taps + verifies the
+  // customer still controls the email on file (so a stolen session
+  // cannot wipe the account silently).
   async function deleteAccount() {
     const sure = await confirmModal({
       title: 'Delete your account?',
-      message: 'Your account is deactivated immediately and all personal '
-        + 'data is purged within 30 days. Transaction records required '
-        + 'by law are kept for the legal period. This cannot be undone.',
-      yes: 'Delete account', no: 'Cancel', danger: true,
+      message: 'We will email a 6-digit code to your registered '
+        + 'address. Enter it on the next screen to confirm. Your '
+        + 'account is then deactivated immediately and personal '
+        + 'data is purged within 30 days.',
+      yes: 'Send code', no: 'Cancel', danger: true,
     });
     if (!sure) return;
+    setDelOtp({ step: 'send' });
+    setDelOtpCode(''); setDelOtpErr('');
     try {
+      await authService.requestEmailOtp(profile.email || '',
+        profile.name || '');
+      setDelOtp({ step: 'enter' });
+    } catch (e) {
+      setDelOtp(null);
+      await confirmModal({ title: 'Could not send code',
+        message: (e && e.message) || 'Please try again.',
+        yes: 'OK', no: 'Close' });
+    }
+  }
+
+  // Called by the OTP modal's Confirm button.
+  async function confirmDeleteWithOtp() {
+    const code = String(delOtpCode || '').trim();
+    if (!/^\d{6}$/.test(code)) {
+      setDelOtpErr('Enter the 6-digit code from the email.'); return;
+    }
+    setDelOtpErr('');
+    setDelOtp({ step: 'verify' });
+    try {
+      // Verify the OTP through the relay first - this protects
+      // against a stolen session pushing the deletion directly.
+      await authService.verifyEmailOtp(profile.email || '', code);
       await userService.requestAccountDeletion(user.uid, '');
       try { await authService.logoutUser(); } catch (_) {}
+      setDelOtp(null);
       router.replace('/account-deletion');
-    } catch (_) {
-      await confirmModal({ title: 'Could not submit',
-        message: 'Please email support@astroseer.in to delete your account.',
-        yes: 'OK', no: 'Close' });
+    } catch (e) {
+      setDelOtp({ step: 'enter' });
+      setDelOtpErr((e && e.message)
+        || 'Could not verify the code. Please try again.');
+    }
+  }
+
+  async function resendDeleteOtp() {
+    setDelOtpErr('');
+    try {
+      await authService.requestEmailOtp(profile.email || '',
+        profile.name || '');
+      setDelOtpErr('A new code has been sent. Check your inbox.');
+    } catch (e) {
+      setDelOtpErr((e && e.message) || 'Could not resend the code.');
     }
   }
 

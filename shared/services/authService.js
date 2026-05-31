@@ -51,13 +51,11 @@ export async function signupUser(name, email, password, extra = {}) {
   }
   // Compliance: log the signup with IP + device (admin-only).
   try { logAudit('signup', { method: 'email', email }); } catch (_) {}
-  // Fire-and-forget the welcome email through the relay. The relay
-  // is idempotent (writes welcomeEmailSentAt on users/{uid}) and
-  // honours the admin toggle, so safe to call from every signup
-  // path without coordination.
-  sendWelcomeEmail({
-    uid: cred.user.uid, email, name: full,
-  }).catch(() => {});
+  // NOTE: welcome email is NOT fired here. The caller (LoginCard)
+  // decides when to send it - immediately on signup if OTP is OFF,
+  // or only AFTER a successful OTP verify if OTP is ON. This keeps
+  // the welcome message from going out to users who never actually
+  // proved control of the mailbox.
   return cred.user;
 }
 

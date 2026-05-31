@@ -136,9 +136,10 @@ export default function Document() {
         {/* Pre-hydration brand cover: opaque, on-theme dark maroon
             (#1A0F0F) with the bundled logo, painted on the FIRST
             frame so the old cached UI / purple colour can never flash
-            during the reload window. Removed once React has rendered
-            (SplashScreen then takes over seamlessly); hard 4s failsafe
-            so it can never get stuck even if the bundle fails. */}
+            during the reload window. Stays up until _app.js flips
+            window.__appReady (auth resolved + first route mounted).
+            Hard 8s failsafe so a broken Firestore hop can never
+            freeze it forever. */}
         <div id="__boot" style={{
           position: 'fixed', inset: 0, zIndex: 2147483646,
           background: '#1A0F0F', display: 'flex',
@@ -156,9 +157,10 @@ export default function Document() {
               + "b.style.opacity='0';setTimeout(function(){if(b&&b."
               + 'parentNode){b.parentNode.removeChild(b);}},300);}'
               + 'function poll(){var n=document.getElementById('
-              + "'__next');var ready=n&&n.children&&n.children.length"
-              + '>0;if(ready&&Date.now()-s>300){done();return;}'
-              + 'if(Date.now()-s>4000){done();return;}'
+              + "'__next');var mounted=n&&n.children&&n.children."
+              + 'length>0;var ready=window.__appReady===true;'
+              + 'if(mounted&&ready){done();return;}'
+              + 'if(Date.now()-s>8000){done();return;}'
               + 'requestAnimationFrame(poll);}'
               + 'requestAnimationFrame(poll);})();',
           }}

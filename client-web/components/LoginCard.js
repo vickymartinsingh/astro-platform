@@ -131,6 +131,23 @@ export default function LoginCard({ onDone, compact, initialMode }) {
     try {
       let user;
       if (mode === 'signup') {
+        // PRE-SEED the OTP-pending flag BEFORE we call signupUser.
+        // createUserWithEmailAndPassword fires onAuthStateChanged
+        // synchronously the moment Firebase returns, which means
+        // AuthModalProvider's auto-close effect runs BEFORE this
+        // function's next statement. If we wait until after
+        // signupUser returns to set the flag, the modal has already
+        // started closing. Set it now (uid filled in after creation)
+        // so AuthModalProvider keeps the modal open from the very
+        // first user-truthy render.
+        try {
+          if (typeof window !== 'undefined') {
+            window.__pendingSignupOtp = {
+              uid: '', // populated post-creation
+              email: email.trim(),
+            };
+          }
+        } catch (_) {}
         setStepLabel('Creating account…');
         user = await withTimeout(
           authService.signupUser(name.trim(), email.trim(),
@@ -168,6 +185,17 @@ export default function LoginCard({ onDone, compact, initialMode }) {
             liveFeatures = { ...(liveFeatures || {}), ...s.data() };
           }
         } catch (_) { /* network blip - keep cached */ }
+        // No-OTP path: fire welcome email immediately on signup since
+        // there is no later verify step to gate it on. The relay is
+        // idempotent so a retry / re-signup with the same email is a
+        // no-op (welcomeEmailSentAt is set after the first send).
+        if (!(liveFeatures && liveFeatures.email_verification === true)) {
+          try {
+            authService.sendWelcomeEmail({
+              uid: user.uid, email: email.trim(), name: name.trim(),
+            }).catch(() => {});
+          } catch (_) { /* tolerate */ }
+        }
         if (liveFeatures && liveFeatures.email_verification === true) {
           // NEW: do NOT sign the freshly-created user out. The bypass
           // bug ("after a flash logout, re-login completes without
@@ -190,18 +218,36 @@ export default function LoginCard({ onDone, compact, initialMode }) {
               password,
               displayName: name.trim(),
             });
+            // Mark this signup as "pending OTP" so that if the customer
+            // dismisses the modal we can ROLLBACK the Firebase user.
+            // Per user: "without OTP signup should not be processed."
+            // Without this rollback the Firebase account survives and
+            // they could log in later without ever verifying.
+            try {
+              if (typeof window !== 'undefined') {
+                window.__pendingSignupOtp = {
+                  uid: user && user.uid,
+                  email: email.trim(),
+                };
+              }
+            } catch (_) {}
             setOtpInfo(`We just emailed a 6-digit code to ${email.trim()}.`
               + ' Enter it below to finish signing up - the rest of the '
               + 'app stays locked until you verify.');
             setBusy(false);
             return;
           } catch (e3) {
-            // OTP SEND FAILED - this is a HARD STOP. We do not let the
-            // user through unverified just because SMTP hiccuped. Show
-            // a clear error + offer Retry / Cancel. They can also try
-            // again later from the login screen which will re-trigger
-            // the OTP send because the Firebase user is still flagged
-            // emailVerified:false.
+            // OTP SEND FAILED. Clear the flag so the modal can close
+            // and the customer can retry. The Firebase user still
+            // exists with emailVerified:false - on the next signup
+            // attempt with the same email, they will hit
+            // auth/email-already-in-use; they need to wait a few
+            // minutes or contact support.
+            try {
+              if (typeof window !== 'undefined') {
+                delete window.__pendingSignupOtp;
+              }
+            } catch (_) {}
             setErr('Could not send the verification email: '
               + (e3 && e3.message || 'unknown')
               + '. Please tap Sign up again to retry.');
@@ -217,6 +263,13 @@ export default function LoginCard({ onDone, compact, initialMode }) {
       }
       await finish(user);
     } catch (e2) {
+      // Clear the pre-seeded OTP-pending flag - signup failed so the
+      // modal must be free to close on the next render.
+      try {
+        if (typeof window !== 'undefined') {
+          delete window.__pendingSignupOtp;
+        }
+      } catch (_) {}
       const code = e2?.code || '';
       const msg = e2?.message || '';
       if (code === 'auth/timeout') {
@@ -450,6 +503,23 @@ export default function LoginCard({ onDone, compact, initialMode }) {
           authService.loginUser(otpUser.email, otpUser.password),
           25000, 'Login');
       }
+      // OTP verified - NOW send the welcome email. signupUser no
+      // longer fires it because we only want welcome to land for
+      // customers who actually proved mailbox control.
+      try {
+        authService.sendWelcomeEmail({
+          uid: user.uid,
+          email: user.email || otpUser.email,
+          name: user.displayName || otpUser.displayName || '',
+        }).catch(() => {});
+      } catch (_) { /* tolerate */ }
+      // Signup is now COMPLETE - clear the rollback flag so a later
+      // logout / re-login of this account does not get nuked.
+      try {
+        if (typeof window !== 'undefined') {
+          delete window.__pendingSignupOtp;
+        }
+      } catch (_) {}
       setOtpUser(null); setOtpCode(''); setOtpInfo('');
       await finish(user);
     } catch (e2) {
