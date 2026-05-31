@@ -85,7 +85,10 @@ export async function payCall(payload) {
 //
 // Coupon doc shape (from admin-coupons): {
 //   code, discountPercent, maxDiscount, expiry (YYYY-MM-DD),
-//   usageLimit, usedCount, active
+//   usageLimit, usedCount, active,
+//   title?, description?,        // browsable copy in the customer UI
+//   minAmount?,                  // minimum recharge for this coupon
+//   firstRechargeOnly?: boolean, // per-user; checked vs payments coll
 // }
 // Returns: { valid, code, bonus, percent, maxDiscount, message }
 export async function validateCoupon(rawCode, amount) {
@@ -120,6 +123,28 @@ export async function validateCoupon(rawCode, amount) {
       return { valid: false, code,
         message: `Coupon "${code}" has reached its usage limit.` };
     }
+    const minAmt = Math.max(0, Number(c.minAmount || 0));
+    if (minAmt > 0 && amt < minAmt) {
+      return { valid: false, code,
+        message: `${code} needs a minimum recharge of ₹${minAmt}.` };
+    }
+    // PER-USER first-recharge enforcement. Client-side check is a
+    // friendliness optimisation - the relay's pay handler does the
+    // SAME query before crediting, so a user cannot bypass this by
+    // calling the API directly.
+    if (c.firstRechargeOnly && auth && auth.currentUser) {
+      try {
+        const prior = await getDocs(query(
+          collection(db, 'payments'),
+          where('userId', '==', auth.currentUser.uid),
+          where('status', '==', 'success')));
+        if (!prior.empty) {
+          return { valid: false, code,
+            message: `${code} is a first-recharge offer and your wallet `
+              + 'already has a successful recharge on it.' };
+        }
+      } catch (_) { /* fall through - server validator catches it */ }
+    }
     const percent = Math.max(0, Number(c.discountPercent || 0));
     const cap = Math.max(0, Number(c.maxDiscount || 0));
     const raw = Math.floor((amt * percent) / 100);
@@ -130,6 +155,9 @@ export async function validateCoupon(rawCode, amount) {
     }
     return {
       valid: true, code, bonus, percent, maxDiscount: cap,
+      title: c.title || '', description: c.description || '',
+      firstRechargeOnly: !!c.firstRechargeOnly,
+      minAmount: minAmt,
       message: `${code} applied. You will get an extra ₹${bonus} `
         + 'as bonus credit on top of your recharge.',
     };
@@ -137,6 +165,52 @@ export async function validateCoupon(rawCode, amount) {
     return { valid: false, code,
       message: `Could not check coupon: ${e.message || e}` };
   }
+}
+
+// Public listing of every coupon the customer is eligible for RIGHT
+// NOW. Powers the Swiggy/BigBasket-style "Available offers" panel on
+// the wallet page. Filters out:
+//   - inactive coupons
+//   - expired coupons
+//   - coupons that have hit their global usage limit
+//   - first-recharge coupons where the signed-in user has already
+//     completed a successful recharge
+// Returns an array sorted by best-discount-first (so the headline
+// 100% cashback always shows on top).
+export async function listAvailableCoupons() {
+  try {
+    const snap = await getDocs(collection(db, 'coupons'));
+    const now = new Date().setHours(0, 0, 0, 0);
+    const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+      .filter((c) => c.active !== false)
+      .filter((c) => {
+        if (!c.expiry) return true;
+        const exp = new Date(c.expiry).getTime();
+        return Number.isNaN(exp) ? true : exp >= now;
+      })
+      .filter((c) => !(c.usageLimit
+        && Number(c.usedCount || 0) >= Number(c.usageLimit)));
+    // Per-user first-recharge filter (asks payments collection ONCE).
+    let usedFirstRecharge = false;
+    if (auth && auth.currentUser
+      && rows.some((c) => c.firstRechargeOnly)) {
+      try {
+        const prior = await getDocs(query(
+          collection(db, 'payments'),
+          where('userId', '==', auth.currentUser.uid),
+          where('status', '==', 'success')));
+        usedFirstRecharge = !prior.empty;
+      } catch (_) { usedFirstRecharge = false; }
+    }
+    return rows
+      .filter((c) => !(c.firstRechargeOnly && usedFirstRecharge))
+      .sort((a, b) => {
+        const pa = Number(a.discountPercent || 0);
+        const pb = Number(b.discountPercent || 0);
+        if (pa !== pb) return pb - pa;
+        return Number(b.maxDiscount || 0) - Number(a.maxDiscount || 0);
+      });
+  } catch (_) { return []; }
 }
 
 // Redeem a gift card code into the wallet (server-side via the relay,

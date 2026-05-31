@@ -267,94 +267,133 @@ export default function Wallet() {
         </button>
       )}
 
-      <div className="hero-grad rounded-card p-6 text-center text-white">
-        <div className="text-sm opacity-80">Wallet Balance</div>
-        <div className="mt-1 text-4xl font-bold">{rupees(wallet)}</div>
-      </div>
-
-      <div className="mt-4 flex gap-2">
-        <button onClick={() => setTab('add')}
-          className={`flex-1 rounded-card py-2 font-semibold ${
-            tab === 'add' ? 'bg-primary text-white' : 'bg-white'}`}>
-          Add Money
-        </button>
-        <button onClick={() => setTab('history')}
-          className={`flex-1 rounded-card py-2 font-semibold ${
-            tab === 'history' ? 'bg-primary text-white' : 'bg-white'}`}>
-          Transactions
-        </button>
+      {/* Compact balance + inline tab switcher. ~88 px tall total. */}
+      <div className="hero-grad flex items-center justify-between
+        rounded-2xl px-4 py-3 text-white">
+        <div>
+          <div className="text-[11px] uppercase tracking-wide opacity-80">
+            Wallet balance
+          </div>
+          <div className="text-2xl font-bold leading-tight">
+            {rupees(wallet)}
+          </div>
+        </div>
+        <div className="flex gap-1 rounded-full bg-white/15 p-0.5">
+          {[['add', 'Add'], ['history', 'History']].map(([k, l]) => (
+            <button key={k} onClick={() => setTab(k)}
+              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                tab === k ? 'bg-white text-primary' : 'text-white'}`}>
+              {l}
+            </button>
+          ))}
+        </div>
       </div>
 
       {tab === 'add' ? (
-        <div className="card mt-3 space-y-3">
-          <div className="grid grid-cols-4 gap-2">
-            {QUICK.map((q) => (
-              <button key={q} onClick={() => setAmount(q)}
-                className={`rounded-card py-3 font-semibold ${
-                  amount === q ? 'bg-primary text-white' : 'bg-bg-light'}`}>
-                {rupees(q)}
-              </button>
-            ))}
-          </div>
-          <input className="input" type="number" min={MIN_RECHARGE}
-            value={amount}
-            onChange={(e) => setAmount(e.target.value === ''
-              ? '' : Number(e.target.value))}
-            placeholder="Custom amount" />
-          <div className="rounded-card border border-gray-200 p-3">
-            <div className="mb-2 text-sm font-semibold">
-              Apply a coupon
+        <div className="mt-3 space-y-3">
+          {/* Quick amounts + custom field combined into a single card */}
+          <div className="card space-y-2 p-3">
+            <div className="text-xs font-semibold uppercase tracking-wide
+              text-sub-text">Recharge amount</div>
+            <div className="grid grid-cols-5 gap-1.5">
+              {QUICK.map((q) => (
+                <button key={q} onClick={() => setAmount(q)}
+                  className={`rounded-full py-1.5 text-xs font-semibold ${
+                    amount === q
+                      ? 'bg-primary text-white'
+                      : 'bg-bg-light text-dark-text'}`}>
+                  {rupees(q)}
+                </button>
+              ))}
             </div>
+            <input className="input !py-2 text-sm" type="number"
+              min={MIN_RECHARGE} value={amount}
+              onChange={(e) => setAmount(e.target.value === ''
+                ? '' : Number(e.target.value))}
+              placeholder={`Custom amount (min ${rupees(MIN_RECHARGE)})`} />
+          </div>
+
+          {/* Available offers - Swiggy/BigBasket-style list. Renders
+              every active coupon the customer can use right now. Tap
+              a card to auto-fill the code into the field below. */}
+          <CouponsPanel
+            amount={Number(amount) || 0}
+            activeCode={couponInfo?.valid ? couponInfo.code : ''}
+            onPick={(code, minAmt) => {
+              setCoupon(code);
+              if (minAmt > 0 && (Number(amount) || 0) < minAmt) {
+                setAmount(minAmt);
+              }
+              setCouponInfo(null);
+              // Auto-apply so the customer sees the bonus preview
+              // without an extra tap.
+              setTimeout(() => {
+                walletService.validateCoupon(code,
+                  Math.max(Number(amount) || 0, minAmt || 0))
+                  .then((info) => setCouponInfo(info))
+                  .catch(() => {});
+              }, 0);
+            }} />
+
+          {/* Manual code entry (paste from outside) */}
+          <div className="card space-y-1.5 p-3">
+            <div className="text-xs font-semibold uppercase tracking-wide
+              text-sub-text">Have a code from outside?</div>
             <div className="flex gap-2">
-              <input className="input flex-1 tracking-widest"
+              <input className="input !py-2 flex-1 tracking-wider
+                text-sm uppercase"
                 value={coupon}
                 onChange={(e) => {
                   setCoupon(e.target.value.toUpperCase());
-                  // Typing a new code invalidates the last preview.
                   if (couponInfo) setCouponInfo(null);
                 }}
-                placeholder="Have a coupon? Enter code" />
+                placeholder="Coupon code" />
               {couponInfo && couponInfo.valid ? (
                 <button onClick={clearCoupon}
-                  className="rounded-card border border-gray-300 px-4
-                    text-sm font-semibold text-sub-text">
+                  className="rounded-full border border-gray-300 px-3
+                    text-xs font-semibold text-sub-text">
                   Remove
                 </button>
               ) : (
                 <button onClick={applyCoupon}
                   disabled={couponBusy || !coupon.trim()}
-                  className="btn-primary !min-h-0 px-4">
-                  {couponBusy ? '...' : 'Apply'}
+                  className="rounded-full bg-primary px-4 text-xs
+                    font-bold text-white disabled:opacity-50">
+                  {couponBusy ? '…' : 'Apply'}
                 </button>
               )}
             </div>
             {couponInfo && (
-              <div className={`mt-2 rounded-card p-2 text-xs ${
+              <div className={`rounded-md px-2 py-1 text-[11px] ${
                 couponInfo.valid
                   ? 'bg-success/10 text-success'
                   : 'bg-danger/10 text-danger'}`}>
-                {couponInfo.valid ? '✅ ' : '✗ '}{couponInfo.message}
+                {couponInfo.valid ? '✓ ' : '✗ '}{couponInfo.message}
               </div>
             )}
           </div>
-          <div className="rounded-card border border-gray-200 p-3">
-            <div className="mb-2 text-sm font-semibold">
-              Redeem a gift card
-            </div>
+
+          {/* Gift card - kept but tightened */}
+          <div className="card space-y-1.5 p-3">
+            <div className="text-xs font-semibold uppercase tracking-wide
+              text-sub-text">Redeem a gift card</div>
             <div className="flex gap-2">
-              <input className="input flex-1 tracking-widest"
+              <input className="input !py-2 flex-1 tracking-wider
+                text-sm uppercase"
                 maxLength={8} value={gift}
                 onChange={(e) => setGift(
                   e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
-                placeholder="8-CHAR CODE" />
+                placeholder="Gift card code (8 letters)" />
               <button onClick={redeemGift} disabled={giftBusy}
-                className="btn-primary !min-h-0 px-4">
-                {giftBusy ? '...' : 'Redeem'}
+                className="rounded-full bg-primary px-4 text-xs
+                  font-bold text-white disabled:opacity-50">
+                {giftBusy ? '…' : 'Redeem'}
               </button>
             </div>
           </div>
+
           {msg && (
-            <div className={`rounded-card p-3 ${msg.ok
+            <div className={`rounded-card p-3 text-sm ${msg.ok
               ? 'bg-success/10 text-success' : 'bg-danger/10 text-danger'}`}>
               {msg.ok ? '✅ ' : ''}{msg.t}
               {msg.ok && msg.back && (
@@ -370,12 +409,13 @@ export default function Wallet() {
             className="btn-primary w-full">
             {busy ? 'Processing...'
               : (couponInfo && couponInfo.valid && couponInfo.bonus > 0
-                ? `Pay ₹${Number(amount) || 0}, get `
-                  + `₹${(Number(amount) || 0) + couponInfo.bonus} in wallet`
+                ? `Pay ₹${Number(amount) || 0} → `
+                  + `get ₹${(Number(amount) || 0) + couponInfo.bonus} `
+                  + 'in wallet'
                 : `Add ₹${Number(amount) || 0} to Wallet`)}
           </button>
-          <p className="text-center text-xs text-sub-text">
-            🔒 Secure online payment{gwName ? ` via ${gwName}` : ''}
+          <p className="text-center text-[11px] text-sub-text">
+            🔒 Secure payment{gwName ? ` via ${gwName}` : ''}
           </p>
         </div>
       ) : (
@@ -394,6 +434,93 @@ export default function Wallet() {
         </div>
       )}
     </Layout>
+  );
+}
+
+// Available-offers panel. Swiggy / BigBasket-style horizontal card
+// list of every active coupon the customer can use right now.
+// Tapping a card applies the code into the manual-entry input below.
+// Shows the headline 100%-cashback first-recharge offer prominently
+// when the user is eligible; hides it the moment they have a
+// successful payment on the wallet.
+function CouponsPanel({ amount, activeCode, onPick }) {
+  const [list, setList] = useState(null);
+  useEffect(() => {
+    walletService.listAvailableCoupons()
+      .then(setList).catch(() => setList([]));
+  }, []);
+  if (list == null) {
+    return (
+      <div className="card flex h-16 items-center justify-center
+        p-3 text-xs text-sub-text">
+        Loading offers...
+      </div>
+    );
+  }
+  if (list.length === 0) return null;
+  return (
+    <div className="card space-y-2 p-3">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-semibold uppercase tracking-wide
+          text-sub-text">Available offers</div>
+        <div className="text-[10px] text-sub-text">
+          Tap to apply
+        </div>
+      </div>
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {list.map((c) => {
+          const min = Number(c.minAmount || 0);
+          const cap = Number(c.maxDiscount || 0);
+          const pct = Number(c.discountPercent || 0);
+          const ineligible = min > 0 && amount > 0 && amount < min;
+          const isActive = activeCode === c.code;
+          return (
+            <button key={c.id} type="button"
+              onClick={() => onPick(c.code, min)}
+              className={`relative flex w-60 shrink-0 flex-col gap-1
+                rounded-xl border p-2.5 text-left transition ${
+                isActive
+                  ? 'border-primary bg-primary/5'
+                  : ineligible
+                    ? 'border-gray-200 bg-white opacity-70'
+                    : 'border-gray-200 bg-white hover:border-primary'}`}>
+              <div className="flex items-center gap-1.5">
+                <span className="rounded-md bg-amber-100 px-1.5 py-0.5
+                  text-[10px] font-bold uppercase tracking-wide
+                  text-amber-800">
+                  {pct}%{cap ? ` UP TO ₹${cap}` : ''}
+                </span>
+                {c.firstRechargeOnly && (
+                  <span className="rounded-md bg-emerald-100 px-1.5 py-0.5
+                    text-[10px] font-bold uppercase tracking-wide
+                    text-emerald-800">
+                    First recharge
+                  </span>
+                )}
+              </div>
+              <div className="text-sm font-bold text-dark-text">
+                {c.title || c.code}
+              </div>
+              {c.description && (
+                <div className="line-clamp-2 text-[11px] leading-snug
+                  text-sub-text">{c.description}</div>
+              )}
+              <div className="mt-0.5 flex items-center justify-between
+                text-[10px]">
+                <span className="font-mono text-sub-text">
+                  Code {c.code}
+                </span>
+                <span className={`font-bold ${
+                  isActive ? 'text-success' : 'text-primary'}`}>
+                  {isActive ? '✓ Applied'
+                    : ineligible ? `Min ₹${min}` : 'Tap to apply'}
+                </span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

@@ -26,7 +26,7 @@ async function gateways() {
 // error } so we credit ONLY the recharge amount (the bonus is silently
 // skipped instead of failing the whole payment - the user should never
 // lose a successful payment over a bad coupon).
-async function validateCouponServer(db, rawCode, amount) {
+async function validateCouponServer(db, rawCode, amount, uid) {
   const code = String(rawCode || '').trim().toUpperCase();
   if (!code) return { ok: false, error: 'no code' };
   const amt = Math.round(Number(amount) || 0);
@@ -49,6 +49,22 @@ async function validateCouponServer(db, rawCode, amount) {
       && Number(c.usedCount || 0) >= Number(c.usageLimit)) {
       return { ok: false, error: 'usage limit reached' };
     }
+    const minAmt = Math.max(0, Number(c.minAmount || 0));
+    if (minAmt > 0 && amt < minAmt) {
+      return { ok: false, error: 'below min amount' };
+    }
+    // PER-USER first-recharge enforcement (authoritative). Client
+    // side does the same check for UX, but it's untrusted - this is
+    // the only gate that actually decides whether the bonus credits.
+    if (c.firstRechargeOnly && uid) {
+      const prior = await db.collection('payments')
+        .where('userId', '==', uid)
+        .where('status', '==', 'success')
+        .limit(1).get();
+      if (!prior.empty) {
+        return { ok: false, error: 'first-recharge-already-used' };
+      }
+    }
     const percent = Math.max(0, Number(c.discountPercent || 0));
     const cap = Math.max(0, Number(c.maxDiscount || 0));
     const raw = Math.floor((amt * percent) / 100);
@@ -68,7 +84,7 @@ async function creditWallet(uid, amount, gateway, meta, couponCode) {
   // sees their balance grow by amt + bonus, with two separate
   // transaction rows ("recharge" + "coupon bonus") so it's auditable.
   const coupon = couponCode
-    ? await validateCouponServer(db, couponCode, amt)
+    ? await validateCouponServer(db, couponCode, amt, uid)
     : { ok: false };
   const bonus = coupon.ok ? coupon.bonus : 0;
 
