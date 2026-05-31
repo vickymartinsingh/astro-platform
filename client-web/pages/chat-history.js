@@ -97,92 +97,85 @@ export default function ChatHistory() {
         <EmptyState
           message="No chats yet. Start your first consultation 🔮" />
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {rows.map((s) => (
-            <div key={s.id}
-              className="card flex w-full flex-wrap items-start gap-3
-                text-left">
-              {/* Avatar */}
+            <div key={s.id} className="card flex w-full gap-3 p-3">
+              {/* Compact avatar */}
               <img src={s.astro?.profileImage || '/avatar.png'}
-                className="h-12 w-12 shrink-0 rounded-full object-cover
+                className="h-10 w-10 shrink-0 rounded-full object-cover
                   bg-bg-light" alt="" />
-              {/* Astrologer + metadata. min-w-0 lets the parent
-                  flex-wrap so the name uses the FULL width on narrow
-                  viewports instead of wrapping to 2 lines next to the
-                  avatar. */}
-              <div className="min-w-0 flex-1">
-                <div className="text-base font-bold text-dark-text">
+              {/* Centre column: Name on top, then Date | Time row,
+                  then Duration | Amount row. Each label is tiny
+                  uppercase + tight value below for a neat scannable
+                  block - the whole metadata stack fits in ~80 px so
+                  the card stays small. */}
+              <div className="min-w-0 flex-1 leading-tight">
+                <div className="truncate text-sm font-bold text-dark-text">
                   {s.astro?.name || 'Astrologer'}
                 </div>
-                <div className="mt-0.5 text-xs uppercase tracking-wide
-                  text-sub-text">
-                  Chat consultation
+                <div className="mt-1.5 flex items-baseline gap-4
+                  text-xs text-dark-text">
+                  <div className="min-w-0">
+                    <span className="block text-[10px] uppercase
+                      tracking-wide text-sub-text">Date</span>
+                    <span className="font-semibold">
+                      {fmtDate(s.startTime || s.createdAt) || '-'}
+                    </span>
+                  </div>
+                  <div className="min-w-0">
+                    <span className="block text-[10px] uppercase
+                      tracking-wide text-sub-text">Time</span>
+                    <span className="font-semibold">
+                      {fmtTime(s.startTime || s.createdAt) || '-'}
+                    </span>
+                  </div>
                 </div>
-                <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1
-                  text-sm text-dark-text sm:grid-cols-4">
-                  <div>
-                    <div className="text-[11px] uppercase tracking-wide
-                      text-sub-text">Date</div>
-                    <div className="font-semibold">
-                      {fmtDate(s.startTime || s.createdAt)}
-                    </div>
+                <div className="mt-1 flex items-baseline gap-4
+                  text-xs text-dark-text">
+                  <div className="min-w-0">
+                    <span className="block text-[10px] uppercase
+                      tracking-wide text-sub-text">Duration</span>
+                    <span className="font-semibold">
+                      {fmtDuration(s.duration) || '-'}
+                    </span>
                   </div>
-                  <div>
-                    <div className="text-[11px] uppercase tracking-wide
-                      text-sub-text">Time</div>
-                    <div className="font-semibold">
-                      {fmtTime(s.startTime || s.createdAt)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] uppercase tracking-wide
-                      text-sub-text">Duration</div>
-                    <div className="font-semibold">
-                      {fmtDuration(s.duration)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] uppercase tracking-wide
-                      text-sub-text">Amount</div>
-                    <div className="font-semibold">
+                  <div className="min-w-0">
+                    <span className="block text-[10px] uppercase
+                      tracking-wide text-sub-text">Amount</span>
+                    <span className="font-semibold">
                       {s.cost > 0 ? `₹${s.cost}` : 'Free'}
-                    </div>
+                    </span>
                   </div>
                 </div>
+                {s.recordingUrl && (
+                  <div className="mt-2">
+                    {s.recordingKind === 'video' ? (
+                      <video src={s.recordingUrl} controls preload="none"
+                        className="w-full rounded-card bg-black" />
+                    ) : (
+                      <audio src={s.recordingUrl} controls preload="none"
+                        className="h-8 w-full" />
+                    )}
+                  </div>
+                )}
               </div>
-              {/* Actions: View conversation + Chat again. Wrap below
-                  the metadata on narrow viewports so the buttons
-                  never squeeze the name column. */}
-              <div className="ml-auto flex shrink-0 items-center gap-2">
+              {/* Right column: stacked compact actions so they never
+                  squeeze the metadata grid. */}
+              <div className="flex shrink-0 flex-col items-end
+                justify-center gap-1.5">
                 <a href={`/chat/${s.astroId}?view=1`}
-                  className="rounded-full border border-primary px-4 py-2
-                    text-sm font-semibold text-primary">
+                  className="rounded-full border border-primary px-3 py-1
+                    text-xs font-semibold text-primary">
                   View
                 </a>
                 {s.astro && (
                   <button onClick={() => go('chat', s.astro)}
-                    className="rounded-full bg-primary px-4 py-2 text-sm
-                      font-semibold text-white">
+                    className="rounded-full bg-primary px-3 py-1
+                      text-xs font-semibold text-white">
                     Chat again
                   </button>
                 )}
               </div>
-              {/* Recording playback (if captured during this chat).
-                  Audio for chat sessions covers voice notes; for the
-                  pure-text chat the row is hidden silently. */}
-              {s.recordingUrl && (
-                <div className="basis-full pt-2">
-                  <div className="mb-1 text-[11px] uppercase tracking-wide
-                    text-sub-text">Recording</div>
-                  {s.recordingKind === 'video' ? (
-                    <video src={s.recordingUrl} controls preload="none"
-                      className="w-full rounded-card bg-black" />
-                  ) : (
-                    <audio src={s.recordingUrl} controls preload="none"
-                      className="w-full" />
-                  )}
-                </div>
-              )}
             </div>
           ))}
         </div>
