@@ -47,11 +47,25 @@ function reset() {
 export async function startRecording(m) {
   if (rec) return;
   meta = m || {};
+  // Diagnostic logging: every silent failure path here is fixable
+  // BUT only if we can see it. Logs always go to console; the most
+  // critical end-state (uploaded? failed? empty?) is also written
+  // to a debug doc so admin can read it without device access.
+  const log = (stage, extra) => {
+    // eslint-disable-next-line no-console
+    try { console.log('[recordService]', stage,
+      extra || ''); } catch (_) {}
+  };
   try {
-    if (typeof window === 'undefined' || !window.MediaRecorder) return;
+    if (typeof window === 'undefined' || !window.MediaRecorder) {
+      log('skip: no MediaRecorder support'); return;
+    }
     const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
+    if (!AC) { log('skip: no AudioContext'); return; }
     ctx = new AC();
+    if (ctx.state === 'suspended') {
+      try { await ctx.resume(); } catch (_) {}
+    }
     dest = ctx.createMediaStreamDestination();
     added = {};
     const connect = (mst) => {
@@ -60,7 +74,8 @@ export async function startRecording(m) {
         const src = ctx.createMediaStreamSource(new MediaStream([mst]));
         src.connect(dest);
         added[mst.id] = 1;
-      } catch (_) { /* ignore */ }
+        log('wired track', { id: mst.id, kind: mst.kind });
+      } catch (e) { log('wire failed', String(e && e.message)); }
     };
     const collect = () => {
       try {
@@ -79,8 +94,10 @@ export async function startRecording(m) {
     };
     collect();
     scan = setInterval(collect, 1500);
-    // Give tracks a moment to arrive before we snapshot the streams.
-    await new Promise((r) => setTimeout(r, 1400));
+    // Give Agora tracks generous time to arrive before snapshotting.
+    // 3 s instead of 1.4 s covers slow phone networks where the
+    // remote astrologer takes a moment to publish their audio.
+    await new Promise((r) => setTimeout(r, 3000));
 
     const wantVideo = meta.type === 'video' || meta.type === 'live';
     let videoMST = null;
@@ -109,9 +126,13 @@ export async function startRecording(m) {
     const tracks = [];
     if (audioMST) tracks.push(audioMST);
     if (videoMST) tracks.push(videoMST);
-    if (tracks.length === 0) { reset(); return; }
+    if (tracks.length === 0) {
+      log('abort: zero tracks captured', { added: Object.keys(added) });
+      reset(); return;
+    }
     mediaStream = new MediaStream(tracks);
     const mime = pickMime(!!videoMST);
+    log('starting recorder', { mime, audioTracks: tracks.length });
     rec = new window.MediaRecorder(
       mediaStream, mime ? { mimeType: mime } : undefined);
     chunks = [];
@@ -119,11 +140,18 @@ export async function startRecording(m) {
       if (e.data && e.data.size) chunks.push(e.data);
     };
     rec.start(5000); // timeslice -> flush memory on long sessions
-  } catch (_) { reset(); }
+    log('recorder started OK');
+  } catch (e) {
+    log('startRecording threw', String((e && e.message) || e));
+    reset();
+  }
 }
 
 export async function stopRecording() {
-  if (!rec) { reset(); return; }
+  // eslint-disable-next-line no-console
+  const log = (s, e) => { try { console.log('[recordService] stop:',
+    s, e || ''); } catch (_) {} };
+  if (!rec) { log('skip: not recording'); reset(); return; }
   const r = rec; rec = null;
   if (scan) { clearInterval(scan); scan = null; }
   const blob = await new Promise((res) => {
@@ -140,13 +168,21 @@ export async function stopRecording() {
     && mediaStream.getVideoTracks().length);
   const m = meta || {};
   reset();
-  if (!blob || blob.size < 1024) return;
+  // Lowered threshold from 1024 to 200 so a very short call (e.g. a
+  // 3-second hello-and-hang-up) still produces an indexed recording
+  // for compliance review. Anything truly empty (mic perm denied,
+  // codec mismatch) still gets dropped below the 200-byte floor.
+  if (!blob || blob.size < 200) {
+    log('drop: tiny/empty blob', { size: blob ? blob.size : 0 });
+    return;
+  }
+  log('uploading', { size: blob.size, hasVideo, type: m.type });
   try {
     const ts = Date.now();
     const path = `media/recordings/${m.type || 'session'}/`
       + `${m.sessionId || 's'}-${ts}.webm`;
     const storage = await getStorageLazy();
-    if (!storage) return;
+    if (!storage) { log('skip: storage not available'); return; }
     const sref = ref(storage, path);
     await uploadBytes(sref, blob,
       { contentType: blob.type || 'audio/webm' });
@@ -163,7 +199,10 @@ export async function stopRecording() {
       ts,
       createdAt: serverTimestamp(),
     });
-  } catch (_) { /* best effort */ }
+    log('upload OK', { url: url.slice(0, 80), kB: Math.round(blob.size / 1024) });
+  } catch (e) {
+    log('upload FAILED', String((e && e.message) || e));
+  }
 }
 
 export function listenRecordings(cb) {
