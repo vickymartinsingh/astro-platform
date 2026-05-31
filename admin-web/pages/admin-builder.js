@@ -459,8 +459,11 @@ export default function AdminBuilder() {
             <p className="text-xs text-sub-text">
               Edit the labels, headings, body text and button copy
               for any modal in the customer app. Changes go live
-              instantly with no rebuild. Leave a field blank to fall
-              back to the default copy below it.
+              instantly with no rebuild. The input is PRE-FILLED with
+              the current copy - tweak a word, hit save, done. Use
+              the template selector below to switch between named
+              variants (e.g. seasonal sale copy, regional language
+              variants).
             </p>
             <label className="block text-xs font-semibold text-sub-text">
               Pick a modal
@@ -473,6 +476,17 @@ export default function AdminBuilder() {
                 ))}
               </select>
             </label>
+            {/* Templates row. Saved templates live in
+                content.modalTemplates as
+                  { id, name, text: { key: value, ... } }
+                Loading a template overwrites every override key in
+                content.text with the template's values, so the entire
+                modal copy switches in one click. */}
+            <ModalTemplates
+              modalId={modalId}
+              content={content}
+              setContent={setContent}
+              saveContent={saveContent} />
             {(() => {
               const modal = MODAL_REGISTRY.find((m) => m.id === modalId);
               if (!modal) return null;
@@ -482,33 +496,56 @@ export default function AdminBuilder() {
                 ...content,
                 text: { ...text, [k]: v },
               });
+              const revert = (k) => {
+                const next = { ...text };
+                delete next[k];
+                setContent({ ...content, text: next });
+              };
               return (
                 <>
                   {modal.note && (
                     <div className="rounded-md bg-bg-light px-2 py-1
                       text-[11px] text-sub-text">{modal.note}</div>
                   )}
-                  {modal.fields.map((f) => (
-                    <div key={f.key} className="space-y-1 pt-2">
-                      <div className="text-xs font-semibold text-dark-text">
-                        {f.label}
+                  {modal.fields.map((f) => {
+                    // Pre-fill the input with the live override
+                    // value, OR fall back to the default copy.
+                    // Admin edits the visible text directly without
+                    // having to retype the whole sentence.
+                    const overridden = text[f.key] != null
+                      && String(text[f.key]).trim() !== '';
+                    const live = overridden ? text[f.key] : f.def;
+                    return (
+                      <div key={f.key} className="space-y-1 pt-2">
+                        <div className="flex items-center justify-between
+                          gap-2">
+                          <div className="text-xs font-semibold
+                            text-dark-text">{f.label}</div>
+                          {overridden && (
+                            <button type="button"
+                              onClick={() => revert(f.key)}
+                              className="text-[10px] font-semibold
+                                text-primary hover:underline">
+                              Revert to default
+                            </button>
+                          )}
+                        </div>
+                        {f.multiline ? (
+                          <textarea className="input min-h-[64px]"
+                            value={live}
+                            onChange={(e) => upd(f.key, e.target.value)} />
+                        ) : (
+                          <input className="input"
+                            value={live}
+                            onChange={(e) => upd(f.key, e.target.value)} />
+                        )}
+                        <div className="text-[11px] text-sub-text">
+                          {overridden ? 'Custom override.'
+                            : 'Showing default. Edit + save to override.'}
+                        </div>
                       </div>
-                      {f.multiline ? (
-                        <textarea className="input min-h-[64px]"
-                          placeholder={f.def}
-                          value={text[f.key] || ''}
-                          onChange={(e) => upd(f.key, e.target.value)} />
-                      ) : (
-                        <input className="input"
-                          placeholder={f.def}
-                          value={text[f.key] || ''}
-                          onChange={(e) => upd(f.key, e.target.value)} />
-                      )}
-                      <div className="text-[11px] text-sub-text">
-                        Default: {f.def}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   <button onClick={saveContent}
                     className="btn-primary mt-3 w-full">
                     Save modal copy
@@ -547,5 +584,151 @@ export default function AdminBuilder() {
         </div>
       </div>
     </Layout>
+  );
+}
+
+// Reusable: extracts the subset of content.text keys that belong to
+// the given modal. We use this to snapshot the current visible copy
+// (overrides AND defaults) into a template so loading the template
+// later restores EXACTLY what the admin saw when they saved it.
+function snapshotModalText(modalId, content) {
+  const modal = MODAL_REGISTRY.find((m) => m.id === modalId);
+  if (!modal) return {};
+  const text = (content.text && typeof content.text === 'object')
+    ? content.text : {};
+  const out = {};
+  for (const f of modal.fields) {
+    // Snapshot the LIVE value (override if set, else the code default).
+    out[f.key] = (text[f.key] != null && String(text[f.key]).trim() !== '')
+      ? text[f.key] : f.def;
+  }
+  return out;
+}
+
+function applyTemplateText(content, templateText) {
+  const text = (content.text && typeof content.text === 'object')
+    ? { ...content.text } : {};
+  for (const [k, v] of Object.entries(templateText || {})) {
+    text[k] = v;
+  }
+  return { ...content, text };
+}
+
+// Templates panel - sits between the modal picker and the field
+// editor. Saved templates live in content.modalTemplates[modalId]
+// as an array of {id, name, text:{}, savedAt}. Picking a template
+// overwrites the live text overrides; saving creates a new template
+// or updates the currently-selected one.
+function ModalTemplates({ modalId, content, setContent, saveContent }) {
+  const [selected, setSelected] = useState('');
+  const [newName, setNewName] = useState('');
+  const all = (content.modalTemplates
+    && typeof content.modalTemplates === 'object')
+    ? content.modalTemplates : {};
+  const list = Array.isArray(all[modalId]) ? all[modalId] : [];
+
+  // Reset selection when admin switches modal so a template ID from
+  // a different modal doesn't bleed across.
+  useEffect(() => { setSelected(''); }, [modalId]);
+
+  function load(id) {
+    setSelected(id);
+    const t = list.find((x) => x.id === id);
+    if (!t || !t.text) return;
+    setContent(applyTemplateText(content, t.text));
+  }
+
+  async function saveAsNew() {
+    const name = String(newName || '').trim();
+    if (!name) return;
+    const id = `t_${Date.now().toString(36)}`;
+    const snap = snapshotModalText(modalId, content);
+    const nextList = [...list, { id, name, text: snap,
+      // No Date.now() in journaled scripts; here we're in admin
+      // browser context so it's safe.
+      savedAt: new Date().toISOString() }];
+    const next = {
+      ...content,
+      modalTemplates: { ...all, [modalId]: nextList },
+    };
+    setContent(next);
+    setNewName('');
+    setSelected(id);
+    await saveContent();
+  }
+  async function update() {
+    if (!selected) return;
+    const snap = snapshotModalText(modalId, content);
+    const nextList = list.map((t) => (t.id === selected
+      ? { ...t, text: snap, savedAt: new Date().toISOString() }
+      : t));
+    const next = {
+      ...content,
+      modalTemplates: { ...all, [modalId]: nextList },
+    };
+    setContent(next);
+    await saveContent();
+  }
+  async function remove() {
+    if (!selected) return;
+    if (typeof window !== 'undefined'
+      // eslint-disable-next-line no-alert
+      && !window.confirm('Delete this template?')) return;
+    const nextList = list.filter((t) => t.id !== selected);
+    const next = {
+      ...content,
+      modalTemplates: { ...all, [modalId]: nextList },
+    };
+    setContent(next);
+    setSelected('');
+    await saveContent();
+  }
+
+  return (
+    <div className="rounded-md border border-gray-200 bg-bg-light/60
+      px-3 py-2 space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="text-[11px] font-bold uppercase tracking-wide
+          text-sub-text">Templates</div>
+        <div className="text-[10px] text-sub-text">
+          {list.length} saved
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <select className="input flex-1 !min-w-[160px] !py-1.5 text-xs"
+          value={selected}
+          onChange={(e) => load(e.target.value)}>
+          <option value="">— Live overrides —</option>
+          {list.map((t) => (
+            <option key={t.id} value={t.id}>{t.name}</option>
+          ))}
+        </select>
+        {selected && (
+          <>
+            <button type="button" onClick={update}
+              className="rounded-full bg-primary px-3 py-1 text-[11px]
+                font-bold text-white">
+              Update this template
+            </button>
+            <button type="button" onClick={remove}
+              className="rounded-full border border-danger px-3 py-1
+                text-[11px] font-bold text-danger">
+              Delete
+            </button>
+          </>
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        <input className="input flex-1 !py-1.5 text-xs"
+          placeholder="Name a new template (e.g. Diwali Sale)"
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)} />
+        <button type="button" onClick={saveAsNew} disabled={!newName.trim()}
+          className="rounded-full bg-primary px-3 py-1 text-[11px]
+            font-bold text-white disabled:opacity-50">
+          Save as template
+        </button>
+      </div>
+    </div>
   );
 }
