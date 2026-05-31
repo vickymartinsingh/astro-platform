@@ -9,6 +9,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { useOptionalClient } from '../lib/useAuth';
 import { useAuthModal } from '../lib/authModal';
+import { useContentText } from '../lib/useContentText';
 
 // Discover page - every AstroSeer-API-backed reading rendered as a
 // monochrome icon card. Click → detail panel with the sections,
@@ -448,6 +449,7 @@ function SuccessModal({ result, feature, onClose }) {
   const cached = !!(result && result.pdfUrl);
   const pending = !!(result && result.pending);
   const isError = !!(result && result.error);
+  const T = useContentText();
   // Per-kind delivery SLA copy. Maps the catalogue's `sla` field
   // through, with sensible defaults for non-kundli features that
   // route through other AstroSeer endpoints.
@@ -464,14 +466,23 @@ function SuccessModal({ result, feature, onClose }) {
   //   isError - relay returned an error, red header.
   //   cached  - cache hit, PDF available immediately.
   //   else    - order placed, async generation in flight.
-  const headerLabel = isError ? 'Order could not be placed'
-    : pending ? 'Placing order'
-      : cached ? 'Report ready'
-        : 'Order placed';
+  // Every visible string here is admin-overridable through the
+  // "Modals & popups" editor in /admin-builder. Defaults live in
+  // code; admin overrides land in settings/content.text[<key>].
+  const headerLabel = isError
+    ? T('modals.orderPlaced.errorLabel', 'Order could not be placed')
+    : pending ? T('modals.orderPlaced.pendingLabel', 'Placing order')
+      : cached ? T('modals.orderPlaced.readyLabel', 'Report ready')
+        : T('modals.orderPlaced.label', 'Order placed');
   const headerTitle = isError
-    ? `We could not place your ${feature.title} order`
-    : cached ? `${feature.title} is ready`
-      : `Thank you, your ${feature.title} is on its way`;
+    ? T('modals.orderPlaced.errorTitle',
+        'We could not place your {title} order', { title: feature.title })
+    : cached
+      ? T('modals.orderPlaced.readyTitle',
+          '{title} is ready', { title: feature.title })
+      : T('modals.orderPlaced.title',
+          'Thank you, your {title} is on its way',
+          { title: feature.title });
   const headerGradient = isError
     ? 'linear-gradient(135deg, #C0392B 0%, #7F2020 100%)'
     : 'linear-gradient(135deg, #D4A12A 0%, #B45309 50%, #7F2020 100%)';
@@ -520,7 +531,8 @@ function SuccessModal({ result, feature, onClose }) {
                 <div>
                   <div className="text-[10px] font-bold uppercase
                     tracking-wide text-sub-text">
-                    Expected delivery
+                    {T('modals.orderPlaced.expectedDeliveryLabel',
+                      'Expected delivery')}
                   </div>
                   <div className="text-sm font-bold text-dark-text">
                     {sla}
@@ -530,26 +542,30 @@ function SuccessModal({ result, feature, onClose }) {
               <p className="mt-3 text-[12px] leading-snug
                 text-sub-text">
                 {pending
-                  ? 'Confirming with our system... your order will '
-                    + 'be ready shortly. You can close this window '
-                    + 'now and check My Orders at any time.'
-                  : 'You can close this window. We will email you '
-                    + 'the moment the PDF is ready, and the '
-                    + 'download link lives permanently in '}
-                {!pending && <b>My Orders</b>}{!pending && '.'}
+                  ? T('modals.orderPlaced.pendingBody',
+                      'Confirming with our system... your order will '
+                      + 'be ready shortly. You can close this window '
+                      + 'now and check My Orders at any time.')
+                  : T('modals.orderPlaced.footer',
+                      'You can close this window. We will email you '
+                      + 'the moment the PDF is ready, and the '
+                      + 'download link lives permanently in My Orders.')}
               </p>
               {result && result.orderId ? (
                 <div className="mt-3 rounded-card bg-bg-light px-3
                   py-2 text-[11px]">
-                  <div className="text-sub-text">Order ID</div>
+                  <div className="text-sub-text">
+                    {T('modals.orderPlaced.orderIdLabel', 'Order ID')}
+                  </div>
                   <div className="mt-0.5 font-mono break-all
                     text-dark-text">{result.orderId}</div>
                 </div>
               ) : pending && (
                 <div className="mt-3 rounded-card bg-bg-light px-3
                   py-2 text-[11px] text-sub-text">
-                  Order ID will appear here once the system
-                  confirms your purchase.
+                  {T('modals.orderPlaced.orderIdPending',
+                    'Order ID will appear here once the system '
+                    + 'confirms your purchase.')}
                 </div>
               )}
             </>
@@ -557,7 +573,7 @@ function SuccessModal({ result, feature, onClose }) {
           {cached && !isError && (
             <a href={result.pdfUrl} target="_blank" rel="noreferrer"
               className="btn-primary mt-4 block text-center">
-              Download PDF
+              {T('modals.orderPlaced.downloadCta', 'Download PDF')}
             </a>
           )}
           <div className="mt-3 grid grid-cols-2 gap-2">
@@ -565,14 +581,14 @@ function SuccessModal({ result, feature, onClose }) {
               <Link href="/orders" onClick={onClose}
                 className="rounded-full bg-primary px-3 py-2
                   text-center text-sm font-bold text-white">
-                Open My Orders
+                {T('modals.orderPlaced.primaryCta', 'Open My Orders')}
               </Link>
             )}
             <button type="button" onClick={onClose}
               className={`rounded-full border border-gray-300
                 bg-white px-3 py-2 text-sm font-bold text-dark-text
                 ${isError ? 'col-span-2' : ''}`}>
-              Close
+              {T('modals.orderPlaced.closeCta', 'Close')}
             </button>
           </div>
         </div>

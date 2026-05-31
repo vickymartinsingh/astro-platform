@@ -29,12 +29,91 @@ const HOME_SECTIONS = [
   ['reviews', 'Customer reviews'],
 ];
 
+// ---------------------------------------------------------------------
+// Modals & popups text registry.
+//
+// Every customer-facing modal exposes a list of editable strings here.
+// Admin picks a modal from the dropdown, edits the fields, hits Save -
+// the change lands in settings/content.text[<key>] and propagates live
+// to every device via the existing onSnapshot listener in
+// client-web/lib/useContentText.js.
+//
+// To add a new modal: append a new entry. The customer-facing component
+// reads each string via T('<key>', '<default>') so the field is editable
+// from day one with no code change required from the admin.
+const MODAL_REGISTRY = [
+  {
+    id: 'orderPlaced',
+    label: 'Order placed / Report generation popup',
+    note: 'Shown after a paid kundli / forecast order is placed. '
+      + 'Use {title} as a placeholder for the product name.',
+    fields: [
+      { key: 'modals.orderPlaced.label',
+        label: 'Header label',
+        def: 'Order placed' },
+      { key: 'modals.orderPlaced.title',
+        label: 'Header title (supports {title})',
+        def: 'Thank you, your {title} is on its way',
+        multiline: true },
+      { key: 'modals.orderPlaced.pendingLabel',
+        label: 'Header label - placing order state',
+        def: 'Placing order' },
+      { key: 'modals.orderPlaced.readyLabel',
+        label: 'Header label - report ready state',
+        def: 'Report ready' },
+      { key: 'modals.orderPlaced.errorLabel',
+        label: 'Header label - error state',
+        def: 'Order could not be placed' },
+      { key: 'modals.orderPlaced.readyTitle',
+        label: 'Header title - cached / ready state',
+        def: '{title} is ready' },
+      { key: 'modals.orderPlaced.errorTitle',
+        label: 'Header title - error state',
+        def: 'We could not place your {title} order',
+        multiline: true },
+      { key: 'modals.orderPlaced.expectedDeliveryLabel',
+        label: 'Expected-delivery row label',
+        def: 'Expected delivery' },
+      { key: 'modals.orderPlaced.footer',
+        label: 'Footer body (after the SLA, normal flow)',
+        def: 'You can close this window. We will email you '
+          + 'the moment the PDF is ready, and the download link '
+          + 'lives permanently in My Orders.',
+        multiline: true },
+      { key: 'modals.orderPlaced.pendingBody',
+        label: 'Footer body (pending / placing state)',
+        def: 'Confirming with our system... your order will be ready '
+          + 'shortly. You can close this window now and check My '
+          + 'Orders at any time.',
+        multiline: true },
+      { key: 'modals.orderPlaced.orderIdLabel',
+        label: 'Order ID label',
+        def: 'Order ID' },
+      { key: 'modals.orderPlaced.orderIdPending',
+        label: 'Order ID placeholder (while pending)',
+        def: 'Order ID will appear here once the system confirms '
+          + 'your purchase.',
+        multiline: true },
+      { key: 'modals.orderPlaced.downloadCta',
+        label: 'Download PDF button',
+        def: 'Download PDF' },
+      { key: 'modals.orderPlaced.primaryCta',
+        label: 'Primary button (My Orders)',
+        def: 'Open My Orders' },
+      { key: 'modals.orderPlaced.closeCta',
+        label: 'Close button',
+        def: 'Close' },
+    ],
+  },
+];
+
 export default function AdminBuilder() {
   const { loading } = useRequireAdmin();
   const [feat, setFeat] = useState(null);     // settings/features
   const [ann, setAnn] = useState(null);       // settings/announcement
   const [content, setContent] = useState(null); // settings/content
   const [plat, setPlat] = useState('app'); // 'app' | 'desktop'
+  const [modalId, setModalId] = useState(MODAL_REGISTRY[0]?.id || '');
 
   useEffect(() => {
     Promise.all([
@@ -368,6 +447,75 @@ export default function AdminBuilder() {
                 ...content, previewUrl: e.target.value })} />
             <button onClick={saveContent}
               className="btn-primary w-full">Save home content</button>
+          </div>
+
+          {/* MODALS & POPUPS - admin-editable text for every customer-
+              facing modal. Each modal lives in MODAL_REGISTRY at the
+              top of this file. Adding a new modal there + reading
+              T('<key>', '<default>') in the modal's component makes
+              every field editable here from day one. */}
+          <div className="card space-y-2">
+            <div className="font-semibold">Modals &amp; popups</div>
+            <p className="text-xs text-sub-text">
+              Edit the labels, headings, body text and button copy
+              for any modal in the customer app. Changes go live
+              instantly with no rebuild. Leave a field blank to fall
+              back to the default copy below it.
+            </p>
+            <label className="block text-xs font-semibold text-sub-text">
+              Pick a modal
+              <select
+                className="input mt-1"
+                value={modalId}
+                onChange={(e) => setModalId(e.target.value)}>
+                {MODAL_REGISTRY.map((m) => (
+                  <option key={m.id} value={m.id}>{m.label}</option>
+                ))}
+              </select>
+            </label>
+            {(() => {
+              const modal = MODAL_REGISTRY.find((m) => m.id === modalId);
+              if (!modal) return null;
+              const text = (content.text && typeof content.text === 'object')
+                ? content.text : {};
+              const upd = (k, v) => setContent({
+                ...content,
+                text: { ...text, [k]: v },
+              });
+              return (
+                <>
+                  {modal.note && (
+                    <div className="rounded-md bg-bg-light px-2 py-1
+                      text-[11px] text-sub-text">{modal.note}</div>
+                  )}
+                  {modal.fields.map((f) => (
+                    <div key={f.key} className="space-y-1 pt-2">
+                      <div className="text-xs font-semibold text-dark-text">
+                        {f.label}
+                      </div>
+                      {f.multiline ? (
+                        <textarea className="input min-h-[64px]"
+                          placeholder={f.def}
+                          value={text[f.key] || ''}
+                          onChange={(e) => upd(f.key, e.target.value)} />
+                      ) : (
+                        <input className="input"
+                          placeholder={f.def}
+                          value={text[f.key] || ''}
+                          onChange={(e) => upd(f.key, e.target.value)} />
+                      )}
+                      <div className="text-[11px] text-sub-text">
+                        Default: {f.def}
+                      </div>
+                    </div>
+                  ))}
+                  <button onClick={saveContent}
+                    className="btn-primary mt-3 w-full">
+                    Save modal copy
+                  </button>
+                </>
+              );
+            })()}
           </div>
         </div>
 
