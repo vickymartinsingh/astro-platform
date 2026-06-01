@@ -89,6 +89,15 @@ export default function TopNav() {
     menuService.DEFAULT_CLIENT_MENU);
   const [profileMenu, setProfileMenu] = useState(
     menuService.DEFAULT_CLIENT_PROFILE);
+  // SSR renders an empty/skeleton; the menus are populated client-
+  // side. Without this gate the server-rendered <Link> list and the
+  // post-snapshot client list mismatch (Firestore may add / remove
+  // menu items relative to the defaults), which throws the React
+  // hydration warning and re-mounts the whole subtree on every
+  // navigation. The "mounted" flag flips on the first effect tick so
+  // server HTML stays in sync with first-paint client HTML.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
   const router = useRouter();
   useEffect(() => menuService.watchMenus((m) => {
     setMenu(m.menu);
@@ -140,6 +149,30 @@ export default function TopNav() {
 
   const profActive = profileMenu.some((m) => m.href === router.pathname);
 
+  // SSR path: render a minimal header skeleton (logo + spacer) and
+  // wait for the first effect tick to mount the real menu + user
+  // controls. Every interactive control inside the nav depends on
+  // client-only state (Firestore menu doc, Firebase auth user,
+  // settings/features doc, branding doc) - the server can't possibly
+  // produce a tree that matches the client one, so trying to do so
+  // throws the hydration warnings + cascades into "div was replaced
+  // with client content" which kills the whole page.
+  if (!mounted) {
+    return (
+      <header data-topnav
+        className="sticky top-0 z-40 border-b border-gray-100 bg-white"
+        style={{ paddingTop: 'env(safe-area-inset-top, 0px)' }}>
+        <div className="mx-auto flex max-w-6xl items-center
+          justify-between px-4 py-3">
+          <span className="flex items-center gap-2">
+            <img src={brand.logo || '/logo.png'} alt={brand.name}
+              className="h-9 max-w-[150px] object-contain" />
+          </span>
+          <span className="h-9 w-9 rounded-full bg-bg-light" />
+        </div>
+      </header>
+    );
+  }
   return (
     <header data-topnav
       className="sticky top-0 z-40 border-b border-gray-100 bg-white"
@@ -176,7 +209,7 @@ export default function TopNav() {
         </Link>
 
         <nav className="hidden items-center gap-1 md:flex">
-          {menu.map((l) => {
+          {mounted && menu.map((l) => {
             const active = router.pathname === l.href;
             return (
               <Link key={l.href} href={l.href}
