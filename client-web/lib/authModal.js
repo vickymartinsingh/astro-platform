@@ -13,17 +13,52 @@ import { useSettings } from './useSettings';
 // minified - it pulls Firebase Auth flows, OTP plumbing, Google sign-in
 // helpers). It is only visible when the auth modal opens, so we ship
 // it in its own chunk that the browser fetches on demand. Until the
-// chunk lands the overlay shows a lightweight spinner, then swaps in
-// the real card with no layout shift.
+// chunk lands the overlay shows a lightweight spinner with a 6-second
+// recovery escape hatch: if the chunk genuinely never arrives (the
+// classic "stale tab after a deploy - chunk hash 404s" failure) the
+// spinner flips to a hard-reload prompt so the customer can recover
+// without closing the app.
 const LoginCard = dynamic(() => import('../components/LoginCard'), {
   ssr: false,
-  loading: () => (
+  loading: () => <LoginCardLoading />,
+});
+
+function LoginCardLoading() {
+  const [stuck, setStuck] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setStuck(true), 6000);
+    return () => clearTimeout(t);
+  }, []);
+  if (stuck) {
+    return (
+      <div className="rounded-2xl bg-white p-6 text-center">
+        <div className="text-sm font-semibold text-dark-text">
+          Sign-in could not load
+        </div>
+        <p className="mx-auto mt-2 max-w-xs text-xs text-sub-text">
+          The app may have updated in the background. Reloading
+          should fix this in a second.
+        </p>
+        <button type="button"
+          onClick={() => {
+            try {
+              if (typeof window !== 'undefined') window.location.reload();
+            } catch (_) { /* swallow */ }
+          }}
+          className="mt-4 rounded-full bg-primary px-5 py-2 text-sm
+            font-bold text-white">
+          Reload now
+        </button>
+      </div>
+    );
+  }
+  return (
     <div className="rounded-2xl bg-white p-10 text-center text-sm
                     text-gray-500">
       Loading sign-in…
     </div>
-  ),
-});
+  );
+}
 
 // Global login popup. openLogin(onSuccess, { onDismiss }).
 // Closes ONLY on: successful login, the X / "Maybe later" buttons, or a
