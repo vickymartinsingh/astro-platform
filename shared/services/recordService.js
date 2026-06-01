@@ -16,11 +16,9 @@
 // Firestore rules redeploy. Audio is always captured so admin can at
 // least listen.
 import {
-  collection, addDoc, doc, setDoc, query, where, onSnapshot,
-  serverTimestamp,
+  collection, doc, setDoc, query, where, onSnapshot,
 } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, getStorageLazy } from '../firebase.js';
+import { db } from '../firebase.js';
 import { getClient, getLocalTracks } from './callService.js';
 
 let rec = null;
@@ -221,39 +219,74 @@ export async function stopRecording() {
   }
   log('uploading', { size: blob.size, hasVideo, type: m.type });
   try {
-    // DETERMINISTIC path + index doc, so customer+astro both writing
-    // for the same session produce ONE file in Storage and ONE entry
-    // in the admin recordings list. Last writer wins; either side
-    // alone still works. Without this we accumulated stale duplicates
-    // per call.
     if (!m.sessionId) { log('skip: no sessionId on meta'); return; }
-    const path = `media/recordings/${m.type || 'session'}/`
-      + `${m.sessionId}.webm`;
-    const storage = await getStorageLazy();
-    if (!storage) { log('skip: storage not available'); return; }
-    const sref = ref(storage, path);
-    await uploadBytes(sref, blob,
-      { contentType: blob.type || 'audio/webm' });
-    const url = await getDownloadURL(sref);
-    // Index doc id = deterministic too, so two writers for the same
-    // session don't create two index rows the admin has to clean up.
-    await setDoc(doc(db, 'chats', `recording_${m.sessionId}`), {
-      isRecordingDoc: true,
-      sessionId: m.sessionId,
-      type: m.type || 'session',
-      astroId: m.astroId || '',
-      userId: m.userId || '',
-      kind: hasVideo ? 'video' : 'audio',
-      url,
-      sizeKB: Math.round(blob.size / 1024),
-      ts: Date.now(),
-      createdAt: serverTimestamp(),
-    }, { merge: true });
-    log('upload OK', { url: url.slice(0, 80),
-      kB: Math.round(blob.size / 1024), path });
+    // Upload via the relay to Cloudflare R2. Firebase Storage is not
+    // provisioned on this project (Spark plan; the Blaze upgrade
+    // prompt blocks Storage). The relay accepts a base64-encoded
+    // blob and writes to the SAME R2 bucket the kundli PDFs use,
+    // then writes the chats/recording_<sessionId> index doc so
+    // /consultations + /admin-recordings pick it up automatically.
+    const base = relayBase();
+    if (!base) {
+      log('skip: relay endpoint not configured');
+      return;
+    }
+    const dataBase64 = await blobToBase64(blob);
+    const r = await fetch(`${base}/api/kundli`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'uploadRecording',
+        sessionId: m.sessionId,
+        type: m.type || 'session',
+        userId: m.userId || '',
+        astroId: m.astroId || '',
+        mime: blob.type || 'audio/webm',
+        kind: hasVideo ? 'video' : 'audio',
+        dataBase64,
+      }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.ok) {
+      log('upload FAILED',
+        `${r.status} ${j.error || ''}`.trim());
+      return;
+    }
+    log('upload OK', { url: String(j.url || '').slice(0, 80),
+      kB: Math.round(blob.size / 1024) });
   } catch (e) {
     log('upload FAILED', String((e && e.message) || e));
   }
+}
+
+// Resolve the relay base URL. Same pattern as kundliService /
+// pushService / etc - NEXT_PUBLIC_* env literal, with the
+// /sendPush or /kundli endpoint stripped so we can append our
+// own action endpoint.
+function relayBase() {
+  const push = (typeof process !== 'undefined' && process.env
+    && process.env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
+  if (push) return push.replace(/\/api\/sendPush\/?$/, '');
+  const k = (typeof process !== 'undefined' && process.env
+    && process.env.NEXT_PUBLIC_KUNDLI_ENDPOINT) || '';
+  if (k) return k.replace(/\/api\/kundli\/?$/, '');
+  return '';
+}
+
+// Browser blob -> base64 string (no data: prefix).
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    try {
+      const r = new FileReader();
+      r.onerror = () => reject(new Error('FileReader failed'));
+      r.onload = () => {
+        const s = String(r.result || '');
+        const idx = s.indexOf(',');
+        resolve(idx >= 0 ? s.slice(idx + 1) : s);
+      };
+      r.readAsDataURL(blob);
+    } catch (e) { reject(e); }
+  });
 }
 
 export function listenRecordings(cb) {

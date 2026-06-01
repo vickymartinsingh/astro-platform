@@ -738,6 +738,97 @@ module.exports = async (req, res) => {
   if (src.action === 'rescueByOrderId') {
     return reportMod().handleRescueByOrderId(req, res);
   }
+  // Call / video / live recording upload via R2.
+  //
+  // Firebase Storage requires a Blaze billing upgrade, which this
+  // project has explicitly opted out of. Customer recordings come
+  // in as a base64-encoded WebM blob in the POST body; we decode
+  // and push to the existing Cloudflare R2 bucket the kundli PDFs
+  // use (so no new infra, no second Vercel env to manage). On
+  // success we ALSO write the chats/recording_<sessionId> index
+  // doc so /consultations + /admin-recordings pick it up
+  // automatically.
+  //
+  // Body:
+  //   { action:'uploadRecording', sessionId, type, userId, astroId,
+  //     mime, kind, dataBase64 }
+  // Returns:
+  //   { ok:true, url, size }
+  if (src.action === 'uploadRecording' && req.method === 'POST') {
+    if (!initAdmin()) {
+      return res.status(503).json({ error: 'admin SDK not configured' });
+    }
+    const { sessionId, mime, kind, dataBase64,
+      userId, astroId } = src;
+    const type = String(src.type || 'session').replace(/[^a-z0-9]/gi, '');
+    if (!sessionId || !dataBase64) {
+      return res.status(400).json({
+        error: 'sessionId and dataBase64 required' });
+    }
+    const buf = Buffer.from(String(dataBase64), 'base64');
+    if (!buf || buf.length < 200) {
+      return res.status(400).json({ error: 'empty/tiny blob',
+        size: buf ? buf.length : 0 });
+    }
+    if (buf.length > 25 * 1024 * 1024) {     // Vercel body cap ~4.5 MB
+      return res.status(413).json({ error: 'recording too large',
+        size: buf.length });                  // - but we accept up to
+                                              //   the Node mem cap.
+    }
+    if (!(process.env.R2_ACCOUNT_ID && process.env.R2_ACCESS_KEY_ID
+        && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET)) {
+      return res.status(503).json({ error: 'R2 not configured' });
+    }
+    try {
+      const { S3Client, PutObjectCommand } = require(
+        '@aws-sdk/client-s3');
+      const client = new S3Client({
+        region: 'auto',
+        endpoint: `https://${process.env.R2_ACCOUNT_ID}.`
+          + 'r2.cloudflarestorage.com',
+        credentials: {
+          accessKeyId: process.env.R2_ACCESS_KEY_ID,
+          secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+        },
+        forcePathStyle: true,
+      });
+      // Deterministic path so customer + astro writes for the same
+      // session collapse into ONE object.
+      const ext = mime && mime.includes('mp4') ? 'm4a'
+        : 'webm';
+      const key = `recordings/${type}/${sessionId}.${ext}`;
+      await client.send(new PutObjectCommand({
+        Bucket: process.env.R2_BUCKET,
+        Key: key,
+        Body: buf,
+        ContentType: mime || 'audio/webm',
+        CacheControl: 'public, max-age=31536000, immutable',
+      }));
+      const publicBase = process.env.R2_PUBLIC_URL
+        || `https://${process.env.R2_BUCKET}.r2.dev`;
+      const url = `${publicBase.replace(/\/+$/, '')}/${key}`;
+      // Index doc - deterministic id so duplicate uploads merge.
+      try {
+        await admin.firestore().collection('chats')
+          .doc(`recording_${sessionId}`).set({
+            isRecordingDoc: true,
+            sessionId,
+            type,
+            astroId: astroId || '',
+            userId: userId || '',
+            kind: kind || 'audio',
+            url,
+            sizeKB: Math.round(buf.length / 1024),
+            ts: Date.now(),
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          }, { merge: true });
+      } catch (_) { /* index write best-effort */ }
+      return res.status(200).json({ ok: true, url, size: buf.length });
+    } catch (e) {
+      return res.status(500).json({ ok: false,
+        error: String((e && e.message) || e).slice(0, 300) });
+    }
+  }
 
   // GET ?probe=1 -> just report which provider would be used and
   // whether the relay can read Firestore. Lets admin verify the chain
