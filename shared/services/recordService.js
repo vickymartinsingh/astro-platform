@@ -101,16 +101,27 @@ export async function startRecording(m) {
         });
       } catch (_) { /* ignore */ }
     };
+    // Start the MediaRecorder IMMEDIATELY against the Web Audio mixer's
+    // output stream. Critical: we used to await 3 seconds before
+    // initialising the recorder, which meant any call shorter than
+    // ~5 seconds finished hangUp BEFORE the recorder was even alive.
+    // stopRecording then saw mediaRecorder=null and silently bailed
+    // - which is exactly why production had 0 indexed recordings.
+    //
+    // dest.stream from createMediaStreamDestination is valid the
+    // moment the AudioContext returns; new source nodes connected
+    // later (when the remote astrologer audio arrives) feed into the
+    // SAME stream so the recorder picks them up live. No wait needed.
     collect();
     scan = setInterval(collect, 1500);
-    // Give Agora tracks generous time to arrive before snapshotting.
-    // 3 s instead of 1.4 s covers slow phone networks where the
-    // remote astrologer takes a moment to publish their audio.
-    await new Promise((r) => setTimeout(r, 3000));
 
+    // Video / live still snapshot a single video track at this
+    // moment - we wait a brief 600 ms for it to publish, but DO NOT
+    // gate audio-only recordings on that wait.
     const wantVideo = meta.type === 'video' || meta.type === 'live';
     let videoMST = null;
     if (wantVideo) {
+      await new Promise((r) => setTimeout(r, 600));
       try {
         const lt = getLocalTracks();
         const localV = lt && lt.video && lt.video.getMediaStreamTrack
@@ -148,7 +159,11 @@ export async function startRecording(m) {
     rec.ondataavailable = (e) => {
       if (e.data && e.data.size) chunks.push(e.data);
     };
-    rec.start(5000); // timeslice -> flush memory on long sessions
+    // 1-second timeslice so short calls still flush at least one
+    // chunk before stop(); the 5-second slice meant a 4-second call
+    // never produced ANY ondataavailable events and the resulting
+    // blob was empty.
+    rec.start(1000);
     log('recorder started OK');
   } catch (e) {
     log('startRecording threw', String((e && e.message) || e));
