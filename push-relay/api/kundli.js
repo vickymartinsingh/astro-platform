@@ -828,6 +828,24 @@ module.exports = async (req, res) => {
   //     mime, kind, dataBase64 }
   // Returns:
   //   { ok:true, url, size }
+  // Quick env probe so admin can see whether Drive is wired without
+  // making a real call. GET /api/kundli?action=recordingProbe
+  if (src.action === 'recordingProbe') {
+    let saClientEmail = '';
+    try {
+      saClientEmail = (JSON.parse(
+        process.env.FIREBASE_SERVICE_ACCOUNT || '{}').client_email) || '';
+    } catch (_) {}
+    return res.status(200).json({
+      driveFolderId: process.env.DRIVE_FOLDER_ID || null,
+      driveScopeReady: !!process.env.FIREBASE_SERVICE_ACCOUNT,
+      serviceAccountEmail: saClientEmail,
+      r2Configured: !!(process.env.R2_ACCOUNT_ID
+        && process.env.R2_ACCESS_KEY_ID
+        && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET),
+    });
+  }
+
   if (src.action === 'uploadRecording' && req.method === 'POST') {
     if (!initAdmin()) {
       return res.status(503).json({ error: 'admin SDK not configured' });
@@ -860,6 +878,8 @@ module.exports = async (req, res) => {
     // because the Drive token expired.
     let url = '';
     let backend = '';
+    let driveError = null;          // surfaced in the response for
+                                    // diagnostic
     try {
       if (process.env.DRIVE_FOLDER_ID) {
         url = await _uploadToDrive(fileName, contentType, buf,
@@ -867,10 +887,9 @@ module.exports = async (req, res) => {
         backend = 'google-drive';
       }
     } catch (e) {
-      // Fall through to R2.
+      driveError = String((e && e.message) || e).slice(0, 300);
       // eslint-disable-next-line no-console
-      console.warn('drive upload failed, falling back to R2:',
-        (e && e.message) || e);
+      console.warn('drive upload failed, falling back to R2:', driveError);
     }
     if (!url) {
       if (!(process.env.R2_ACCOUNT_ID && process.env.R2_ACCESS_KEY_ID
@@ -905,7 +924,7 @@ module.exports = async (req, res) => {
         }, { merge: true });
     } catch (_) { /* index write best-effort */ }
     return res.status(200).json({ ok: true, url, size: buf.length,
-      backend });
+      backend, driveError });
   }
 
   // GET ?probe=1 -> just report which provider would be used and
