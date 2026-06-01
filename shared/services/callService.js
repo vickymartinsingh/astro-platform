@@ -95,6 +95,14 @@ export function subscribeToRemote(onRemote) {
 // changing the call flow.
 export function getClient() { return client; }
 export function getLocalTracks() { return localTracks; }
+// TEST-ONLY: inject a raw MediaStreamTrack as the local mic so the
+// /pages/_record-test diagnostic can exercise recordService without
+// joining Agora. Wrapped to mimic the Agora track API
+// (.getMediaStreamTrack()). Do NOT call from production code paths.
+export function _setTestAudioTrack(mst) {
+  if (!mst) { localTracks.audio = null; return; }
+  localTracks.audio = { getMediaStreamTrack: () => mst };
+}
 
 export function setMuted(muted) {
   if (localTracks.audio) localTracks.audio.setEnabled(!muted);
