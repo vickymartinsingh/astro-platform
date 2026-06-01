@@ -37,6 +37,80 @@ function initAdmin() {
 // to function, so it's the safest default whenever
 // ASTROSEER_API_URL is present (which it is on this relay). The old
 // fallback was Prokerala, which throws if creds aren't set.
+// ===== Recording backend helpers =====================================
+//
+// Storage destinations for call / video / live recordings (NOT the
+// kundli PDFs - those have their own R2 helper inside lib/kundliReport).
+//
+// Google Drive is preferred when configured (user has 1 TB on their
+// personal account). Service account uploads land in a shared folder;
+// quota counts against the FOLDER OWNER's account, i.e. the user, not
+// the service account.
+//
+// Required Vercel env vars for Drive:
+//   DRIVE_FOLDER_ID    - Drive folder ID (from the share URL)
+//   FIREBASE_SERVICE_ACCOUNT - same JSON the rest of the relay uses;
+//                              we just add the Drive scope below
+// User MUST share the target folder with the service account email
+// (find it in the JSON's client_email field) and give Editor access.
+async function _uploadToDrive(fileName, contentType, buf, folderId) {
+  const { google } = require('googleapis');
+  const sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT || '{}');
+  const auth = new google.auth.GoogleAuth({
+    credentials: sa,
+    scopes: ['https://www.googleapis.com/auth/drive.file'],
+  });
+  const drive = google.drive({ version: 'v3', auth });
+  const { Readable } = require('stream');
+  // 1. Upload the file into the shared folder.
+  const created = await drive.files.create({
+    requestBody: { name: fileName, parents: [folderId] },
+    media: { mimeType: contentType, body: Readable.from(buf) },
+    fields: 'id, webContentLink, webViewLink',
+  });
+  const fileId = created.data.id;
+  // 2. Make it publicly readable so the customer + admin can stream
+  //    without authenticating. Drive returns webContentLink for direct
+  //    download. The "anyone with the link" permission is fine for
+  //    audio recordings - they are session-scoped + uuid-keyed so they
+  //    can't be enumerated.
+  try {
+    await drive.permissions.create({
+      fileId,
+      requestBody: { role: 'reader', type: 'anyone' },
+    });
+  } catch (_) { /* if perm already exists, ignore */ }
+  // 3. Prefer the direct-download URL; fall back to view link.
+  return (created.data.webContentLink
+    || `https://drive.google.com/uc?id=${fileId}&export=download`);
+}
+
+async function _uploadToR2(key, contentType, buf) {
+  const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+  const client = new S3Client({
+    region: 'auto',
+    endpoint: `https://${process.env.R2_ACCOUNT_ID}.`
+      + 'r2.cloudflarestorage.com',
+    credentials: {
+      accessKeyId: process.env.R2_ACCESS_KEY_ID,
+      secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+    },
+    forcePathStyle: true,
+  });
+  await client.send(new PutObjectCommand({
+    Bucket: process.env.R2_BUCKET,
+    Key: key,
+    Body: buf,
+    ContentType: contentType,
+    CacheControl: 'public, max-age=31536000, immutable',
+  }));
+  const publicBase = process.env.R2_PUBLIC_URL
+    || `https://${process.env.R2_BUCKET}.r2.dev`;
+  return `${publicBase.replace(/\/+$/, '')}/${key}`;
+}
+
+// ===== End recording backends ========================================
+
 function envFallbackProvider() {
   if (process.env.ASTROSEER_API_URL || process.env.ASTROSEER_API_KEY) {
     return 'astroseer';
@@ -775,59 +849,63 @@ module.exports = async (req, res) => {
         size: buf.length });                  // - but we accept up to
                                               //   the Node mem cap.
     }
-    if (!(process.env.R2_ACCOUNT_ID && process.env.R2_ACCESS_KEY_ID
-        && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET)) {
-      return res.status(503).json({ error: 'R2 not configured' });
-    }
+    const ext = mime && mime.includes('mp4') ? 'm4a' : 'webm';
+    const fileName = `${sessionId}.${ext}`;
+    const r2KeyOrPath = `recordings/${type}/${fileName}`;
+    const contentType = mime || 'audio/webm';
+
+    // Decide which backend to use. Google Drive WINS when configured -
+    // user has a 1 TB Drive and prefers it over R2 / Firebase Storage.
+    // R2 stays as the fallback so the customer never loses a recording
+    // because the Drive token expired.
+    let url = '';
+    let backend = '';
     try {
-      const { S3Client, PutObjectCommand } = require(
-        '@aws-sdk/client-s3');
-      const client = new S3Client({
-        region: 'auto',
-        endpoint: `https://${process.env.R2_ACCOUNT_ID}.`
-          + 'r2.cloudflarestorage.com',
-        credentials: {
-          accessKeyId: process.env.R2_ACCESS_KEY_ID,
-          secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
-        },
-        forcePathStyle: true,
-      });
-      // Deterministic path so customer + astro writes for the same
-      // session collapse into ONE object.
-      const ext = mime && mime.includes('mp4') ? 'm4a'
-        : 'webm';
-      const key = `recordings/${type}/${sessionId}.${ext}`;
-      await client.send(new PutObjectCommand({
-        Bucket: process.env.R2_BUCKET,
-        Key: key,
-        Body: buf,
-        ContentType: mime || 'audio/webm',
-        CacheControl: 'public, max-age=31536000, immutable',
-      }));
-      const publicBase = process.env.R2_PUBLIC_URL
-        || `https://${process.env.R2_BUCKET}.r2.dev`;
-      const url = `${publicBase.replace(/\/+$/, '')}/${key}`;
-      // Index doc - deterministic id so duplicate uploads merge.
-      try {
-        await admin.firestore().collection('chats')
-          .doc(`recording_${sessionId}`).set({
-            isRecordingDoc: true,
-            sessionId,
-            type,
-            astroId: astroId || '',
-            userId: userId || '',
-            kind: kind || 'audio',
-            url,
-            sizeKB: Math.round(buf.length / 1024),
-            ts: Date.now(),
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          }, { merge: true });
-      } catch (_) { /* index write best-effort */ }
-      return res.status(200).json({ ok: true, url, size: buf.length });
+      if (process.env.DRIVE_FOLDER_ID) {
+        url = await _uploadToDrive(fileName, contentType, buf,
+          process.env.DRIVE_FOLDER_ID);
+        backend = 'google-drive';
+      }
     } catch (e) {
-      return res.status(500).json({ ok: false,
-        error: String((e && e.message) || e).slice(0, 300) });
+      // Fall through to R2.
+      // eslint-disable-next-line no-console
+      console.warn('drive upload failed, falling back to R2:',
+        (e && e.message) || e);
     }
+    if (!url) {
+      if (!(process.env.R2_ACCOUNT_ID && process.env.R2_ACCESS_KEY_ID
+          && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET)) {
+        return res.status(503).json({
+          error: 'No storage backend configured (need DRIVE_FOLDER_ID '
+            + 'or R2_* env vars)' });
+      }
+      try {
+        url = await _uploadToR2(r2KeyOrPath, contentType, buf);
+        backend = 'cloudflare-r2';
+      } catch (e) {
+        return res.status(500).json({ ok: false,
+          error: String((e && e.message) || e).slice(0, 300) });
+      }
+    }
+    // Index doc - deterministic id so duplicate uploads merge.
+    try {
+      await admin.firestore().collection('chats')
+        .doc(`recording_${sessionId}`).set({
+          isRecordingDoc: true,
+          sessionId,
+          type,
+          astroId: astroId || '',
+          userId: userId || '',
+          kind: kind || 'audio',
+          url,
+          backend,
+          sizeKB: Math.round(buf.length / 1024),
+          ts: Date.now(),
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+    } catch (_) { /* index write best-effort */ }
+    return res.status(200).json({ ok: true, url, size: buf.length,
+      backend });
   }
 
   // GET ?probe=1 -> just report which provider would be used and
