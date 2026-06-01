@@ -60,6 +60,17 @@ const TOGGLES = [
   ['google_signin_mobile', 'Google sign-in on mobile app', false],
   ['google_signin_desktop', 'Google sign-in on desktop / web', false],
   ['email_verification', 'Require email verification on signup'],
+  // Two-factor authentication for astrologers / admins. The flag is
+  // read by the auth gate when present - default OFF so the existing
+  // flow is unchanged until you wire the enforcement UI (TOTP / OTP
+  // email second factor). Leave OFF unless you're ready to roll it
+  // out across every staff login.
+  ['two_factor_enabled',
+    'Two-factor authentication for staff (astrologer / admin)', false],
+  ['two_factor_app_enabled',
+    'Allow TOTP authenticator app as the 2nd factor', false],
+  ['two_factor_email_enabled',
+    'Allow email code as the 2nd factor', false],
   ['register_as_astro_show', 'Show "Register as astrologer" on client'],
   // --- API / external integrations ---
   ['api_kundli_enabled', 'AstroSeer kundli API'],

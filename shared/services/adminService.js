@@ -9,7 +9,8 @@ import {
 } from 'firebase/firestore';
 import { initializeApp, getApps } from 'firebase/app';
 import {
-  getAuth, createUserWithEmailAndPassword, signOut,
+  getAuth, createUserWithEmailAndPassword, sendEmailVerification,
+  signOut,
 } from 'firebase/auth';
 import { httpsCallable } from 'firebase/functions';
 import { db, auth, getFunctionsLazy } from '../firebase.js';
@@ -694,6 +695,14 @@ export async function createAstrologer(data) {
     const cred = await createUserWithEmailAndPassword(
       secAuth, email, data.password || 'admin123');
     uid = cred.user.uid;
+    // Fire the Firebase email-verification mail. Caller can opt out
+    // by passing skipEmailVerification:true (e.g. seed scripts). The
+    // mail is best-effort: a network blip here must not block the
+    // astrologer account from being created.
+    if (!data.skipEmailVerification) {
+      try { await sendEmailVerification(cred.user); }
+      catch (_) { /* swallow - the doc-level flag still gates login */ }
+    }
     await setDoc(doc(db, 'users', uid), {
       name: data.name, email, phone: data.phone || '', role: 'astrologer',
       isAstrologer: true,
@@ -762,11 +771,18 @@ export async function createAstrologer(data) {
     priceChat: Number(data.priceChat || 20),
     priceCall: Number(data.priceCall || 30),
     priceVideo: Number(data.priceVideo || 40),
+    priceLive: Number(data.priceLive || 0),
     discountPercent: Number(data.discountPercent || 0),
     rating: 0, reviewsCount: 0, totalSessions: 0, responseRate: 100,
     approved: true, status: 'offline',
     chat_enabled: false, call_enabled: false, video_enabled: false,
     earnings: 0,
+    // Force-change-password + email-verification gates. Admin sets
+    // these true when minting a new account; astro-web's auth gate
+    // unlocks the dashboard only after the astrologer has set their
+    // own password and verified their email.
+    mustChangePassword: data.mustChangePassword !== false,
+    needsEmailVerification: data.needsEmailVerification !== false,
     profileImage: `https://api.dicebear.com/9.x/${style}/svg?seed=`
       + `${encodeURIComponent(uid)}&backgroundType=gradientLinear`,
     createdAt: serverTimestamp(),

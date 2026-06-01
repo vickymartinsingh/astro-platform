@@ -43,7 +43,12 @@ export default function AdminDashboard() {
       users: users.filter((u) => u.role === 'client').length,
       astros: astros.length,
       onlineAstros: aList.filter((a) => a.status === 'online').length,
-      pendingApproval: aList.filter((a) => !a.approved).length,
+      // "Pending approval" excludes BOTH approved AND rejected
+      // astrologers. Previously rejected ones kept inflating the
+      // dashboard alert even though they were never going to be
+      // approved.
+      pendingApproval: aList.filter((a) => !a.approved && !a.rejected)
+        .length,
       pendingPhotos: aList.filter((a) => a.pendingProfileImage).length,
       revToday, revAll, resetAt,
     });
