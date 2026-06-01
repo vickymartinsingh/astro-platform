@@ -52,18 +52,34 @@ function reset() {
   added = null; mediaStream = null;
 }
 
+// Best-effort telemetry doc so we can see what happened on the
+// customer's device without asking them to open DevTools. One doc
+// per session, merged on each event. Safe to disable for prod scale -
+// but right now it's the only window into the silent failure path.
+async function tel(sessionId, payload) {
+  if (!sessionId) return;
+  try {
+    await setDoc(doc(db, 'chats', `recording_${sessionId}`), {
+      sessionId,
+      telemetry: { [Date.now().toString()]: payload },
+    }, { merge: true });
+  } catch (_) { /* swallow */ }
+}
+
 // meta = { sessionId, type: 'call'|'video'|'live', astroId, userId }
 export async function startRecording(m) {
   if (rec) return;
   meta = m || {};
   // Diagnostic logging: every silent failure path here is fixable
-  // BUT only if we can see it. Logs always go to console; the most
-  // critical end-state (uploaded? failed? empty?) is also written
-  // to a debug doc so admin can read it without device access.
+  // BUT only if we can see it. Logs always go to console AND to a
+  // Firestore telemetry field on the session's recording doc so
+  // admin can read it without device access.
+  const sid = meta.sessionId;
   const log = (stage, extra) => {
     // eslint-disable-next-line no-console
     try { console.log('[recordService]', stage,
       extra || ''); } catch (_) {}
+    tel(sid, { stage, extra: extra || null });
   };
   try {
     if (typeof window === 'undefined' || !window.MediaRecorder) {
@@ -172,9 +188,12 @@ export async function startRecording(m) {
 }
 
 export async function stopRecording() {
-  // eslint-disable-next-line no-console
-  const log = (s, e) => { try { console.log('[recordService] stop:',
-    s, e || ''); } catch (_) {} };
+  const sid = meta && meta.sessionId;
+  const log = (s, e) => {
+    // eslint-disable-next-line no-console
+    try { console.log('[recordService] stop:', s, e || ''); } catch (_) {}
+    tel(sid, { stopStage: s, extra: e || null });
+  };
   if (!rec) { log('skip: not recording'); reset(); return; }
   const r = rec; rec = null;
   if (scan) { clearInterval(scan); scan = null; }
