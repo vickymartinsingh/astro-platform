@@ -383,3 +383,48 @@ export async function publishBotEvent(astroUid, { kind, name,
     createdAt: serverTimestamp(),
   });
 }
+
+// Admin diagnostic: fires a burst of N bot events into one
+// astrologer's live chat right now. Used by the "Fire 5 events"
+// button on /admin-live-bots Settings tab so the operator can
+// prove the pipeline works without waiting for the astrologer
+// to go live + a fresh deploy.
+//
+// Returns { joins, comments, errors[] } so the UI can report what
+// got through and what bounced.
+export async function fireDiagnosticBurst(astroUid,
+  { joins = 3, comments = 2 } = {}) {
+  const out = { joins: 0, comments: 0, errors: [] };
+  if (!astroUid) { out.errors.push('no astroUid'); return out; }
+  const usedQs = new Set();
+  for (let i = 0; i < joins; i += 1) {
+    try {
+      const b = await pickRandomBot();
+      if (!b) { out.errors.push('no bot in pool'); continue; }
+      // eslint-disable-next-line no-await-in-loop
+      await publishBotEvent(astroUid, { kind: 'join',
+        name: b.name, code: b.code || b.id });
+      out.joins += 1;
+    } catch (e) {
+      out.errors.push(`join: ${(e && e.message) || e}`);
+    }
+  }
+  for (let i = 0; i < comments; i += 1) {
+    try {
+      const b = await pickRandomBot();
+      // eslint-disable-next-line no-await-in-loop
+      const q = await pickQuestion(usedQs);
+      if (!b || !q) {
+        out.errors.push(`comment ${i}: bot=${!!b} q=${!!q}`);
+        continue;
+      }
+      // eslint-disable-next-line no-await-in-loop
+      await publishBotEvent(astroUid, { kind: 'comment',
+        name: b.name, code: b.code || b.id, text: q.text });
+      out.comments += 1;
+    } catch (e) {
+      out.errors.push(`comment: ${(e && e.message) || e}`);
+    }
+  }
+  return out;
+}

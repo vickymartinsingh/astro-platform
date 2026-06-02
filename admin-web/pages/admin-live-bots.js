@@ -560,6 +560,8 @@ function SettingsTab() {
   const [astros, setAstros] = useState([]);
   const [busy, setBusy] = useState(false);
   const [astroQ, setAstroQ] = useState('');
+  const [diagAstro, setDiagAstro] = useState('');
+  const [diagOut, setDiagOut] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -706,6 +708,76 @@ function SettingsTab() {
           font-bold text-white disabled:opacity-50">
         {busy ? 'Saving...' : 'Save settings'}
       </button>
+
+      {/* Diagnostic burst - lets the operator verify the entire
+          pipeline (pool read + question pick + chat write + UI
+          render) without waiting for the astrologer to actually
+          go live or for a fresh astro-web deploy. Picks the target
+          astrologer's uid, fires 3 joins + 2 comments into their
+          chats/live_{uid}/messages collection, and reports
+          successes / errors so the failing gate is visible. */}
+      <div className="surface space-y-3 p-4">
+        <h2 className="text-sm font-bold uppercase tracking-wider
+          text-sub-text">
+          Diagnostic burst
+        </h2>
+        <p className="text-[11px] text-sub-text">
+          Sends 3 bot joins + 2 bot comments into the chosen
+          astrologer&apos;s live chat right now. If the astrologer is
+          live in a browser tab, the names + questions should appear
+          within a second. If nothing appears, the issue is at the
+          UI / deploy layer (astro-web not on the new bundle).
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <select className="rounded-md border border-gray-200
+            bg-white px-2 py-2 text-sm" value={diagAstro}
+            onChange={(e) => setDiagAstro(e.target.value)}>
+            <option value="">Pick astrologer...</option>
+            {(astros || []).map((a) => (
+              <option key={a.id || a.uid} value={a.id || a.uid}>
+                {a.name || '(no name)'}
+                {a.email ? ` (${a.email})` : ''}
+              </option>
+            ))}
+          </select>
+          <button onClick={async () => {
+            if (!diagAstro) { flash('Pick an astrologer.', 'error');
+              return; }
+            setBusy(true); setDiagOut(null);
+            try {
+              const r = await liveBotService
+                .fireDiagnosticBurst(diagAstro);
+              setDiagOut(r);
+              flash(`Fired ${r.joins + r.comments} event(s).`,
+                'success');
+            } catch (e) {
+              flash(String((e && e.message) || e), 'error');
+            } finally { setBusy(false); }
+          }} disabled={busy || !diagAstro}
+            className="rounded-full bg-emerald-100 px-3 py-1.5
+              text-xs font-bold text-emerald-800
+              disabled:opacity-50">
+            Fire 5 events now
+          </button>
+        </div>
+        {diagOut && (
+          <div className="rounded-card bg-bg-light p-3 text-[12px]
+            font-mono">
+            <div>joins: {diagOut.joins} / 3</div>
+            <div>comments: {diagOut.comments} / 2</div>
+            {diagOut.errors.length > 0 && (
+              <div className="mt-1 text-danger">
+                errors:
+                <ul className="ml-4 list-disc">
+                  {diagOut.errors.map((e, i) => (
+                    <li key={i}>{e}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

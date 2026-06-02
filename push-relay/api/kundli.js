@@ -812,6 +812,95 @@ module.exports = async (req, res) => {
   if (src.action === 'rescueByOrderId') {
     return reportMod().handleRescueByOrderId(req, res);
   }
+
+  // ----------------------------------------------------------------
+  // Live audience bot tick. Pinged every N seconds by an external
+  // cron (e.g. cron-job.org -> https://.../api/kundli?action=liveBotTick).
+  // Reads settings/config.live_bots_*, finds every currently-active
+  // live broadcast, picks one random bot + question per active live
+  // and writes a join + a comment into the SAME messages collection
+  // viewers + astrologer subscribe to. Runs through the Firebase
+  // Admin SDK so it bypasses client rules + works even when the
+  // astrologer's deployed bundle is stale.
+  // ----------------------------------------------------------------
+  if (src.action === 'liveBotTick') {
+    if (!initAdmin()) {
+      return res.status(503).json({
+        error: 'admin SDK not configured' });
+    }
+    try {
+      const db = admin.firestore();
+      const cfgSnap = await db.collection('settings')
+        .doc('config').get();
+      const cfg = cfgSnap.exists ? (cfgSnap.data() || {}) : {};
+      if (!cfg.live_bots_enabled) {
+        return res.status(200).json({ ok: true, skipped: 'disabled' });
+      }
+      // Find every active live broadcast: chats/live_<uid> with
+      // status === 'live' (the liveService.startLive writer).
+      const liveSnap = await db.collection('chats').get();
+      const lives = liveSnap.docs.filter((d) =>
+        d.id.startsWith('live_')
+        && (d.data() || {}).status === 'live');
+      if (lives.length === 0) {
+        return res.status(200).json({ ok: true, ticks: 0,
+          note: 'no active lives' });
+      }
+      // Pool sample.
+      const botsSnap = await db.collection('liveBots')
+        .limit(300).get();
+      const bots = botsSnap.docs.map((d) => d.data())
+        .filter((b) => b.enabled !== false);
+      const qsSnap = await db.collection('liveBotQuestions')
+        .limit(300).get();
+      const qs = qsSnap.docs.map((d) => d.data())
+        .filter((x) => x.text);
+      if (bots.length === 0 || qs.length === 0) {
+        return res.status(200).json({ ok: true,
+          skipped: 'empty pool',
+          bots: bots.length, questions: qs.length });
+      }
+      let ticked = 0;
+      for (const liveDoc of lives) {
+        const astroUid = liveDoc.id.replace(/^live_/, '');
+        // Scope check.
+        if ((cfg.live_bots_scope || 'all') === 'allowlist') {
+          const arr = Array.isArray(cfg.live_bots_astro_uids)
+            ? cfg.live_bots_astro_uids : [];
+          if (!arr.includes(astroUid)) continue;
+        }
+        const msgsRef = db.collection('chats').doc(liveDoc.id)
+          .collection('messages');
+        // 1 join + (50% chance) 1 comment per tick - matches the
+        // 'few seconds between joins, longer between comments'
+        // pacing the admin set in the catalogue defaults.
+        const b1 = bots[Math.floor(Math.random() * bots.length)];
+        // eslint-disable-next-line no-await-in-loop
+        await msgsRef.add({
+          type: 'join', name: b1.name, code: b1.code, _bot: true,
+          senderId: `bot_${b1.code}`,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        if (Math.random() < 0.5) {
+          const b2 = bots[Math.floor(Math.random() * bots.length)];
+          const q = qs[Math.floor(Math.random() * qs.length)];
+          // eslint-disable-next-line no-await-in-loop
+          await msgsRef.add({
+            type: 'comment', name: b2.name, code: b2.code,
+            text: q.text, _bot: true,
+            senderId: `bot_${b2.code}`,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          });
+        }
+        ticked += 1;
+      }
+      return res.status(200).json({ ok: true, ticks: ticked,
+        lives: lives.length });
+    } catch (e) {
+      return res.status(500).json({ ok: false,
+        error: String((e && e.message) || e).slice(0, 300) });
+    }
+  }
   // Call / video / live recording upload via R2.
   //
   // Firebase Storage requires a Blaze billing upgrade, which this
