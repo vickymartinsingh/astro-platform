@@ -22,6 +22,17 @@ function classNames(...xs) {
   return xs.filter(Boolean).join(' ');
 }
 
+// Where the relay lives. Same pattern other services use - the
+// NEXT_PUBLIC_PUSH_ENDPOINT env points at the relay's /api/sendPush
+// route; we strip the suffix and append /api/kundli?action=liveBotTick.
+function relayBaseClient() {
+  try {
+    const push = (process.env.NEXT_PUBLIC_PUSH_ENDPOINT || '').trim();
+    if (push) return push.replace(/\/api\/sendPush\/?$/, '');
+  } catch (_) { /* fall through */ }
+  return 'https://astro-platform-push-relay.vercel.app';
+}
+
 export default function AdminLiveBots() {
   const { loading } = useRequireAdmin();
   const [tab, setTab] = useState('audience');
@@ -562,6 +573,8 @@ function SettingsTab() {
   const [astroQ, setAstroQ] = useState('');
   const [diagAstro, setDiagAstro] = useState('');
   const [diagOut, setDiagOut] = useState(null);
+  const [autoTick, setAutoTick] = useState({ on: false,
+    lastAt: 0, lastResp: null, count: 0 });
 
   useEffect(() => {
     (async () => {
@@ -589,6 +602,48 @@ function SettingsTab() {
       : [...arr, uid];
     setCfg({ ...cfg, live_bots_astro_uids: next });
   }
+  // BROWSER-SIDE AUTO TICKER. While this tab is open and the
+  // master switch is on, ping the relay's liveBotTick every 10
+  // seconds. The relay sweeps every active live and writes one bot
+  // join (and 50% of the time, one comment) per active stream.
+  // Stops cleanly when the master switch flips off, the tab is
+  // closed, or the page unmounts. Zero external setup needed - the
+  // bots run as long as some admin browser has this page open. The
+  // Vercel cron in push-relay/vercel.json runs the same path once
+  // per minute as a backstop for periods where no admin is on the
+  // page.
+  useEffect(() => {
+    if (!cfg || cfg.live_bots_enabled !== true) return undefined;
+    let cancelled = false;
+    const endpoint = relayBaseClient() + '/api/kundli?action=liveBotTick';
+    async function tick() {
+      if (cancelled) return;
+      try {
+        const r = await fetch(endpoint, { cache: 'no-store' });
+        const j = await r.json().catch(() => ({}));
+        if (!cancelled) {
+          setAutoTick((s) => ({ on: true,
+            lastAt: Date.now(),
+            lastResp: j,
+            count: s.count + 1 }));
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setAutoTick((s) => ({ on: true,
+            lastAt: Date.now(),
+            lastResp: { error: String((e && e.message) || e) },
+            count: s.count + 1 }));
+        }
+      }
+    }
+    // Fire once immediately so the operator sees activity within a
+    // second of opening the page, then keep ticking every 10s.
+    tick();
+    const id = setInterval(tick, 10_000);
+    return () => { cancelled = true; clearInterval(id);
+      setAutoTick((s) => ({ ...s, on: false })); };
+  }, [cfg && cfg.live_bots_enabled]);
+
   if (!cfg) return <div className="card">Loading settings...</div>;
 
   const filteredAstros = (astros || []).filter((a) => {
@@ -598,8 +653,48 @@ function SettingsTab() {
       || (a.email || '').toLowerCase().includes(s);
   });
 
+  const lastResp = autoTick.lastResp || {};
+  const lastErr = lastResp.error || (lastResp.ok === false
+    ? lastResp.error : '');
+  const lastSummary = lastResp.skipped
+    ? `skipped: ${lastResp.skipped}`
+    : (lastResp.ok && typeof lastResp.ticks === 'number'
+      ? `${lastResp.ticks} live${lastResp.ticks === 1 ? '' : 's'} `
+        + 'ticked'
+      : '');
   return (
     <div className="space-y-4">
+      {/* Auto-tick status banner. Tells the operator at a glance
+          that the bot pipeline is running and what the last sweep
+          saw. Green dot = ticks landing, gray dot = master off,
+          amber = errors. */}
+      <div className="surface flex flex-wrap items-center
+        justify-between gap-2 p-3">
+        <div className="flex items-center gap-2">
+          <span className={`grid h-2.5 w-2.5 place-items-center
+            rounded-full ${cfg.live_bots_enabled
+              ? (lastErr ? 'bg-amber-500'
+                : 'bg-emerald-500 animate-pulse')
+              : 'bg-gray-300'}`} />
+          <span className="text-xs font-bold uppercase tracking-wider
+            text-sub-text">
+            {cfg.live_bots_enabled ? 'Auto-tick running'
+              : 'Auto-tick paused'}
+          </span>
+          {cfg.live_bots_enabled && (
+            <span className="text-[11px] text-sub-text">
+              · {autoTick.count} sweep
+              {autoTick.count === 1 ? '' : 's'} this session
+              {lastSummary ? ` · last: ${lastSummary}` : ''}
+              {lastErr ? ` · ${lastErr}` : ''}
+            </span>
+          )}
+        </div>
+        <span className="text-[11px] text-sub-text">
+          Tab open = bots running. Vercel cron is a 1-min backstop.
+        </span>
+      </div>
+
       <div className="surface space-y-3 p-4">
         <h2 className="text-sm font-bold uppercase tracking-wider
           text-sub-text">Master switch</h2>
