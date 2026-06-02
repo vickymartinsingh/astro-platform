@@ -23,7 +23,15 @@ export default function AdminLogin() {
     e.preventDefault();
     setErr(''); setBusy(true);
     try {
-      const u = await authService.loginUser(email.trim(), password);
+      // Hard 15s timeout around the Firebase auth call so a bad
+      // network or a stalled SDK init can never strand the spinner.
+      // The Promise.race rejects with a "timeout" string we catch
+      // below and surface as a retryable error.
+      const u = await Promise.race([
+        authService.loginUser(email.trim(), password),
+        new Promise((_, reject) => setTimeout(() =>
+          reject(new Error('auth timeout')), 15000)),
+      ]);
       // 10-second guard around the Firestore profile lookup. On iOS
       // WKWebView this read used to hang forever when Firestore had
       // picked the wrong transport - now even if that race still
