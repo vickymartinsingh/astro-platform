@@ -136,5 +136,24 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
     match /scheduler/{id} { allow read, write: if isAdmin(); }
+
+    // Live-stream audience bots. The astrologer client reads the
+    // pool + question list while broadcasting (to pick a random bot
+    // + question per tick) and writes the resulting bot join /
+    // comment events into chats/live_{uid}/messages. Pool + question
+    // mutations are admin-only; reads are open to any signed-in user.
+    match /liveBots/{botId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+    match /liveBotQuestions/{qid} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+    // Waitlist intents from the Discover "coming soon" flow.
+    match /waitlist/{wid} {
+      allow create: if signedIn();
+      allow read, update, delete: if isAdmin();
+    }
   }
 }

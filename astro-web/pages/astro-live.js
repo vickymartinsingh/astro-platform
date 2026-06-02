@@ -146,6 +146,9 @@ export default function AstroLive() {
     const usedQs = new Set();
     (async () => {
       const cfg = await liveBotService.getBotConfig();
+      // eslint-disable-next-line no-console
+      console.log('[liveBots] cfg=', cfg, 'uid=', user.uid,
+        'active=', liveBotService.botsActiveForAstro(cfg, user.uid));
       if (!liveBotService.botsActiveForAstro(cfg, user.uid)) return;
       const joinMs = Math.max(3,
         Number(cfg.live_bots_join_rate_sec) || 12) * 1000;
@@ -159,8 +162,17 @@ export default function AstroLive() {
             await liveBotService.publishBotEvent(user.uid,
               { kind: 'join', name: bot.name,
                 code: bot.code || bot.id });
+            // eslint-disable-next-line no-console
+            console.log('[liveBots] joined', bot.name);
+          } else {
+            // eslint-disable-next-line no-console
+            console.warn('[liveBots] no bot picked - pool empty?');
           }
-        } catch (_) { /* swallow */ }
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.error('[liveBots] join failed:',
+            (e && e.message) || e);
+        }
       }
       async function commentTick() {
         if (cancelled) return;
@@ -171,8 +183,18 @@ export default function AstroLive() {
             await liveBotService.publishBotEvent(user.uid,
               { kind: 'comment', name: bot.name,
                 code: bot.code || bot.id, text: q.text });
+            // eslint-disable-next-line no-console
+            console.log('[liveBots] said', bot.name, '>', q.text);
+          } else {
+            // eslint-disable-next-line no-console
+            console.warn('[liveBots] no bot/question:',
+              { hasBot: !!bot, hasQ: !!q });
           }
-        } catch (_) { /* swallow */ }
+        } catch (e) {
+          // eslint-disable-next-line no-console
+          console.error('[liveBots] comment failed:',
+            (e && e.message) || e);
+        }
       }
       // First join + comment after a short stagger so it doesn't all
       // fire at t=0.

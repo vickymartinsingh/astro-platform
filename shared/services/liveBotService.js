@@ -271,17 +271,34 @@ export function botsActiveForAstro(cfg, astroUid) {
 // side so we don't read the whole 5000-doc collection for every
 // tick. Refreshed when 1) the page is exhausted (cycled through all
 // cached bots) or 2) the cache is older than 10 minutes.
+//
+// NOTE: we deliberately DO NOT use a Firestore `where('enabled', '!=',
+// false)` filter here. The inequality query (a) requires a composite
+// index, (b) silently drops docs that have no `enabled` field at all
+// (e.g. CSV-imported bots that left the column blank), and (c) makes
+// rule-deny errors look like "no bots in pool". Client-side filter
+// is cheaper, kinder to indexes, and surfaces every bot the rules
+// let us read.
 const BOT_CACHE = { items: [], used: new Set(), ts: 0 };
 async function refreshCache(force = false) {
   const fresh = !force && (Date.now() - BOT_CACHE.ts < 10 * 60_000)
     && BOT_CACHE.items.length > 0;
   if (fresh) return;
-  // Pull up to 500 enabled bots; client picks from this window.
-  const snap = await getDocs(query(collection(db, 'liveBots'),
-    where('enabled', '!=', false), limit(500)));
-  BOT_CACHE.items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-  BOT_CACHE.used = new Set();
-  BOT_CACHE.ts = Date.now();
+  try {
+    const snap = await getDocs(query(collection(db, 'liveBots'),
+      limit(500)));
+    BOT_CACHE.items = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+      .filter((b) => b.enabled !== false);
+    BOT_CACHE.used = new Set();
+    BOT_CACHE.ts = Date.now();
+    // eslint-disable-next-line no-console
+    console.log('[liveBots] loaded', BOT_CACHE.items.length, 'bots');
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error('[liveBots] read failed:',
+      (e && e.message) || e);
+    throw e;
+  }
 }
 
 // Same caching pattern for questions, 5-min TTL.
@@ -290,11 +307,20 @@ async function refreshQuestions() {
   if (Date.now() - QCACHE.ts < 5 * 60_000 && QCACHE.items.length > 0) {
     return;
   }
-  const snap = await getDocs(query(collection(db, 'liveBotQuestions'),
-    limit(500)));
-  QCACHE.items = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
-    .filter((x) => x.text);
-  QCACHE.ts = Date.now();
+  try {
+    const snap = await getDocs(query(collection(db, 'liveBotQuestions'),
+      limit(500)));
+    QCACHE.items = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+      .filter((x) => x.text);
+    QCACHE.ts = Date.now();
+    // eslint-disable-next-line no-console
+    console.log('[liveBots] loaded', QCACHE.items.length, 'questions');
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error('[liveBots] questions read failed:',
+      (e && e.message) || e);
+    throw e;
+  }
 }
 
 // Pick a random bot that hasn't been picked YET (per the current
