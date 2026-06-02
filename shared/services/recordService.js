@@ -100,12 +100,31 @@ export async function startRecording(m) {
         log('wired track', { id: mst.id, kind: mst.kind });
       } catch (e) { log('wire failed', String(e && e.message)); }
     };
+    // Fallback: if Agora's createMicrophoneAudioTrack failed (perm
+    // denied, codec error, etc.) the call screen still calls us, but
+    // getLocalTracks().audio is null. Try our OWN getUserMedia so we
+    // at least capture the customer's voice. Best-effort - if THIS
+    // also denies, we'll still record any remote audio that arrives.
+    let fallbackMicTried = false;
+    const tryFallbackMic = async () => {
+      if (fallbackMicTried) return;
+      fallbackMicTried = true;
+      try {
+        if (!navigator || !navigator.mediaDevices
+          || !navigator.mediaDevices.getUserMedia) return;
+        const s = await navigator.mediaDevices.getUserMedia(
+          { audio: true });
+        const t = s && s.getAudioTracks && s.getAudioTracks()[0];
+        if (t) { connect(t); log('fallback mic OK'); }
+      } catch (e) { log('fallback mic failed',
+        String(e && e.message)); }
+    };
     const collect = () => {
       try {
         const lt = getLocalTracks();
         const la = lt && lt.audio && lt.audio.getMediaStreamTrack
           && lt.audio.getMediaStreamTrack();
-        if (la) connect(la);
+        if (la) connect(la); else tryFallbackMic();
         const cl = getClient();
         const ru = (cl && cl.remoteUsers) || [];
         ru.forEach((u) => {

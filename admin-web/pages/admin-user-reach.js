@@ -9,19 +9,35 @@ import { useRequireAdmin } from '../lib/useAuth';
 
 // Unified compliance lookup. One search box that finds any customer OR
 // astrologer by name / email / phone / user code / uid, with a Search
-// button. Click any result to jump straight into their full profile
-// (which already shows transactions, sessions, kundli, reviews,
-// compliance device/IP/activity, danger-zone reset, etc).
+// button. Each result row is high-density: balance, verified-status
+// badges, last activity timestamp, and (for customers) total spent so
+// admin can spot a high-value account without opening the profile.
 function fmt(ts) {
   try {
     const ms = ts && ts.toMillis ? ts.toMillis()
-      : ts && ts.seconds ? ts.seconds * 1000 : 0;
-    if (!ms) return '-';
+      : ts && ts.seconds ? ts.seconds * 1000
+      : typeof ts === 'number' ? ts
+      : 0;
+    if (!ms) return '–';
     return new Date(ms).toLocaleString('en-GB', {
       day: '2-digit', month: 'short', year: 'numeric',
       hour: '2-digit', minute: '2-digit',
     });
-  } catch (_) { return '-'; }
+  } catch (_) { return '–'; }
+}
+function relTime(ts) {
+  try {
+    const ms = ts && ts.toMillis ? ts.toMillis()
+      : ts && ts.seconds ? ts.seconds * 1000
+      : typeof ts === 'number' ? ts
+      : 0;
+    if (!ms) return '–';
+    const d = Date.now() - ms;
+    if (d < 60_000) return 'just now';
+    if (d < 3600_000) return `${Math.floor(d / 60_000)}m ago`;
+    if (d < 86400_000) return `${Math.floor(d / 3600_000)}h ago`;
+    return `${Math.floor(d / 86400_000)}d ago`;
+  } catch (_) { return '–'; }
 }
 
 function matchOne(s, hay) {
@@ -69,10 +85,10 @@ export default function AdminUserReach() {
     <Layout>
       <h1 className="mb-1 text-xl font-bold">User Reach</h1>
       <p className="mb-3 text-sm text-sub-text">
-        One-stop lookup. Find any customer or astrologer by name, email,
-        phone, user code or UID, then open their full profile to see
-        every consultation, transaction, kundli, review, the compliance
-        device/IP/activity log, and the reset / restore controls.
+        One-stop lookup. Find any customer or astrologer, see balance,
+        verified status and last activity at a glance, then open the
+        full profile for transactions, kundli, recordings and the
+        reset / restore controls.
       </p>
 
       <div className="card mb-3">
@@ -115,7 +131,6 @@ export default function AdminUserReach() {
         </div>
       </div>
 
-      {/* Customer matches */}
       {customerMatches.length > 0 && (
         <div className="mb-3">
           <div className="mb-1 text-xs font-bold uppercase tracking-wide
@@ -129,7 +144,6 @@ export default function AdminUserReach() {
         </div>
       )}
 
-      {/* Astrologer matches */}
       {astroMatches.length > 0 && (
         <div className="mb-3">
           <div className="mb-1 text-xs font-bold uppercase tracking-wide
@@ -149,7 +163,6 @@ export default function AdminUserReach() {
         </div>
       )}
 
-      {/* When idle, show jump links to the dedicated lists. */}
       {!q.trim() && (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <Link href="/admin-users"
@@ -166,17 +179,41 @@ export default function AdminUserReach() {
   );
 }
 
+function VerifiedDot({ ok, label }) {
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full
+      px-2 py-0.5 text-[10px] font-bold ${
+      ok ? 'bg-emerald-100 text-emerald-700'
+        : 'bg-gray-100 text-gray-500'}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${
+        ok ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+      {label}{ok ? '' : ' – no'}
+    </span>
+  );
+}
+
 function ResultRow({ u, kind, onClick }) {
+  // Pull the same KPIs the profile page shows so the operator can
+  // triage WITHOUT opening the profile. Falls back gracefully if the
+  // field is missing on an older account.
+  const balance = Number(u.wallet || u.balance || 0);
+  const lastSeen = u.lastSeenAt || u.lastLoginAt
+    || u.lastActiveAt || u.updatedAt || u.createdAt;
+  const blocked = u.status === 'blocked' || u.blocked === true;
+  const online = u.status === 'online';
+  const emailVerified = !!(u.emailVerified || u.verifiedEmail);
+  const phoneVerified = !!(u.phoneVerified || u.verifiedPhone || u.phone);
   return (
     <button onClick={onClick}
-      className="flex w-full items-center gap-3 rounded-card border
-        border-gray-200 bg-white p-3 text-left hover:bg-bg-light">
-      <span className={`flex h-10 w-10 shrink-0 items-center
-        justify-center rounded-full text-sm font-bold text-white ${
+      className="flex w-full items-start gap-3 rounded-card border
+        border-gray-200 bg-white p-3 text-left hover:bg-bg-light
+        hover:shadow-sm transition">
+      <span className={`flex h-11 w-11 shrink-0 items-center
+        justify-center rounded-full text-base font-bold text-white ${
         kind === 'astrologer' ? 'bg-primary' : 'bg-amber-500'}`}>
         {(u.name || u.email || '?').charAt(0).toUpperCase()}
       </span>
-      <div className="min-w-0 flex-1">
+      <div className="min-w-0 flex-1 space-y-1">
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="truncate text-sm font-semibold text-dark-text">
             {u.name || '(no name)'}
@@ -193,24 +230,45 @@ function ResultRow({ u, kind, onClick }) {
               {u.userCode}
             </span>
           )}
-          {u.status && (
-            <span className={`rounded-full px-2 py-0.5 text-[10px]
-              font-bold capitalize ${u.status === 'blocked'
-                ? 'bg-red-100 text-red-700'
-                : u.status === 'online'
-                  ? 'bg-emerald-100 text-emerald-700'
-                  : 'bg-gray-100 text-gray-700'}`}>
-              {u.status}
+          {blocked && (
+            <span className="rounded-full bg-red-100 px-2 py-0.5
+              text-[10px] font-bold text-red-700">
+              Blocked
+            </span>
+          )}
+          {online && !blocked && (
+            <span className="rounded-full bg-emerald-100 px-2 py-0.5
+              text-[10px] font-bold text-emerald-700">
+              Online
             </span>
           )}
         </div>
-        <div className="mt-0.5 truncate text-[11px] text-sub-text">
-          {u.email || ' - '}
+        <div className="truncate text-[11px] text-sub-text">
+          {u.email || ' – '}
           {u.phone ? ` · ${u.phone}` : ''}
-          {u.createdAt ? ` · joined ${fmt(u.createdAt)}` : ''}
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+          <VerifiedDot ok={emailVerified} label="Email" />
+          <VerifiedDot ok={phoneVerified} label="Phone" />
+          {kind === 'customer' && (
+            <span className="rounded-full bg-emerald-50
+              px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+              Wallet ₹{balance.toFixed(0)}
+            </span>
+          )}
+          {kind === 'astrologer' && (
+            <span className="rounded-full bg-amber-50 px-2 py-0.5
+              text-[10px] font-bold text-amber-700">
+              Rating {Number(u.ratingAvg || u.rating || 0).toFixed(1)}
+            </span>
+          )}
+          <span className="rounded-full bg-bg-light px-2 py-0.5
+            text-[10px] font-bold text-sub-text">
+            Last seen {relTime(lastSeen)}
+          </span>
         </div>
       </div>
-      <span className="text-sub-text">›</span>
+      <span className="self-center text-sub-text">›</span>
     </button>
   );
 }

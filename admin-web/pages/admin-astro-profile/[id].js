@@ -7,6 +7,7 @@ import Layout from '../../components/Layout';
 import ResetAccountPanel from '../../components/ResetAccountPanel';
 import ComplianceActivity from '../../components/ComplianceActivity';
 import ActivityHistory from '../../components/ActivityHistory';
+import UserRecordingsPanel from '../../components/UserRecordingsPanel';
 import { useRequireAdmin } from '../../lib/useAuth';
 
 const { sessionRefNo } = sessionService;
@@ -133,6 +134,9 @@ export default function AdminAstroProfile() {
           </div>
         </div>
       </div>
+
+      {/* CALL RECORDINGS for this astrologer (audio + video). */}
+      <UserRecordingsPanel uid={id} kind="astrologer" />
 
       {/* PROFESSIONAL */}
       <div className="surface mt-4 p-4">

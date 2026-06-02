@@ -12,6 +12,12 @@
       "runtimeExecutable": "npx",
       "runtimeArgs": ["--yes", "serve", "-s", "client-web/out", "-l", "4173"],
       "port": 4173
+    },
+    {
+      "name": "admin-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--workspace=admin-web"],
+      "port": 3002
     }
   ]
 }

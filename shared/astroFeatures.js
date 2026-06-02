@@ -5,6 +5,30 @@
 //   - the price (override key on settings/config.<priceKey>)
 //   - the relay action that produces the deliverable
 //
+// FEATURE STATUS (the honest taxonomy - so customers never pay for
+// a generic report when they expected the focused one):
+//
+//   status: 'live'
+//     The AstroSeer API generates a UNIQUE PDF for this feature.
+//     Charge as priced, render the buy button as normal.
+//
+//   status: 'included'
+//     The content is ALREADY inside the Free Vedic Kundli (the
+//     250+ page Janma report). Charging again would just regenerate
+//     a near-identical kundli. /discover surfaces these as "Included
+//     in your Free Vedic Kundli - tap to generate that" and routes
+//     the buy click into the free kundli kind. No double-charging.
+//     `includedSection` (optional) tells the customer which kundli
+//     page to look at - copied into the success modal.
+//
+//   status: 'coming_soon'
+//     Generating endpoint isn't ready yet. The card is greyed and
+//     the buy button reads "Coming soon - notify me". Price is
+//     hidden so we never collect for something that doesn't yet
+//     ship. Admin can flip individual features to 'live' from
+//     settings/config.feature_<id>_status as the AstroSeer side
+//     catches up.
+//
 // Icons are intentionally simple line emoji so the cards render
 // single-colour on every device - no colourful PNG zoo. The
 // dashboard CSS forces a monochrome shadow + tint anyway.
@@ -24,24 +48,31 @@ export const FEATURES = [
     title: 'Vedic Kundli (Janma)',
     blurb: 'Birth chart with Lagna, planets, nakshatras, panchang.',
     priceKey: 'kundli_free_price', defaultPrice: 0,
+    status: 'live', kind: 'free',
     sections: ['Basic + Avakhada + Panchang', 'Lagna chart D1',
       'Planets sign + nakshatra', 'Yogas + doshas overview'] },
   { id: 'kundli_lagna', group: 'core', icon: 'star',
     title: 'Lagna / Ascendant Report',
     blurb: 'Detailed ascendant personality, body, mind.',
     priceKey: 'kundli_lagna_price', defaultPrice: 0,
+    status: 'included', kind: 'free',
+    includedSection: 'Lagna chart D1 + Planet positions',
     sections: ['Lagna sign and lord', 'Body, mind, temperament',
       'Career indications by ascendant'] },
   { id: 'moon_nakshatra', group: 'core', icon: 'moon',
     title: 'Moon Nakshatra Deep-Dive',
     blurb: "Detailed treatment of the native's Moon nakshatra.",
     priceKey: 'moon_nakshatra_price', defaultPrice: 49,
+    status: 'included', kind: 'free',
+    includedSection: 'Nakshatra detail with pada, lord, yoni',
     sections: ['Nakshatra lord and deity', 'Pada-level traits',
       'Compatible nakshatras', 'Career and money signals'] },
   { id: 'dasha_drilldown', group: 'core', icon: 'clock',
     title: '4-Level Vimshottari Dasha',
     blurb: 'Maha to Sookshma drilldown with dates and predictions.',
     priceKey: 'dasha_drilldown_price', defaultPrice: 0,
+    status: 'included', kind: 'free',
+    includedSection: 'Vimshottari dasha tree (Maha, Antar, Pratyantar)',
     sections: ['All 9 mahas', 'Antar, pratyantar, sookshma tree',
       'Current period analysis'] },
 
@@ -50,18 +81,24 @@ export const FEATURES = [
     title: 'D9 Navamsa - Marriage',
     blurb: 'Marriage and dharma chart with detailed reading.',
     priceKey: 'd9_navamsa_price', defaultPrice: 49,
+    status: 'included', kind: 'free',
+    includedSection: 'D9 Navamsa under 16 divisional charts',
     sections: ['Navamsa chart', '7th house deep analysis',
       'Spouse character indications'] },
   { id: 'd10_dasamsa', group: 'vargas', icon: 'briefcase',
     title: 'D10 Dasamsa - Career',
     blurb: 'Career and profession chart with timing windows.',
     priceKey: 'd10_dasamsa_price', defaultPrice: 49,
+    status: 'included', kind: 'free',
+    includedSection: 'D10 Dasamsa under 16 divisional charts',
     sections: ['Dasamsa chart', '10th house deep analysis',
       'Industry and job role pointers'] },
   { id: 'divisional_all', group: 'vargas', icon: 'grid',
     title: 'All 16 Divisional Charts',
     blurb: 'D1 to D60 charts in a single bundled report.',
     priceKey: 'divisional_all_price', defaultPrice: 99,
+    status: 'included', kind: 'free',
+    includedSection: '16 divisional charts (Navamsa onward)',
     sections: ['Hora, Drekkana, Chaturthamsa', 'Saptamsa, Navamsa, Dasamsa',
       'Dvadasamsa, Shodasamsa, Vimsamsa', 'Plus 7 more divisional charts'] },
 
@@ -70,24 +107,32 @@ export const FEATURES = [
     title: 'KP (Krishnamurti Paddhati)',
     blurb: 'Bhav Chalit chart, ruling planets and cusps detail.',
     priceKey: 'kp_system_price', defaultPrice: 49,
+    status: 'included', kind: 'free',
+    includedSection: 'KP (Krishnamurti Paddhati) tab',
     sections: ['Bhav Chalit chart', 'Ruling planets', 'Cusps table',
       'Sub-lord analysis'] },
   { id: 'ashtakvarga', group: 'systems', icon: 'grid',
     title: 'Ashtakvarga (BAV + SAV)',
     blurb: 'Bindu strength analysis per house from every BAV.',
     priceKey: 'ashtakvarga_price', defaultPrice: 49,
+    status: 'included', kind: 'free',
+    includedSection: 'Ashtakvarga tab (SAV + 8 BAV grids)',
     sections: ['Sarvashtakvarga grid', '8 BAV mini-charts',
       'Strong and weak houses', 'Transit overlay'] },
   { id: 'yogas_doshas', group: 'systems', icon: 'thunder',
     title: 'Yogas + Doshas Audit',
     blurb: 'Every classical yoga and dosha present in the chart.',
     priceKey: 'yogas_doshas_price', defaultPrice: 49,
+    status: 'included', kind: 'free',
+    includedSection: 'Yogas + Doshas section of the Free Kundli',
     sections: ['Mahapurusha + Raj yogas', 'Mangal, Kalsarp, Sade Sati',
       'Remedies per dosha'] },
   { id: 'panchang_birth', group: 'systems', icon: 'calendar',
     title: 'Panchang at Birth',
     blurb: 'Tithi, Karan, Yoga, Nakshatra, Rahu / Gulika / Yamaganda.',
     priceKey: 'panchang_birth_price', defaultPrice: 0,
+    status: 'included', kind: 'free',
+    includedSection: 'Panchang at birth in the Free Kundli',
     sections: ['Tithi + Paksha', 'Karan + Yoga', 'Nakshatra + pada',
       'Sunrise, sunset, moonrise, moonset', 'Rahu kaalam window'] },
 
@@ -96,35 +141,41 @@ export const FEATURES = [
     title: 'Chinese Zodiac Reading',
     blurb: 'Animal, element and Yin/Yang polarity from the birth year.',
     priceKey: 'chinese_zodiac_price', defaultPrice: 29,
+    status: 'coming_soon',
     sections: ['Animal totem + element', 'Yin / Yang polarity',
       'Compatible signs', 'Year-by-year prospects'] },
   { id: 'western_astro', group: 'extra', icon: 'sun',
     title: 'Western Astrology Snapshot',
     blurb: 'Tropical Sun, Moon and Rising sign with Western interpretation.',
     priceKey: 'western_astro_price', defaultPrice: 29,
+    status: 'coming_soon',
     sections: ['Tropical Sun, Moon, Rising', 'Element + modality',
       'Big Three personality reading'] },
   { id: 'face_reading', group: 'extra', icon: 'face',
     title: 'Face Reading (Mukha Samudrika)',
     blurb: 'Self-guide for face reading across 9 facial zones.',
     priceKey: 'face_reading_price', defaultPrice: 49,
+    status: 'coming_soon',
     sections: ['9-zone face map', 'What each feature reveals',
       'How to self-assess'] },
   { id: 'palm_reading', group: 'extra', icon: 'hand',
     title: 'Palm Reading (Hastha Samudrika)',
     blurb: 'Self-guide for palmistry: 7 major lines, 7 mounts, fingers.',
     priceKey: 'palm_reading_price', defaultPrice: 49,
+    status: 'coming_soon',
     sections: ['7 major lines', '7 mounts of the palm', 'Finger shapes',
       'Hand reading method'] },
   { id: 'colour_crystal', group: 'extra', icon: 'gem',
     title: 'Colour and Crystal Therapy',
     blurb: 'Seven-chakra colour and crystal reference for self-balancing.',
     priceKey: 'colour_crystal_price', defaultPrice: 29,
+    status: 'coming_soon',
     sections: ['Chakra colours', 'Crystal per chakra', 'How to use them'] },
   { id: 'tarot_lifecard', group: 'extra', icon: 'card',
     title: 'Tarot Life-Path Card',
     blurb: 'Major Arcana card derived from your life-path number.',
     priceKey: 'tarot_lifecard_price', defaultPrice: 29,
+    status: 'coming_soon',
     sections: ['Your life-path card', 'Theme + guidance',
       'Year card overlay'] },
 
@@ -133,12 +184,14 @@ export const FEATURES = [
     title: 'Vastu Directional Guidance',
     blurb: 'Eight-direction Vastu reference plus personal sleep direction.',
     priceKey: 'vastu_price', defaultPrice: 49,
+    status: 'coming_soon',
     sections: ['8-direction Vastu map', 'Personal sleep + work direction',
       'Quick room layout fixes'] },
   { id: 'numerology', group: 'life', icon: 'numerology',
     title: 'Numerology Deep Profile',
     blurb: 'Driver, conductor, life-path, soul, destiny - full numerology.',
     priceKey: 'numerology_price', defaultPrice: 49,
+    status: 'coming_soon',
     sections: ['Driver number', 'Conductor number', 'Life-path number',
       'Soul + destiny + personality numbers',
       'Lucky colour + day + gemstone'] },
@@ -146,6 +199,7 @@ export const FEATURES = [
     title: 'Lucky Mobile Number',
     blurb: 'Personalised mobile-number compatibility + lucky suggestions.',
     priceKey: 'lucky_mobile_price', defaultPrice: 49,
+    status: 'coming_soon',
     sections: ['Compatibility check for your current number',
       '5 personalised lucky number patterns',
       'When to change your number'] },
@@ -153,6 +207,7 @@ export const FEATURES = [
     title: 'Name Correction',
     blurb: 'Optimal name spelling based on date of birth and chart.',
     priceKey: 'name_correction_price', defaultPrice: 99,
+    status: 'coming_soon',
     sections: ['Current name analysis',
       '3 corrected name suggestions',
       'How to phase the change in'] },
@@ -160,6 +215,7 @@ export const FEATURES = [
     title: 'Baby Name Suggestions',
     blurb: 'Auspicious baby names based on nakshatra + numerology.',
     priceKey: 'baby_name_price', defaultPrice: 99,
+    status: 'coming_soon',
     sections: ['Nakshatra-based syllables',
       '20 name suggestions with meanings',
       'Numerology-checked'] },
@@ -167,6 +223,7 @@ export const FEATURES = [
     title: 'Career and Finance Deep Dive',
     blurb: '10th, 2nd, 11th, 6th house + dasha career timing.',
     priceKey: 'kundli_careerFinance_price', defaultPrice: 99,
+    status: 'live', kind: 'careerFinance',
     sections: ['10th house karma analysis',
       '2nd house wealth + 11th house gains',
       'Business vs job indication',
@@ -175,6 +232,7 @@ export const FEATURES = [
     title: 'Lifetime Vedic Report',
     blurb: '300+ pages: every dasha, every life area, lifetime.',
     priceKey: 'kundli_lifetime_price', defaultPrice: 299,
+    status: 'live', kind: 'lifetime',
     sections: ['All 9 mahas with antardashas',
       'Decade-by-decade outlook',
       'Marriage, child, career, finance, health',
@@ -185,6 +243,8 @@ export const FEATURES = [
     title: 'Gemstone Consultation',
     blurb: 'Birthstone + remedial stones based on planetary strength.',
     priceKey: 'gemstone_price', defaultPrice: 49,
+    status: 'included', kind: 'free',
+    includedSection: 'Remedies tab > Gemstone sub-pill',
     sections: ['Birthstone by Lagna',
       'Remedial stones for weak planets',
       'How to wear them'] },
@@ -192,6 +252,8 @@ export const FEATURES = [
     title: 'Personal Mantras',
     blurb: 'Beej and stotra mantras keyed to your weak planets.',
     priceKey: 'mantra_price', defaultPrice: 49,
+    status: 'included', kind: 'free',
+    includedSection: 'Remedies tab > Mantra sub-pill',
     sections: ['Beej mantra per planet',
       'When and how to chant',
       'Stotra suggestions'] },
@@ -199,6 +261,7 @@ export const FEATURES = [
     title: 'Lal Kitab Remedies',
     blurb: 'Practical daily Lal Kitab remedies matched to your chart.',
     priceKey: 'lal_kitab_price', defaultPrice: 99,
+    status: 'coming_soon',
     sections: ['Planet-by-planet remedies',
       'Household-item totkas',
       'When to start, how long to continue'] },
@@ -206,6 +269,8 @@ export const FEATURES = [
     title: 'Rudraksha Recommendation',
     blurb: 'Mukhi-by-mukhi rudraksha matched to your planetary needs.',
     priceKey: 'rudraksha_price', defaultPrice: 49,
+    status: 'included', kind: 'free',
+    includedSection: 'Remedies tab > General / Lifestyle sub-pills',
     sections: ['Mukhi recommendation',
       'How to wear and energise it',
       'Combo suggestions'] },
@@ -215,6 +280,7 @@ export const FEATURES = [
     title: '12-Month Forecast',
     blurb: 'Month-by-month predictions for the next 12 months.',
     priceKey: 'kundli_forecast12_price', defaultPrice: 50,
+    status: 'live', kind: 'forecast12',
     sections: ['12 monthly outlooks',
       'Maha, antar, pratyantar lord per month',
       'Career, finance, love, health',
@@ -223,9 +289,28 @@ export const FEATURES = [
     title: 'Marriage Compatibility (Guna Milan)',
     blurb: 'Ashtakoota 36-point match across the 8 kootas.',
     priceKey: 'compat_report_price', defaultPrice: 99,
+    status: 'coming_soon',
     sections: ['All 8 kootas scored', 'Total Guna out of 36',
       'Mangal-dosha cross-check', 'Suggested matching window'] },
 ];
+
+// Per-feature status override from settings/config so admin can flip
+// a feature to 'live' the moment AstroSeer's endpoint catches up,
+// without a redeploy. Caller passes the raw settings/config doc.
+//
+// Override key shape: feature_<id>_status (one of:
+// 'live' | 'included' | 'coming_soon').
+//
+// Falls back to the catalogue entry's hard-coded status.
+export function featureStatus(feature, configDoc) {
+  if (!feature) return 'coming_soon';
+  if (configDoc && typeof configDoc === 'object') {
+    const k = `feature_${feature.id}_status`;
+    const v = configDoc[k];
+    if (v === 'live' || v === 'included' || v === 'coming_soon') return v;
+  }
+  return feature.status || 'coming_soon';
+}
 
 // Resolve the live price for a feature by merging admin overrides
 // from settings/config (same pattern shared/reportTypes.js uses).

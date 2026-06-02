@@ -15,7 +15,7 @@ export default function CallScreen() {
   const { id: astroId } = router.query;
   const callType = router.query.type === 'video' ? 'video' : 'call';
   const { user, profile, loading } = useRequireClient();
-  const { astro, session, wallet, countdown, end, sessionId } =
+  const { astro, session, wallet, walletLoaded, countdown, end, sessionId } =
     useSession({ astroId, type: callType, uid: user?.uid,
       clientName: profile?.name });
   const { cfg } = useSettings();
@@ -71,6 +71,20 @@ export default function CallScreen() {
     if (!active || joinedRef.current || !sessionId) return;
     joinedRef.current = true;
     (async () => {
+      // Customer-side recording MUST start independent of Agora -
+      // even if Agora's createMicrophoneAudioTrack throws (mic
+      // permission denied, codec error), recordService has its own
+      // getUserMedia fallback so we still capture the customer's
+      // voice. The deterministic Storage path in recordService
+      // means both sides writing for the same session collapse to
+      // ONE file. Fire-and-forget - the call never breaks on a
+      // recording failure.
+      recordService.startRecording({
+        sessionId,
+        type: callType,                  // 'call' | 'video'
+        astroId,
+        userId: user.uid,
+      }).catch(() => {});
       try {
         const tok = await callService.fetchAgoraToken(sessionId, user.uid);
         const appId = tok.appId || callService.AGORA_APP_ID;
@@ -87,20 +101,6 @@ export default function CallScreen() {
         if (callType === 'video' && tracks.video && localRef.current) {
           tracks.video.play(localRef.current);
         }
-        // Customer-side recording (mandatory for monitoring +
-        // playback). The astrologer side ALSO calls startRecording
-        // when present, but they often aren't (AI auto-accept, web
-        // browser closed, etc.) - so the customer is the reliable
-        // recorder. The deterministic Storage path in recordService
-        // means both sides writing for the same session collapse to
-        // ONE file. Best-effort: failures (no mic perm, no codec)
-        // are swallowed by recordService - the call never breaks.
-        recordService.startRecording({
-          sessionId,
-          type: callType,                  // 'call' | 'video'
-          astroId,
-          userId: user.uid,
-        }).catch(() => {});
       } catch (e) { console.error('agora join failed', e); }
     })();
   }, [active, sessionId, callType, user, astroId]);
@@ -119,9 +119,14 @@ export default function CallScreen() {
   useEffect(() => {
     if (!active) return;
     if (ratePerSec <= 0) return; // free chat (zero rate) never hangs
+    // CRITICAL: don't auto-hang until the wallet listener has fired
+    // at least once. Otherwise the default wallet=0 racing with the
+    // active-status flip kills the call (and the recording) at t=0
+    // before the real wallet snapshot arrives.
+    if (!walletLoaded) return;
     if (totalSecsLeft <= 0) hangUp();
     // eslint-disable-next-line
-  }, [totalSecsLeft, active, ratePerSec]);
+  }, [totalSecsLeft, active, ratePerSec, walletLoaded]);
 
   // Low-balance threshold: 60 seconds of TOTAL remaining time (free
   // + wallet). The existing "Call will end soon, recharge now" banner

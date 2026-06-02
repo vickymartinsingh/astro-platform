@@ -1,9 +1,34 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { db, adminService } from '@astro/shared';
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
+
+// Convert any of Firestore Timestamp / Date / number / undefined into
+// milliseconds. Used by the analytics range filters.
+function toMs(v) {
+  if (!v) return 0;
+  if (typeof v === 'number') return v;
+  if (v.toMillis) return v.toMillis();
+  if (v.seconds) return v.seconds * 1000;
+  if (v instanceof Date) return v.getTime();
+  return 0;
+}
+// Pretty 'd MMM' for the range chip.
+function fmtDate(ms) {
+  return new Date(ms).toLocaleDateString('en-GB',
+    { day: '2-digit', month: 'short' });
+}
+// Preset ranges. Custom is handled separately via two date inputs.
+const PRESETS = [
+  ['today', 'Today', 1],
+  ['yest', 'Yesterday', -1],          // special: 1-day window ending today
+  ['7d', 'Last 7 days', 7],
+  ['30d', 'Last 30 days', 30],
+  ['90d', 'Last 90 days', 90],
+  ['all', 'All time', 0],
+];
 
 const TEST_EMAIL = 'vickymartinsing@gmail.com';
 const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
@@ -12,15 +37,26 @@ export default function AdminDashboard() {
   const { loading } = useRequireAdmin();
   const [m, setM] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [allTxns, setAllTxns] = useState([]);
+  const [allUsers, setAllUsers] = useState([]);
+  const [allSessions, setAllSessions] = useState([]);
+  const [preset, setPreset] = useState('today');
+  const [customStart, setCustomStart] = useState('');
+  const [customEnd, setCustomEnd] = useState('');
 
   async function loadData() {
-    const [users, astros, txns, astroSnap, cfgSnap] = await Promise.all([
+    const [users, astros, txns, astroSnap, cfgSnap,
+      sessSnap] = await Promise.all([
       adminService.getAllUsers(),
       adminService.getAllUsers({ role: 'astrologer' }),
       adminService.getAllTransactions({ type: 'debit' }),
       getDocs(collection(db, 'astrologers')),
       getDoc(doc(db, 'settings', 'config')),
+      getDocs(collection(db, 'sessions')),
     ]);
+    setAllSessions(sessSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    setAllUsers(users);
+    setAllTxns(txns);
     const cfg = cfgSnap.exists() ? cfgSnap.data() : {};
     const resetAt = Number(cfg.revenueResetAt || 0); // ms cutoff
     // Test account uids are excluded from real revenue.
@@ -265,6 +301,16 @@ export default function AdminDashboard() {
         ))}
       </div>
 
+      {/* Analytics: scoped by a date range (preset or custom). Counts
+          new users (created in the range), returning users (existing
+          accounts that logged a session in the range), service mix
+          (chat / call / video / kundli orders) and revenue. */}
+      <AnalyticsPanel
+        users={allUsers} txns={allTxns} sessions={allSessions}
+        preset={preset} setPreset={setPreset}
+        customStart={customStart} setCustomStart={setCustomStart}
+        customEnd={customEnd} setCustomEnd={setCustomEnd} />
+
       {/* Sectioned shortcut grid. Every customer-platform feature
           has a card so admin never has to memorise URLs. */}
       <div className="space-y-5">
@@ -302,5 +348,150 @@ export default function AdminDashboard() {
         ))}
       </div>
     </Layout>
+  );
+}
+
+// Resolve the [startMs, endMs) window for the picked preset / custom
+// range. Returns null,null for "all time" which short-circuits to no
+// filter. "Yesterday" is the single 24-hour window ending at the
+// start of today.
+function resolveRange(preset, customStart, customEnd) {
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(),
+    now.getDate()).getTime();
+  if (preset === 'all') return [0, Date.now() + 1];
+  if (preset === 'today') return [startOfToday, Date.now() + 1];
+  if (preset === 'yest') return [startOfToday - 86400000, startOfToday];
+  if (preset === 'custom') {
+    const s = customStart ? new Date(customStart).getTime() : 0;
+    const e = customEnd ? new Date(customEnd).getTime() + 86400000
+      : Date.now() + 1;
+    return [s, e];
+  }
+  const days = preset === '7d' ? 7 : preset === '30d' ? 30
+    : preset === '90d' ? 90 : 30;
+  return [Date.now() - days * 86400000, Date.now() + 1];
+}
+
+function AnalyticsPanel({ users, txns, sessions, preset, setPreset,
+  customStart, setCustomStart, customEnd, setCustomEnd }) {
+  const stats = useMemo(() => {
+    const [from, to] = resolveRange(preset, customStart, customEnd);
+    const inRange = (ms) => ms >= from && ms < to;
+    const customers = users.filter((u) => (u.role || 'client') === 'client');
+    const newUsers = customers.filter((u) =>
+      inRange(toMs(u.createdAt))).length;
+    const sessionsInRange = sessions.filter((s) =>
+      inRange(toMs(s.createdAt) || toMs(s.startTime) || toMs(s.endTime)));
+    // Existing-user activity: sessions whose user was created BEFORE
+    // this window started. That tells us how much of the activity is
+    // returning customers vs the new acquisitions cohort.
+    const newUserIds = new Set(customers
+      .filter((u) => inRange(toMs(u.createdAt)))
+      .map((u) => u.uid || u.id));
+    const existingUserActivity = sessionsInRange
+      .filter((s) => !newUserIds.has(s.userId)).length;
+    // Service mix
+    const svc = { chat: 0, call: 0, video: 0 };
+    sessionsInRange.forEach((s) => {
+      const t = s.type === 'video' ? 'video'
+        : s.type === 'call' ? 'call' : 'chat';
+      svc[t] += 1;
+    });
+    // Revenue in range (debit transactions only).
+    const rev = txns
+      .filter((t) => inRange(toMs(t.createdAt)))
+      .reduce((a, t) => a + Math.abs(Number(t.amount || 0)), 0);
+    return {
+      from, to, newUsers, existingUserActivity, sessions: sessionsInRange,
+      sessionCount: sessionsInRange.length,
+      svc, rev: Math.round(rev * 100) / 100,
+    };
+  }, [users, txns, sessions, preset, customStart, customEnd]);
+
+  const rangeLabel = preset === 'custom' && customStart && customEnd
+    ? `${fmtDate(stats.from)} – ${fmtDate(stats.to - 1)}`
+    : preset === 'all' ? 'All time'
+    : (PRESETS.find(([k]) => k === preset) || [])[1] || '';
+
+  return (
+    <div className="surface mb-5 p-4">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <h2 className="text-sm font-bold uppercase tracking-wider
+          text-sub-text">
+          Activity
+        </h2>
+        <span className="rounded-full bg-bg-light px-2 py-0.5
+          text-[11px] font-bold text-sub-text">{rangeLabel}</span>
+        <div className="ml-auto inline-flex flex-wrap items-center
+          gap-1 rounded-full bg-bg-light p-1">
+          {PRESETS.map(([k, l]) => (
+            <button key={k} onClick={() => setPreset(k)}
+              className={`rounded-full px-2.5 py-1 text-[11px]
+                font-bold ${preset === k
+                  ? 'bg-white text-primary shadow-sm'
+                  : 'text-sub-text'}`}>
+              {l}
+            </button>
+          ))}
+          <button onClick={() => setPreset('custom')}
+            className={`rounded-full px-2.5 py-1 text-[11px]
+              font-bold ${preset === 'custom'
+                ? 'bg-white text-primary shadow-sm' : 'text-sub-text'}`}>
+            Custom
+          </button>
+        </div>
+      </div>
+      {preset === 'custom' && (
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-1 text-xs">
+            <span className="text-sub-text">From</span>
+            <input type="date" value={customStart}
+              onChange={(e) => setCustomStart(e.target.value)}
+              className="rounded-card border border-gray-200
+                px-2 py-1 text-xs" />
+          </label>
+          <label className="flex items-center gap-1 text-xs">
+            <span className="text-sub-text">To</span>
+            <input type="date" value={customEnd}
+              onChange={(e) => setCustomEnd(e.target.value)}
+              className="rounded-card border border-gray-200
+                px-2 py-1 text-xs" />
+          </label>
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Tile label="New users" value={stats.newUsers}
+          sub="created in range" />
+        <Tile label="Existing user activity"
+          value={stats.existingUserActivity}
+          sub="sessions by older accounts" />
+        <Tile label="Sessions" value={stats.sessionCount}
+          sub="total in range" />
+        <Tile label="Revenue" value={`₹${stats.rev.toFixed(0)}`}
+          sub="paid sessions + orders" highlight />
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-3">
+        <Tile label="Chat" value={stats.svc.chat}
+          sub="conversations" />
+        <Tile label="Voice" value={stats.svc.call} sub="calls" />
+        <Tile label="Video" value={stats.svc.video} sub="calls" />
+      </div>
+    </div>
+  );
+}
+function Tile({ label, value, sub, highlight }) {
+  return (
+    <div className={`rounded-card border border-gray-200 p-3
+      ${highlight ? 'ring-1 ring-primary/30' : ''}`}>
+      <div className="text-[10px] uppercase tracking-wider text-sub-text">
+        {label}
+      </div>
+      <div className={`mt-0.5 text-xl font-bold ${highlight
+        ? 'text-primary' : 'text-dark-text'}`}>
+        {value}
+      </div>
+      <div className="text-[10px] text-sub-text">{sub}</div>
+    </div>
   );
 }

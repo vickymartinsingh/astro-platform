@@ -1,16 +1,22 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { kundliService, db } from '@astro/shared';
+import {
+  kundliService, db, reportType,
+} from '@astro/shared';
 import {
   collection, query, orderBy, onSnapshot,
 } from 'firebase/firestore';
 import Layout from '../components/Layout';
+import PdfPreviewModal from '../components/PdfPreviewModal';
+import SendPdfByEmailModal from '../components/SendPdfByEmailModal';
 import { useRequireClient } from '../lib/useAuth';
 
 // Orders = every PDF report (free + paid) the user has bought.
-// Re-download is just an <a href> to the long-lived signed Firebase
-// Storage URL stored on each order doc; we never re-hit the relay
-// for repeats, so this page is essentially free.
+// Re-download opens the PDF in an in-app preview (PdfPreviewModal)
+// with a corner download icon, so the customer stays inside the app
+// instead of being kicked to a Chrome tab. Send-to-email opens
+// SendPdfByEmailModal which ships the PDF as an attachment via the
+// SMTP relay and reports "Email sent successfully" on completion.
 //
 // LIVE UPDATES: the page subscribes to users/{uid}/orders with
 // Firestore onSnapshot, so the moment the relay's sweep writes
@@ -23,13 +29,13 @@ import { useRequireClient } from '../lib/useAuth';
 //   - Any external cron service pointed at action:'sweepPending'
 // So at least one trigger is ALWAYS active for any signed-in user.
 export default function Orders() {
-  const { user, loading } = useRequireClient();
+  const { user, profile, loading } = useRequireClient();
   const [rows, setRows] = useState(null);
+  const [preview, setPreview] = useState(null);   // { url, name } | null
+  const [emailing, setEmailing] = useState(null); // order | null
 
   useEffect(() => {
     if (!user) return undefined;
-    // Live subscription instead of a one-shot listOrders fetch.
-    // Sorted by paidAt desc so the newest order is on top.
     const q = query(
       collection(db, 'users', user.uid, 'orders'),
       orderBy('paidAt', 'desc'),
@@ -41,13 +47,7 @@ export default function Orders() {
   }, [user]);
 
   // BACKGROUND POLLING: any order in *_generating gets its
-  // reportStatus polled every 15s while the customer is on /orders.
-  // The relay's status endpoint will fetch the PDF from AstroSeer
-  // + upload to storage + email the customer the moment AstroSeer
-  // marks the order 'sent'. So orders flip from "Generating..." to
-  // "Ready" in front of the customer's eyes without them needing
-  // to refresh. Stops once no orders are pending (saves Firestore
-  // reads + relay calls).
+  // reportStatus polled every 60s while the customer is on /orders.
   useEffect(() => {
     if (!user || !Array.isArray(rows)) return undefined;
     const pending = rows.filter((o) => o.status === 'paid_generating'
@@ -74,12 +74,6 @@ export default function Orders() {
         } catch (_) { /* */ }
       }
     };
-    // First tick after 8s. Subsequent ticks every 60s (was 15s).
-    // The customer's onSnapshot listener picks up status flips the
-    // moment the relay writes them, so this poll is the "kick the
-    // relay" trigger - not the freshness mechanism. 4x slower
-    // cadence saves ~3x Firestore reads on /orders without any
-    // user-visible delay.
     const t1 = setTimeout(tick, 8000);
     const t2 = setInterval(tick, 60000);
     return () => { clearTimeout(t1); clearInterval(t2); };
@@ -89,38 +83,44 @@ export default function Orders() {
     return <Layout><div className="card">Loading…</div></Layout>;
   }
 
+  // Friendly report name. Pulls the catalogue shortName when known
+  // (REPORT_TYPES is the single source of truth) and falls back to
+  // the raw kind tag for orders predating a catalogue entry.
   function pretty(kind) {
-    if (kind === 'forecast12') return '12-Month Forecast';
+    const t = reportType(kind);
+    if (t && t.shortName) return t.shortName;
     if (kind === 'free') return 'Vedic Kundli (250+ pages)';
+    if (kind === 'forecast12') return '12-Month Forecast';
+    if (kind === 'careerFinance') return 'Career & Finance Report';
+    if (kind === 'lifetime') return 'Lifetime Report';
     return kind || 'Report';
   }
+  // Status badge with the legacy + edge labels collapsed into the
+  // four states a customer actually cares about: Ready, Generating,
+  // Queued, Failed.
   function statusLabel(o) {
+    const ok = (s) => ({ text: s,
+      cls: 'bg-emerald-100 text-emerald-700' });
+    const warn = (s) => ({ text: s,
+      cls: 'bg-amber-100 text-amber-700' });
+    const bad = (s) => ({ text: s,
+      cls: 'bg-red-100 text-red-700' });
+    const neutral = (s) => ({ text: s,
+      cls: 'bg-bg-light text-sub-text' });
     switch (o.status) {
-      case 'ready': return { text: 'Ready', cls: 'bg-success/10 text-success' };
+      case 'ready':
+      case 'ready_rescued':
+        return ok('Ready');
       case 'paid_generating':
       case 'free_generating':
-        // kickoffPending = relay couldn't reach AstroSeer to start
-        // generation (service is busy with another order). The
-        // pill text changes so the customer knows it's a queue
-        // wait, not silent breakage.
-        if (o.kickoffPending) {
-          return { text: 'Queued', cls: 'bg-warning/10 text-warning' };
-        }
-        return { text: 'Generating…', cls: 'bg-warning/10 text-warning' };
-      case 'failed':
-      case 'failed_refunded':
-        return { text: o.status === 'failed_refunded'
-          ? 'Failed (refunded)' : 'Failed',
-          cls: 'bg-danger/10 text-danger' };
-      default: return { text: o.status || '·',
-        cls: 'bg-bg-light text-sub-text' };
+      case 'prepaid':
+        return o.kickoffPending ? warn('Queued')
+          : warn('Generating…');
+      case 'failed': return bad('Failed');
+      case 'failed_refunded': return bad('Failed · refunded');
+      default: return neutral(o.status || '·');
     }
   }
-
-  // Human note about queue state. Shown below the row when the
-  // order has been waiting >30s with kickoffPending (i.e. our
-  // relay couldn't get a confirmation handoff from AstroSeer).
-  // Tells the customer it's normal and what to expect.
   function queueNote(o) {
     if (!o || !o.kickoffPending) return '';
     const paidMs = (o.paidAt && o.paidAt.toMillis
@@ -139,12 +139,38 @@ export default function Orders() {
       + 'automatically.';
   }
 
+  // Same fmt + ref helpers we used before, with date+time on the
+  // primary "ordered on" line.
+  function fmtDateTime(ts) {
+    const d = ts && ts.toDate ? ts.toDate()
+      : (typeof ts === 'number' ? new Date(ts) : null);
+    if (!d) return '';
+    return d.toLocaleString('en-GB', {
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+  }
+  function orderRef(o) {
+    if (!o || !o.id) return '';
+    if (/^\d{6,12}$/.test(o.id)) return o.id;
+    return o.id.slice(0, 10);
+  }
+  function amountLabel(o) {
+    if (o.amount > 0) return `₹${o.amount}`;
+    return 'Free';
+  }
+  function pdfHref(o) {
+    if (o.pdfBase64) return `data:application/pdf;base64,${o.pdfBase64}`;
+    if (o.pdfUrl && o.pdfUrl !== 'inline') return o.pdfUrl;
+    return '';
+  }
+
   return (
     <Layout>
-      <h1 className="mb-1 text-xl font-bold">My Orders</h1>
-      <p className="mb-3 text-sm text-sub-text">
-        Every PDF report you bought. One click re-downloads the same
-        file from the cloud at no charge.
+      <h1 className="mb-1 text-2xl font-bold">My Orders</h1>
+      <p className="mb-4 text-sm text-sub-text">
+        Every PDF report you bought. Preview right here, email it to
+        yourself or anyone else, or download to your device.
       </p>
       {rows.length === 0 ? (
         <div className="card text-center text-sub-text">
@@ -156,96 +182,145 @@ export default function Orders() {
           </Link>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {rows.map((o) => {
             const s = statusLabel(o);
-            const at = o.paidAt && o.paidAt.toDate
-              ? o.paidAt.toDate() : null;
-            // Profile snapshot lets the user tell which chart each
-            // PDF belongs to without an extra Firestore read.
-            // Falls back to the kundliProfileId tail if a legacy
-            // order doc didn't carry the snapshot.
             const who = o.profileName
               || (o.kundliProfileId
                 ? `Profile ${String(o.kundliProfileId).slice(0, 6)}`
                 : '');
             const birthLine = [o.profileDob, o.profileTob, o.profileAmpm]
               .filter(Boolean).join(' ');
+            const href = pdfHref(o);
+            const ready = !!href;
             return (
-              <div key={o.id} className="card">
-                <div className="flex items-start justify-between gap-2">
+              <div key={o.id}
+                className="overflow-hidden rounded-2xl bg-white
+                  shadow-sm ring-1 ring-gray-200/70">
+                {/* HEADER: report name + status pill */}
+                <div className="flex items-start justify-between
+                  gap-3 px-4 pt-4">
                   <div className="min-w-0">
-                    <div className="font-semibold">{pretty(o.kind)}</div>
+                    <div className="truncate text-base font-bold
+                      text-dark-text">
+                      {pretty(o.kind)}
+                    </div>
                     {who && (
-                      <div className="text-xs font-medium text-dark-text">
-                        {who}
+                      <div className="mt-0.5 truncate text-xs
+                        text-sub-text">
+                        For <span className="font-semibold
+                          text-dark-text">{who}</span>
                         {o.profilePlace ? `, ${o.profilePlace}` : ''}
                       </div>
                     )}
-                    <div className="text-xs text-sub-text">
-                      {birthLine ? `${birthLine} · ` : ''}
-                      {at ? at.toLocaleDateString('en-GB', {
-                        day: '2-digit', month: 'short', year: 'numeric',
-                      }) : ''}
-                      {o.amount > 0 ? ` · ₹${o.amount}` : ' · free'}
-                    </div>
-                    {/* Order ID line - mint-format 8-digit ids
-                        render in full so the customer can quote
-                        them in support tickets. Older long
-                        auto-generated ids show first 10 chars. */}
-                    {o.id && (
-                      <div className="mt-1 font-mono text-[10px]
-                        text-sub-text">
-                        Order #{(/^\d{8}$/).test(o.id)
-                          ? o.id
-                          : o.id.slice(0, 10)}
+                    {birthLine && (
+                      <div className="mt-0.5 text-[11px] text-sub-text">
+                        Born {birthLine}
                       </div>
                     )}
                   </div>
-                  <span className={`shrink-0 rounded-full px-2 py-0.5
-                      text-[10px] font-bold ${s.cls}`}>
+                  <span className={`shrink-0 rounded-full px-2.5
+                    py-1 text-[11px] font-bold ${s.cls}`}>
                     {s.text}
                   </span>
                 </div>
+
+                {/* META BAR: order #, ordered on, amount - all in
+                    one tidy strip below the header. */}
+                <div className="mt-3 flex flex-wrap items-center
+                  gap-x-3 gap-y-1 border-t border-gray-200/70
+                  bg-bg-light/40 px-4 py-2 text-[11px]">
+                  <span className="font-mono text-sub-text">
+                    Order&nbsp;<span className="font-bold
+                      text-dark-text">#{orderRef(o)}</span>
+                  </span>
+                  <span className="text-sub-text">·</span>
+                  <span className="text-sub-text">
+                    Ordered <span className="font-semibold
+                      text-dark-text">
+                      {fmtDateTime(o.paidAt) || '–'}
+                    </span>
+                  </span>
+                  <span className="text-sub-text">·</span>
+                  <span className="text-sub-text">
+                    Amount <span className="font-semibold
+                      text-dark-text">{amountLabel(o)}</span>
+                  </span>
+                </div>
+
+                {/* QUEUE NOTE */}
                 {queueNote(o) && (
-                  <div className="mt-2 rounded-card bg-warning/10
-                    px-3 py-2 text-[11px] leading-snug text-warning">
+                  <div className="mx-4 mt-3 rounded-card
+                    bg-amber-50 px-3 py-2 text-[11px] leading-snug
+                    text-amber-800">
                     {queueNote(o)}
                   </div>
                 )}
-                {o.status === 'ready' && (() => {
-                  // Inline-stored orders carry only a short marker on
-                  // pdfUrl ("inline") and the real bytes on
-                  // pdfBase64 - we rebuild a data URL on the fly,
-                  // then download it via Blob so Chrome's
-                  // data-URL-navigation block (since 2021) does
-                  // not turn the click into an about:blank tab.
-                  const href = o.pdfBase64
-                    ? `data:application/pdf;base64,${o.pdfBase64}`
-                    : (o.pdfUrl && o.pdfUrl !== 'inline' ? o.pdfUrl : '');
-                  if (!href) return null;
-                  return (
+
+                {/* ACTIONS */}
+                {ready && (
+                  <div className="flex flex-wrap items-center gap-2
+                    px-4 py-3">
                     <button type="button"
-                      onClick={() => kundliService.downloadPdfFromUrl(
-                        href,
-                        o.pdfName || 'AstroSeer-Kundli.pdf')}
-                      className="mt-2 inline-block rounded-full
-                        bg-primary px-3 py-1.5 text-xs font-bold
-                        text-white">
+                      onClick={() => setPreview({ url: href,
+                        name: o.pdfName || `AstroSeer-${
+                          pretty(o.kind).replace(/\s+/g, '-')}.pdf` })}
+                      className="inline-flex items-center gap-1.5
+                        rounded-full bg-primary px-4 py-2 text-xs
+                        font-bold text-white hover:bg-primary/90">
+                      <svg width="14" height="14" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor"
+                        strokeWidth="2.4" strokeLinecap="round"
+                        strokeLinejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0
+                          1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
+                      </svg>
                       Download
                     </button>
-                  );
-                })()}
+                    <button type="button"
+                      onClick={() => setEmailing(o)}
+                      className="inline-flex items-center gap-1.5
+                        rounded-full border border-primary/40
+                        bg-white px-4 py-2 text-xs font-bold
+                        text-primary hover:bg-primary/5">
+                      <svg width="14" height="14" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor"
+                        strokeWidth="2.4" strokeLinecap="round"
+                        strokeLinejoin="round">
+                        <path d="M4 4h16c1.1 0 2 .9 2 2v12c0
+                          1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1
+                          .9-2 2-2z" />
+                        <polyline points="22,6 12,13 2,6" />
+                      </svg>
+                      Send to email
+                    </button>
+                  </div>
+                )}
+
                 {o.validUntil && (
-                  <div className="mt-1 text-[11px] text-sub-text">
-                    Forecast valid until{' '}
-                    {String(o.validUntil).slice(0, 10)}
+                  <div className="border-t border-gray-200/70 px-4
+                    py-2 text-[11px] text-sub-text">
+                    Forecast valid until <b className="text-dark-text">
+                      {String(o.validUntil).slice(0, 10)}
+                    </b>
                   </div>
                 )}
               </div>
             );
           })}
         </div>
+      )}
+
+      {preview && (
+        <PdfPreviewModal url={preview.url} name={preview.name}
+          onClose={() => setPreview(null)} />
+      )}
+      {emailing && (
+        <SendPdfByEmailModal order={emailing}
+          defaultEmail={profile?.email || user?.email || ''}
+          onClose={() => setEmailing(null)} />
       )}
     </Layout>
   );

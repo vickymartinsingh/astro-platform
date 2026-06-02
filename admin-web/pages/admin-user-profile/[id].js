@@ -11,6 +11,8 @@ import Layout from '../../components/Layout';
 import ResetAccountPanel from '../../components/ResetAccountPanel';
 import ComplianceActivity from '../../components/ComplianceActivity';
 import ActivityHistory from '../../components/ActivityHistory';
+import UserActionBar from '../../components/UserActionBar';
+import UserRecordingsPanel from '../../components/UserRecordingsPanel';
 import { useRequireAdmin } from '../../lib/useAuth';
 
 const { sessionRefNo } = sessionService;
@@ -349,6 +351,20 @@ export default function AdminUserProfile() {
           )}
         </div>
       </div>
+
+      {/* ADMIN ACTIONS (balance, bonus, gift card, voucher, edit,
+          block, delete). Each opens a confirmation modal so a misclick
+          on Delete never wipes an account. */}
+      {!u.deleted && (
+        <UserActionBar uid={id} user={u}
+          onChange={(patch) => setU((cur) => ({ ...cur,
+            ...(patch && typeof patch === 'object' ? patch : {}) }))} />
+      )}
+
+      {/* CALL RECORDINGS for this customer (audio + video). Each
+          recording is playable inline; download link opens the R2
+          URL in a new tab for archive. */}
+      <UserRecordingsPanel uid={id} kind="customer" />
 
       {/* PROFILE / KUNDLI */}
       <div className="surface mt-4 p-4">

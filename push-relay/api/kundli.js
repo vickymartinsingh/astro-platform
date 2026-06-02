@@ -907,6 +907,14 @@ module.exports = async (req, res) => {
       }
     }
     // Index doc - deterministic id so duplicate uploads merge.
+    // Enrich with the session's duration so /admin-recordings can
+    // show "12m 04s" without a second round-trip per row.
+    let durationSec = 0;
+    try {
+      const s = await admin.firestore().collection('sessions')
+        .doc(sessionId).get();
+      if (s.exists) durationSec = Number(s.data().duration || 0);
+    } catch (_) { /* duration is decorative */ }
     try {
       await admin.firestore().collection('chats')
         .doc(`recording_${sessionId}`).set({
@@ -919,6 +927,7 @@ module.exports = async (req, res) => {
           url,
           backend,
           sizeKB: Math.round(buf.length / 1024),
+          durationSec,
           ts: Date.now(),
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
         }, { merge: true });

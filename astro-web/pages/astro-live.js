@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import {
   callService, liveService, astrologerService, recordService,
+  liveBotService,
 } from '@astro/shared';
 import { useRequireAstrologer } from '../lib/useAuth';
 import { useSettings } from '../lib/useSettings';
@@ -127,6 +128,71 @@ export default function AstroLive() {
     const t = setInterval(() => setElapsed((s) => s + 1), 1000);
     return () => clearInterval(t);
   }, [live]);
+
+  // ADMIN-DRIVEN AUDIENCE BOTS: when the live_bots_* settings are
+  // enabled (and this astrologer is in scope), the astrologer
+  // client publishes bot viewer-joins + chat questions into the
+  // SAME live messages collection real viewers write into. So
+  // every viewer + the astrologer themselves sees the same bot
+  // names + comments, with no separate API call needed.
+  //
+  // Astrologer NEVER sees a toggle for this - the master switch
+  // and per-astrologer allowlist are admin-side only.
+  useEffect(() => {
+    if (!live || !user) return undefined;
+    let cancelled = false;
+    let joinTimer = null;
+    let commentTimer = null;
+    const usedQs = new Set();
+    (async () => {
+      const cfg = await liveBotService.getBotConfig();
+      if (!liveBotService.botsActiveForAstro(cfg, user.uid)) return;
+      const joinMs = Math.max(3,
+        Number(cfg.live_bots_join_rate_sec) || 12) * 1000;
+      const commentMs = Math.max(5,
+        Number(cfg.live_bots_comment_rate_sec) || 35) * 1000;
+      async function joinTick() {
+        if (cancelled) return;
+        try {
+          const bot = await liveBotService.pickRandomBot();
+          if (bot) {
+            await liveBotService.publishBotEvent(user.uid,
+              { kind: 'join', name: bot.name,
+                code: bot.code || bot.id });
+          }
+        } catch (_) { /* swallow */ }
+      }
+      async function commentTick() {
+        if (cancelled) return;
+        try {
+          const bot = await liveBotService.pickRandomBot();
+          const q = await liveBotService.pickQuestion(usedQs);
+          if (bot && q) {
+            await liveBotService.publishBotEvent(user.uid,
+              { kind: 'comment', name: bot.name,
+                code: bot.code || bot.id, text: q.text });
+          }
+        } catch (_) { /* swallow */ }
+      }
+      // First join + comment after a short stagger so it doesn't all
+      // fire at t=0.
+      joinTimer = setTimeout(function loop() {
+        joinTick().then(() => {
+          if (!cancelled) joinTimer = setTimeout(loop, joinMs);
+        });
+      }, 2000);
+      commentTimer = setTimeout(function loop() {
+        commentTick().then(() => {
+          if (!cancelled) commentTimer = setTimeout(loop, commentMs);
+        });
+      }, 6000);
+    })();
+    return () => {
+      cancelled = true;
+      if (joinTimer) clearTimeout(joinTimer);
+      if (commentTimer) clearTimeout(commentTimer);
+    };
+  }, [live, user]);
 
   async function start() {
     if (!user || joinedRef.current) return;

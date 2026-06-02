@@ -14,6 +14,7 @@ export function useSession({ astroId, type, uid, clientName, view = false }) {
   const [astro, setAstro] = useState(null);
   const [session, setSession] = useState(null);   // live session doc
   const [wallet, setWallet] = useState(0);
+  const [walletLoaded, setWalletLoaded] = useState(false);
   const [countdown, setCountdown] = useState(60);
   const [chatId, setChatId] = useState(null);
   const sessionIdRef = useRef(null);
@@ -105,8 +106,18 @@ export function useSession({ astroId, type, uid, clientName, view = false }) {
   }, [astroId, uid, type]);
 
   // Live wallet (ticks down as the Cloud Function deducts).
+  // walletLoaded flips true on the first snapshot so the call screen
+  // can distinguish "wallet is genuinely 0" from "wallet listener has
+  // not fired yet" - critical: a race between the active-status flip
+  // and the first wallet snapshot used to fire the auto-hang-up at
+  // t=0 (walletSecsLeft computed from default 0 wallet), which killed
+  // the recording before any chunks were captured.
   useEffect(() => {
-    if (uid) return walletService.listenWallet(uid, setWallet);
+    if (!uid) return undefined;
+    return walletService.listenWallet(uid, (w) => {
+      setWallet(w);
+      setWalletLoaded(true);
+    });
   }, [uid]);
 
   // 60-second request timeout (blueprint 4.10 step 5).
@@ -182,6 +193,6 @@ export function useSession({ astroId, type, uid, clientName, view = false }) {
     sessionService.endSession(sid).catch(() => {});
   }
 
-  return { astro, session, wallet, countdown, chatId, end,
+  return { astro, session, wallet, walletLoaded, countdown, chatId, end,
     sessionId: sessionIdRef.current };
 }
