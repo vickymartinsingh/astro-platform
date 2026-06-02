@@ -14,50 +14,69 @@ export default function AdminLogin() {
   const [password, setPassword] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  // Visible step indicator so the user (and us) can see exactly
+  // which network leg hung on a flaky iOS WKWebView. Goes from
+  // 'auth' -> 'profile' -> 'redirect'.
+  const [step, setStep] = useState('');
   const [brand, setBrand] = useState({ logo: '', name: 'AstroSeer' });
 
   useEffect(() => brandingService.watchBranding((b) =>
     setBrand({ logo: b.logo || '', name: b.name || 'AstroSeer' })), []);
 
+  // Tight per-step timeouts. With each step visible to the user
+  // (changes 'busy' text), even if the spinner never clears the
+  // user can tell US which step was stuck. We log each transition
+  // so the iOS Safari Web Inspector / a connected console shows
+  // exactly where the flow halts.
   async function submit(e) {
     e.preventDefault();
     setErr(''); setBusy(true);
+    setStep('auth');
+    const log = (s) => {
+      // eslint-disable-next-line no-console
+      try { console.log('[admin-login]', s); } catch (_) {}
+    };
     try {
-      // Hard 15s timeout around the Firebase auth call so a bad
-      // network or a stalled SDK init can never strand the spinner.
-      // The Promise.race rejects with a "timeout" string we catch
-      // below and surface as a retryable error.
+      log('auth start');
       const u = await Promise.race([
         authService.loginUser(email.trim(), password),
         new Promise((_, reject) => setTimeout(() =>
-          reject(new Error('auth timeout')), 15000)),
+          reject(new Error('auth timeout')), 12000)),
       ]);
-      // 10-second guard around the Firestore profile lookup. On iOS
-      // WKWebView this read used to hang forever when Firestore had
-      // picked the wrong transport - now even if that race still
-      // happens for any reason, the spinner clears and the user can
-      // retry instead of staring at "Signing in..." forever.
+      log('auth ok ' + u.uid);
+      setStep('profile');
       const p = await Promise.race([
         userService.getUser(u.uid),
         new Promise((_, reject) => setTimeout(() =>
-          reject(new Error('profile timeout')), 10000)),
+          reject(new Error('profile timeout')), 8000)),
       ]);
+      log('profile ok role=' + (p && p.role));
       if (!isAdminUser(p, u.email)) {
         await authService.logoutUser();
         setErr('Access denied, admin only.');
         return;
       }
+      setStep('redirect');
+      log('redirecting');
       router.replace('/admin-dashboard');
     } catch (e2) {
       const msg = String((e2 && e2.message) || '');
-      if (msg.includes('timeout')) {
-        setErr('Connection slow. Try once more.');
-      } else if (/invalid|wrong-password|user-not-found/i.test(msg)) {
+      log('FAIL ' + msg);
+      if (/auth timeout/.test(msg)) {
+        setErr('Authentication took too long. Check your '
+          + 'internet and try again.');
+      } else if (/profile timeout/.test(msg)) {
+        setErr('Connected, but profile read stalled. Tap Sign in '
+          + 'again to retry.');
+      } else if (/invalid|wrong-password|user-not-found|password/i
+        .test(msg)) {
         setErr('Invalid credentials.');
+      } else if (/network/i.test(msg)) {
+        setErr('Network error. Check your internet.');
       } else {
         setErr(msg || 'Sign-in failed. Try again.');
       }
-    } finally { setBusy(false); }
+    } finally { setBusy(false); setStep(''); }
   }
 
   return (
@@ -120,7 +139,12 @@ export default function AdminLogin() {
                 onChange={(e) => setPassword(e.target.value)} required />
             </label>
             <button className="btn-primary w-full" disabled={busy}>
-              {busy ? 'Signing in…' : 'Sign in'}
+              {busy
+                ? (step === 'auth' ? 'Signing in… (1/3 auth)'
+                  : step === 'profile' ? 'Verifying access… (2/3)'
+                  : step === 'redirect' ? 'Opening dashboard… (3/3)'
+                  : 'Signing in…')
+                : 'Sign in'}
             </button>
           </form>
         </div>
