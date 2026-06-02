@@ -42,6 +42,21 @@ function fmtDur(sec) {
   if (m >= 60) return `${Math.floor(m / 60)}h ${m % 60}m`;
   return m > 0 ? `${m}m${r ? ` ${r}s` : ''}` : `${r}s`;
 }
+// Birth place can be either a raw string (legacy) or the structured
+// city object the CityField widget now writes, shaped roughly as
+// { label, place, city, state, country, lat, lng, tz, id }.
+// React explodes if we try to render the object directly, so we
+// normalize to a readable label string here.
+function placeLabel(v) {
+  if (!v) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'object') {
+    return v.label || v.place
+      || [v.city, v.state, v.country].filter(Boolean).join(', ')
+      || '';
+  }
+  return String(v);
+}
 
 export default function AdminUserProfile() {
   const router = useRouter();
@@ -373,7 +388,8 @@ export default function AdminUserProfile() {
         <Row k="Gender" v={u.gender || '-'} />
         <Row k="DOB" v={u.dob || '-'} />
         <Row k="Birth time" v={u.tob || u.timeOfBirth || '-'} />
-        <Row k="Birth place" v={u.placeOfBirth || u.place || '-'} />
+        <Row k="Birth place" v={placeLabel(u.placeOfBirth
+          || u.place) || '-'} />
         <Row k="Language" v={u.language || '-'} />
         <Row k="Referral" v={u.referralCode || u.referredBy || '-'} />
         <Row k="Last seen"
@@ -413,7 +429,7 @@ export default function AdminUserProfile() {
                       )}
                     </div>
                     <div className="text-xs text-sub-text">
-                      {k.dob} · {k.tob} {k.ampm} · {k.place}
+                      {k.dob} · {k.tob} {k.ampm} · {placeLabel(k.place)}
                       {/* Zodiac (sun sign by DOB) intentionally
                           omitted - that's a horoscope concept, not
                           a kundli identifier. Moon sign + Lagna
@@ -621,7 +637,7 @@ function AdminEditKundli({ k, onSaved }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({
     name: k.name || '', dob: k.dob || '', tob: k.tob || '',
-    ampm: k.ampm || 'AM', place: k.place || '',
+    ampm: k.ampm || 'AM', place: placeLabel(k.place) || '',
   });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState({ text: '', kind: '' });

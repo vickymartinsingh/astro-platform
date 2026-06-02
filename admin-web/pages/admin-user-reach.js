@@ -1,17 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/router';
-import Link from 'next/link';
 import {
   adminService, astrologerService,
 } from '@astro/shared';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
 
-// Unified compliance lookup. One search box that finds any customer OR
-// astrologer by name / email / phone / user code / uid, with a Search
-// button. Each result row is high-density: balance, verified-status
-// badges, last activity timestamp, and (for customers) total spent so
-// admin can spot a high-value account without opening the profile.
+// Unified People hub. The old /admin-users + /admin-astrologers
+// pages are now consolidated here: one search box, one scope chip
+// strip, one virtually-scrolled list. Empty search renders the
+// full customer + astrologer list (paginated in 100-row pages); a
+// typed query filters across name, email, phone, user code or uid.
+// Click any row to jump into the full profile.
 function fmt(ts) {
   try {
     const ms = ts && ts.toMillis ? ts.toMillis()
@@ -48,6 +48,8 @@ function matchOne(s, hay) {
     .some((v) => v.includes(q));
 }
 
+const PAGE_SIZE = 100;
+
 export default function AdminUserReach() {
   const router = useRouter();
   const { loading } = useRequireAdmin();
@@ -55,6 +57,7 @@ export default function AdminUserReach() {
   const [astros, setAstros] = useState(null);
   const [q, setQ] = useState('');
   const [scope, setScope] = useState('all'); // all | customer | astrologer
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
     if (loading) return;
@@ -65,16 +68,31 @@ export default function AdminUserReach() {
         (a) => ({ ...a, uid: a.id || a.uid })))).catch(() => setAstros([]));
   }, [loading]);
 
+  // Reset to page 1 whenever the query or scope changes so the
+  // operator never lands on an empty page just because they
+  // filtered the previous result.
+  useEffect(() => { setPage(1); }, [q, scope]);
+
+  const customers = useMemo(() =>
+    (users || []).filter((u) => (u.role || 'client') === 'client'),
+    [users]);
+  const customerMatches = useMemo(() =>
+    scope === 'astrologer' ? []
+      : customers.filter((u) => matchOne(q, u)),
+    [customers, scope, q]);
+  const astroMatches = useMemo(() =>
+    scope === 'customer' ? []
+      : (astros || []).filter((a) => matchOne(q, a)),
+    [astros, scope, q]);
+
+  const visibleCustomers = customerMatches.slice(0, page * PAGE_SIZE);
+  const visibleAstros = astroMatches.slice(0, page * PAGE_SIZE);
+  const moreAvailable = customerMatches.length > visibleCustomers.length
+    || astroMatches.length > visibleAstros.length;
+
   if (loading || users == null || astros == null) {
     return <Layout><div className="card">Loading…</div></Layout>;
   }
-
-  const customers = users.filter((u) => (u.role || 'client') === 'client');
-  const customerMatches = scope === 'astrologer' ? []
-    : customers.filter((u) => matchOne(q, u));
-  const astroMatches = scope === 'customer' ? []
-    : astros.filter((a) => matchOne(q, a));
-  const total = customerMatches.length + astroMatches.length;
 
   function go(kind, uid) {
     if (kind === 'astrologer') router.push(`/admin-astro-profile/${uid}`);
@@ -83,12 +101,12 @@ export default function AdminUserReach() {
 
   return (
     <Layout>
-      <h1 className="mb-1 text-xl font-bold">User Reach</h1>
+      <h1 className="mb-1 text-2xl font-bold">People</h1>
       <p className="mb-3 text-sm text-sub-text">
-        One-stop lookup. Find any customer or astrologer, see balance,
-        verified status and last activity at a glance, then open the
-        full profile for transactions, kundli, recordings and the
-        reset / restore controls.
+        Every customer and astrologer in one place. Use the scope
+        chips to narrow, type any name, email, phone, user code or
+        UID to search. Click a row to open the full profile with
+        actions (balance, gifts, roles, recordings, reset).
       </p>
 
       <div className="card mb-3">
@@ -99,6 +117,7 @@ export default function AdminUserReach() {
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();
+                const total = customerMatches.length + astroMatches.length;
                 if (total === 1) {
                   const hit = customerMatches[0] || astroMatches[0];
                   const kind = customerMatches[0] ? 'customer' : 'astrologer';
@@ -124,19 +143,27 @@ export default function AdminUserReach() {
           ))}
         </div>
         <div className="mt-2 text-[11px] text-sub-text">
-          {q.trim()
-            ? `${total} result${total === 1 ? '' : 's'}`
-            : `Total: ${customers.length} customers, ${astros.length}`
-              + ' astrologers'}
+          {customerMatches.length} customer
+          {customerMatches.length === 1 ? '' : 's'}
+          {' · '}
+          {astroMatches.length} astrologer
+          {astroMatches.length === 1 ? '' : 's'}
+          {q.trim() ? ` matching "${q.trim()}"`
+            : ` total · showing ${visibleCustomers.length
+              + visibleAstros.length}`}
         </div>
       </div>
 
       {customerMatches.length > 0 && (
         <div className="mb-3">
-          <div className="mb-1 text-xs font-bold uppercase tracking-wide
-            text-sub-text">Customers ({customerMatches.length})</div>
+          <div className="mb-1 flex items-center justify-between">
+            <div className="text-xs font-bold uppercase tracking-wide
+              text-sub-text">
+              Customers ({customerMatches.length})
+            </div>
+          </div>
           <div className="space-y-2">
-            {customerMatches.slice(0, 30).map((u) => (
+            {visibleCustomers.map((u) => (
               <ResultRow key={u.uid || u.id} u={u} kind="customer"
                 onClick={() => go('customer', u.uid || u.id)} />
             ))}
@@ -146,10 +173,14 @@ export default function AdminUserReach() {
 
       {astroMatches.length > 0 && (
         <div className="mb-3">
-          <div className="mb-1 text-xs font-bold uppercase tracking-wide
-            text-sub-text">Astrologers ({astroMatches.length})</div>
+          <div className="mb-1 flex items-center justify-between">
+            <div className="text-xs font-bold uppercase tracking-wide
+              text-sub-text">
+              Astrologers ({astroMatches.length})
+            </div>
+          </div>
           <div className="space-y-2">
-            {astroMatches.slice(0, 30).map((a) => (
+            {visibleAstros.map((a) => (
               <ResultRow key={a.uid || a.id} u={a} kind="astrologer"
                 onClick={() => go('astrologer', a.uid || a.id)} />
             ))}
@@ -157,22 +188,21 @@ export default function AdminUserReach() {
         </div>
       )}
 
-      {q.trim() && total === 0 && (
+      {customerMatches.length === 0 && astroMatches.length === 0 && (
         <div className="card text-sm text-sub-text">
-          No customer or astrologer matches that search.
+          {q.trim()
+            ? `No customer or astrologer matches "${q.trim()}".`
+            : 'No people yet.'}
         </div>
       )}
 
-      {!q.trim() && (
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <Link href="/admin-users"
-            className="card text-center font-semibold hover:bg-bg-light">
-            Browse all customers
-          </Link>
-          <Link href="/admin-astrologers"
-            className="card text-center font-semibold hover:bg-bg-light">
-            Browse all astrologers
-          </Link>
+      {moreAvailable && (
+        <div className="mt-2 text-center">
+          <button onClick={() => setPage((p) => p + 1)}
+            className="rounded-full bg-primary px-5 py-2 text-sm
+              font-bold text-white">
+            Show {PAGE_SIZE} more
+          </button>
         </div>
       )}
     </Layout>
@@ -193,13 +223,11 @@ function VerifiedDot({ ok, label }) {
 }
 
 function ResultRow({ u, kind, onClick }) {
-  // Pull the same KPIs the profile page shows so the operator can
-  // triage WITHOUT opening the profile. Falls back gracefully if the
-  // field is missing on an older account.
   const balance = Number(u.wallet || u.balance || 0);
   const lastSeen = u.lastSeenAt || u.lastLoginAt
     || u.lastActiveAt || u.updatedAt || u.createdAt;
-  const blocked = u.status === 'blocked' || u.blocked === true;
+  const blocked = u.status === 'blocked' || u.blocked === true
+    || u.isBlocked === true;
   const online = u.status === 'online';
   const emailVerified = !!(u.emailVerified || u.verifiedEmail);
   const phoneVerified = !!(u.phoneVerified || u.verifiedPhone || u.phone);
