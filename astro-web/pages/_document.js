@@ -96,6 +96,20 @@ export default function Document() {
               + 'requestAnimationFrame(poll);})();',
           }}
         />
+        {/* Native iOS splash kill switch - mirrors the admin-web +
+            client-web version. Three timed Capacitor SplashScreen.
+            hide() calls so a JS bundle error never strands the
+            splash. Web build: no-op. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: '(function(){function hide(){try{var C=window.'
+              + 'Capacitor;if(!C||!C.Plugins||!C.Plugins.SplashScreen)'
+              + 'return;C.Plugins.SplashScreen.hide({fadeOutDuration'
+              + ':200});}catch(e){}}'
+              + 'setTimeout(hide,400);setTimeout(hide,1500);'
+              + 'setTimeout(hide,4000);})();',
+          }}
+        />
         <Main />
         <NextScript />
       </body>

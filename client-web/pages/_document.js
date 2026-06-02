@@ -165,6 +165,21 @@ export default function Document() {
               + 'requestAnimationFrame(poll);})();',
           }}
         />
+        {/* Native iOS splash kill switch - see admin-web/_document.js
+            for the rationale. Fires three timed Capacitor.Plugins.
+            SplashScreen.hide() calls so the splash never outlives the
+            WKWebView paint, even if the JS bundle throws. Web build:
+            harmless no-op (window.Capacitor undefined). */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: '(function(){function hide(){try{var C=window.'
+              + 'Capacitor;if(!C||!C.Plugins||!C.Plugins.SplashScreen)'
+              + 'return;C.Plugins.SplashScreen.hide({fadeOutDuration'
+              + ':200});}catch(e){}}'
+              + 'setTimeout(hide,400);setTimeout(hide,1500);'
+              + 'setTimeout(hide,4000);})();',
+          }}
+        />
         <Main />
         <NextScript />
       </body>

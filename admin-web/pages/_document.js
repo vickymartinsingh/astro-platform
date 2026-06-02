@@ -137,6 +137,30 @@ export default function Document() {
               + 'requestAnimationFrame(poll);})();',
           }}
         />
+        {/* Native iOS splash kill switch.
+            The Capacitor splash plugin owns a UIView painted on top of
+            the WKWebView; React + the __boot cover above only live
+            INSIDE the WKWebView. If anything in the JS bundle throws
+            during boot (rare, but it has happened in production), the
+            splash stays forever because nothing calls
+            SplashScreen.hide(). This inline script runs BEFORE any
+            React module loads and forcibly hides the native splash:
+              - at t=400ms (as soon as the WKWebView paints anything)
+              - again at t=1500ms (insurance)
+              - again at t=4000ms (paranoid)
+            Three separate calls, all wrapped in try so a missing
+            Capacitor object just no-ops. On the web build this is a
+            harmless no-op (window.Capacitor is undefined). */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: '(function(){function hide(){try{var C=window.'
+              + 'Capacitor;if(!C||!C.Plugins||!C.Plugins.SplashScreen)'
+              + 'return;C.Plugins.SplashScreen.hide({fadeOutDuration'
+              + ':200});}catch(e){}}'
+              + 'setTimeout(hide,400);setTimeout(hide,1500);'
+              + 'setTimeout(hide,4000);})();',
+          }}
+        />
         <Main />
         <NextScript />
       </body>
