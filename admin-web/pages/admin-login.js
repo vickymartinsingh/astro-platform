@@ -24,15 +24,31 @@ export default function AdminLogin() {
     setErr(''); setBusy(true);
     try {
       const u = await authService.loginUser(email.trim(), password);
-      const p = await userService.getUser(u.uid);
+      // 10-second guard around the Firestore profile lookup. On iOS
+      // WKWebView this read used to hang forever when Firestore had
+      // picked the wrong transport - now even if that race still
+      // happens for any reason, the spinner clears and the user can
+      // retry instead of staring at "Signing in..." forever.
+      const p = await Promise.race([
+        userService.getUser(u.uid),
+        new Promise((_, reject) => setTimeout(() =>
+          reject(new Error('profile timeout')), 10000)),
+      ]);
       if (!isAdminUser(p, u.email)) {
         await authService.logoutUser();
         setErr('Access denied, admin only.');
         return;
       }
       router.replace('/admin-dashboard');
-    } catch {
-      setErr('Invalid credentials.');
+    } catch (e2) {
+      const msg = String((e2 && e2.message) || '');
+      if (msg.includes('timeout')) {
+        setErr('Connection slow. Try once more.');
+      } else if (/invalid|wrong-password|user-not-found/i.test(msg)) {
+        setErr('Invalid credentials.');
+      } else {
+        setErr(msg || 'Sign-in failed. Try again.');
+      }
     } finally { setBusy(false); }
   }
 

@@ -71,11 +71,33 @@ try {
 function isCapacitorIOS() {
   try {
     if (typeof window === 'undefined') return false;
+    // Three independent signals - any ONE of them is enough. Some
+    // fire at different points in the Capacitor boot sequence, so
+    // relying on Capacitor.getPlatform() alone gave a false negative
+    // during firebase.js evaluation in the static-export bundle:
+    // the bundle ran BEFORE the Capacitor object was injected, the
+    // check returned false, Firestore was wired with WebChannel (the
+    // iframe transport), and every post-login userService.getUser()
+    // call hung forever. That is the exact "Signing in..." infinite
+    // spinner the user reported.
+    //
+    // 1) custom-scheme URL - available from the very first byte of
+    //    the page, set by the WKWebView before any JS executes.
+    if (typeof location !== 'undefined'
+      && (location.protocol === 'capacitor:'
+        || location.protocol === 'ionic:')) return true;
+    // 2) WKWebView message-handler bridge - synchronously injected
+    //    by iOS Capacitor before any user script runs.
+    if (window.webkit && window.webkit.messageHandlers
+      && window.webkit.messageHandlers.bridge) return true;
+    // 3) Capacitor's own platform query - the original check, kept
+    //    as a catch-all for desktop simulators / dev shells.
     const C = window.Capacitor;
-    if (!C || typeof C.isNativePlatform !== 'function') return false;
-    if (!C.isNativePlatform()) return false;
-    const p = (typeof C.getPlatform === 'function' && C.getPlatform()) || '';
-    return String(p).toLowerCase() === 'ios';
+    if (C && typeof C.isNativePlatform === 'function'
+      && C.isNativePlatform()
+      && typeof C.getPlatform === 'function'
+      && String(C.getPlatform()).toLowerCase() === 'ios') return true;
+    return false;
   } catch (_) { return false; }
 }
 function initAuth() {
