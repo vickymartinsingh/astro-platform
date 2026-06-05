@@ -180,7 +180,7 @@ export default function AdminDashboard() {
         'Recruitment overview + KYC + bank backlog'],
       ['/admin-team', 'Team access',
         'Admin / dev / support / HR roles'],
-      ['/admin-user-reach', 'User reach',
+      ['/admin-user-reach', 'People directory',
         'Search any customer / astrologer activity'],
     ]],
     ['Money', [

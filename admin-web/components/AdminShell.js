@@ -55,7 +55,8 @@ const ADMIN_GROUPS = [
     ['/admin-health', 'System health', 'Relay + Firestore + SMTP', 'health'],
   ]],
   ['People', [
-    ['/admin-user-reach', 'User reach', 'One-search lookup', 'reach'],
+    ['/admin-user-reach', 'People directory',
+      'Everyone in one place', 'reach'],
     ['/admin-users', 'Customers', 'All client accounts', 'users'],
     ['/admin-astrologers', 'Astrologers', 'Onboarded + online', 'astrologers'],
     ['/admin-astro-applications', 'Applications', 'HR pipeline', 'applications'],
@@ -167,7 +168,8 @@ const HR_GROUPS = [
     ['/admin-hr-dashboard', 'HR dashboard', 'Recruitment overview', 'dashboard'],
     ['/admin-astro-applications', 'Applications',
       'Review + interview', 'applications'],
-    ['/admin-user-reach', 'User reach', 'Search any account', 'reach'],
+    ['/admin-user-reach', 'People directory',
+      'Search any account', 'reach'],
   ]],
   ['Onboarding', [
     ['/admin-astro-applications?stage=kyc', 'KYC pending',
@@ -203,7 +205,7 @@ const SUPPORT_GROUPS = [
     ['/admin-disputes', 'Disputes', '', 'disputes'],
   ]],
   ['Lookup', [
-    ['/admin-user-reach', 'User reach', '', 'reach'],
+    ['/admin-user-reach', 'People directory', '', 'reach'],
     ['/admin-users', 'Customers', '', 'users'],
     ['/admin-astrologers', 'Astrologers', '', 'astrologers'],
     ['/admin-orders', 'Kundli orders', '', 'orders'],

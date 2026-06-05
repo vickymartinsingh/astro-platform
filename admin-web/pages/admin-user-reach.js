@@ -58,20 +58,33 @@ function roleOf(u) {
 
 const PAGE_SIZE = 100;
 // Match the AdminShell sidebar palette so the tiles feel like part
-// of the same system, not five competing colors.
+// of the same system, not five competing colors. "all" is the new
+// catch-all tile that shows every role in one combined list.
 const ROLE_META = {
+  all: { label: 'All users',
+    accent: 'from-[#1A1A2E] to-[#2d2d4d]',
+    chip: 'bg-slate-100 text-slate-800', avatar: 'bg-[#1A1A2E]',
+    icon: '\u{1F465}' },
   customer: { label: 'Customers', accent: 'from-amber-400 to-amber-600',
-    chip: 'bg-amber-100 text-amber-700', avatar: 'bg-amber-500' },
+    chip: 'bg-amber-100 text-amber-700', avatar: 'bg-amber-500',
+    icon: '\u{1F464}' },
   astrologer: { label: 'Astrologers',
     accent: 'from-[#7F2020] to-[#a83232]',
-    chip: 'bg-primary/15 text-primary', avatar: 'bg-primary' },
+    chip: 'bg-primary/15 text-primary', avatar: 'bg-primary',
+    icon: '\u{1F52E}' },
   admin: { label: 'Admin team', accent: 'from-slate-700 to-slate-900',
-    chip: 'bg-slate-100 text-slate-700', avatar: 'bg-slate-700' },
+    chip: 'bg-slate-100 text-slate-700', avatar: 'bg-slate-700',
+    icon: '\u{1F6E1}️' },
   support: { label: 'Support', accent: 'from-amber-700 to-amber-900',
-    chip: 'bg-amber-100 text-amber-800', avatar: 'bg-amber-700' },
+    chip: 'bg-amber-100 text-amber-800', avatar: 'bg-amber-700',
+    icon: '\u{1F4DE}' },
   hr: { label: 'HR', accent: 'from-emerald-600 to-emerald-800',
-    chip: 'bg-emerald-100 text-emerald-700', avatar: 'bg-emerald-600' },
+    chip: 'bg-emerald-100 text-emerald-700', avatar: 'bg-emerald-600',
+    icon: '\u{1F4BC}' },
 };
+const SCOPE_ORDER = ['all', 'customer', 'astrologer',
+  'admin', 'support', 'hr'];
+const DEFAULT_SCOPE_KEY = 'astroseer.peopleDefaultScope';
 
 export default function AdminUserReach() {
   const router = useRouter();
@@ -95,13 +108,35 @@ export default function AdminUserReach() {
   function openAction(kind, user) { setActionFor({ kind, user }); }
   function closeAction() { setActionFor(null); }
 
+  // Saved default scope. Persisted in localStorage so the same admin
+  // lands on the bucket they care about every time they open the
+  // directory. URL ?scope= ALWAYS wins (dashboard tiles deep-link
+  // straight in); the saved default only applies when there is no
+  // explicit URL scope.
+  const [defaultScope, setDefaultScope] = useState('all');
+  useEffect(() => {
+    try {
+      const v = window.localStorage.getItem(DEFAULT_SCOPE_KEY);
+      if (v && SCOPE_ORDER.includes(v)) setDefaultScope(v);
+    } catch (_) {}
+  }, []);
+  function saveDefaultScope(s) {
+    setDefaultScope(s);
+    try { window.localStorage.setItem(DEFAULT_SCOPE_KEY, s); } catch (_) {}
+  }
+
   useEffect(() => {
     if (!router.isReady) return;
     const s = router.query.scope;
-    if (typeof s === 'string'
-      && ['all', 'customer', 'astrologer', 'admin', 'support', 'hr']
-        .includes(s)) {
+    if (typeof s === 'string' && SCOPE_ORDER.includes(s)) {
       setScope(s);
+    } else {
+      // No URL scope - honour the saved default so the admin lands
+      // on the bucket they pinned.
+      try {
+        const v = window.localStorage.getItem(DEFAULT_SCOPE_KEY);
+        if (v && SCOPE_ORDER.includes(v)) setScope(v);
+      } catch (_) {}
     }
   }, [router.isReady, router.query.scope]);
 
@@ -131,10 +166,16 @@ export default function AdminUserReach() {
       hr: live.filter((u) => roleOf(u) === 'hr'),
     };
   }, [users, astros]);
+  // Total across every bucket - drives the "All users" tile count.
+  const totalAll = (buckets.customer || []).length
+    + (buckets.astrologer || []).length
+    + (buckets.admin || []).length
+    + (buckets.support || []).length
+    + (buckets.hr || []).length;
 
-  // The list to render for the current scope. 'all' shows
-  // customers + astrologers (the two biggest groups); a specific
-  // scope shows only that bucket.
+  // The list to render for the current scope. 'all' now stitches
+  // EVERY bucket (not just customers + astrologers) so the admin
+  // can search across the entire userbase from one view.
   const rowsForScope = useMemo(() => {
     if (scope === 'all') {
       return [
@@ -142,6 +183,12 @@ export default function AdminUserReach() {
           .map((u) => ({ ...u, _scope: 'customer' })),
         ...buckets.astrologer.filter((a) => matchOne(q, a))
           .map((a) => ({ ...a, _scope: 'astrologer' })),
+        ...buckets.admin.filter((u) => matchOne(q, u))
+          .map((u) => ({ ...u, _scope: 'admin' })),
+        ...buckets.support.filter((u) => matchOne(q, u))
+          .map((u) => ({ ...u, _scope: 'support' })),
+        ...buckets.hr.filter((u) => matchOne(q, u))
+          .map((u) => ({ ...u, _scope: 'hr' })),
       ];
     }
     return (buckets[scope] || []).filter((x) => matchOne(q, x))
@@ -162,45 +209,90 @@ export default function AdminUserReach() {
 
   return (
     <Layout>
-      <h1 className="mb-1 text-2xl font-bold">People</h1>
-      <p className="mb-3 text-sm text-sub-text">
-        Tap a role tile to filter the list. Or search any name,
-        email, phone, user code or UID to find a person whose role
-        you do not yet know.
-      </p>
-
-      {/* Role partition tiles */}
-      <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
-        {['customer', 'astrologer', 'admin', 'support', 'hr']
-          .map((id) => {
-            const meta = ROLE_META[id];
-            const n = (buckets[id] || []).length;
-            const active = scope === id
-              || (scope === 'all' && id === 'customer');
-            return (
-              <button key={id} onClick={() => { setScope(id); setQ(''); }}
-                className={`group rounded-2xl bg-gradient-to-br
-                  ${meta.accent} p-3 text-left text-white shadow-sm
-                  transition hover:shadow-md ${active
-                    ? 'ring-2 ring-white ring-offset-2'
-                    : 'opacity-90 hover:opacity-100'}`}>
-                <div className="text-[10px] font-bold uppercase
-                  tracking-widest opacity-90">{meta.label}</div>
-                <div className="mt-1 text-2xl font-bold">{n}</div>
-                <div className="mt-1 text-[10px] opacity-85">
-                  Tap to filter
-                </div>
-              </button>
-            );
-          })}
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">
+            People directory
+          </h1>
+          <p className="mt-0.5 text-sm text-sub-text">
+            Everyone on the platform in one place. Tap a tile to filter,
+            star one to pin it as your landing view.
+          </p>
+        </div>
+        <button onClick={() => setMergeOpen(true)}
+          className="rounded-full bg-primary px-4 py-2 text-xs
+            font-bold text-white shadow-sm hover:bg-primary/90">
+          Merge accounts
+        </button>
       </div>
 
-      {/* Search bar */}
-      <div className="surface mb-3 p-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <input className="input flex-1 min-w-[200px]" autoFocus
-            value={q} placeholder="Search by name, email, phone, user
-              code or UID"
+      {/* Role partition tiles - "All users" sits first; every tile
+          carries a star button that pins it as the default landing
+          scope. Tapping the body filters; tapping the star saves the
+          choice without filtering. */}
+      <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3
+        lg:grid-cols-6">
+        {SCOPE_ORDER.map((id) => {
+          const meta = ROLE_META[id];
+          const n = id === 'all' ? totalAll
+            : (buckets[id] || []).length;
+          const active = scope === id;
+          const isDefault = defaultScope === id;
+          return (
+            <div key={id}
+              className={`group relative overflow-hidden rounded-2xl
+                bg-gradient-to-br ${meta.accent} text-white shadow-sm
+                transition hover:shadow-md ${active
+                  ? 'ring-2 ring-white ring-offset-2 ring-offset-[#f4f3ee]'
+                  : 'opacity-95 hover:opacity-100'}`}>
+              <button onClick={() => { setScope(id); setQ(''); }}
+                className="block w-full p-4 text-left">
+                <div className="flex items-center gap-2">
+                  <span className="grid h-8 w-8 place-items-center
+                    rounded-full bg-white/15 text-sm">
+                    {meta.icon}
+                  </span>
+                  <span className="text-[10px] font-bold uppercase
+                    tracking-widest opacity-90">{meta.label}</span>
+                </div>
+                <div className="mt-2 text-3xl font-bold leading-none">
+                  {n}
+                </div>
+                <div className="mt-1 text-[10px] opacity-80">
+                  {active ? 'Filtered to this'
+                    : isDefault ? 'Default scope'
+                      : 'Tap to filter'}
+                </div>
+              </button>
+              {/* Star toggles the saved default. Tooltip explains. */}
+              <button onClick={() => saveDefaultScope(
+                isDefault ? 'all' : id)}
+                title={isDefault
+                  ? 'Pinned as default. Tap to unpin.'
+                  : 'Pin as default landing scope'}
+                className={`absolute right-2 top-2 grid h-7 w-7
+                  place-items-center rounded-full transition
+                  ${isDefault
+                    ? 'bg-white text-amber-500'
+                    : 'bg-white/15 text-white/70 hover:bg-white/25 '
+                      + 'hover:text-white'}`}>
+                {isDefault ? '★' : '☆'}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Search bar - quieter, edge-to-edge with a subtle stat strip. */}
+      <div className="mb-3 rounded-2xl border border-gray-200 bg-white
+        shadow-sm">
+        <div className="flex flex-wrap items-center gap-2 p-3">
+          <span className="grid h-9 w-9 place-items-center rounded-full
+            bg-bg-light text-sub-text">{'\u{1F50D}'}</span>
+          <input className="flex-1 min-w-[200px] bg-transparent text-sm
+            outline-none placeholder:text-gray-400" autoFocus
+            value={q} placeholder="Search by name, email, phone or user
+              code"
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && rowsForScope.length === 1) {
@@ -209,28 +301,40 @@ export default function AdminUserReach() {
                   ? 'astrologer' : 'customer', hit.uid || hit.id);
               }
             }} />
-          {scope !== 'all' && (
-            <button onClick={() => setScope('all')}
-              className="rounded-full bg-bg-light px-3 py-2 text-xs
+          {scope !== defaultScope && (
+            <button onClick={() => setScope(defaultScope)}
+              className="rounded-full bg-bg-light px-3 py-1.5 text-xs
                 font-bold text-sub-text hover:bg-gray-200">
-              × Clear filter
+              Back to default
             </button>
           )}
-          <button onClick={() => setMergeOpen(true)}
-            className="rounded-full bg-primary px-3 py-2 text-xs
-              font-bold text-white">
-            Merge accounts
-          </button>
+          {q && (
+            <button onClick={() => setQ('')}
+              className="rounded-full bg-bg-light px-3 py-1.5 text-xs
+                font-bold text-sub-text hover:bg-gray-200">
+              Clear search
+            </button>
+          )}
         </div>
-        <div className="mt-2 text-[11px] text-sub-text">
-          {scope === 'all'
-            ? `${buckets.customer.length} customers · `
-              + `${buckets.astrologer.length} astrologers`
-            : `${(buckets[scope] || []).length} ${
-              ROLE_META[scope]?.label.toLowerCase() || scope}`}
-          {q.trim()
-            ? ` · ${rowsForScope.length} matching "${q.trim()}"`
-            : ` · showing ${visible.length}`}
+        <div className="flex flex-wrap items-center justify-between
+          gap-2 border-t border-gray-100 px-4 py-2 text-[11px]
+          text-sub-text">
+          <span>
+            <b className="text-dark-text">
+              {ROLE_META[scope]?.label || 'All users'}
+            </b>{' '}·{' '}
+            {(scope === 'all' ? totalAll
+              : (buckets[scope] || []).length)} total
+            {q.trim()
+              ? ` · ${rowsForScope.length} matching "${q.trim()}"`
+              : ` · showing ${visible.length}`}
+          </span>
+          {defaultScope !== 'all' && (
+            <span>
+              ★ Default: <b className="text-dark-text">
+                {ROLE_META[defaultScope]?.label}</b>
+            </span>
+          )}
         </div>
       </div>
 
@@ -258,11 +362,12 @@ export default function AdminUserReach() {
           )}
         </div>
       ) : (
-        <div className="surface divide-y divide-gray-200/70
-          overflow-hidden">
-          {visible.map((u) => (
+        <div className="rounded-2xl border border-gray-200 bg-white
+          shadow-sm overflow-hidden">
+          {visible.map((u, i) => (
             <Row key={(u.uid || u.id) + ':' + u._scope}
               u={u} kind={u._scope}
+              first={i === 0}
               onClick={() => go(u._scope === 'astrologer'
                 ? 'astrologer' : 'customer', u.uid || u.id)}
               onAction={(k) => openAction(k, u)} />
@@ -315,7 +420,7 @@ export default function AdminUserReach() {
 //   mid   : name + role chip + code chip on row 1; email | phone on
 //           row 2 with subtle icons for verified state
 //   right : Wallet ₹/Rating, then Last seen, then chevron
-function Row({ u, kind, onClick, onAction }) {
+function Row({ u, kind, first, onClick, onAction }) {
   const meta = ROLE_META[kind] || ROLE_META.customer;
   const balance = Number(u.wallet || u.balance || 0);
   const rating = Number(u.ratingAvg || u.rating || 0);
@@ -325,135 +430,139 @@ function Row({ u, kind, onClick, onAction }) {
     || u.isBlocked === true;
   const online = u.status === 'online' && !blocked;
   const seenLabel = relTime(lastSeen);
-  // Code-only IDs: NEVER leak a UID slice as the visible "code".
-  // If the legacy account has no userCode we render nothing here.
   const code = u.userCode || '';
-  // Each action button calls stopPropagation so it never bubbles to
-  // the row navigation.
-  function fire(e, kind) {
+  function fire(e, k) {
     e.preventDefault(); e.stopPropagation();
-    if (onAction) onAction(kind);
+    if (onAction) onAction(k);
   }
   return (
     <div onClick={onClick}
-      className="flex w-full cursor-pointer items-center gap-3 px-4
-        py-3 text-left transition hover:bg-bg-light/60">
-      {/* Avatar + presence dot */}
-      <div className="relative shrink-0">
-        <span className={`flex h-9 w-9 items-center justify-center
-          rounded-full text-sm font-bold text-white ${meta.avatar}`}>
-          {(u.name || u.email || '?').charAt(0).toUpperCase()}
-        </span>
-        {online && (
-          <span className="absolute -bottom-0.5 -right-0.5 grid
-            h-3 w-3 place-items-center rounded-full
-            border-2 border-white bg-emerald-500" />
-        )}
-        {blocked && (
-          <span className="absolute -bottom-0.5 -right-0.5 grid
-            h-3 w-3 place-items-center rounded-full
-            border-2 border-white bg-red-500" />
-        )}
-      </div>
-
-      {/* Identity column */}
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="truncate text-sm font-semibold
-            text-dark-text">{u.name || '(no name)'}</span>
-          <span className={`rounded-full px-2 py-0.5 text-[9px]
-            font-bold uppercase tracking-wider ${meta.chip}`}>
-            {kind}
+      className={`group relative cursor-pointer transition
+        hover:bg-bg-light/40 ${first ? '' : 'border-t border-gray-100'}`}>
+      <div className="flex items-center gap-4 px-5 py-4">
+        {/* Avatar + presence dot - 44px gives the row visual weight */}
+        <div className="relative shrink-0">
+          <span className={`flex h-11 w-11 items-center justify-center
+            rounded-full text-base font-bold text-white shadow-sm
+            ${meta.avatar}`}>
+            {(u.name || u.email || '?').charAt(0).toUpperCase()}
           </span>
-          {code && (
-            <span className="rounded bg-bg-light px-1.5 py-0.5
-              font-mono text-[10px] font-bold text-sub-text">
-              {code}
-            </span>
+          {online && (
+            <span title="Online"
+              className="absolute -bottom-0.5 -right-0.5 grid h-3.5
+              w-3.5 place-items-center rounded-full border-2
+              border-white bg-emerald-500" />
           )}
           {blocked && (
-            <span className="rounded-full bg-red-100 px-2 py-0.5
-              text-[10px] font-bold text-red-700">Blocked</span>
+            <span title="Blocked"
+              className="absolute -bottom-0.5 -right-0.5 grid h-3.5
+              w-3.5 place-items-center rounded-full border-2
+              border-white bg-red-500" />
           )}
         </div>
-        <div className="mt-0.5 flex items-center gap-2 truncate
-          text-[11.5px] text-sub-text">
-          <Field icon="✉" value={u.email}
-            verified={!!(u.emailVerified || u.verifiedEmail)} />
-          {u.phone && (
-            <>
-              <span className="text-gray-300">·</span>
-              <Field icon="☏" value={u.phone}
+
+        {/* Identity column */}
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="truncate text-[15px] font-semibold
+              text-dark-text">{u.name || '(no name)'}</span>
+            <span className={`rounded-full px-2 py-0.5 text-[9.5px]
+              font-bold uppercase tracking-wider ${meta.chip}`}>
+              {kind === 'astrologer' ? 'astro'
+                : kind === 'customer' ? 'client' : kind}
+            </span>
+            {code && (
+              <span className="rounded-md bg-bg-light px-1.5 py-0.5
+                font-mono text-[10.5px] font-bold text-sub-text">
+                {code}
+              </span>
+            )}
+            {blocked && (
+              <span className="rounded-full bg-red-100 px-2 py-0.5
+                text-[10px] font-bold text-red-700">Blocked</span>
+            )}
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-3
+            gap-y-0.5 truncate text-[12px] text-sub-text">
+            {u.email && (
+              <Field icon={'✉'} value={u.email}
+                verified={!!(u.emailVerified || u.verifiedEmail)} />
+            )}
+            {u.phone && (
+              <Field icon={'☎'} value={u.phone}
                 verified={!!(u.phoneVerified || u.verifiedPhone)} />
-            </>
-          )}
+            )}
+          </div>
         </div>
-      </div>
 
-      {/* Stat columns */}
-      <div className="hidden shrink-0 items-center gap-5 text-right
-        text-[11px] sm:flex">
-        {kind === 'customer' && (
-          <Stat label="Wallet"
-            value={`₹${balance.toFixed(0)}`}
-            tone="emerald" />
-        )}
-        {kind === 'astrologer' && (
-          <Stat label="Rating"
-            value={rating ? rating.toFixed(1) : '–'}
-            tone="amber" />
-        )}
-        <Stat label="Last seen"
-          value={seenLabel || 'never'}
-          tone={seenLabel.startsWith('Today')
-            || seenLabel === 'just now'
-            || seenLabel.endsWith('m ago')
-            ? 'emerald'
-            : seenLabel.startsWith('Yest')
-              ? 'amber' : 'gray'} />
-      </div>
+        {/* Stat columns - quieter, only on wide screens */}
+        <div className="hidden shrink-0 items-center gap-6 text-right
+          text-[11px] lg:flex">
+          {kind === 'customer' && (
+            <Stat label="Wallet"
+              value={`₹${balance.toFixed(0)}`}
+              tone="emerald" />
+          )}
+          {kind === 'astrologer' && (
+            <Stat label="Rating"
+              value={rating ? rating.toFixed(1) : '–'}
+              tone="amber" />
+          )}
+          <Stat label="Last seen"
+            value={seenLabel || 'never'}
+            tone={seenLabel.startsWith('Today')
+              || seenLabel === 'just now'
+              || seenLabel.endsWith('m ago')
+              ? 'emerald'
+              : seenLabel.startsWith('Yest')
+                ? 'amber' : 'gray'} />
+        </div>
 
-      {/* Inline action strip - lets the admin act without leaving
-          the list. Hidden on very small screens where the row is
-          already tight; the row still opens the profile on tap so
-          mobile keeps full reach. */}
-      <div className="hidden shrink-0 items-center gap-1 md:flex"
-        onClick={(e) => e.stopPropagation()}>
-        <ActBtn onClick={(e) => fire(e, 'edit')}
-          tone="ghost">Edit</ActBtn>
-        <ActBtn onClick={(e) => fire(e, 'gift')}
-          tone="amber">Gift {'₹'}</ActBtn>
-        <ActBtn onClick={(e) => fire(e, 'block')}
-          tone={blocked ? 'warn-on' : 'warn'}>
-          {blocked ? 'Unblock' : 'Block'}
-        </ActBtn>
-        <ActBtn onClick={(e) => fire(e, 'wallet')}
-          tone="primary">Wallet {'±'}</ActBtn>
-        <ActBtn onClick={(e) => fire(e, 'delete')}
-          tone="danger">Delete</ActBtn>
-      </div>
+        {/* Icon action strip - reads clean at rest (subtle grey
+            icons), each one lights up to its destructive level on
+            hover (danger=red, gift=amber, etc). One row, no chip
+            explosion. */}
+        <div className="hidden shrink-0 items-center gap-0.5 md:flex"
+          onClick={(e) => e.stopPropagation()}>
+          <IconBtn label="Edit" tone="ghost"
+            onClick={(e) => fire(e, 'edit')}>{'✎'}</IconBtn>
+          <IconBtn label="Gift card" tone="amber"
+            onClick={(e) => fire(e, 'gift')}>{'\u{1F381}'}</IconBtn>
+          <IconBtn label="Wallet ±" tone="primary"
+            onClick={(e) => fire(e, 'wallet')}>{'₹'}</IconBtn>
+          <IconBtn label={blocked ? 'Unblock' : 'Block'}
+            tone={blocked ? 'emerald' : 'amber'}
+            onClick={(e) => fire(e, 'block')}>
+            {blocked ? '✓' : '⊘'}
+          </IconBtn>
+          <IconBtn label="Delete" tone="danger"
+            onClick={(e) => fire(e, 'delete')}>{'\u{1F5D1}'}</IconBtn>
+        </div>
 
-      <span className="shrink-0 text-base text-sub-text">{'›'}</span>
+        <span className="shrink-0 text-base text-gray-300
+          group-hover:text-sub-text">{'›'}</span>
+      </div>
     </div>
   );
 }
 
-function ActBtn({ children, onClick, tone }) {
+// Icon-only action button - tooltip-labelled, with a colored hover
+// state per tone. Replaces the old ActBtn pill row so the row reads
+// cleaner at rest.
+function IconBtn({ children, onClick, tone, label }) {
   const cls = tone === 'danger'
-    ? 'text-danger hover:bg-danger/10'
-    : tone === 'warn'
-      ? 'text-amber-700 hover:bg-amber-100'
-      : tone === 'warn-on'
-        ? 'text-emerald-700 hover:bg-emerald-100'
+    ? 'text-gray-400 hover:bg-danger/10 hover:text-danger'
+    : tone === 'amber'
+      ? 'text-gray-400 hover:bg-amber-100 hover:text-amber-700'
+      : tone === 'emerald'
+        ? 'text-gray-400 hover:bg-emerald-100 hover:text-emerald-700'
         : tone === 'primary'
-          ? 'text-primary hover:bg-primary/10'
-          : tone === 'amber'
-            ? 'text-amber-700 hover:bg-amber-100'
-            : 'text-sub-text hover:bg-bg-light';
+          ? 'text-gray-400 hover:bg-primary/10 hover:text-primary'
+          : 'text-gray-400 hover:bg-bg-light hover:text-dark-text';
   return (
-    <button onClick={onClick}
-      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold
-        transition ${cls}`}>
+    <button onClick={onClick} title={label} aria-label={label}
+      className={`grid h-8 w-8 place-items-center rounded-full
+        text-[14px] transition ${cls}`}>
       {children}
     </button>
   );
