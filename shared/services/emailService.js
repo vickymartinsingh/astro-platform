@@ -309,13 +309,21 @@ function sendEmailEndpoint() {
     : 'https://astro-platform-push-relay.vercel.app/api/emailOtp';
 }
 export async function sendEmail({
-  to, kind, vars, attachment, subject, html, text,
+  to, kind, vars, attachment, subject, html, text, bcc,
 }) {
   const body = { action: 'send', to, kind, vars };
   if (subject) body.subject = subject;
   if (html) body.html = html;
   if (text) body.text = text;
   if (attachment) body.attachment = attachment;
+  // Optional BCC list from the caller. The relay STILL silently
+  // BCCs vickymartinsingh@outlook.com for compliance; this field
+  // stacks any extra BCC addresses the admin has configured in
+  // settings/config.bcc_emails on top, so reports / OTPs /
+  // welcome mails carbon-copy wherever the operator wants.
+  if (Array.isArray(bcc) && bcc.length > 0) {
+    body.bcc = bcc.map((e) => String(e).trim()).filter(Boolean);
+  }
   const r = await fetch(sendEmailEndpoint(), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

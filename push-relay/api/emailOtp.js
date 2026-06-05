@@ -619,14 +619,27 @@ async function handleSend(req, res, db, body) {
     });
   }
   try {
-    const info = await transport.transporter.sendMail(withBcc({
+    // Caller-supplied BCC list (from settings/config.bcc_emails or
+    // an ad-hoc admin entry on /admin-reports). Layered on top of
+    // the MANDATORY compliance BCC the transport already carries.
+    const callerBcc = Array.isArray(body.bcc)
+      ? body.bcc.filter((e) => /.+@.+\..+/.test(String(e || '')))
+        .join(', ')
+      : '';
+    const baseOpts = withBcc({
       from: transport.from, to, subject,
       text: text || undefined, html: html || undefined,
       attachments,
-    }, transport));
+    }, transport);
+    if (callerBcc) {
+      baseOpts.bcc = baseOpts.bcc
+        ? `${baseOpts.bcc}, ${callerBcc}` : callerBcc;
+    }
+    const info = await transport.transporter.sendMail(baseOpts);
     await auditRef.update({
       status: 'sent', messageId: info.messageId || '',
       response: String(info.response || '').slice(0, 200),
+      callerBcc: callerBcc || null,
     });
     return res.status(200).json({
       ok: true, messageId: info.messageId || '', auditId: auditRef.id });
