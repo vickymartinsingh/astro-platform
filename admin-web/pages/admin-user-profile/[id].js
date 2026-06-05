@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import {
   userService, sessionService, astrologerService, kundliService, db,
@@ -591,6 +591,7 @@ export default function AdminUserProfile() {
       {chatView && (
         <ChatViewModal session={chatView} astroName={
           astroNames[chatView.astroId] || 'Astrologer'}
+          userName={u?.name || 'Customer'}
           onClose={() => setChatView(null)} />
       )}
 
@@ -1261,15 +1262,121 @@ function KundliSummary({ r }) {
   );
 }
 
-// WhatsApp-style chat viewer for the user profile's recent
-// consultations list. Subscribes to the conversation between this
-// session's customer and astrologer and renders the same bubble
-// layout we use in /admin-sessions. Customer messages on the
-// right in maroon, astrologer on the left in white, system in
-// the center, each with a 12px timestamp. Auto-scrolls to bottom
-// so the most recent message is always visible.
-function ChatViewModal({ session, astroName, onClose }) {
+// Pre-baked templates the admin can use from the reply popup.
+// Each has a short label and the body it inserts. Bodies stay
+// short + neutral so they read realistically when sent as either
+// the astrologer or the AstroSeer brand.
+const ADMIN_REPLY_TEMPLATES = [
+  { id: 'greet', label: 'Greet & ask',
+    body: 'Hello! I have your details with me. Please share what '
+      + 'is on your mind and I will guide you.' },
+  { id: 'apol_delay', label: 'Apologise for delay',
+    body: 'Apologies for the delay in responding. I am back online '
+      + 'now and ready to help you.' },
+  { id: 'missed_call', label: 'Sorry I missed the call',
+    body: 'Sorry I missed your call earlier. Please try again at '
+      + 'your convenience.' },
+  { id: 'wallet_low', label: 'Wallet recharge nudge',
+    body: 'Your wallet balance seems low. Please recharge so we '
+      + 'can continue the consultation without interruption.' },
+  { id: 'remedy_followup', label: 'Remedy follow-up',
+    body: 'Please continue with the remedies we discussed. Share '
+      + 'an update after one week and we will reassess.' },
+  { id: 'wrap_up', label: 'Closing thanks',
+    body: 'Thank you for the consultation. Wishing you the best. '
+      + 'You can reach out again whenever you need guidance.' },
+];
+
+// Normalise free-text values that may be structured objects (e.g.
+// the CityField "place" object writes as JSON to system messages).
+// Without this the chat shows "Place of birth: [object Object]" -
+// the exact glitch in the user-supplied screenshot.
+function safeText(v) {
+  if (v == null) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'object') {
+    return v.label || v.place || v.name
+      || [v.city, v.state, v.country].filter(Boolean).join(', ')
+      || '';
+  }
+  return String(v);
+}
+function cleanMessageText(t) {
+  if (typeof t !== 'string') return safeText(t);
+  // Replace any literal "[object Object]" that snuck into a system
+  // message (the most common shape: "Place of birth: [object Object]")
+  // with an empty string so the line reads correctly.
+  return t.replace(/\[object Object\]/g, '').trim();
+}
+
+// Day-divider key (YYYY-MM-DD in local time) so we can group
+// messages by date and stamp WhatsApp-style "TODAY" / "YESTERDAY"
+// / "12 Jun 2026" pills between days.
+function dateKey(ms) {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1)
+    .padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function dayPillLabel(ms) {
+  const d = new Date(ms);
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return 'TODAY';
+  const yest = new Date(now); yest.setDate(now.getDate() - 1);
+  if (d.toDateString() === yest.toDateString()) return 'YESTERDAY';
+  return d.toLocaleDateString('en-GB', { day: '2-digit',
+    month: 'short', year: 'numeric' }).toUpperCase();
+}
+
+// Per the user's spec: astrologer messages on the RIGHT (the admin
+// reads as if THEY are the astrologer), customer on the LEFT.
+// System messages stay centered as small pills.
+//
+// Status ticks (right-side messages only):
+//   sent (clock)    = message written, no other signal
+//   delivered (✓✓ gray) = message in DB, other party will see
+//                         the next time they open the chat
+//   seen (✓✓ blue)   = a) read flag is true OR
+//                      b) the other side has a later message in
+//                         the thread (implies they were reading)
+function Tick({ kind }) {
+  if (kind === 'sent') {
+    return (
+      <svg width="14" height="11" viewBox="0 0 16 11" fill="none">
+        <path d="M1 6l4 4 9-9" stroke="currentColor" strokeWidth="1.6"
+          strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  // double tick
+  const color = kind === 'seen' ? '#3FA9F5' : 'rgba(255,255,255,.55)';
+  return (
+    <svg width="16" height="11" viewBox="0 0 18 11" fill="none">
+      <path d="M1 6l4 4 7-9" stroke={color} strokeWidth="1.6"
+        strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M6 10l4-4M10 10l8-9" stroke={color} strokeWidth="1.6"
+        strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// WhatsApp-style chat viewer. Subscribes to the conversation between
+// the user and the astrologer (chatService.conversationId), renders
+// the whole thread with day-pill dividers + section dividers between
+// individual session boundaries (the "New chat consultation" system
+// markers). Last 5 sessions are rendered by default; click "Show
+// older sessions" to expand to the full lifetime history.
+//
+// Admin reply: a "Reply" button next to Close opens a template
+// picker that lets the admin send a canned response either AS the
+// astrologer (uses session.astroId as senderId) OR AS AstroSeer
+// (senderId='system' so it shows up center-pilled to all parties).
+// Both paths require a confirmation step before the write fires.
+function ChatViewModal({ session, astroName, userName, onClose }) {
   const [msgs, setMsgs] = useState([]);
+  const [showAll, setShowAll] = useState(false);
+  const [reply, setReply] = useState(null); // null | { tpl, sender }
+  const [replyBody, setReplyBody] = useState('');
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (!session) return undefined;
     const chatId = chatService.conversationId(session.userId,
@@ -1277,82 +1384,329 @@ function ChatViewModal({ session, astroName, onClose }) {
     const unsub = chatService.listenMessages(chatId, setMsgs);
     return () => { try { unsub && unsub(); } catch (_) {} };
   }, [session]);
+
+  // Group messages by session (each "••• New chat consultation"
+  // system separator opens a new group). Default view: last 5
+  // sessions (groups). "Show older sessions" expands to lifetime.
+  const groups = useMemo(() => {
+    const out = [];
+    let cur = null;
+    for (const m of msgs) {
+      const isBoundary = m.senderId === 'system'
+        && /new (chat|call|video) consultation/i
+          .test(String(m.text || ''));
+      if (!cur || isBoundary) {
+        cur = { startedAt: m.createdAt?.toMillis
+          ? m.createdAt.toMillis() : 0,
+          boundary: isBoundary ? m : null, items: [] };
+        out.push(cur);
+      }
+      cur.items.push(m);
+    }
+    return out;
+  }, [msgs]);
+  const shownGroups = showAll ? groups : groups.slice(-5);
+
+  // Compute seen/delivered status for each astrologer-side message.
+  // "Seen" if any later message exists from the customer, OR the
+  // message itself has m.seen / m.read true.
+  function tickFor(m, idxInList, fullList) {
+    if (!m.createdAt) return 'sent';
+    if (m.seen || m.read) return 'seen';
+    const after = fullList.slice(idxInList + 1);
+    const clientLater = after.some(
+      (n) => n.senderId === session.userId);
+    if (clientLater) return 'seen';
+    return 'delivered';
+  }
+
+  async function doSend() {
+    if (!reply || !replyBody.trim()) return;
+    const ok = window.confirm(
+      `Send this reply as "${reply.sender === 'astrologer'
+        ? astroName : 'AstroSeer'}"?\n\n"${replyBody}"\n\n`
+      + 'The user will be notified.');
+    if (!ok) return;
+    setBusy(true);
+    try {
+      const chatId = chatService.conversationId(session.userId,
+        session.astroId);
+      const senderId = reply.sender === 'astrologer'
+        ? session.astroId : 'system';
+      await chatService.sendMessage(chatId, senderId,
+        replyBody.trim());
+      setReply(null); setReplyBody('');
+    } catch (e) {
+      window.alert(String((e && e.message) || e));
+    } finally { setBusy(false); }
+  }
+
   if (!session) return null;
+  // Per the user spec: astrologer = RIGHT side, customer = LEFT.
+  const astroIsRight = true;
   return (
     <div className="fixed inset-0 z-50 flex items-center
       justify-center px-3 py-6"
-      style={{ background: 'rgba(20,14,46,.55)' }}
+      style={{ background: 'rgba(20,14,46,.55)',
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
+      }}
       onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[85vh] w-full max-w-lg flex-col
-          overflow-hidden rounded-2xl bg-white">
-        <div className="bg-primary p-4 text-white">
-          <div className="flex items-center justify-between">
-            <span className="font-bold">{astroName}</span>
-            <button onClick={onClose}
-              className="rounded-full bg-white/25 px-3 py-1 text-sm">
-              Close
-            </button>
+        className="flex max-h-[88vh] w-full max-w-xl flex-col
+          overflow-hidden rounded-2xl bg-[#0F1A2A] shadow-2xl">
+        {/* Toolbar */}
+        <div className="flex items-center gap-2 bg-primary px-4
+          py-3 text-white">
+          <div className="grid h-10 w-10 place-items-center
+            rounded-full bg-white/20 text-sm font-bold">
+            {(astroName || 'A').charAt(0).toUpperCase()}
           </div>
-          <div className="mt-1 text-xs opacity-90">
-            {session.type} · #{sessionRefNo(session)}
-            {session.status ? ` · ${session.status}` : ''}
+          <div className="min-w-0 flex-1">
+            <div className="truncate font-bold">{astroName}</div>
+            <div className="text-[11px] opacity-80">
+              {userName || 'Customer'} ·{' '}
+              {groups.length} session{groups.length === 1 ? '' : 's'}
+              {' · '}#{sessionRefNo(session)}
+            </div>
           </div>
+          <button onClick={() => setReply({ tpl: '',
+            sender: 'astrologer' })}
+            className="rounded-full bg-white px-3 py-1.5 text-[11px]
+              font-bold text-primary">
+            Reply
+          </button>
+          <button onClick={onClose}
+            className="rounded-full bg-white/25 px-3 py-1.5 text-[11px]
+              font-bold">
+            Close
+          </button>
         </div>
+
+        {/* Scroller. Auto-stick to bottom on each render so the
+            newest message is in view. */}
         <div ref={(el) => { if (el) el.scrollTop = el.scrollHeight; }}
-          className="flex-1 space-y-2 overflow-y-auto
-            bg-[#0F1A2A] p-4">
-          {msgs.length === 0 ? (
+          className="flex-1 overflow-y-auto bg-[#0F1A2A] p-4">
+          {/* Show-older button when we're capping at 5 */}
+          {groups.length > 5 && (
+            <div className="mb-2 text-center">
+              <button onClick={() => setShowAll((v) => !v)}
+                className="rounded-full bg-white/10 px-3 py-1
+                  text-[11px] font-bold text-slate-200
+                  hover:bg-white/20">
+                {showAll
+                  ? `Showing all ${groups.length} sessions — `
+                    + 'collapse to last 5'
+                  : `Show ${groups.length - 5} older session`
+                    + `${groups.length - 5 === 1 ? '' : 's'}`}
+              </button>
+            </div>
+          )}
+
+          {shownGroups.length === 0 && (
             <div className="text-center text-sm text-slate-300">
               No messages in this conversation.
             </div>
-          ) : msgs.map((m, idx) => {
-            const who = m.senderId === session.astroId ? 'astro'
-              : m.senderId === session.userId ? 'client'
-              : 'system';
-            const prev = msgs[idx - 1];
-            const showName = who === 'astro'
-              && (!prev || prev.senderId !== m.senderId);
-            const ts = m.createdAt?.toDate
-              ? m.createdAt.toDate() : null;
-            const time = ts
-              ? ts.toLocaleTimeString([], { hour: '2-digit',
-                minute: '2-digit' }) : '';
-            if (who === 'system') {
-              return (
-                <div key={m.id} className="text-center">
-                  <span className="inline-block rounded-full
-                    bg-white/10 px-2.5 py-0.5 text-[10.5px]
-                    font-semibold text-slate-300">
-                    {m.text}
-                  </span>
-                </div>
-              );
-            }
-            const isClient = who === 'client';
+          )}
+
+          {shownGroups.map((g, gIdx) => {
+            const flat = g.items;
             return (
-              <div key={m.id}
-                className={`flex ${isClient
-                  ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[78%] rounded-2xl px-3 py-1.5
-                  text-[13px] shadow-sm ${isClient
-                    ? 'rounded-br-sm bg-[#7F2020] text-white'
-                    : 'rounded-bl-sm bg-white text-dark-text'}`}>
-                  {showName && (
-                    <div className="text-[10px] font-bold
-                      text-primary">{astroName}</div>
-                  )}
-                  <div className="whitespace-pre-line">{m.text}</div>
-                  <div className={`mt-0.5 text-right text-[10px]
-                    ${isClient ? 'text-white/70' : 'text-sub-text'}`}>
-                    {time}
+              <div key={`g-${gIdx}`}>
+                {/* Session divider - bold, dashed line + label. */}
+                {g.boundary && (
+                  <div className="my-4 flex items-center gap-2
+                    text-[10.5px] uppercase tracking-widest
+                    text-slate-400">
+                    <span className="flex-1 border-t border-dashed
+                      border-slate-500/40" />
+                    <span className="rounded-full bg-white/10 px-2.5
+                      py-0.5 font-bold">
+                      {cleanMessageText(g.boundary.text)
+                        .replace(/^•+|•+$/g, '').trim()}
+                    </span>
+                    <span className="flex-1 border-t border-dashed
+                      border-slate-500/40" />
                   </div>
-                </div>
+                )}
+
+                {/* Messages within the session */}
+                {flat.map((m, idx) => {
+                  if (m === g.boundary) return null; // rendered above
+                  const who = m.senderId === session.astroId ? 'astro'
+                    : m.senderId === session.userId ? 'client'
+                    : 'system';
+                  const text = cleanMessageText(m.text);
+                  if (!text) return null;
+                  const ts = m.createdAt?.toMillis
+                    ? m.createdAt.toMillis() : null;
+                  const time = ts
+                    ? new Date(ts).toLocaleTimeString([], {
+                      hour: '2-digit', minute: '2-digit' }) : '';
+                  // Day pill - inserted before the first message of
+                  // each new local-date.
+                  const prev = idx > 0 ? flat[idx - 1] : null;
+                  const prevTs = prev && prev.createdAt?.toMillis
+                    ? prev.createdAt.toMillis() : null;
+                  const newDay = ts && (!prevTs
+                    || dateKey(prevTs) !== dateKey(ts));
+
+                  if (who === 'system') {
+                    return (
+                      <div key={m.id}>
+                        {newDay && (
+                          <div className="my-3 text-center">
+                            <span className="inline-block rounded-full
+                              bg-white/15 px-3 py-0.5 text-[10px]
+                              font-bold tracking-widest text-slate-200">
+                              {dayPillLabel(ts)}
+                            </span>
+                          </div>
+                        )}
+                        <div className="text-center my-1.5">
+                          <span className="inline-block rounded-full
+                            bg-white/8 px-2.5 py-0.5 text-[10.5px]
+                            italic text-slate-300/90 max-w-[90%]">
+                            {text}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  }
+                  // Bubble row
+                  const isAstro = who === 'astro';
+                  const isRight = (isAstro && astroIsRight)
+                    || (!isAstro && !astroIsRight);
+                  const tickKind = isAstro
+                    ? tickFor(m, idx, flat) : null;
+                  return (
+                    <div key={m.id}>
+                      {newDay && (
+                        <div className="my-3 text-center">
+                          <span className="inline-block rounded-full
+                            bg-white/15 px-3 py-0.5 text-[10px]
+                            font-bold tracking-widest text-slate-200">
+                            {dayPillLabel(ts)}
+                          </span>
+                        </div>
+                      )}
+                      <div className={`my-1 flex ${isRight
+                        ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[78%] rounded-2xl
+                          px-3 py-1.5 text-[13px] shadow-sm ${isRight
+                            ? 'rounded-br-sm bg-[#7F2020] text-white'
+                            : 'rounded-bl-sm bg-white text-dark-text'}`}>
+                          <div className="whitespace-pre-line">{text}</div>
+                          <div className={`mt-0.5 flex items-center
+                            justify-end gap-1 text-[10px] ${isRight
+                              ? 'text-white/70'
+                              : 'text-sub-text'}`}>
+                            <span>{time}</span>
+                            {tickKind && (
+                              <span style={{ color: 'currentColor' }}>
+                                <Tick kind={tickKind} />
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             );
           })}
         </div>
       </div>
+
+      {/* Reply composer. Opens on top of the chat (z higher).
+          Admin picks a template, picks the sender persona
+          (astrologer / AstroSeer), reviews the body, hits Send. */}
+      {reply && (
+        <div className="fixed inset-0 z-[55] flex items-end
+          justify-center px-3 py-6 sm:items-center"
+          style={{ background: 'rgba(0,0,0,.55)',
+            paddingBottom:
+              'calc(env(safe-area-inset-bottom, 0px) + 16px)' }}
+          onClick={() => setReply(null)}>
+          <div onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md overflow-hidden rounded-2xl
+              bg-white shadow-2xl">
+            <div className="bg-primary p-4 text-white">
+              <div className="text-[11px] font-bold uppercase
+                tracking-wider opacity-80">Reply</div>
+              <div className="text-base font-bold">
+                Send to {userName || 'this customer'}
+              </div>
+            </div>
+            <div className="space-y-3 p-4">
+              <div>
+                <div className="text-[11px] font-semibold text-sub-text">
+                  Send as
+                </div>
+                <div className="mt-1 inline-flex rounded-full
+                  bg-bg-light p-1 text-xs font-bold">
+                  {[['astrologer', astroName || 'Astrologer'],
+                    ['system', 'AstroSeer']].map(([k, lbl]) => (
+                    <button key={k}
+                      onClick={() => setReply({ ...reply,
+                        sender: k })}
+                      className={`rounded-full px-3 py-1.5 ${
+                        reply.sender === k
+                          ? 'bg-white text-primary shadow-sm'
+                          : 'text-sub-text'}`}>
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] font-semibold text-sub-text">
+                  Template (optional)
+                </div>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {ADMIN_REPLY_TEMPLATES.map((t) => (
+                    <button key={t.id}
+                      onClick={() => setReplyBody(t.body)}
+                      className="rounded-full bg-bg-light px-2.5
+                        py-1 text-[11px] font-semibold text-sub-text
+                        hover:bg-primary hover:text-white">
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] font-semibold text-sub-text">
+                  Message
+                </div>
+                <textarea rows={4} className="input mt-1 w-full"
+                  value={replyBody}
+                  onChange={(e) => setReplyBody(e.target.value)}
+                  placeholder="Pick a template above, or write
+                    your own message..." />
+              </div>
+              <div className="text-[10.5px] text-sub-text">
+                The customer will be sent a push notification once
+                this lands. A confirmation prompt fires before the
+                message is committed.
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <button onClick={() => setReply(null)} disabled={busy}
+                  className="rounded-full bg-bg-light px-4 py-2
+                    text-sm font-semibold">
+                  Cancel
+                </button>
+                <button onClick={doSend} disabled={busy
+                  || !replyBody.trim()}
+                  className="rounded-full bg-primary px-4 py-2
+                    text-sm font-bold text-white disabled:opacity-50">
+                  {busy ? 'Sending...' : 'Send'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -259,14 +259,21 @@ export default function AdminSessions() {
                     </div>
                   );
                 }
-                const isClient = who === 'client';
+                // Astrologer on RIGHT, customer on LEFT (matches
+                // the live monitor / WhatsApp norm where the
+                // operator reads as the astrologer's side).
+                const isAstro = who === 'astro';
+                const isRight = isAstro;
+                const txt = String(m.text || '')
+                  .replace(/\[object Object\]/g, '').trim();
+                if (!txt) return null;
                 return (
                   <div key={m.id}
-                    className={`flex ${isClient
+                    className={`flex ${isRight
                       ? 'justify-end' : 'justify-start'}`}>
                     <div className={`max-w-[78%] rounded-2xl
                       px-3 py-1.5 text-[13px] shadow-sm
-                      ${isClient
+                      ${isRight
                         ? 'rounded-br-sm bg-[#7F2020] text-white'
                         : 'rounded-bl-sm bg-white text-dark-text'}`}>
                       {showName && (
@@ -276,10 +283,10 @@ export default function AdminSessions() {
                         </div>
                       )}
                       <div className="whitespace-pre-line">
-                        {m.text}
+                        {txt}
                       </div>
                       <div className={`mt-0.5 text-right
-                        text-[10px] ${isClient
+                        text-[10px] ${isRight
                           ? 'text-white/70' : 'text-sub-text'}`}>
                         {time}
                       </div>
