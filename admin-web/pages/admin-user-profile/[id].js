@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import {
   userService, sessionService, astrologerService, kundliService, db,
-  emailService,
+  emailService, chatService,
 } from '@astro/shared';
 import {
   collection, query, where, getDocs, orderBy, limit,
@@ -64,6 +64,7 @@ export default function AdminUserProfile() {
   const { loading } = useRequireAdmin();
   const [u, setU] = useState(null);
   const [sessions, setSessions] = useState([]);
+  const [chatView, setChatView] = useState(null);
   const [txns, setTxns] = useState([]);
   const [astroNames, setAstroNames] = useState({});
   const [kundlis, setKundlis] = useState([]);
@@ -534,6 +535,7 @@ export default function AdminUserProfile() {
                 <th className="p-2">Cost</th>
                 <th className="p-2">Status</th>
                 <th className="p-2">Ref</th>
+                <th className="p-2">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -562,16 +564,35 @@ export default function AdminUserProfile() {
                   <td className="p-2 font-mono text-xs">
                     #{sessionRefNo(s)}
                   </td>
+                  <td className="p-2">
+                    <button onClick={() => setChatView(s)}
+                      className="rounded-full bg-bg-light px-2.5
+                        py-0.5 text-[11px] font-bold
+                        text-primary hover:bg-primary
+                        hover:text-white">
+                      View chat
+                    </button>
+                  </td>
                 </tr>
               ))}
               {sessions.length === 0 && (
-                <tr><td colSpan={7} className="p-3 text-center
+                <tr><td colSpan={8} className="p-3 text-center
                   text-sub-text">No consultations yet.</td></tr>
               )}
             </tbody>
           </table>
         </div>
       </div>
+
+      {/* WhatsApp-style chat viewer. Click "View chat" on any
+          consultation row to subscribe to that conversation and
+          read the messages with customer-right / astrologer-left
+          bubbles, timestamps and the real astrologer name. */}
+      {chatView && (
+        <ChatViewModal session={chatView} astroName={
+          astroNames[chatView.astroId] || 'Astrologer'}
+          onClose={() => setChatView(null)} />
+      )}
 
       {/* TRANSACTIONS */}
       <div className="surface mt-4 p-3">
@@ -1236,6 +1257,102 @@ function KundliSummary({ r }) {
       <p className="mt-1 text-[11px] text-sub-text">
         Download the PDF for the complete multi-page report.
       </p>
+    </div>
+  );
+}
+
+// WhatsApp-style chat viewer for the user profile's recent
+// consultations list. Subscribes to the conversation between this
+// session's customer and astrologer and renders the same bubble
+// layout we use in /admin-sessions. Customer messages on the
+// right in maroon, astrologer on the left in white, system in
+// the center, each with a 12px timestamp. Auto-scrolls to bottom
+// so the most recent message is always visible.
+function ChatViewModal({ session, astroName, onClose }) {
+  const [msgs, setMsgs] = useState([]);
+  useEffect(() => {
+    if (!session) return undefined;
+    const chatId = chatService.conversationId(session.userId,
+      session.astroId);
+    const unsub = chatService.listenMessages(chatId, setMsgs);
+    return () => { try { unsub && unsub(); } catch (_) {} };
+  }, [session]);
+  if (!session) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center
+      justify-center px-3 py-6"
+      style={{ background: 'rgba(20,14,46,.55)' }}
+      onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()}
+        className="flex max-h-[85vh] w-full max-w-lg flex-col
+          overflow-hidden rounded-2xl bg-white">
+        <div className="bg-primary p-4 text-white">
+          <div className="flex items-center justify-between">
+            <span className="font-bold">{astroName}</span>
+            <button onClick={onClose}
+              className="rounded-full bg-white/25 px-3 py-1 text-sm">
+              Close
+            </button>
+          </div>
+          <div className="mt-1 text-xs opacity-90">
+            {session.type} · #{sessionRefNo(session)}
+            {session.status ? ` · ${session.status}` : ''}
+          </div>
+        </div>
+        <div ref={(el) => { if (el) el.scrollTop = el.scrollHeight; }}
+          className="flex-1 space-y-2 overflow-y-auto
+            bg-[#0F1A2A] p-4">
+          {msgs.length === 0 ? (
+            <div className="text-center text-sm text-slate-300">
+              No messages in this conversation.
+            </div>
+          ) : msgs.map((m, idx) => {
+            const who = m.senderId === session.astroId ? 'astro'
+              : m.senderId === session.userId ? 'client'
+              : 'system';
+            const prev = msgs[idx - 1];
+            const showName = who === 'astro'
+              && (!prev || prev.senderId !== m.senderId);
+            const ts = m.createdAt?.toDate
+              ? m.createdAt.toDate() : null;
+            const time = ts
+              ? ts.toLocaleTimeString([], { hour: '2-digit',
+                minute: '2-digit' }) : '';
+            if (who === 'system') {
+              return (
+                <div key={m.id} className="text-center">
+                  <span className="inline-block rounded-full
+                    bg-white/10 px-2.5 py-0.5 text-[10.5px]
+                    font-semibold text-slate-300">
+                    {m.text}
+                  </span>
+                </div>
+              );
+            }
+            const isClient = who === 'client';
+            return (
+              <div key={m.id}
+                className={`flex ${isClient
+                  ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[78%] rounded-2xl px-3 py-1.5
+                  text-[13px] shadow-sm ${isClient
+                    ? 'rounded-br-sm bg-[#7F2020] text-white'
+                    : 'rounded-bl-sm bg-white text-dark-text'}`}>
+                  {showName && (
+                    <div className="text-[10px] font-bold
+                      text-primary">{astroName}</div>
+                  )}
+                  <div className="whitespace-pre-line">{m.text}</div>
+                  <div className={`mt-0.5 text-right text-[10px]
+                    ${isClient ? 'text-white/70' : 'text-sub-text'}`}>
+                    {time}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

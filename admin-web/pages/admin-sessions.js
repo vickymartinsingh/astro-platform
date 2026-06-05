@@ -1,4 +1,5 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
+import { useRouter } from 'next/router';
 import { db, adminService, chatService } from '@astro/shared';
 import {
   collection, query, orderBy, limit, getDocs, doc, getDoc,
@@ -89,12 +90,44 @@ export default function AdminSessions() {
     return <Layout><div className="card">Loading…</div></Layout>;
   }
 
-  const live = rows.filter((s) => s.status === 'active'
+  // Read the ?type= query param so the dashboard analytics tiles
+  // (Chat / Voice / Video) can deep-link straight to the filtered
+  // view. Default = all. Click chips below to switch interactively.
+  const router = useRouter();
+  const typeFromUrl = typeof router.query.type === 'string'
+    ? router.query.type : '';
+  const [typeFilter, setTypeFilter] = useState(typeFromUrl);
+  useEffect(() => { setTypeFilter(typeFromUrl); }, [typeFromUrl]);
+  const filteredRows = useMemo(() => {
+    if (!typeFilter) return rows;
+    const norm = (typeFilter === 'voice' || typeFilter === 'call')
+      ? 'call' : typeFilter;
+    return rows.filter((s) => (s.type || 'chat') === norm);
+  }, [rows, typeFilter]);
+
+  const live = filteredRows.filter((s) => s.status === 'active'
     || s.status === 'accepted');
 
   return (
     <Layout>
-      <h1 className="mb-3 text-xl font-bold">Session Monitoring</h1>
+      <div className="mb-3 flex flex-wrap items-end justify-between
+        gap-2">
+        <h1 className="text-xl font-bold">Session Monitoring</h1>
+        <div className="inline-flex rounded-full bg-bg-light p-1
+          text-xs font-bold">
+          {[['', 'All types'], ['chat', 'Chat'],
+            ['call', 'Voice'], ['video', 'Video'],
+            ['live', 'Live']].map(([k, lbl]) => (
+            <button key={k || 'all'}
+              onClick={() => setTypeFilter(k)}
+              className={`rounded-full px-3 py-1.5 ${typeFilter === k
+                ? 'bg-white text-primary shadow-sm'
+                : 'text-sub-text'}`}>
+              {lbl}
+            </button>
+          ))}
+        </div>
+      </div>
 
       <h2 className="mb-2 font-semibold">Live ({live.length})</h2>
       <div className="mb-5 space-y-2">
@@ -141,7 +174,7 @@ export default function AdminSessions() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((s) => (
+            {filteredRows.map((s) => (
               <tr key={s.id} className="border-t">
                 <td className="p-2">{nm(s.astroId)}</td>
                 <td className="p-2">{nm(s.userId)}</td>

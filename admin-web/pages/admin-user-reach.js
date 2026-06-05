@@ -31,13 +31,26 @@ function relTime(ts) {
       : ts && ts.seconds ? ts.seconds * 1000
       : typeof ts === 'number' ? ts
       : 0;
-    if (!ms) return '–';
-    const d = Date.now() - ms;
-    if (d < 60_000) return 'just now';
-    if (d < 3600_000) return `${Math.floor(d / 60_000)}m ago`;
-    if (d < 86400_000) return `${Math.floor(d / 3600_000)}h ago`;
-    return `${Math.floor(d / 86400_000)}d ago`;
-  } catch (_) { return '–'; }
+    if (!ms) return 'never';
+    const d = new Date(ms);
+    const now = new Date();
+    const isToday = d.toDateString() === now.toDateString();
+    const yest = new Date(now);
+    yest.setDate(yest.getDate() - 1);
+    const isYest = d.toDateString() === yest.toDateString();
+    const hhmm = d.toLocaleTimeString([], { hour: '2-digit',
+      minute: '2-digit' });
+    if (isToday) {
+      const mins = Math.floor((now - d) / 60_000);
+      if (mins < 1) return `just now (${hhmm})`;
+      if (mins < 60) return `${mins}m ago (${hhmm})`;
+      return `Today ${hhmm}`;
+    }
+    if (isYest) return `Yesterday ${hhmm}`;
+    // Older: show short date + time
+    return `${d.toLocaleDateString('en-GB',
+      { day: '2-digit', month: 'short' })} ${hhmm}`;
+  } catch (_) { return 'never'; }
 }
 
 function matchOne(s, hay) {
@@ -244,8 +257,12 @@ export default function AdminUserReach() {
       {customerMatches.length === 0 && astroMatches.length === 0 && (
         <div className="card text-sm text-sub-text">
           {q.trim()
-            ? `No customer or astrologer matches "${q.trim()}".`
-            : 'No people yet.'}
+            ? `No profile or user found matching "${q.trim()}".`
+            : scope === 'customer'
+              ? 'No customers yet.'
+              : scope === 'astrologer'
+                ? 'No astrologers yet.'
+                : 'No profile or user found in this role.'}
         </div>
       )}
 
