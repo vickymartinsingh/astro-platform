@@ -104,7 +104,13 @@ export default function SendPdfByEmailModal({ order, defaultEmail,
   return (
     <div className="fixed inset-0 z-[2147483646] flex items-center
       justify-center bg-black/55 p-4"
-      role="dialog" aria-modal="true" onClick={onClose}>
+      role="dialog" aria-modal="true" onClick={onClose}
+      style={{
+        // Reserve room for Android gesture nav / iOS home indicator
+        // so the Cancel/Send buttons never sit behind the system bar.
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)',
+      }}>
       <div className="w-full max-w-md overflow-hidden rounded-2xl
         bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
         {sent ? (

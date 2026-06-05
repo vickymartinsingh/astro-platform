@@ -388,7 +388,15 @@ function FeatureDetail({ f, price, status, wallet, busy, onClose, onBuy }) {
   return (
     <div className="fixed inset-0 z-[60] flex items-end
       justify-center bg-black/40 px-3 py-4 sm:items-center"
-      role="dialog" aria-modal="true">
+      role="dialog" aria-modal="true"
+      style={{
+        // Android 16's gesture nav reserves a chunk of the bottom
+        // edge - inset the dialog by that amount so the CTA never
+        // sits under the system bar. env(safe-area-inset-bottom) is
+        // 0 on systems without one, so it has no effect on desktop.
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)',
+      }}>
       <div className="w-full max-w-lg overflow-hidden rounded-2xl
         bg-white shadow-xl">
         <div className={`p-5 text-white ${comingSoon
@@ -488,7 +496,11 @@ function InsufficientBalanceModal({
 }) {
   return (
     <div className="fixed inset-0 z-[70] flex items-center
-      justify-center bg-black/50 px-4" role="dialog" aria-modal="true">
+      justify-center bg-black/50 px-4" role="dialog" aria-modal="true"
+      style={{
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)',
+      }}>
       <div className="w-full max-w-sm rounded-2xl bg-white p-5
         shadow-xl">
         <div className="mb-2 flex items-center gap-2">
@@ -598,7 +610,11 @@ function SuccessModal({ result, feature, status, onClose }) {
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center
-      justify-center bg-black/55 px-4" role="dialog" aria-modal="true">
+      justify-center bg-black/55 px-4" role="dialog" aria-modal="true"
+      style={{
+        paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 16px)',
+        paddingTop: 'calc(env(safe-area-inset-top, 0px) + 16px)',
+      }}>
       <div className="w-full max-w-sm overflow-hidden rounded-2xl
         bg-white shadow-xl">
         <div className="relative px-5 py-5 text-white"
