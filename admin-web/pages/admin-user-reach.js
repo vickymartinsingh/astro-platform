@@ -1,10 +1,11 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import {
-  adminService, astrologerService,
+  adminService, astrologerService, authService, rupees,
 } from '@astro/shared';
 import Layout from '../components/Layout';
-import { useRequireAdmin } from '../lib/useAuth';
+import { useRequireAdmin, useAuth } from '../lib/useAuth';
+import { flash } from '../lib/flash';
 
 // Unified People hub. All roles in one place: customer / astrologer
 // / admin / support / hr. Five tiles at the top filter the list to
@@ -75,6 +76,8 @@ const ROLE_META = {
 export default function AdminUserReach() {
   const router = useRouter();
   const { loading } = useRequireAdmin();
+  const { user: adminUser } = useAuth();
+  const [mergeOpen, setMergeOpen] = useState(false);
   const [users, setUsers] = useState(null);
   const [astros, setAstros] = useState(null);
   const [q, setQ] = useState('');
@@ -205,6 +208,11 @@ export default function AdminUserReach() {
               × Clear filter
             </button>
           )}
+          <button onClick={() => setMergeOpen(true)}
+            className="rounded-full bg-primary px-3 py-2 text-xs
+              font-bold text-white">
+            Merge accounts
+          </button>
         </div>
         <div className="mt-2 text-[11px] text-sub-text">
           {scope === 'all'
@@ -261,6 +269,20 @@ export default function AdminUserReach() {
             Show {PAGE_SIZE} more
           </button>
         </div>
+      )}
+
+      {mergeOpen && (
+        <MergeAccountsModal
+          allCustomers={buckets.customer}
+          adminEmail={adminUser?.email}
+          onClose={() => setMergeOpen(false)}
+          onDone={async () => {
+            setMergeOpen(false);
+            // Refresh the list so the secondary (now tombstoned)
+            // disappears.
+            adminService.getAllUsers().then((list) =>
+              setUsers(list || [])).catch(() => {});
+          }} />
       )}
     </Layout>
   );
@@ -392,6 +414,358 @@ function Stat({ label, value, tone }) {
         text-sub-text">{label}</div>
       <div className={`mt-0.5 truncate text-[12px] font-semibold
         ${color}`}>{value}</div>
+    </div>
+  );
+}
+
+// Account merge modal. Three-step flow:
+//   1) Picker - admin types or selects PRIMARY + SECONDARY accounts
+//      (from the customer bucket). The same uid cannot fill both
+//      slots.
+//   2) Field comparison - side-by-side rows for email / phone / dob
+//      / wallet etc. Each field has two radios (primary's value vs
+//      secondary's value); admin chooses the survivor per field.
+//      Equal-values rows just show "same" and don't ask.
+//   3) Confirm - admin types their own password (Firebase Auth
+//      re-auth via authService.loginUser) and clicks the final
+//      red Merge button. Wallet moves, sessions reassign, kundli
+//      transfers, orders copy, secondary tombstones.
+const MERGE_FIELDS = [
+  ['name', 'Name'],
+  ['email', 'Email'],
+  ['phone', 'Phone'],
+  ['dob', 'Date of birth'],
+  ['tob', 'Time of birth'],
+  ['placeOfBirth', 'Place of birth'],
+  ['gender', 'Gender'],
+];
+
+function asDisplay(v) {
+  if (v == null || v === '') return '–';
+  if (typeof v === 'object') {
+    return v.label || v.place || v.city || JSON.stringify(v);
+  }
+  return String(v);
+}
+
+function MergeAccountsModal({ allCustomers, adminEmail, onClose,
+  onDone }) {
+  const [primary, setPrimary] = useState(null);
+  const [secondary, setSecondary] = useState(null);
+  const [picks, setPicks] = useState({});
+  const [pwd, setPwd] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState(1); // 1 = pick | 2 = compare | 3 = confirm
+
+  const candidates = (allCustomers || []).filter((u) =>
+    String(u.status || '').toLowerCase() !== 'deleted');
+
+  function pickField(field, winner) {
+    setPicks((p) => ({ ...p, [field]: winner }));
+  }
+
+  async function run() {
+    if (!primary || !secondary) {
+      flash('Pick both accounts first.', 'error'); return;
+    }
+    if ((primary.uid || primary.id) === (secondary.uid || secondary.id)) {
+      flash('Primary and secondary cannot be the same account.',
+        'error'); return;
+    }
+    if (!pwd) {
+      flash('Type your admin password to confirm.', 'error'); return;
+    }
+    setBusy(true);
+    try {
+      // Re-auth the signed-in admin so an unattended browser cannot
+      // merge accounts.
+      await authService.loginUser(adminEmail, pwd);
+      const out = await adminService.mergeAccounts(
+        primary.uid || primary.id,
+        secondary.uid || secondary.id,
+        picks);
+      flash(`Merge complete. Wallet ${rupees(out.walletMoved || 0)} `
+        + `moved · ${out.movedSessions} session(s) · `
+        + `${out.movedTxns} txn(s) · ${out.movedKundli} kundli `
+        + `· ${out.movedOrders} order(s) transferred.`,
+        'success');
+      onDone && onDone();
+    } catch (e) {
+      const msg = String((e && e.message) || e);
+      if (/wrong-password|invalid|user-not-found/i.test(msg)) {
+        flash('Admin password incorrect. Cancelled.', 'error');
+      } else {
+        flash(`Merge failed: ${msg}`, 'error');
+      }
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center
+      justify-center bg-black/55 px-3 py-6" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()}
+        className="flex max-h-[88vh] w-full max-w-2xl flex-col
+          overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="bg-primary p-4 text-white">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-[11px] font-bold uppercase
+                tracking-widest opacity-80">
+                Step {step} of 3
+              </div>
+              <div className="text-lg font-bold">
+                Merge two accounts
+              </div>
+            </div>
+            <button onClick={onClose}
+              className="rounded-full bg-white/20 px-3 py-1
+                text-sm font-bold">
+              Cancel
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5">
+          {step === 1 && (
+            <div className="space-y-4">
+              <p className="text-[12px] text-sub-text">
+                Pick the PRIMARY account (the one that survives) and
+                the SECONDARY (the one being absorbed into the
+                primary). Wallet balance, sessions, kundli profiles
+                and orders move to the primary. The secondary is
+                soft-deleted and the user is signed out on next
+                attempt to sign in.
+              </p>
+              <AccountPicker label="Primary (survivor)"
+                value={primary} onChange={setPrimary}
+                others={[secondary]} candidates={candidates} />
+              <AccountPicker label="Secondary (absorbed + closed)"
+                value={secondary} onChange={setSecondary}
+                others={[primary]} candidates={candidates} />
+              <div className="flex justify-end">
+                <button onClick={() => setStep(2)}
+                  disabled={!primary || !secondary
+                    || (primary.uid || primary.id)
+                      === (secondary.uid || secondary.id)}
+                  className="rounded-full bg-primary px-5 py-2
+                    text-sm font-bold text-white
+                    disabled:opacity-50">
+                  Compare fields →
+                </button>
+              </div>
+            </div>
+          )}
+
+          {step === 2 && primary && secondary && (
+            <div className="space-y-3">
+              <p className="text-[12px] text-sub-text">
+                For each field below, pick which account&apos;s value
+                the merged record should keep. Defaults to the
+                primary&apos;s value.
+              </p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-left text-[10.5px]
+                    uppercase tracking-wider text-sub-text">
+                    <tr>
+                      <th className="p-2">Field</th>
+                      <th className="p-2">Primary</th>
+                      <th className="p-2">Secondary</th>
+                      <th className="p-2">Use</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {MERGE_FIELDS.map(([f, lbl]) => {
+                      const pv = asDisplay(primary[f]);
+                      const sv = asDisplay(secondary[f]);
+                      const same = pv === sv;
+                      const winner = picks[f] || 'primary';
+                      return (
+                        <tr key={f} className="border-t
+                          border-gray-200">
+                          <td className="p-2 font-semibold">{lbl}</td>
+                          <td className="p-2 text-xs">{pv}</td>
+                          <td className="p-2 text-xs">{sv}</td>
+                          <td className="p-2">
+                            {same ? (
+                              <span className="rounded-full
+                                bg-bg-light px-2 py-0.5 text-[10px]
+                                font-bold text-sub-text">same</span>
+                            ) : (
+                              <div className="inline-flex
+                                rounded-full bg-bg-light p-0.5
+                                text-[10px] font-bold">
+                                <button onClick={() => pickField(f,
+                                  'primary')}
+                                  className={`rounded-full px-2
+                                    py-0.5 ${winner === 'primary'
+                                      ? 'bg-white text-primary'
+                                      : 'text-sub-text'}`}>
+                                  Primary
+                                </button>
+                                <button onClick={() => pickField(f,
+                                  'secondary')}
+                                  className={`rounded-full px-2
+                                    py-0.5 ${winner === 'secondary'
+                                      ? 'bg-white text-primary'
+                                      : 'text-sub-text'}`}>
+                                  Secondary
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    <tr className="border-t border-gray-200">
+                      <td className="p-2 font-semibold">Wallet</td>
+                      <td className="p-2 text-xs">
+                        {rupees(primary.wallet || 0)}
+                      </td>
+                      <td className="p-2 text-xs">
+                        {rupees(secondary.wallet || 0)}
+                      </td>
+                      <td className="p-2">
+                        <span className="rounded-full
+                          bg-emerald-100 px-2 py-0.5 text-[10px]
+                          font-bold text-emerald-700">
+                          Sum: {rupees(
+                            (Number(primary.wallet || 0)
+                              + Number(secondary.wallet || 0)))}
+                        </span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex justify-between">
+                <button onClick={() => setStep(1)}
+                  className="rounded-full bg-bg-light px-4 py-2
+                    text-sm font-semibold">
+                  ← Back
+                </button>
+                <button onClick={() => setStep(3)}
+                  className="rounded-full bg-primary px-5 py-2
+                    text-sm font-bold text-white">
+                  Confirm merge →
+                </button>
+              </div>
+            </div>
+          )}
+
+          {step === 3 && (
+            <div className="space-y-3">
+              <div className="rounded-card bg-amber-50 p-3
+                text-[12px] text-amber-900">
+                <b>Final review.</b> This is permanent. After
+                clicking the red button: the secondary account is
+                closed, its wallet (
+                {rupees(secondary?.wallet || 0)}) moves to the
+                primary, every session / kundli / order is
+                reassigned, and the secondary&apos;s next sign-in
+                attempt is auto-rejected.
+              </div>
+              <label className="block">
+                <span className="text-xs font-semibold text-sub-text">
+                  Type your admin password ({adminEmail || 'admin'})
+                </span>
+                <input type="password" className="input mt-1 w-full"
+                  value={pwd}
+                  onChange={(e) => setPwd(e.target.value)}
+                  placeholder="Password" />
+              </label>
+              <div className="flex justify-between">
+                <button onClick={() => setStep(2)} disabled={busy}
+                  className="rounded-full bg-bg-light px-4 py-2
+                    text-sm font-semibold">
+                  ← Back
+                </button>
+                <button onClick={run} disabled={busy || !pwd}
+                  className="rounded-full bg-danger px-5 py-2
+                    text-sm font-bold text-white
+                    disabled:opacity-50">
+                  {busy ? 'Merging...' : 'Merge accounts now'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AccountPicker({ label, value, onChange, others = [],
+  candidates }) {
+  const [q, setQ] = useState('');
+  const blockedUids = new Set(others.filter(Boolean)
+    .map((o) => o.uid || o.id));
+  const filtered = q.trim()
+    ? candidates.filter((c) => {
+      if (blockedUids.has(c.uid || c.id)) return false;
+      const t = q.trim().toLowerCase();
+      return [c.name, c.email, c.phone, c.userCode]
+        .filter(Boolean).map((x) => String(x).toLowerCase())
+        .some((x) => x.includes(t));
+    }).slice(0, 8)
+    : [];
+  return (
+    <div>
+      <div className="text-[11px] font-bold uppercase tracking-wider
+        text-sub-text">{label}</div>
+      {value ? (
+        <div className="mt-1 flex items-center justify-between
+          rounded-card border border-primary/30 bg-primary/5 p-3">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-semibold">
+              {value.name || '(no name)'}
+            </div>
+            <div className="truncate text-[11px] text-sub-text">
+              {value.email || ''}
+              {value.phone ? ` · ${value.phone}` : ''}
+              {' · '}{rupees(value.wallet || 0)}
+            </div>
+          </div>
+          <button onClick={() => onChange(null)}
+            className="rounded-full bg-bg-light px-2.5 py-1
+              text-[11px] font-bold text-sub-text">
+            Change
+          </button>
+        </div>
+      ) : (
+        <>
+          <input className="input mt-1 w-full" value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search by name, email, phone, code..." />
+          {filtered.length > 0 && (
+            <div className="mt-1 max-h-44 overflow-y-auto
+              rounded-card border border-gray-200">
+              {filtered.map((c) => (
+                <button key={c.uid || c.id}
+                  onClick={() => { onChange(c); setQ(''); }}
+                  className="flex w-full items-center justify-between
+                    gap-2 border-b border-gray-100 px-3 py-2
+                    text-left text-sm last:border-b-0
+                    hover:bg-bg-light">
+                  <div className="min-w-0">
+                    <div className="truncate font-semibold">
+                      {c.name || '(no name)'}
+                    </div>
+                    <div className="truncate text-[11px]
+                      text-sub-text">
+                      {c.email}
+                      {c.phone ? ` · ${c.phone}` : ''}
+                    </div>
+                  </div>
+                  <span className="text-[10px] text-sub-text">
+                    {rupees(c.wallet || 0)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

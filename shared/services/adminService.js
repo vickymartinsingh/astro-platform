@@ -111,6 +111,156 @@ export function blockUser(uid, blocked = true) {
   });
 }
 
+// Merge two user accounts.
+//
+// Two customers were independently created (a common situation when
+// someone signs up via email once, loses access to the email, then
+// signs up again via phone). Admin picks PRIMARY (the survivor) and
+// SECONDARY (the one being absorbed) + an optional `picks` map that
+// says which value wins for each shared field (e.g. picks.email =
+// 'secondary' means the survivor takes the secondary's email).
+//
+// What happens:
+//   1. Wallet balances are summed onto primary; a transaction row
+//      records the move.
+//   2. sessions, transactions, kundliProfiles, reviews are RE-
+//      assigned: secondary uid is rewritten to the primary uid.
+//      Each collection is paged in batches of 400.
+//   3. orders subcollection is copied from users/{sec}/orders to
+//      users/{pri}/orders. Originals stay until secondary is
+//      tombstoned.
+//   4. Optional field picks are applied to the primary user doc.
+//      Default = primary keeps its existing values; admin can flip
+//      any field to take the secondary's value instead.
+//   5. Secondary user doc is tombstoned with
+//      status='merged_into:<primary uid>' so ensureUserDoc kicks
+//      the auth user out on next sign-in (no resurrection).
+//
+// Returns { success, movedSessions, movedTxns, movedKundli,
+//          movedOrders, walletMoved }.
+export async function mergeAccounts(primaryUid, secondaryUid, picks = {}) {
+  if (!primaryUid || !secondaryUid) {
+    throw new Error('Both primary and secondary uids are required.');
+  }
+  if (primaryUid === secondaryUid) {
+    throw new Error('Primary and secondary cannot be the same uid.');
+  }
+  return tryCloud('adminMergeAccounts',
+    { primaryUid, secondaryUid, picks }, async () => {
+      const pRef = doc(db, 'users', primaryUid);
+      const sRef = doc(db, 'users', secondaryUid);
+      const [pSnap, sSnap] = await Promise.all([
+        getDoc(pRef), getDoc(sRef),
+      ]);
+      if (!pSnap.exists()) throw new Error('Primary user not found.');
+      if (!sSnap.exists()) {
+        throw new Error('Secondary user not found.');
+      }
+      const p = pSnap.data();
+      const s = sSnap.data();
+
+      // 1) Wallet move.
+      const sWallet = Number(s.wallet || 0);
+      const pWallet = Number(p.wallet || 0);
+      const newWallet = pWallet + Math.max(0, sWallet);
+      let walletMoved = 0;
+      if (sWallet > 0) {
+        await updateDoc(pRef, { wallet: newWallet });
+        try {
+          await addDoc(collection(db, 'transactions'), {
+            userId: primaryUid,
+            amount: sWallet,
+            type: 'credit',
+            reason: `merge_from:${secondaryUid}`,
+            referenceId: secondaryUid,
+            createdAt: serverTimestamp(),
+          });
+        } catch (_) { /* swallow */ }
+        walletMoved = sWallet;
+      }
+
+      // 2) Reassign sessions / transactions / kundliProfiles /
+      //    reviews to the primary uid.
+      async function reassign(name, field = 'userId') {
+        let moved = 0;
+        const snap = await getDocs(query(collection(db, name),
+          where(field, '==', secondaryUid)));
+        const docs = snap.docs;
+        for (let i = 0; i < docs.length; i += 400) {
+          const batch = writeBatch(db);
+          docs.slice(i, i + 400).forEach((d) => {
+            batch.update(d.ref, { [field]: primaryUid });
+          });
+          // eslint-disable-next-line no-await-in-loop
+          await batch.commit();
+          moved += Math.min(400, docs.length - i);
+        }
+        return moved;
+      }
+      const movedSessions = await reassign('sessions', 'userId');
+      const movedTxns = await reassign('transactions', 'userId');
+      const movedKundli = await reassign('kundliProfiles', 'userId');
+      try { await reassign('reviews', 'userId'); } catch (_) {}
+
+      // 3) Copy secondary's orders subcollection into primary's.
+      //    Orders sit under users/<uid>/orders so they don't have a
+      //    flat userId field; we walk them by hand.
+      let movedOrders = 0;
+      try {
+        const oSnap = await getDocs(collection(db,
+          'users', secondaryUid, 'orders'));
+        const oDocs = oSnap.docs;
+        for (let i = 0; i < oDocs.length; i += 400) {
+          const batch = writeBatch(db);
+          oDocs.slice(i, i + 400).forEach((d) => {
+            batch.set(doc(db, 'users', primaryUid, 'orders', d.id),
+              d.data(), { merge: true });
+          });
+          // eslint-disable-next-line no-await-in-loop
+          await batch.commit();
+          movedOrders += Math.min(400, oDocs.length - i);
+        }
+      } catch (_) { /* swallow - orders are nice-to-have */ }
+
+      // 4) Apply field picks to the primary doc. Only the listed
+      //    fields are updatable here; everything else stays as-is
+      //    on the primary record.
+      const FIELDS = ['name', 'email', 'phone', 'dob', 'tob',
+        'placeOfBirth', 'gender', 'profileImage'];
+      const patch = {};
+      for (const f of FIELDS) {
+        if (picks && picks[f] === 'secondary' && s[f] != null) {
+          patch[f] = s[f];
+        }
+      }
+      if (Object.keys(patch).length > 0) {
+        await updateDoc(pRef, patch);
+      }
+
+      // 5) Tombstone secondary.
+      try {
+        await updateDoc(sRef, {
+          status: `merged_into:${primaryUid}`,
+          mergedAt: serverTimestamp(),
+          isBlocked: true,
+        });
+      } catch (_) { /* swallow */ }
+      // Remove astrologer marketplace listing if the secondary had one.
+      try {
+        await deleteDoc(doc(db, 'astrologers', secondaryUid));
+      } catch (_) {}
+
+      return {
+        success: true,
+        walletMoved,
+        movedSessions,
+        movedTxns,
+        movedKundli,
+        movedOrders,
+      };
+    });
+}
+
 // Permanently delete a user (and their astrologer profile if any).
 //
 // IMPORTANT: we do NOT hard-delete users/{uid}. Hard-deleting only

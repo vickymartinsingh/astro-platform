@@ -24,7 +24,8 @@ export async function ensureUserDoc(authUser) {
     // undone. We sign the auth user out immediately and refuse to
     // return a profile so the rest of the app treats them as a
     // signed-out guest.
-    if (String(u.status || '').toLowerCase() === 'deleted') {
+    const stat = String(u.status || '').toLowerCase();
+    if (stat === 'deleted' || stat.startsWith('merged_into:')) {
       try {
         const { getAuth, signOut } = await import('firebase/auth');
         await signOut(getAuth());
