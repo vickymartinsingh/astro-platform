@@ -71,6 +71,19 @@ export async function ensureUserDoc(authUser) {
     createdAt: serverTimestamp(),
   };
   await setDoc(ref, data, { merge: true });
+  // ---- Welcome bonus fire-and-forget --------------------------------
+  // The relay reads settings/config so toggling enable/disable in
+  // /admin-welcome-bonus takes effect instantly without any redeploy.
+  // We never block signup on it (and the relay itself is idempotent
+  // via users/{uid}.welcomeBonusAppliedAt).
+  try {
+    if (data.role === 'client') {
+      // Lazy-import so this never appears in the bundler graph of
+      // apps that don't have the relay configured.
+      const { applyWelcomeBonus } = await import('./welcomeBonusService.js');
+      applyWelcomeBonus(authUser).catch(() => {});
+    }
+  } catch (_) { /* never block signup */ }
   return { uid: authUser.uid, ...data };
 }
 

@@ -83,6 +83,8 @@ const ADMIN_GROUPS = [
     ['/admin-coupons', 'Coupons', 'Promo codes', 'coupons'],
     ['/admin-gifts', 'Gift cards', 'Issue + redeem', 'gifts'],
     ['/admin-refer', 'Refer & earn', 'Referral payouts', 'refer'],
+    ['/admin-welcome-bonus', 'Welcome bonus',
+      'Signup bonus + email + push', 'welcomeBonus'],
     ['/admin-disputes', 'Disputes', 'Refund requests', 'disputes'],
   ]],
   ['Content', [

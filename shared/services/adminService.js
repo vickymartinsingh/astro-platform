@@ -638,6 +638,39 @@ export async function deleteArchive(archiveId) {
   return { success: true };
 }
 
+// Permanent erase: nukes the archive AND the tombstoned users/{uid}
+// doc (status='deleted') AND any other archives we hold for that uid.
+// Used by the admin "Erase forever" action on /admin-archive when the
+// operator is sure they will never want this user back. Soft-delete is
+// reversible from Restore; permanent-erase is not.
+export async function permanentlyEraseArchive(archiveId) {
+  const meta = await getDoc(doc(db, 'archives', archiveId));
+  if (!meta.exists()) throw new Error('Archive not found.');
+  const uid = meta.data().uid;
+  // 1) Purge this archive + its items.
+  await deleteArchive(archiveId);
+  if (!uid) return { success: true, erasedUser: false, otherArchives: 0 };
+  // 2) Purge every other archive we have for this uid.
+  const otherSnap = await getDocs(query(collection(db, 'archives'),
+    where('uid', '==', uid)));
+  for (const a of otherSnap.docs) {
+    try { await deleteArchive(a.id); } catch (_) {}
+  }
+  // 3) Hard-delete the tombstoned users/{uid}. (deleteUser sets
+  //    status='deleted' so ensureUserDoc bounces the auth user on next
+  //    sign-in - permanent erase removes that tombstone too.)
+  let erasedUser = false;
+  try {
+    await deleteDoc(doc(db, 'users', uid));
+    erasedUser = true;
+  } catch (_) {}
+  return {
+    success: true,
+    erasedUser,
+    otherArchives: otherSnap.docs.length,
+  };
+}
+
 export function approveAstrologer(astroId, approved = true) {
   return tryCloud('adminApproveAstrologer', { astroId, approved }, async () => {
     await updateDoc(doc(db, 'astrologers', astroId), { approved: !!approved });

@@ -86,6 +86,14 @@ export default function AdminUserReach() {
   // straight into a filtered view.
   const [scope, setScope] = useState('all');
   const [page, setPage] = useState(1);
+  // Inline-action state. The row buttons (Edit / Gift / Block /
+  // Wallet / Delete) open this single shared modal at the page
+  // level instead of navigating into the profile - the operator
+  // can act on dozens of accounts back-to-back without losing the
+  // list scroll position.
+  const [actionFor, setActionFor] = useState(null); // {kind, user}
+  function openAction(kind, user) { setActionFor({ kind, user }); }
+  function closeAction() { setActionFor(null); }
 
   useEffect(() => {
     if (!router.isReady) return;
@@ -256,7 +264,8 @@ export default function AdminUserReach() {
             <Row key={(u.uid || u.id) + ':' + u._scope}
               u={u} kind={u._scope}
               onClick={() => go(u._scope === 'astrologer'
-                ? 'astrologer' : 'customer', u.uid || u.id)} />
+                ? 'astrologer' : 'customer', u.uid || u.id)}
+              onAction={(k) => openAction(k, u)} />
           ))}
         </div>
       )}
@@ -284,6 +293,19 @@ export default function AdminUserReach() {
               setUsers(list || [])).catch(() => {});
           }} />
       )}
+
+      {actionFor && (
+        <InlineActionModal
+          action={actionFor.kind}
+          user={actionFor.user}
+          onClose={closeAction}
+          onDone={() => {
+            // Refresh source-of-truth so wallet / block / delete
+            // changes show on the row.
+            adminService.getAllUsers().then((list) =>
+              setUsers(list || [])).catch(() => {});
+          }} />
+      )}
     </Layout>
   );
 }
@@ -293,7 +315,7 @@ export default function AdminUserReach() {
 //   mid   : name + role chip + code chip on row 1; email | phone on
 //           row 2 with subtle icons for verified state
 //   right : Wallet ₹/Rating, then Last seen, then chevron
-function Row({ u, kind, onClick }) {
+function Row({ u, kind, onClick, onAction }) {
   const meta = ROLE_META[kind] || ROLE_META.customer;
   const balance = Number(u.wallet || u.balance || 0);
   const rating = Number(u.ratingAvg || u.rating || 0);
@@ -305,10 +327,16 @@ function Row({ u, kind, onClick }) {
   const seenLabel = relTime(lastSeen);
   const code = u.userCode
     || String(u.uid || u.id || '').slice(0, 6).toUpperCase();
+  // Each action button calls stopPropagation so it never bubbles to
+  // the row navigation.
+  function fire(e, kind) {
+    e.preventDefault(); e.stopPropagation();
+    if (onAction) onAction(kind);
+  }
   return (
-    <button onClick={onClick}
-      className="flex w-full items-center gap-3 px-4 py-3 text-left
-        transition hover:bg-bg-light/60">
+    <div onClick={onClick}
+      className="flex w-full cursor-pointer items-center gap-3 px-4
+        py-3 text-left transition hover:bg-bg-light/60">
       {/* Avatar + presence dot */}
       <div className="relative shrink-0">
         <span className={`flex h-9 w-9 items-center justify-center
@@ -381,7 +409,49 @@ function Row({ u, kind, onClick }) {
             : seenLabel.startsWith('Yest')
               ? 'amber' : 'gray'} />
       </div>
-      <span className="shrink-0 text-base text-sub-text">›</span>
+
+      {/* Inline action strip - lets the admin act without leaving
+          the list. Hidden on very small screens where the row is
+          already tight; the row still opens the profile on tap so
+          mobile keeps full reach. */}
+      <div className="hidden shrink-0 items-center gap-1 md:flex"
+        onClick={(e) => e.stopPropagation()}>
+        <ActBtn onClick={(e) => fire(e, 'edit')}
+          tone="ghost">Edit</ActBtn>
+        <ActBtn onClick={(e) => fire(e, 'gift')}
+          tone="amber">Gift {'₹'}</ActBtn>
+        <ActBtn onClick={(e) => fire(e, 'block')}
+          tone={blocked ? 'warn-on' : 'warn'}>
+          {blocked ? 'Unblock' : 'Block'}
+        </ActBtn>
+        <ActBtn onClick={(e) => fire(e, 'wallet')}
+          tone="primary">Wallet {'±'}</ActBtn>
+        <ActBtn onClick={(e) => fire(e, 'delete')}
+          tone="danger">Delete</ActBtn>
+      </div>
+
+      <span className="shrink-0 text-base text-sub-text">{'›'}</span>
+    </div>
+  );
+}
+
+function ActBtn({ children, onClick, tone }) {
+  const cls = tone === 'danger'
+    ? 'text-danger hover:bg-danger/10'
+    : tone === 'warn'
+      ? 'text-amber-700 hover:bg-amber-100'
+      : tone === 'warn-on'
+        ? 'text-emerald-700 hover:bg-emerald-100'
+        : tone === 'primary'
+          ? 'text-primary hover:bg-primary/10'
+          : tone === 'amber'
+            ? 'text-amber-700 hover:bg-amber-100'
+            : 'text-sub-text hover:bg-bg-light';
+  return (
+    <button onClick={onClick}
+      className={`rounded-full px-2.5 py-1 text-[11px] font-semibold
+        transition ${cls}`}>
+      {children}
     </button>
   );
 }
@@ -767,5 +837,234 @@ function AccountPicker({ label, value, onChange, others = [],
         </>
       )}
     </div>
+  );
+}
+
+// ---- Inline action modal --------------------------------------------
+// One modal, one set of handlers, dispatched by `action`. Mirrors the
+// per-profile UserActionBar but lives on the list so the admin can act
+// without losing the scroll position. Auto-closes 1.2s after success
+// to match the fix made to UserActionBar.
+function InlineActionModal({ action, user, onClose, onDone }) {
+  const uid = user.uid || user.id;
+  const blocked = user.status === 'blocked' || user.isBlocked === true;
+  const [amount, setAmount] = useState('');
+  const [note, setNote] = useState('');
+  const [direction, setDirection] = useState('credit'); // wallet only
+  const [name, setName] = useState(user.name || '');
+  const [email, setEmail] = useState(user.email || '');
+  const [phone, setPhone] = useState(user.phone || '');
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [success, setSuccess] = useState('');
+
+  useEffect(() => {
+    if (!success) return undefined;
+    const t = setTimeout(() => {
+      try { onDone && onDone(); } catch (_) {}
+      onClose && onClose();
+    }, 1200);
+    return () => clearTimeout(t);
+  }, [success, onClose, onDone]);
+
+  async function run(fn, okMsg) {
+    setBusy(true); setErr(''); setSuccess('');
+    try { const out = await fn(); setSuccess(okMsg); return out; }
+    catch (e) { setErr(String((e && e.message) || e)); }
+    finally { setBusy(false); }
+  }
+
+  async function doEdit() {
+    await run(async () => {
+      const { userService } = await import('@astro/shared');
+      return userService.updateUser(uid, { name, email, phone });
+    }, 'Profile updated.');
+  }
+  async function doGift() {
+    const amt = Math.round(Number(amount) || 0);
+    if (!amt || amt <= 0) { setErr('Enter a positive amount.'); return; }
+    await run(async () => {
+      const r = await adminService.createGiftCard(amt);
+      setCode((r && (r.code || r.giftCode)) || '');
+      return r;
+    }, `Gift card ${'₹'}${amt} created.`);
+  }
+  async function doBlock() {
+    await run(() => adminService.blockUser(uid, !blocked),
+      blocked ? 'Account unblocked.' : 'Account blocked.');
+  }
+  async function doWallet() {
+    const amt = Math.round(Number(amount) || 0);
+    if (!amt || amt <= 0) { setErr('Enter a positive amount.'); return; }
+    const delta = direction === 'debit' ? -amt : amt;
+    await run(() => adminService.adjustWallet(uid, delta,
+      note || (direction === 'debit' ? 'admin_debit' : 'admin_topup')),
+      `${direction === 'debit' ? '-' : '+'} ${'₹'}${amt} ${
+        direction === 'debit' ? 'debited' : 'credited'}.`);
+  }
+  async function doDelete() {
+    await run(() => adminService.deleteUser(uid),
+      'Account soft-deleted. Recoverable from /admin-archive.');
+  }
+
+  const titles = {
+    edit: 'Edit profile',
+    gift: 'Issue gift card',
+    block: blocked ? 'Unblock account' : 'Block account',
+    wallet: 'Wallet adjustment',
+    delete: 'Delete account',
+  };
+  const ctas = {
+    edit: 'Save', gift: 'Create gift card',
+    block: blocked ? 'Unblock' : 'Block',
+    wallet: direction === 'debit' ? 'Debit wallet' : 'Credit wallet',
+    delete: 'Delete account',
+  };
+  const tones = {
+    edit: 'primary', gift: 'primary',
+    block: blocked ? 'primary' : 'warn',
+    wallet: 'primary', delete: 'danger',
+  };
+  const submit = {
+    edit: doEdit, gift: doGift, block: doBlock,
+    wallet: doWallet, delete: doDelete,
+  }[action];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center
+      bg-black/40 p-4" onClick={onClose}>
+      <div className="w-full max-w-md rounded-card bg-white p-5 shadow-xl"
+        onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2">
+          <span className="grid h-9 w-9 place-items-center rounded-full
+            bg-primary text-sm font-bold text-white">
+            {(user.name || user.email || '?').charAt(0).toUpperCase()}
+          </span>
+          <div className="min-w-0">
+            <div className="truncate text-sm font-bold">
+              {user.name || '(no name)'}
+            </div>
+            <div className="truncate text-[11px] text-sub-text">
+              {user.email || user.phone || uid}
+            </div>
+          </div>
+        </div>
+        <h3 className="mt-3 text-lg font-bold">{titles[action]}</h3>
+
+        {!success && action === 'edit' && (
+          <div className="mt-3 space-y-2">
+            <Lbl text="Name"><input className="input mt-1" value={name}
+              onChange={(e) => setName(e.target.value)} /></Lbl>
+            <Lbl text="Email"><input className="input mt-1" value={email}
+              onChange={(e) => setEmail(e.target.value)} /></Lbl>
+            <Lbl text="Phone"><input className="input mt-1" value={phone}
+              onChange={(e) => setPhone(e.target.value)} /></Lbl>
+          </div>
+        )}
+        {!success && action === 'gift' && (
+          <div className="mt-3 space-y-2">
+            <Lbl text="Amount (₹)">
+              <input className="input mt-1" type="number" min="1"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)} />
+            </Lbl>
+            <p className="text-[11px] text-sub-text">
+              Creates a fresh code. Email + push delivery follow the
+              welcome-bonus template if enabled in settings.
+            </p>
+          </div>
+        )}
+        {!success && action === 'block' && (
+          <p className="mt-3 text-xs text-sub-text">
+            {blocked
+              ? 'Customer will be able to sign in and consult again.'
+              : 'Soft-block: sign-in still works but consultations '
+                + 'are refused. Reversible from this list.'}
+          </p>
+        )}
+        {!success && action === 'wallet' && (
+          <div className="mt-3 space-y-2">
+            <div className="flex gap-2">
+              <button onClick={() => setDirection('credit')}
+                className={`flex-1 rounded-full px-3 py-1.5 text-xs
+                  font-bold ${direction === 'credit'
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-bg-light text-sub-text'}`}>
+                Credit (+)
+              </button>
+              <button onClick={() => setDirection('debit')}
+                className={`flex-1 rounded-full px-3 py-1.5 text-xs
+                  font-bold ${direction === 'debit'
+                    ? 'bg-danger text-white'
+                    : 'bg-bg-light text-sub-text'}`}>
+                Debit (-)
+              </button>
+            </div>
+            <Lbl text="Amount (₹)">
+              <input className="input mt-1" type="number" min="1"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)} />
+            </Lbl>
+            <Lbl text="Note (reason)">
+              <input className="input mt-1" value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Refund for failed kundli, manual top-up..." />
+            </Lbl>
+          </div>
+        )}
+        {!success && action === 'delete' && (
+          <p className="mt-3 text-xs text-sub-text">
+            Soft-delete: account is archived and recoverable from
+            /admin-archive. Their kundli + consultation history is
+            preserved for compliance.
+          </p>
+        )}
+
+        {err && (
+          <div className="mt-3 rounded-card bg-danger/10 p-2 text-xs
+            font-semibold text-danger">{err}</div>
+        )}
+        {success && (
+          <div className="mt-3 rounded-card bg-emerald-50 p-3 text-sm
+            font-semibold text-emerald-700 flex items-center gap-2">
+            <span aria-hidden>{'✓'}</span>{success}
+          </div>
+        )}
+        {!success && code && (
+          <div className="mt-2 rounded-card border border-emerald-300
+            bg-emerald-50 p-2 text-center font-mono text-sm
+            text-emerald-700">{code}</div>
+        )}
+
+        <div className="mt-4 flex justify-end gap-2">
+          <button onClick={onClose} disabled={busy}
+            className="rounded-full bg-bg-light px-4 py-2 text-sm
+              font-semibold">
+            {success ? 'Done' : 'Close'}
+          </button>
+          {!success && (
+            <button onClick={submit} disabled={busy}
+              className={`rounded-full px-4 py-2 text-sm font-bold
+                ${tones[action] === 'danger'
+                  ? 'bg-danger text-white'
+                  : tones[action] === 'warn'
+                    ? 'bg-warning text-white'
+                    : 'bg-primary text-white'}`}>
+              {busy ? 'Working...' : ctas[action]}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Lbl({ text, children }) {
+  return (
+    <label className="block">
+      <span className="text-xs font-semibold text-sub-text">{text}</span>
+      {children}
+    </label>
   );
 }

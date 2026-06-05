@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { adminService } from '@astro/shared';
 
 // Action bar that lives on the admin user profile (and could mount on
@@ -254,35 +254,52 @@ function ActionModal({ title, subtitle, children, onClose, onSubmit,
     ? 'bg-danger text-white'
     : ctaTone === 'warn' ? 'bg-warning text-white'
     : 'bg-primary text-white';
+  // Auto-close ~1.2s after success so the admin sees confirmation but
+  // does not have to manually close (and so the destructive CTA does
+  // not stay clickable / repeatable). Fixes a report that after
+  // "Account soft-deleted." the Delete button stayed live.
+  useEffect(() => {
+    if (!success) return undefined;
+    const t = setTimeout(() => { try { onClose && onClose(); } catch (_) {} },
+      1200);
+    return () => clearTimeout(t);
+  }, [success, onClose]);
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center
       bg-black/40 p-4" onClick={onClose}>
       <div className="w-full max-w-md rounded-card bg-white p-5
         shadow-xl" onClick={(e) => e.stopPropagation()}>
         <h3 className="text-lg font-bold">{title}</h3>
-        {subtitle && (
+        {subtitle && !success && (
           <p className="mt-1 text-xs text-sub-text">{subtitle}</p>
         )}
-        <div className="mt-3 space-y-3">{children}</div>
+        {!success && (
+          <div className="mt-3 space-y-3">{children}</div>
+        )}
         {err && (
           <div className="mt-3 rounded-card bg-danger/10 p-2
             text-xs font-semibold text-danger">{err}</div>
         )}
         {success && (
-          <div className="mt-3 rounded-card bg-emerald-50 p-2
-            text-xs font-semibold text-emerald-700">{success}</div>
+          <div className="mt-3 rounded-card bg-emerald-50 p-3
+            text-sm font-semibold text-emerald-700 flex items-center
+            gap-2">
+            <span aria-hidden>{'✓'}</span>{success}
+          </div>
         )}
         <div className="mt-4 flex justify-end gap-2">
           <button onClick={onClose} disabled={busy}
             className="rounded-full bg-bg-light px-4 py-2
               text-sm font-semibold">
-            Close
+            {success ? 'Done' : 'Close'}
           </button>
-          <button onClick={onSubmit} disabled={busy}
-            className={`rounded-full px-4 py-2 text-sm font-bold
-              ${ctaCls}`}>
-            {busy ? 'Working...' : cta}
-          </button>
+          {!success && (
+            <button onClick={onSubmit} disabled={busy}
+              className={`rounded-full px-4 py-2 text-sm font-bold
+                ${ctaCls}`}>
+              {busy ? 'Working...' : cta}
+            </button>
+          )}
         </div>
       </div>
     </div>
