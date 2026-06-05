@@ -317,6 +317,48 @@ export default function ChatScreen() {
     }, 1000);
     return () => clearTimeout(t);
   }, [broke, session?.status, isView, end]);
+  // ---- Customer-inactivity watchdog ---------------------------------
+  // After 3 minutes + 1 second of no customer activity (text or image
+  // send), force-end the chat. The server is the authoritative
+  // boundary - it re-checks lastCustomerActivityAt before ending so
+  // a stale tab cannot trigger it. We also re-arm the timer on every
+  // session.lastCustomerActivityAt advance, so a single message from
+  // the customer at 2:55 restarts the clock from scratch.
+  //
+  // The cron sweep on the relay (every 10 minutes) is the secondary
+  // safety net for the case where the customer's app closes entirely.
+  const IDLE_MS = 3 * 60 * 1000 + 1000;
+  useEffect(() => {
+    if (!active || isView) return undefined;
+    if (session?.type && session.type !== 'chat') return undefined;
+    const la = session?.lastCustomerActivityAt;
+    const startTs = session?.startTime;
+    const lastMs = (la && la.toMillis) ? la.toMillis()
+      : (la && la.seconds) ? la.seconds * 1000
+      : (startTs && startTs.toMillis) ? startTs.toMillis()
+      : (startTs && startTs.seconds) ? startTs.seconds * 1000 : 0;
+    if (!lastMs) return undefined;
+    const due = lastMs + IDLE_MS - Date.now();
+    if (due <= 0) {
+      // Already past threshold - fire immediately.
+      if (session?.id && !endedRef.current) {
+        endedRef.current = true;
+        sessionService.endChatForInactivity(session.id).catch(() => {});
+      }
+      return undefined;
+    }
+    const t = setTimeout(() => {
+      if (session?.id && !endedRef.current
+        && (session?.status === 'active'
+          || session?.status === 'accepted')) {
+        endedRef.current = true;
+        sessionService.endChatForInactivity(session.id).catch(() => {});
+      }
+    }, due);
+    return () => clearTimeout(t);
+  }, [session?.lastCustomerActivityAt, session?.startTime,
+    session?.status, session?.id, session?.type, active, isView]);
+
   // Per-tick live display: re-sync whenever the real wallet figure
   // changes (server-end settlement deducts) and tick down locally.
   const secsLeft = freeSecsRemaining + walletSecsLeft;
@@ -347,6 +389,11 @@ export default function ChatScreen() {
     setText('');
     setAtBottom(true);
     await chatService.sendMessage(chatId, user.uid, v);
+    // Stamp customer activity so the server-side inactivity guard
+    // resets its 3-minute idle timer.
+    if (session?.id) {
+      sessionService.stampCustomerActivity(session.id).catch(() => {});
+    }
     // Kick the relay to auto-reply on behalf of the astrologer when
     // they have the AI assistant on. Fire-and-forget (no UI block).
     if (chatId && astroId && user?.uid) {
@@ -383,6 +430,9 @@ export default function ChatScreen() {
     try {
       await chatService.sendImageMessage(chatId, user.uid, f);
       setAtBottom(true);
+      if (session?.id) {
+        sessionService.stampCustomerActivity(session.id).catch(() => {});
+      }
     } catch (err) {
       // sendImageMessage now throws a specific human-readable message
       // (file too large / storage rules / network timeout / not

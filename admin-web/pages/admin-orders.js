@@ -13,6 +13,20 @@ import { flash } from '../lib/flash';
 // drills down to the customer profile and shows the PDF status,
 // download link, and amount paid.
 
+// Render a structured place ({label, city, state, country, ...})
+// as a plain string. Older orders stored the place as a string,
+// newer ones store the full object - both must render cleanly
+// instead of "[object Object]".
+function placeStr(p) {
+  if (!p) return '';
+  if (typeof p === 'string') return p;
+  if (typeof p === 'object') {
+    return p.label || p.place || p.name
+      || [p.city, p.state, p.country].filter(Boolean).join(', ');
+  }
+  return '';
+}
+
 function fmt(ts) {
   try {
     const ms = ts && ts.toMillis ? ts.toMillis()
@@ -258,7 +272,8 @@ export default function AdminOrders() {
                         {o.profileDob ? ` · DOB ${o.profileDob}` : ''}
                         {o.profileTob ? ` · ${o.profileTob}` : ''}
                         {o.profileAmpm ? ` ${o.profileAmpm}` : ''}
-                        {o.profilePlace ? ` · ${o.profilePlace}` : ''}
+                        {placeStr(o.profilePlace)
+                          ? ` · ${placeStr(o.profilePlace)}` : ''}
                       </div>
                     )}
                     {o.failureReason && (

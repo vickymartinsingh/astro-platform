@@ -12,6 +12,10 @@
     {
       "path": "/api/kundli?action=liveBotTick",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/kundli?action=ping",
+      "schedule": "*/10 * * * *"
     }
   ]
 }

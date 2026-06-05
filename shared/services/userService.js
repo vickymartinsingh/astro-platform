@@ -1,7 +1,7 @@
 // userService, blueprint 8.2
 import {
   doc, getDoc, setDoc, updateDoc, onSnapshot, collection, query, where,
-  getDocs, serverTimestamp,
+  getDocs, serverTimestamp, runTransaction,
 } from 'firebase/firestore';
 import { httpsCallable } from 'firebase/functions';
 import { db, getFunctionsLazy } from '../firebase.js';
@@ -70,7 +70,16 @@ export async function ensureUserDoc(authUser) {
     fcmToken: '',
     createdAt: serverTimestamp(),
   };
-  await setDoc(ref, data, { merge: true });
+  // RACE GUARD. Two tabs hitting first signup simultaneously, or the
+  // welcome-bonus credit landing between our getDoc and setDoc, could
+  // race a wallet:0 write onto a freshly-credited doc. Doing this in
+  // a transaction means we only write if NO doc exists at commit
+  // time - any concurrent write wins and we leave it alone.
+  await runTransaction(db, async (t) => {
+    const cur = await t.get(ref);
+    if (cur.exists()) return; // someone else won the race
+    t.set(ref, data);
+  });
   // ---- Welcome bonus fire-and-forget --------------------------------
   // The relay reads settings/config so toggling enable/disable in
   // /admin-welcome-bonus takes effect instantly without any redeploy.

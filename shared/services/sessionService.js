@@ -319,6 +319,51 @@ export function listenSession(id, callback) {
     callback(s.exists() ? { id: s.id, ...s.data() } : null));
 }
 
+// Stamp the customer's last activity on the session. Called from the
+// chat screen on every send (text or image) so the server-side
+// inactivity guard knows the user is alive. Failure is non-fatal -
+// the chat continues even if the stamp fails, the server-side cron
+// is the safety net.
+export async function stampCustomerActivity(sessionId) {
+  if (!sessionId) return;
+  try {
+    await updateDoc(doc(db, 'sessions', sessionId), {
+      lastCustomerActivityAt: serverTimestamp(),
+    });
+  } catch (_) { /* best effort */ }
+}
+
+// Force-end a chat session because the customer went idle for 3 mins
+// (CHAT_IDLE_MS on the relay). Server is authoritative: it reads
+// lastCustomerActivityAt and refuses if the customer was active
+// within the threshold, so a rogue client can never trigger this.
+// Server also handles the no-activity refund + same-session-id
+// transaction so the customer can trace it in their statement.
+export async function endChatForInactivity(sessionId) {
+  if (!sessionId) throw new Error('Missing session id');
+  const baseEnv = (typeof process !== 'undefined' && process.env
+    && process.env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
+  const base = baseEnv
+    || 'https://astro-platform-push-relay.vercel.app/api/sendPush';
+  const url = base.replace(/\/sendPush\/?$/, '/kundli')
+    + '?action=endChatForInactivity';
+  let idToken = '';
+  try {
+    const mod = await import('../firebase.js');
+    const u = mod.auth && mod.auth.currentUser;
+    if (u && u.getIdToken) idToken = await u.getIdToken();
+  } catch (_) {}
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+    },
+    body: JSON.stringify({ sessionId }),
+  });
+  return res.json().catch(() => ({}));
+}
+
 // endSession: authoritative finaliser runs in the Cloud Function
 // (computes duration, cost, commission, astrologer earnings, reverts
 // astrologer status). The browser only requests the end.

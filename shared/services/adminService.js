@@ -524,10 +524,17 @@ export async function resetAccountData(uid, { role = 'client', parts = [],
     } catch (_) {}
   }
   if (want.has('profile')) {
+    // WALLET-ZERO REGRESSION FIX. This reset object used to include
+    // `wallet: 0`, which meant ANY reset that touched the profile
+    // part silently wiped the user's wallet while the admin's credit
+    // history stayed intact - matching the operator's report of
+    // "wallet shows zero but admin transactions show credit". The
+    // 'wallet' reset part above is the ONLY place that should ever
+    // zero the field; the profile reset must not.
     const reset = {
       name: '', gender: '', dob: '', tob: '', timeOfBirth: '',
       place: '', placeOfBirth: '', language: '', bio: '',
-      profileImage: '', avatar: '', wallet: 0, status: 'active',
+      profileImage: '', avatar: '', status: 'active',
       isBlocked: false, updatedAt: serverTimestamp(),
     };
     try { await updateDoc(doc(db, 'users', uid), reset); } catch (_) {}
@@ -692,18 +699,32 @@ export function adjustWallet(uid, amount, reason) {
   const amt = Number(amount);
   return tryCloud('adminAdjustWallet', { uid, amount: amt, reason },
     async () => {
+      let beforeW = 0;
+      let afterW = 0;
       await runTransaction(db, async (t) => {
         const ref = doc(db, 'users', uid);
         const s = await t.get(ref);
-        const w = Number((s.data() || {}).wallet || 0) + amt;
-        t.update(ref, { wallet: w < 0 ? 0 : w });
+        beforeW = Number((s.data() || {}).wallet || 0);
+        const w = beforeW + amt;
+        afterW = w < 0 ? 0 : w;
+        t.update(ref, { wallet: afterW });
         t.set(doc(collection(db, 'transactions')), {
           userId: uid, amount: amt, type: amt >= 0 ? 'credit' : 'debit',
           reason: reason || 'admin_adjust', referenceId: 'admin_adjust',
           createdAt: serverTimestamp() });
+        // Paper-trail subcollection. EVERY wallet move from this
+        // function now leaves a row in users/{uid}/walletAudit so
+        // future "wallet shows zero" reports can be traced to the
+        // exact actor + reason without grepping logs.
+        t.set(doc(collection(db, 'users', uid, 'walletAudit')), {
+          before: beforeW, delta: amt, after: afterW,
+          reason: reason || 'admin_adjust',
+          source: 'adjustWallet',
+          at: serverTimestamp(),
+        });
       });
       await notifyWallet(uid, amt, reason || 'admin adjustment');
-      return { success: true };
+      return { success: true, before: beforeW, after: afterW };
     });
 }
 

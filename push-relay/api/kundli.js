@@ -32,6 +32,170 @@ function initAdmin() {
   } catch (_) { return false; }
 }
 
+// ===== Chat inactivity sweeper ========================================
+// Idle threshold (ms). When a customer has not posted any chat activity
+// for this long during a chat session, we force-end the session and
+// instant-refund the inactive minutes.
+const CHAT_IDLE_MS = 3 * 60 * 1000 + 1000;
+
+// Scan every active chat session and end any whose lastCustomerActivityAt
+// is older than CHAT_IDLE_MS. Called by the warm-keeper ping every 10
+// minutes so a customer who closes the app mid-session never sits in an
+// active billing state forever. Returns the count of sessions swept.
+async function sweepIdleChats(db) {
+  let n = 0;
+  try {
+    const cutoff = Date.now() - CHAT_IDLE_MS;
+    const snap = await db.collection('sessions')
+      .where('status', '==', 'active')
+      .where('type', '==', 'chat')
+      .limit(50)
+      .get();
+    for (const d of snap.docs) {
+      try {
+        const s = d.data() || {};
+        const la = s.lastCustomerActivityAt;
+        const ms = la && la.toMillis ? la.toMillis()
+          : la && la.seconds ? la.seconds * 1000
+          : (s.createdAt && s.createdAt.toMillis
+            ? s.createdAt.toMillis() : 0);
+        if (!ms || ms < cutoff) {
+          // eslint-disable-next-line no-await-in-loop
+          await endChatForInactivity(db, d.id);
+          n += 1;
+        }
+      } catch (_) { /* keep sweeping */ }
+    }
+  } catch (_) { /* no-op */ }
+  return n;
+}
+
+// Atomic end-and-refund for one chat session. Idempotent: a session
+// already finalised returns { skipped: 'not_active' }.
+async function endChatForInactivity(db, sessionId) {
+  const sRef = db.collection('sessions').doc(sessionId);
+  const out = await db.runTransaction(async (t) => {
+    const ss = await t.get(sRef);
+    if (!ss.exists) throw new Error('Session not found');
+    const s = ss.data() || {};
+    if (s.status !== 'active') {
+      return { skipped: 'not_active', status: s.status };
+    }
+    if (s.type && s.type !== 'chat') {
+      return { skipped: 'not_chat', type: s.type };
+    }
+    const la = s.lastCustomerActivityAt;
+    const lastMs = la && la.toMillis ? la.toMillis()
+      : la && la.seconds ? la.seconds * 1000 : 0;
+    const startMs = s.startedAt && s.startedAt.toMillis
+      ? s.startedAt.toMillis()
+      : s.createdAt && s.createdAt.toMillis
+        ? s.createdAt.toMillis() : Date.now();
+    const now = Date.now();
+    // Anchor the active window to the LAST customer activity if we
+    // have one - if not, treat the whole elapsed time as billed
+    // (no refund) since we have nothing to prove idleness with.
+    const effectiveEnd = lastMs > 0 ? lastMs : now;
+    const billedSec = Math.max(0,
+      Math.floor((effectiveEnd - startMs) / 1000));
+    const idleSec = Math.max(0,
+      Math.floor((now - effectiveEnd) / 1000));
+    const ratePerMin = Number(s.ratePerMin || s.rate || 0);
+    // Refund cap: 3 minutes' worth so even if the cron is late, we
+    // never over-credit. Customer can dispute longer idles manually.
+    const refundMin = Math.min(3, Math.floor(idleSec / 60));
+    const refundAmt = Math.max(0,
+      Math.round(refundMin * ratePerMin));
+    // Update session.
+    t.update(sRef, {
+      status: 'ended',
+      endedAt: admin.firestore.FieldValue.serverTimestamp(),
+      endReason: 'no_activity',
+      idleSec,
+      billedSec,
+      noActivityRefund: refundAmt,
+      duration: billedSec,
+    });
+    if (refundAmt > 0 && s.userId) {
+      const uRef = db.collection('users').doc(s.userId);
+      const u = await t.get(uRef);
+      const w = Number((u.data() || {}).wallet || 0) + refundAmt;
+      t.update(uRef, { wallet: w });
+      // Same sessionId as referenceId so the customer can match the
+      // refund row to the session it came from in their statement.
+      t.set(db.collection('transactions').doc(), {
+        userId: s.userId,
+        amount: refundAmt,
+        type: 'credit',
+        reason: 'No activity refund',
+        referenceId: sessionId,
+        sessionId,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      t.set(db.collection('users').doc(s.userId)
+        .collection('walletAudit').doc(), {
+        before: w - refundAmt,
+        delta: refundAmt,
+        after: w,
+        reason: 'No activity refund',
+        source: 'endChatForInactivity',
+        sessionId,
+        at: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+    return {
+      ok: true, ended: true,
+      billedSec, idleSec, refundAmt, refundMin,
+    };
+  });
+  // Notify the customer once - in-app + push. Best-effort.
+  try {
+    if (out && out.ended) {
+      const ss = await sRef.get();
+      const s = ss.data() || {};
+      if (s.userId) {
+        await db.collection('notifications').add({
+          userId: s.userId,
+          type: 'chat_ended_inactivity',
+          title: 'Chat ended (no activity)',
+          message: 'Your chat ended after 3 minutes of inactivity. '
+            + (out.refundAmt > 0
+              ? `Rs ${out.refundAmt} (${out.refundMin} min) refunded.`
+              : 'No refund was due.'),
+          sessionId,
+          read: false,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        const u = await db.collection('users').doc(s.userId).get();
+        const ud = u.exists ? (u.data() || {}) : {};
+        const toks = []
+          .concat(Array.isArray(ud.fcmTokens) ? ud.fcmTokens : [])
+          .concat(ud.fcmToken ? [ud.fcmToken] : [])
+          .filter(Boolean);
+        if (toks.length) {
+          await admin.messaging().sendEachForMulticast({
+            tokens: [...new Set(toks)],
+            notification: {
+              title: 'Chat ended (no activity)',
+              body: out.refundAmt > 0
+                ? `Rs ${out.refundAmt} refunded for the idle period.`
+                : 'Chat closed after 3 mins of inactivity.',
+            },
+            data: { type: 'chat_ended', route: '/transactions',
+              sessionId },
+            android: {
+              priority: 'high',
+              notification: {
+                channelId: 'astro-default', sound: 'default' },
+            },
+          });
+        }
+      }
+    }
+  } catch (_) { /* notify is best-effort */ }
+  return out;
+}
+
 // Pick the best fallback provider when we can't read settings from
 // Firestore. AstroSeer needs nothing more than its env-var base URL
 // to function, so it's the safest default whenever
@@ -823,6 +987,63 @@ module.exports = async (req, res) => {
   // Admin SDK so it bypasses client rules + works even when the
   // astrologer's deployed bundle is stale.
   // ----------------------------------------------------------------
+  // ----------------------------------------------------------------
+  // Warm-keeper ping. The Vercel cron pings this every 10 minutes
+  // (vercel.json) to keep the relay function instance warm so the
+  // first real user request never pays a cold-start. Returns a
+  // small ~20KB JSON payload (intentionally non-empty so any CDN /
+  // proxy that strips zero-byte responses still treats it as a
+  // real hit). Also opportunistically runs the chat-inactivity
+  // sweeper (see endChatForInactivity action) so a 3-minute idle
+  // chat never sits forever if the customer's app is offline.
+  // ----------------------------------------------------------------
+  if (src.action === 'ping') {
+    let swept = 0;
+    try {
+      if (initAdmin()) {
+        swept = await sweepIdleChats(admin.firestore());
+      }
+    } catch (_) { /* warmth is the primary job, sweep is bonus */ }
+    // ~20KB filler so the response is large enough to keep the
+    // function instance + warm pool busy through the round-trip.
+    const filler = 'x'.repeat(20000);
+    return res.status(200).json({
+      ok: true,
+      at: Date.now(),
+      sweptIdleChats: swept,
+      filler,
+    });
+  }
+
+  // ----------------------------------------------------------------
+  // Force-end a chat session whose customer has gone idle. Caller
+  // is the customer themselves OR the cron. Server enforces the
+  // 3-minute idle rule by reading sessions/{id}.lastCustomerActivityAt
+  // and refusing if the customer was active within the threshold.
+  //
+  // Bills the active portion (already deducted live in normal flow)
+  // and credits back the inactive minutes (up to 3) labelled
+  // "No activity refund" with the SAME session id so the customer
+  // can trace it in their statement.
+  // ----------------------------------------------------------------
+  if (src.action === 'endChatForInactivity'
+    && req.method === 'POST') {
+    if (!initAdmin()) {
+      return res.status(503).json({
+        error: 'admin SDK not configured' });
+    }
+    try {
+      const dbA = admin.firestore();
+      const sid = String((src.sessionId || '')).trim();
+      if (!sid) return res.status(400).json({ error: 'sessionId' });
+      const out = await endChatForInactivity(dbA, sid);
+      return res.status(200).json(out);
+    } catch (e) {
+      return res.status(400).json({
+        error: String((e && e.message) || e) });
+    }
+  }
+
   if (src.action === 'liveBotTick') {
     if (!initAdmin()) {
       return res.status(503).json({
