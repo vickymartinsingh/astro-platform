@@ -6,32 +6,23 @@ import {
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
 
-// Unified People hub. The old /admin-users + /admin-astrologers
-// pages are now consolidated here: one search box, one scope chip
-// strip, one virtually-scrolled list. Empty search renders the
-// full customer + astrologer list (paginated in 100-row pages); a
-// typed query filters across name, email, phone, user code or uid.
-// Click any row to jump into the full profile.
-function fmt(ts) {
-  try {
-    const ms = ts && ts.toMillis ? ts.toMillis()
-      : ts && ts.seconds ? ts.seconds * 1000
-      : typeof ts === 'number' ? ts
-      : 0;
-    if (!ms) return '–';
-    return new Date(ms).toLocaleString('en-GB', {
-      day: '2-digit', month: 'short', year: 'numeric',
-      hour: '2-digit', minute: '2-digit',
-    });
-  } catch (_) { return '–'; }
-}
+// Unified People hub. All roles in one place: customer / astrologer
+// / admin / support / hr. Five tiles at the top filter the list to
+// that role; the search box finds an exact person whose role you do
+// not yet know.
+//
+// Visual was reworked from a pill-stuffed card to a tight, dense
+// row that mirrors Linear / Vercel admin tables: avatar + name on
+// the left, a single subtle identity line, status icons rather
+// than rounded chips, key metrics right-aligned. Per-row hover lift
+// + alternating-row background give the list visual rhythm.
 function relTime(ts) {
   try {
     const ms = ts && ts.toMillis ? ts.toMillis()
       : ts && ts.seconds ? ts.seconds * 1000
       : typeof ts === 'number' ? ts
       : 0;
-    if (!ms) return 'never';
+    if (!ms) return '';
     const d = new Date(ms);
     const now = new Date();
     const isToday = d.toDateString() === now.toDateString();
@@ -42,15 +33,14 @@ function relTime(ts) {
       minute: '2-digit' });
     if (isToday) {
       const mins = Math.floor((now - d) / 60_000);
-      if (mins < 1) return `just now (${hhmm})`;
-      if (mins < 60) return `${mins}m ago (${hhmm})`;
+      if (mins < 1) return 'just now';
+      if (mins < 60) return `${mins}m ago`;
       return `Today ${hhmm}`;
     }
-    if (isYest) return `Yesterday ${hhmm}`;
-    // Older: show short date + time
+    if (isYest) return `Yest ${hhmm}`;
     return `${d.toLocaleDateString('en-GB',
       { day: '2-digit', month: 'short' })} ${hhmm}`;
-  } catch (_) { return 'never'; }
+  } catch (_) { return ''; }
 }
 
 function matchOne(s, hay) {
@@ -61,7 +51,26 @@ function matchOne(s, hay) {
     .some((v) => v.includes(q));
 }
 
+function roleOf(u) {
+  return String(u.role || 'client').toLowerCase();
+}
+
 const PAGE_SIZE = 100;
+// Match the AdminShell sidebar palette so the tiles feel like part
+// of the same system, not five competing colors.
+const ROLE_META = {
+  customer: { label: 'Customers', accent: 'from-amber-400 to-amber-600',
+    chip: 'bg-amber-100 text-amber-700', avatar: 'bg-amber-500' },
+  astrologer: { label: 'Astrologers',
+    accent: 'from-[#7F2020] to-[#a83232]',
+    chip: 'bg-primary/15 text-primary', avatar: 'bg-primary' },
+  admin: { label: 'Admin team', accent: 'from-slate-700 to-slate-900',
+    chip: 'bg-slate-100 text-slate-700', avatar: 'bg-slate-700' },
+  support: { label: 'Support', accent: 'from-amber-700 to-amber-900',
+    chip: 'bg-amber-100 text-amber-800', avatar: 'bg-amber-700' },
+  hr: { label: 'HR', accent: 'from-emerald-600 to-emerald-800',
+    chip: 'bg-emerald-100 text-emerald-700', avatar: 'bg-emerald-600' },
+};
 
 export default function AdminUserReach() {
   const router = useRouter();
@@ -69,8 +78,21 @@ export default function AdminUserReach() {
   const [users, setUsers] = useState(null);
   const [astros, setAstros] = useState(null);
   const [q, setQ] = useState('');
-  const [scope, setScope] = useState('all'); // all | customer | astrologer
+  // scope: all | customer | astrologer | admin | support | hr
+  // Initialised from ?scope= so the dashboard tiles deep-link
+  // straight into a filtered view.
+  const [scope, setScope] = useState('all');
   const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    if (!router.isReady) return;
+    const s = router.query.scope;
+    if (typeof s === 'string'
+      && ['all', 'customer', 'astrologer', 'admin', 'support', 'hr']
+        .includes(s)) {
+      setScope(s);
+    }
+  }, [router.isReady, router.query.scope]);
 
   useEffect(() => {
     if (loading) return;
@@ -81,27 +103,39 @@ export default function AdminUserReach() {
         (a) => ({ ...a, uid: a.id || a.uid })))).catch(() => setAstros([]));
   }, [loading]);
 
-  // Reset to page 1 whenever the query or scope changes so the
-  // operator never lands on an empty page just because they
-  // filtered the previous result.
   useEffect(() => { setPage(1); }, [q, scope]);
 
-  const customers = useMemo(() =>
-    (users || []).filter((u) => (u.role || 'client') === 'client'),
-    [users]);
-  const customerMatches = useMemo(() =>
-    scope === 'astrologer' ? []
-      : customers.filter((u) => matchOne(q, u)),
-    [customers, scope, q]);
-  const astroMatches = useMemo(() =>
-    scope === 'customer' ? []
-      : (astros || []).filter((a) => matchOne(q, a)),
-    [astros, scope, q]);
+  // Bucketize once per data load so every count + filter reads
+  // from the same source of truth.
+  const buckets = useMemo(() => {
+    const list = users || [];
+    return {
+      customer: list.filter((u) => roleOf(u) === 'client'),
+      astrologer: astros || [],
+      admin: list.filter((u) => roleOf(u) === 'admin'),
+      support: list.filter((u) => roleOf(u) === 'support'),
+      hr: list.filter((u) => roleOf(u) === 'hr'),
+    };
+  }, [users, astros]);
 
-  const visibleCustomers = customerMatches.slice(0, page * PAGE_SIZE);
-  const visibleAstros = astroMatches.slice(0, page * PAGE_SIZE);
-  const moreAvailable = customerMatches.length > visibleCustomers.length
-    || astroMatches.length > visibleAstros.length;
+  // The list to render for the current scope. 'all' shows
+  // customers + astrologers (the two biggest groups); a specific
+  // scope shows only that bucket.
+  const rowsForScope = useMemo(() => {
+    if (scope === 'all') {
+      return [
+        ...buckets.customer.filter((u) => matchOne(q, u))
+          .map((u) => ({ ...u, _scope: 'customer' })),
+        ...buckets.astrologer.filter((a) => matchOne(q, a))
+          .map((a) => ({ ...a, _scope: 'astrologer' })),
+      ];
+    }
+    return (buckets[scope] || []).filter((x) => matchOne(q, x))
+      .map((x) => ({ ...x, _scope: scope }));
+  }, [scope, q, buckets]);
+
+  const visible = rowsForScope.slice(0, page * PAGE_SIZE);
+  const moreAvailable = rowsForScope.length > visible.length;
 
   if (loading || users == null || astros == null) {
     return <Layout><div className="card">Loading…</div></Layout>;
@@ -112,28 +146,6 @@ export default function AdminUserReach() {
     else router.push(`/admin-user-profile/${uid}`);
   }
 
-  // Role partition cards. Each card opens THIS page filtered to
-  // that role (no separate page). The dashboard pattern the user
-  // asked for: land on /admin-user-reach -> see Customer /
-  // Astrologer / Admin / Support / HR boxes, click one to drill,
-  // OR use the search box at the top to find an exact person when
-  // their role is unknown.
-  const roleCards = [
-    { id: 'customer', label: 'Customers',
-      n: customers.length, tone: 'amber' },
-    { id: 'astrologer', label: 'Astrologers',
-      n: (astros || []).length, tone: 'primary' },
-    { id: 'admin', label: 'Admin team',
-      n: (users || []).filter((u) => u.role === 'admin').length,
-      tone: 'slate' },
-    { id: 'support', label: 'Support',
-      n: (users || []).filter((u) => u.role === 'support').length,
-      tone: 'amber' },
-    { id: 'hr', label: 'HR',
-      n: (users || []).filter((u) => u.role === 'hr').length,
-      tone: 'emerald' },
-  ];
-
   return (
     <Layout>
       <h1 className="mb-1 text-2xl font-bold">People</h1>
@@ -143,131 +155,103 @@ export default function AdminUserReach() {
         you do not yet know.
       </p>
 
+      {/* Role partition tiles */}
       <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
-        {roleCards.map((c) => {
-          const active = scope === c.id
-            || (scope === 'all' && c.id === 'customer'
-              && customerMatches.length > 0);
-          const tint = c.tone === 'primary'
-            ? 'from-[#7F2020] to-[#a83232]'
-            : c.tone === 'emerald'
-              ? 'from-emerald-600 to-emerald-700'
-              : c.tone === 'slate'
-                ? 'from-slate-700 to-slate-800'
-                : 'from-amber-500 to-amber-600';
-          return (
-            <button key={c.id} onClick={() => {
-              setScope(c.id === 'customer' ? 'customer'
-                : c.id === 'astrologer' ? 'astrologer' : 'all');
-              setQ('');
-            }} className={`group rounded-2xl bg-gradient-to-br
-              ${tint} p-3 text-left text-white shadow-sm
-              transition hover:shadow-md ${active
-                ? 'ring-2 ring-white ring-offset-2' : ''}`}>
-              <div className="text-[10px] font-bold uppercase
-                tracking-widest opacity-80">{c.label}</div>
-              <div className="mt-1 text-2xl font-bold">{c.n}</div>
-              <div className="mt-1 text-[10px] opacity-80">
-                Tap to filter
-              </div>
-            </button>
-          );
-        })}
+        {['customer', 'astrologer', 'admin', 'support', 'hr']
+          .map((id) => {
+            const meta = ROLE_META[id];
+            const n = (buckets[id] || []).length;
+            const active = scope === id
+              || (scope === 'all' && id === 'customer');
+            return (
+              <button key={id} onClick={() => { setScope(id); setQ(''); }}
+                className={`group rounded-2xl bg-gradient-to-br
+                  ${meta.accent} p-3 text-left text-white shadow-sm
+                  transition hover:shadow-md ${active
+                    ? 'ring-2 ring-white ring-offset-2'
+                    : 'opacity-90 hover:opacity-100'}`}>
+                <div className="text-[10px] font-bold uppercase
+                  tracking-widest opacity-90">{meta.label}</div>
+                <div className="mt-1 text-2xl font-bold">{n}</div>
+                <div className="mt-1 text-[10px] opacity-85">
+                  Tap to filter
+                </div>
+              </button>
+            );
+          })}
       </div>
 
-      <div className="card mb-3">
+      {/* Search bar */}
+      <div className="surface mb-3 p-3">
         <div className="flex flex-wrap items-center gap-2">
-          <input className="input flex-1" autoFocus value={q}
-            placeholder="Search by name, email, phone, user code or UID"
+          <input className="input flex-1 min-w-[200px]" autoFocus
+            value={q} placeholder="Search by name, email, phone, user
+              code or UID"
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                const total = customerMatches.length + astroMatches.length;
-                if (total === 1) {
-                  const hit = customerMatches[0] || astroMatches[0];
-                  const kind = customerMatches[0] ? 'customer' : 'astrologer';
-                  go(kind, hit.uid || hit.id);
-                }
+              if (e.key === 'Enter' && rowsForScope.length === 1) {
+                const hit = rowsForScope[0];
+                go(hit._scope === 'astrologer'
+                  ? 'astrologer' : 'customer', hit.uid || hit.id);
               }
             }} />
-          <button onClick={() => setQ((v) => v.trim())}
-            className="rounded-full bg-primary px-4 py-2 text-sm
-              font-bold text-white">
-            Search
-          </button>
-        </div>
-        <div className="mt-2 inline-flex rounded-full bg-bg-light p-1
-          text-xs font-bold">
-          {[['all', 'All'], ['customer', 'Customers'],
-            ['astrologer', 'Astrologers']].map(([k, lbl]) => (
-            <button key={k} onClick={() => setScope(k)}
-              className={`rounded-full px-3 py-1.5 ${scope === k
-                ? 'bg-white text-primary shadow-sm' : 'text-sub-text'}`}>
-              {lbl}
+          {scope !== 'all' && (
+            <button onClick={() => setScope('all')}
+              className="rounded-full bg-bg-light px-3 py-2 text-xs
+                font-bold text-sub-text hover:bg-gray-200">
+              × Clear filter
             </button>
-          ))}
+          )}
         </div>
         <div className="mt-2 text-[11px] text-sub-text">
-          {customerMatches.length} customer
-          {customerMatches.length === 1 ? '' : 's'}
-          {' · '}
-          {astroMatches.length} astrologer
-          {astroMatches.length === 1 ? '' : 's'}
-          {q.trim() ? ` matching "${q.trim()}"`
-            : ` total · showing ${visibleCustomers.length
-              + visibleAstros.length}`}
+          {scope === 'all'
+            ? `${buckets.customer.length} customers · `
+              + `${buckets.astrologer.length} astrologers`
+            : `${(buckets[scope] || []).length} ${
+              ROLE_META[scope]?.label.toLowerCase() || scope}`}
+          {q.trim()
+            ? ` · ${rowsForScope.length} matching "${q.trim()}"`
+            : ` · showing ${visible.length}`}
         </div>
       </div>
 
-      {customerMatches.length > 0 && (
-        <div className="mb-3">
-          <div className="mb-1 flex items-center justify-between">
-            <div className="text-xs font-bold uppercase tracking-wide
-              text-sub-text">
-              Customers ({customerMatches.length})
+      {/* List */}
+      {rowsForScope.length === 0 ? (
+        <div className="surface flex flex-col items-center gap-2
+          p-10 text-center">
+          <div className="grid h-12 w-12 place-items-center rounded-full
+            bg-bg-light text-2xl text-sub-text">·</div>
+          <div className="text-sm font-semibold text-dark-text">
+            {q.trim()
+              ? `No profile or user found matching "${q.trim()}".`
+              : scope === 'all'
+                ? 'No people yet.'
+                : `No ${ROLE_META[scope]?.label.toLowerCase()
+                  || scope} users yet.`}
+          </div>
+          {!q.trim() && scope !== 'all' && scope !== 'customer'
+            && scope !== 'astrologer' && (
+            <div className="text-[12px] text-sub-text">
+              Assign this role to an existing user from{' '}
+              <span className="font-mono">/admin-user-profile</span>{' '}
+              → Roles.
             </div>
-          </div>
-          <div className="space-y-2">
-            {visibleCustomers.map((u) => (
-              <ResultRow key={u.uid || u.id} u={u} kind="customer"
-                onClick={() => go('customer', u.uid || u.id)} />
-            ))}
-          </div>
+          )}
         </div>
-      )}
-
-      {astroMatches.length > 0 && (
-        <div className="mb-3">
-          <div className="mb-1 flex items-center justify-between">
-            <div className="text-xs font-bold uppercase tracking-wide
-              text-sub-text">
-              Astrologers ({astroMatches.length})
-            </div>
-          </div>
-          <div className="space-y-2">
-            {visibleAstros.map((a) => (
-              <ResultRow key={a.uid || a.id} u={a} kind="astrologer"
-                onClick={() => go('astrologer', a.uid || a.id)} />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {customerMatches.length === 0 && astroMatches.length === 0 && (
-        <div className="card text-sm text-sub-text">
-          {q.trim()
-            ? `No profile or user found matching "${q.trim()}".`
-            : scope === 'customer'
-              ? 'No customers yet.'
-              : scope === 'astrologer'
-                ? 'No astrologers yet.'
-                : 'No profile or user found in this role.'}
+      ) : (
+        <div className="surface divide-y divide-gray-200/70
+          overflow-hidden">
+          {visible.map((u) => (
+            <Row key={(u.uid || u.id) + ':' + u._scope}
+              u={u} kind={u._scope}
+              onClick={() => go(u._scope === 'astrologer'
+                ? 'astrologer' : 'customer', u.uid || u.id)} />
+          ))}
         </div>
       )}
 
       {moreAvailable && (
-        <div className="mt-2 text-center">
+        <div className="mt-3 text-center">
           <button onClick={() => setPage((p) => p + 1)}
             className="rounded-full bg-primary px-5 py-2 text-sm
               font-bold text-white">
@@ -279,94 +263,132 @@ export default function AdminUserReach() {
   );
 }
 
-function VerifiedDot({ ok, label }) {
-  return (
-    <span className={`inline-flex items-center gap-1 rounded-full
-      px-2 py-0.5 text-[10px] font-bold ${
-      ok ? 'bg-emerald-100 text-emerald-700'
-        : 'bg-gray-100 text-gray-500'}`}>
-      <span className={`h-1.5 w-1.5 rounded-full ${
-        ok ? 'bg-emerald-500' : 'bg-gray-300'}`} />
-      {label}{ok ? '' : ' – no'}
-    </span>
-  );
-}
-
-function ResultRow({ u, kind, onClick }) {
+// One row of the People list. New compact layout (no pill explosion):
+//   left  : 32px avatar with online dot (if applicable)
+//   mid   : name + role chip + code chip on row 1; email | phone on
+//           row 2 with subtle icons for verified state
+//   right : Wallet ₹/Rating, then Last seen, then chevron
+function Row({ u, kind, onClick }) {
+  const meta = ROLE_META[kind] || ROLE_META.customer;
   const balance = Number(u.wallet || u.balance || 0);
+  const rating = Number(u.ratingAvg || u.rating || 0);
   const lastSeen = u.lastSeenAt || u.lastLoginAt
     || u.lastActiveAt || u.updatedAt || u.createdAt;
   const blocked = u.status === 'blocked' || u.blocked === true
     || u.isBlocked === true;
-  const online = u.status === 'online';
-  const emailVerified = !!(u.emailVerified || u.verifiedEmail);
-  const phoneVerified = !!(u.phoneVerified || u.verifiedPhone || u.phone);
+  const online = u.status === 'online' && !blocked;
+  const seenLabel = relTime(lastSeen);
+  const code = u.userCode
+    || String(u.uid || u.id || '').slice(0, 6).toUpperCase();
   return (
     <button onClick={onClick}
-      className="flex w-full items-start gap-3 rounded-card border
-        border-gray-200 bg-white p-3 text-left hover:bg-bg-light
-        hover:shadow-sm transition">
-      <span className={`flex h-11 w-11 shrink-0 items-center
-        justify-center rounded-full text-base font-bold text-white ${
-        kind === 'astrologer' ? 'bg-primary' : 'bg-amber-500'}`}>
-        {(u.name || u.email || '?').charAt(0).toUpperCase()}
-      </span>
-      <div className="min-w-0 flex-1 space-y-1">
+      className="flex w-full items-center gap-3 px-4 py-3 text-left
+        transition hover:bg-bg-light/60">
+      {/* Avatar + presence dot */}
+      <div className="relative shrink-0">
+        <span className={`flex h-9 w-9 items-center justify-center
+          rounded-full text-sm font-bold text-white ${meta.avatar}`}>
+          {(u.name || u.email || '?').charAt(0).toUpperCase()}
+        </span>
+        {online && (
+          <span className="absolute -bottom-0.5 -right-0.5 grid
+            h-3 w-3 place-items-center rounded-full
+            border-2 border-white bg-emerald-500" />
+        )}
+        {blocked && (
+          <span className="absolute -bottom-0.5 -right-0.5 grid
+            h-3 w-3 place-items-center rounded-full
+            border-2 border-white bg-red-500" />
+        )}
+      </div>
+
+      {/* Identity column */}
+      <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="truncate text-sm font-semibold text-dark-text">
-            {u.name || '(no name)'}
-          </span>
-          <span className={`rounded-full px-2 py-0.5 text-[10px]
-            font-bold capitalize ${kind === 'astrologer'
-              ? 'bg-primary/15 text-primary'
-              : 'bg-amber-100 text-amber-700'}`}>
+          <span className="truncate text-sm font-semibold
+            text-dark-text">{u.name || '(no name)'}</span>
+          <span className={`rounded-full px-2 py-0.5 text-[9px]
+            font-bold uppercase tracking-wider ${meta.chip}`}>
             {kind}
           </span>
-          {u.userCode && (
-            <span className="rounded-full bg-bg-light px-2 py-0.5
-              text-[10px] font-bold text-sub-text">
-              {u.userCode}
-            </span>
-          )}
+          <span className="rounded bg-bg-light px-1.5 py-0.5
+            font-mono text-[10px] font-bold text-sub-text">
+            {code}
+          </span>
           {blocked && (
             <span className="rounded-full bg-red-100 px-2 py-0.5
-              text-[10px] font-bold text-red-700">
-              Blocked
-            </span>
-          )}
-          {online && !blocked && (
-            <span className="rounded-full bg-emerald-100 px-2 py-0.5
-              text-[10px] font-bold text-emerald-700">
-              Online
-            </span>
+              text-[10px] font-bold text-red-700">Blocked</span>
           )}
         </div>
-        <div className="truncate text-[11px] text-sub-text">
-          {u.email || ' – '}
-          {u.phone ? ` · ${u.phone}` : ''}
-        </div>
-        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-          <VerifiedDot ok={emailVerified} label="Email" />
-          <VerifiedDot ok={phoneVerified} label="Phone" />
-          {kind === 'customer' && (
-            <span className="rounded-full bg-emerald-50
-              px-2 py-0.5 text-[10px] font-bold text-emerald-700">
-              Wallet ₹{balance.toFixed(0)}
-            </span>
+        <div className="mt-0.5 flex items-center gap-2 truncate
+          text-[11.5px] text-sub-text">
+          <Field icon="✉" value={u.email}
+            verified={!!(u.emailVerified || u.verifiedEmail)} />
+          {u.phone && (
+            <>
+              <span className="text-gray-300">·</span>
+              <Field icon="☏" value={u.phone}
+                verified={!!(u.phoneVerified || u.verifiedPhone)} />
+            </>
           )}
-          {kind === 'astrologer' && (
-            <span className="rounded-full bg-amber-50 px-2 py-0.5
-              text-[10px] font-bold text-amber-700">
-              Rating {Number(u.ratingAvg || u.rating || 0).toFixed(1)}
-            </span>
-          )}
-          <span className="rounded-full bg-bg-light px-2 py-0.5
-            text-[10px] font-bold text-sub-text">
-            Last seen {relTime(lastSeen)}
-          </span>
         </div>
       </div>
-      <span className="self-center text-sub-text">›</span>
+
+      {/* Stat columns */}
+      <div className="hidden shrink-0 items-center gap-5 text-right
+        text-[11px] sm:flex">
+        {kind === 'customer' && (
+          <Stat label="Wallet"
+            value={`₹${balance.toFixed(0)}`}
+            tone="emerald" />
+        )}
+        {kind === 'astrologer' && (
+          <Stat label="Rating"
+            value={rating ? rating.toFixed(1) : '–'}
+            tone="amber" />
+        )}
+        <Stat label="Last seen"
+          value={seenLabel || 'never'}
+          tone={seenLabel.startsWith('Today')
+            || seenLabel === 'just now'
+            || seenLabel.endsWith('m ago')
+            ? 'emerald'
+            : seenLabel.startsWith('Yest')
+              ? 'amber' : 'gray'} />
+      </div>
+      <span className="shrink-0 text-base text-sub-text">›</span>
     </button>
+  );
+}
+
+function Field({ icon, value, verified }) {
+  if (!value) return null;
+  return (
+    <span className="flex min-w-0 items-center gap-1 truncate">
+      <span className={`grid h-3.5 w-3.5 shrink-0
+        place-items-center rounded-full text-[9px]
+        ${verified ? 'bg-emerald-100 text-emerald-700'
+          : 'bg-gray-100 text-gray-400'}`}>
+        {icon}
+      </span>
+      <span className={`truncate ${verified
+        ? 'text-dark-text' : 'text-sub-text'}`}>
+        {value}
+      </span>
+    </span>
+  );
+}
+
+function Stat({ label, value, tone }) {
+  const color = tone === 'emerald' ? 'text-emerald-600'
+    : tone === 'amber' ? 'text-amber-700'
+    : 'text-sub-text';
+  return (
+    <div className="flex w-[110px] flex-col items-end">
+      <div className="text-[9px] font-bold uppercase tracking-wider
+        text-sub-text">{label}</div>
+      <div className={`mt-0.5 truncate text-[12px] font-semibold
+        ${color}`}>{value}</div>
+    </div>
   );
 }
