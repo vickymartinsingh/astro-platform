@@ -77,15 +77,60 @@ export function inr(value, opts) {
 
 // Convenience: number with the rupee symbol prefix.
 export function rupees(value, opts) {
-  return `₹${inr(value, opts)}`;
+  return `${currencyPrefix()}${inr(value, opts)}`;
 }
 
 // Two-decimal explicit form for invoices / receipts / wallet
 // statements where we always want "₹10,000.00" not "₹10,000".
 export function rupees2(value) {
   if (INR2) {
-    try { return `₹${INR2.format(Number(value) || 0)}`; }
+    try { return `${currencyPrefix()}${INR2.format(Number(value) || 0)}`; }
     catch (_) { /* fall through */ }
   }
-  return `₹${fallback(Number(value) || 0, 2)}`;
+  return `${currencyPrefix()}${fallback(Number(value) || 0, 2)}`;
+}
+
+// Admin-configurable display currency. Sourced from
+// settings/config.currency_symbol (string set in /admin-settings).
+// Defaults to the Rupee glyph. Cached on window for cheap reads.
+//
+// Supported symbols (admin can also type any custom string):
+//   "₹"   - Indian Rupee (default)
+//   "Rs " - Rupee text label
+//   "INR " - INR ISO code
+//   "$"   - US Dollar
+//   "€"   - Euro
+//   "£"   - GBP
+//   "AED " - UAE Dirham, etc.
+//
+// We intentionally only swap the GLYPH, not the locale - the rest of
+// the app stays in Indian numbering (lakh grouping) because that is
+// what the customer base expects regardless of which symbol they see.
+export const CURRENCY_OPTIONS = [
+  { symbol: '₹', label: 'Indian Rupee', code: 'INR' },
+  { symbol: 'Rs ', label: 'Rupee (Rs)', code: 'INR' },
+  { symbol: 'INR ', label: 'INR code', code: 'INR' },
+  { symbol: '$', label: 'US Dollar', code: 'USD' },
+  { symbol: '€', label: 'Euro', code: 'EUR' },
+  { symbol: '£', label: 'British Pound', code: 'GBP' },
+  { symbol: 'AED ', label: 'UAE Dirham', code: 'AED' },
+];
+function currencyPrefix() {
+  try {
+    if (typeof window !== 'undefined') {
+      const v = window.__currencyPrefix;
+      if (typeof v === 'string' && v) return v;
+    }
+  } catch (_) {}
+  return '₹';
+}
+// Public setter so the admin settings page / a startup watcher can
+// publish the current symbol globally. Caller pulls the value from
+// settings/config.currency_symbol and calls this once on load.
+export function setCurrencyPrefix(symbol) {
+  try {
+    if (typeof window !== 'undefined') {
+      window.__currencyPrefix = String(symbol || '₹');
+    }
+  } catch (_) {}
 }

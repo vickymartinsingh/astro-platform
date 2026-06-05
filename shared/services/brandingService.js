@@ -4,6 +4,7 @@
 // no reinstall, no refresh. Cached for instant flash-free paint.
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase.js';
+import { setCurrencyPrefix } from '../money.js';
 
 function applyFavicon(url) {
   if (typeof document === 'undefined' || !url) return;
@@ -28,7 +29,11 @@ export function cachedBranding() {
 export function watchBranding(cb) {
   // Paint cached value instantly.
   const c = cachedBranding();
-  if (c) { applyFavicon(c.favicon || c.logo); if (cb) cb(c); }
+  if (c) {
+    applyFavicon(c.favicon || c.logo);
+    try { setCurrencyPrefix(c.currencySymbol || '₹'); } catch (_) {}
+    if (cb) cb(c);
+  }
   try {
     return onSnapshot(doc(db, 'settings', 'config'), (s) => {
       const d = s.exists() ? s.data() : {};
@@ -36,11 +41,16 @@ export function watchBranding(cb) {
         logo: d.logo || '',
         favicon: d.favicon || d.logo || '',
         name: d.platformName || 'AstroSeer',
+        currencySymbol: d.currency_symbol_custom
+          || d.currency_symbol || '₹',
       };
       try {
         window.localStorage.setItem('appBranding2', JSON.stringify(b));
       } catch (_) {}
       applyFavicon(b.favicon);
+      // Push the admin-configured currency symbol into the money
+      // helpers so every rupees() call across the app uses it.
+      try { setCurrencyPrefix(b.currencySymbol); } catch (_) {}
       if (cb) cb(b);
     }, () => {});
   } catch (_) { return () => {}; }

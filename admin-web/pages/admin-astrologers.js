@@ -82,6 +82,7 @@ const NEW = {
 export default function AdminAstrologers() {
   const { loading } = useRequireAdmin();
   const [rows, setRows] = useState(null);
+  const [showAdd, setShowAdd] = useState(false);
   const [tab, setTab] = useState('all');
   const [form, setForm] = useState(NEW);
   const [adding, setAdding] = useState(false);
@@ -245,9 +246,21 @@ export default function AdminAstrologers() {
 
   return (
     <Layout>
-      <h1 className="mb-3 text-2xl font-bold">Astrologer Management</h1>
+      <div className="mb-3 flex flex-wrap items-center
+        justify-between gap-2">
+        <h1 className="text-2xl font-bold">Astrologer Management</h1>
+        <button onClick={() => setShowAdd((v) => !v)}
+          className="rounded-full bg-primary px-4 py-2 text-sm
+            font-bold text-white">
+          {showAdd ? 'Close add form' : '+ Add new astrologer'}
+        </button>
+      </div>
 
-      {/* Add astrologer */}
+      {/* Add astrologer - only shown when admin explicitly clicks
+          "+ Add new astrologer". Was always rendered inline at the
+          top of the page before, which is why landing on this page
+          felt like the add form auto-opened. */}
+      {showAdd && (
       <div className="surface mb-5 p-4">
         <div className="mb-3 font-semibold">Add a new astrologer</div>
         {msg && (
@@ -392,6 +405,7 @@ export default function AdminAstrologers() {
           first login at the Astrologer portal.
         </p>
       </div>
+      )}
 
       <div className="mb-3 flex flex-wrap gap-2">
         {[

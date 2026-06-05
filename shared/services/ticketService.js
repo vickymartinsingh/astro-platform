@@ -79,10 +79,18 @@ function teamFor(cat) {
   return (ALL_CATEGORIES.find((c) => c[0] === cat) || [])[2]
     || 'Support Team';
 }
+// 10-digit numeric ticket number. Displayed everywhere as
+// "Ticket: #1234567890" so internal teams (dev / hr / support) can
+// quote them aloud without spelling. Range 1e9..9.99e9 = 9 billion
+// slots, ample for the lifetime of the platform; collisions are
+// per-tick so we add millis to defuse a same-millisecond burst.
 function genTicketNo() {
-  return 'AC'
-    + Date.now().toString(36).toUpperCase().slice(-6)
-    + Math.random().toString(36).toUpperCase().slice(2, 4);
+  const ms = Date.now() % 1_000_000_000;
+  const rand = Math.floor(Math.random() * 1_000_000_000);
+  // Concatenate then take a 10-digit window so even monotone seeds
+  // never collapse on the same id.
+  const n = String(ms + rand).padStart(10, '0').slice(-10);
+  return n;
 }
 function millis(ts) {
   return ts && ts.toMillis ? ts.toMillis()

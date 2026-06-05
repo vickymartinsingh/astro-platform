@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { db, adminService } from '@astro/shared';
+import { db, adminService, rupees } from '@astro/shared';
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
@@ -109,18 +109,45 @@ export default function AdminDashboard() {
     return <Layout><div className="surface p-4">Loading…</div></Layout>;
   }
 
+  // Online customer count: any client with status==='online'.
+  // Mirrors the astrologer breakdown so the operator sees the same
+  // "total + currently online" shape on both People tiles.
+  const usersOnline = (allUsers || [])
+    .filter((u) => (u.role || 'client') === 'client'
+      && u.status === 'online').length;
+  // Revenue by window. We already have all transactions in allTxns
+  // (loaded once on mount); just bucket them locally so the tiles
+  // re-render instantly without an extra Firestore round-trip.
+  function revInLast(ms) {
+    const cutoff = Date.now() - ms;
+    return (allTxns || [])
+      .filter((t) => toMs(t.createdAt) >= cutoff
+        && toMs(t.createdAt) >= (m.resetAt || 0))
+      .reduce((a, t) => a + Math.abs(Number(t.amount || 0)), 0);
+  }
+  const revWeek = revInLast(7 * 86400_000);
+  const revMonth = revInLast(30 * 86400_000);
+
   // KPI cards - wide top strip so the operator gets the daily
-  // pulse without scrolling.
+  // pulse without scrolling. Every tile is now a Link → its source
+  // list, so a click on any number jumps straight to the records
+  // that produced it. Sub-line carries a quick breakdown so the
+  // operator doesn't have to drill in for the most useful split.
   const KPIS = [
     { label: 'Total Users', value: m.users,
-      sub: 'across all client accounts', href: '/admin-users' },
+      sub: `${usersOnline} online now`,
+      href: '/admin-user-reach?scope=customer' },
     { label: 'Astrologers', value: m.astros,
       sub: `${m.onlineAstros} online now`,
-      href: '/admin-astrologers' },
-    { label: 'Revenue Today', value: `₹${m.revToday.toFixed(0)}`,
+      href: '/admin-user-reach?scope=astrologer' },
+    { label: 'Revenue Today', value: `${rupees(m.revToday)}`,
       sub: 'paid orders + sessions', href: '/admin-transactions',
       highlight: true },
-    { label: 'Total Revenue', value: `₹${m.revAll.toFixed(0)}`,
+    { label: 'This week', value: `${rupees(revWeek)}`,
+      sub: 'last 7 days', href: '/admin-transactions' },
+    { label: 'This month', value: `${rupees(revMonth)}`,
+      sub: 'last 30 days', href: '/admin-transactions' },
+    { label: 'Total Revenue', value: `${rupees(m.revAll)}`,
       sub: m.resetAt > 0
         ? `since ${new Date(m.resetAt).toLocaleDateString()}`
         : 'lifetime', href: '/admin-transactions' },
@@ -283,7 +310,8 @@ export default function AdminDashboard() {
       )}
 
       {/* KPI strip - high-density daily pulse. */}
-      <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-3
+        xl:grid-cols-6">
         {KPIS.map((k) => (
           <Link key={k.label} href={k.href}
             className={`surface p-4 transition hover:shadow-md

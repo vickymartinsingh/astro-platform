@@ -348,8 +348,11 @@ export default function AdminUserProfile() {
           </div>
           <div className="mt-1 text-xs text-sub-text">
             Joined: <b>{fmtDate(u.createdAt)}</b>
-            {u.userCode ? ` · Code ${u.userCode}` : ''}
-            {' · ID '}<span className="font-mono">{id}</span>
+            {u.userCode
+              ? <> · Code <span className="font-mono">
+                  {u.userCode}</span></>
+              : <> · Code <span className="font-mono">
+                  {String(id).slice(0, 6).toUpperCase()}</span></>}
           </div>
           <div className="mt-2 grid grid-cols-2 gap-2 text-center
             sm:grid-cols-4">

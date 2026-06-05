@@ -202,6 +202,48 @@ export default function AdminSettings() {
               onChange={(e) => setCfg({ ...cfg, [k]: e.target.value })} />
           </div>
         ))}
+
+        {/* CURRENCY SYMBOL. Drives every "₹100" pill across the
+            customer + astrologer + admin apps via the rupees() /
+            rupees2() helpers. Pick one from the curated list OR
+            type any custom string (e.g. "AED ", "SGD "). Saved as
+            settings/config.currency_symbol; the apps read it on
+            boot and rerender every money chip with the new prefix
+            (no redeploy required). */}
+        <div>
+          <label className="text-sm text-sub-text">
+            Display currency
+          </label>
+          <select className="input"
+            value={cfg.currency_symbol || '₹'}
+            onChange={(e) => setCfg({ ...cfg,
+              currency_symbol: e.target.value })}>
+            {[
+              ['₹', 'Indian Rupee  -  ₹'],
+              ['Rs ', 'Rupee (Rs)  -  Rs 100'],
+              ['INR ', 'INR code  -  INR 100'],
+              ['$', 'US Dollar  -  $'],
+              ['€', 'Euro  -  €'],
+              ['£', 'British Pound  -  £'],
+              ['AED ', 'UAE Dirham  -  AED 100'],
+            ].map(([sym, lbl]) => (
+              <option key={lbl} value={sym}>{lbl}</option>
+            ))}
+          </select>
+          <input className="input mt-1" type="text"
+            placeholder="Or type a custom symbol (e.g. 'SGD ')"
+            value={cfg.currency_symbol_custom ?? ''}
+            onChange={(e) => setCfg({ ...cfg,
+              currency_symbol_custom: e.target.value,
+              currency_symbol: e.target.value
+                || cfg.currency_symbol })} />
+          <div className="mt-1 text-[10.5px] text-sub-text">
+            Preview: <span className="font-bold">
+              {(cfg.currency_symbol_custom
+                || cfg.currency_symbol || '₹')}1,00,000
+            </span>
+          </div>
+        </div>
       </div>
 
       {/* Kundli report pricing - every report defined in

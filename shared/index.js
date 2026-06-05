@@ -22,7 +22,9 @@ export {
 export {
   FEATURE_GROUPS, FEATURES, featurePrice, featureById, featureStatus,
 } from './astroFeatures.js';
-export { inr, rupees, rupees2 } from './money.js';
+export {
+  inr, rupees, rupees2, setCurrencyPrefix, CURRENCY_OPTIONS,
+} from './money.js';
 
 export * as authService from './services/authService.js';
 export * as userService from './services/userService.js';
