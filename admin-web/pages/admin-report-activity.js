@@ -446,7 +446,7 @@ export default function AdminReportActivity() {
                     <Link href={`/admin-user-profile/${o.userId}`}
                       className="font-semibold text-primary
                         hover:underline">
-                      {u.name || u.email || o.userId.slice(0, 6)}
+                      {u.name || u.email || u.userCode || '(unknown)'}
                     </Link>
                     {u.email && (
                       <div className="text-[10px] text-sub-text">

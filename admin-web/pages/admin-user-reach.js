@@ -325,8 +325,9 @@ function Row({ u, kind, onClick, onAction }) {
     || u.isBlocked === true;
   const online = u.status === 'online' && !blocked;
   const seenLabel = relTime(lastSeen);
-  const code = u.userCode
-    || String(u.uid || u.id || '').slice(0, 6).toUpperCase();
+  // Code-only IDs: NEVER leak a UID slice as the visible "code".
+  // If the legacy account has no userCode we render nothing here.
+  const code = u.userCode || '';
   // Each action button calls stopPropagation so it never bubbles to
   // the row navigation.
   function fire(e, kind) {
@@ -364,10 +365,12 @@ function Row({ u, kind, onClick, onAction }) {
             font-bold uppercase tracking-wider ${meta.chip}`}>
             {kind}
           </span>
-          <span className="rounded bg-bg-light px-1.5 py-0.5
-            font-mono text-[10px] font-bold text-sub-text">
-            {code}
-          </span>
+          {code && (
+            <span className="rounded bg-bg-light px-1.5 py-0.5
+              font-mono text-[10px] font-bold text-sub-text">
+              {code}
+            </span>
+          )}
           {blocked && (
             <span className="rounded-full bg-red-100 px-2 py-0.5
               text-[10px] font-bold text-red-700">Blocked</span>

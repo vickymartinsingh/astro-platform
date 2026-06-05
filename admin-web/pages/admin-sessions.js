@@ -35,17 +35,30 @@ export default function AdminSessions() {
   const scrollRef = useRef(null);
   const [stickToBottom, setStickToBottom] = useState(true);
 
+  // Resolve a person's display name + 6-char user code. We
+  // intentionally do NOT expose the raw Firebase UID anywhere in
+  // the UI - operator-facing labels are "Name (CODE)" only, per
+  // the standing instruction.
   async function resolveNames(ids) {
     const map = {};
     await Promise.all([...new Set(ids)].filter(Boolean).map(async (id) => {
+      let entry = { name: '-', code: '' };
       try {
         const a = await getDoc(doc(db, 'astrologers', id));
-        if (a.exists() && a.data().name) { map[id] = a.data().name; return; }
+        if (a.exists()) {
+          const d = a.data() || {};
+          entry = { name: d.name || '-', code: d.userCode || '' };
+        }
       } catch (_) {}
       try {
         const u = await getDoc(doc(db, 'users', id));
-        map[id] = (u.exists() && u.data().name) || '-';
-      } catch (_) { map[id] = '-'; }
+        if (u.exists()) {
+          const d = u.data() || {};
+          if (entry.name === '-') entry.name = d.name || '-';
+          if (!entry.code) entry.code = d.userCode || '';
+        }
+      } catch (_) {}
+      map[id] = entry;
     }));
     return map;
   }
@@ -73,7 +86,15 @@ export default function AdminSessions() {
     if (s.createdAt?.toMillis) return s.createdAt.toMillis();
     return now;
   }
-  const nm = (id) => `${names[id] || '…'} (${String(id || '').slice(0, 8)})`;
+  // Render a person as "Name (CODE)" - never "Name (UID)". If we
+  // could not resolve a code (legacy user without one), fall back
+  // to just the name so we still avoid leaking the raw UID.
+  function nm(id) {
+    const e = names[id];
+    if (!e) return '…';
+    if (typeof e === 'string') return e; // tolerate any stale shape
+    return e.code ? `${e.name} (${e.code})` : e.name;
+  }
 
   async function forceEnd(id) {
     if (!window.confirm('Force-end this session?')) return;

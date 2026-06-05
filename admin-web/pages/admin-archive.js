@@ -250,7 +250,9 @@ function ArchiveCard({ a, isOpen, detail, busy, onToggle, onRestore,
     name: a.name || userDoc?.name || '(unknown user)',
     email: a.email || userDoc?.email || '',
     phone: a.phone || userDoc?.phone || '',
-    code: a.userCode || userDoc?.userCode || a.uid?.slice(0, 8) || '',
+    // Code-only IDs: prefer the user's stored 6-char userCode and
+    // NEVER fall back to a raw UID slice in customer-visible labels.
+    code: a.userCode || userDoc?.userCode || '',
     wallet: Number(userDoc?.wallet || 0),
     joinedAt: userDoc?.createdAt || a.userCreatedAt || null,
     role,
@@ -468,7 +470,6 @@ function ExpandedBody({ detail, profile, a }) {
               value={fmtDateOnly(profile.joinedAt) || '—'} />
             <Info label="Reset at" value={fmt(a.createdAt)} />
             <Info label="Archive ID" value={a.id} mono />
-            <Info label="UID" value={a.uid} mono />
             {a.restored && (
               <Info label="Restored at" value={fmt(a.restoredAt)} />
             )}

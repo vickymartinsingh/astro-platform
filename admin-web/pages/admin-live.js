@@ -294,9 +294,9 @@ export default function AdminLive() {
                 <div key={c.id} className="mb-1 text-sm text-white">
                   <span className="font-semibold">
                     {c.name}
-                    {!c.team && c.uid && (
+                    {!c.team && c.userCode && (
                       <span className="opacity-60">
-                        {' '}({String(c.uid).slice(0, 6)})
+                        {' '}({c.userCode})
                       </span>
                     )}:
                   </span>{' '}

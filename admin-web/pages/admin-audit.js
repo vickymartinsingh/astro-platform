@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { db } from '@astro/shared';
 import {
   collection, query, orderBy, limit, onSnapshot,
+  getDoc, doc as fsDoc,
 } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
@@ -33,6 +34,12 @@ export default function AdminAudit() {
   const [rows, setRows] = useState(null);
   const [q, setQ] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
+  // UID -> 6-char userCode resolver. The audit collection only stores
+  // raw UIDs (compliance source of truth), but the operator UI must
+  // never expose them per the standing instruction. We lazily fetch
+  // the matching users/{uid} doc and remember the code so future
+  // renders skip the trip.
+  const [codeMap, setCodeMap] = useState({});
 
   useEffect(() => {
     if (loading) return undefined;
@@ -43,7 +50,25 @@ export default function AdminAudit() {
     const unsub = onSnapshot(query(collection(db, 'logs'),
       orderBy('timestamp', 'desc'), limit(500)),
       (s) => {
-        setRows(s.docs.map((d) => ({ id: d.id, ...d.data() })));
+        const next = s.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setRows(next);
+        // Lazy-resolve any new UIDs into userCodes for display.
+        const need = [...new Set(next.map((r) => r.uid).filter(Boolean))];
+        need.forEach((uid) => {
+          setCodeMap((cur) => {
+            if (cur[uid] !== undefined) return cur;
+            // Mark in-flight immediately so we don't refetch.
+            const nx = { ...cur, [uid]: null };
+            (async () => {
+              try {
+                const u = await getDoc(fsDoc(db, 'users', uid));
+                const c = (u.exists() && u.data().userCode) || '';
+                setCodeMap((cur2) => ({ ...cur2, [uid]: c }));
+              } catch (_) { /* leave null */ }
+            })();
+            return nx;
+          });
+        });
       }, (_e) => setRows([]));
     return () => unsub();
   }, [loading]);
@@ -125,7 +150,7 @@ export default function AdminAudit() {
                 <th className="p-3">Type</th>
                 <th className="p-3">Action</th>
                 <th className="p-3">Role</th>
-                <th className="p-3">UID</th>
+                <th className="p-3">Code</th>
                 <th className="p-3">Target</th>
                 <th className="p-3">IP</th>
               </tr>
@@ -144,7 +169,10 @@ export default function AdminAudit() {
                   <td className="p-3 text-xs">{l.action || '–'}</td>
                   <td className="p-3 text-xs">{l.role || '–'}</td>
                   <td className="p-3 font-mono text-[10px]">
-                    {String(l.uid || '').slice(0, 10) || '–'}
+                    {l.uid
+                      ? (codeMap[l.uid] || (codeMap[l.uid] === null
+                        ? '…' : '–'))
+                      : '–'}
                   </td>
                   <td className="p-3 font-mono text-[10px]
                     break-all">

@@ -43,7 +43,8 @@ export default function AdminHours() {
         const live = hoursService.liveMs(
           liveByAstro[a.id] || [], fromMs, toMs);
         out.push({
-          id: a.id, name: a.name || a.id.slice(0, 8),
+          id: a.id, name: a.name || a.userCode || '(unnamed)',
+          code: a.userCode || '',
           on: h.onlineMs, off: h.offlineMs, live,
         });
       }
@@ -119,9 +120,12 @@ export default function AdminHours() {
                 <tr key={r.id} className="border-t">
                   <td className="p-2">
                     <div className="font-semibold">{r.name}</div>
-                    <div className="text-[11px] text-sub-text">
-                      {r.id.slice(0, 10)}
-                    </div>
+                    {r.code && (
+                      <div className="text-[11px] text-sub-text
+                        font-mono">
+                        {r.code}
+                      </div>
+                    )}
                   </td>
                   <td className="p-2">
                     <span className="text-success">
