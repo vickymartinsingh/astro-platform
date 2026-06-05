@@ -112,9 +112,41 @@ export function blockUser(uid, blocked = true) {
 }
 
 // Permanently delete a user (and their astrologer profile if any).
+//
+// IMPORTANT: we do NOT hard-delete users/{uid}. Hard-deleting only
+// removed the Firestore doc, but Firebase Auth still held the
+// account. The next time that account signed in on ANY device, the
+// client's ensureUserDoc() ran, saw a missing doc, and RECREATED it
+// from scratch - the user reappeared in /admin-users like a ghost.
+// That was the "I deleted them, they came back" bug.
+//
+// New behaviour: mark the doc with status='deleted' (and a tombstone
+// timestamp). ensureUserDoc treats that as a hard NO and signs the
+// account back out; admin lists hide it by default. The doc keeps
+// the original uid so audit / archive recovery still resolves the
+// account, and a future "Restore" admin action can flip the flag.
 export function deleteUser(uid) {
   return tryCloud('adminDeleteUser', { uid }, async () => {
-    await deleteDoc(doc(db, 'users', uid));
+    try {
+      await updateDoc(doc(db, 'users', uid), {
+        status: 'deleted',
+        deletedAt: serverTimestamp(),
+        isBlocked: true,
+      });
+    } catch (e) {
+      // Doc may not exist (rare) - fall back to create-as-tombstone
+      // so a future ensureUserDoc still sees the status='deleted'
+      // signal and refuses to recreate.
+      try {
+        await setDoc(doc(db, 'users', uid), {
+          status: 'deleted',
+          deletedAt: serverTimestamp(),
+          isBlocked: true,
+        }, { merge: true });
+      } catch (_) { /* swallow */ }
+    }
+    // Astrologer doc, if any, is fully removed - the marketplace
+    // listing must not surface a deleted account.
     try { await deleteDoc(doc(db, 'astrologers', uid)); } catch (_) {}
     return { success: true };
   });

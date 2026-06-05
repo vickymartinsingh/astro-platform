@@ -7,6 +7,7 @@ import { flash } from '../lib/flash';
 export default function AdminUsers() {
   const { loading } = useRequireAdmin();
   const [rows, setRows] = useState(null);
+  const [showDeleted, setShowDeleted] = useState(false);
   const [search, setSearch] = useState('');
   const [edit, setEdit] = useState(null); // user being edited
   const [gift, setGift] = useState(null); // user receiving a gift
@@ -113,12 +114,23 @@ export default function AdminUsers() {
         <div className="surface mb-3 bg-success/10 p-3 text-sm
                         text-success">{msg}</div>
       )}
-      <div className="surface mb-3 flex gap-2 p-3">
-        <input className="input flex-1"
+      <div className="surface mb-3 flex flex-wrap items-center
+        gap-2 p-3">
+        <input className="input flex-1 min-w-[200px]"
           placeholder="Search name / email / code" value={search}
           onChange={(e) => setSearch(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && load()} />
         <button onClick={load} className="btn-grad">Search</button>
+        {/* Toggle for soft-deleted accounts. They stay in the DB as
+            tombstones (status='deleted') so an admin can recover or
+            audit them later, but they're hidden by default so the
+            list never re-shows users the admin already removed. */}
+        <label className="flex items-center gap-1.5 text-[12px]
+          font-semibold text-sub-text">
+          <input type="checkbox" checked={showDeleted}
+            onChange={(e) => setShowDeleted(e.target.checked)} />
+          Show deleted
+        </label>
       </div>
 
       <div className="surface overflow-x-auto p-2">
@@ -137,8 +149,13 @@ export default function AdminUsers() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((u) => (
-              <tr key={u.uid} className="border-t">
+            {rows
+              .filter((u) => showDeleted
+                || String(u.status || '').toLowerCase() !== 'deleted')
+              .map((u) => (
+              <tr key={u.uid}
+                className={`border-t ${String(u.status || '')
+                  .toLowerCase() === 'deleted' ? 'opacity-50' : ''}`}>
                 <td className="p-2">{u.name}</td>
                 <td className="p-2">{u.email}</td>
                 <td className="p-2">

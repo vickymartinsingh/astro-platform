@@ -17,6 +17,20 @@ export async function ensureUserDoc(authUser) {
   const snap = await getDoc(ref);
   if (snap.exists()) {
     const u = snap.data();
+    // DELETED-ACCOUNT GUARD. /admin-users.deleteUser flips the doc
+    // to status='deleted' instead of hard-deleting, BECAUSE without
+    // this guard the next sign-in by the same Firebase Auth user
+    // would recreate a fresh doc here and the admin's delete looked
+    // undone. We sign the auth user out immediately and refuse to
+    // return a profile so the rest of the app treats them as a
+    // signed-out guest.
+    if (String(u.status || '').toLowerCase() === 'deleted') {
+      try {
+        const { getAuth, signOut } = await import('firebase/auth');
+        await signOut(getAuth());
+      } catch (_) { /* tolerate */ }
+      return null;
+    }
     // Lazy migration: old long codes (e.g. 9 digits) -> new short
     // 6-char ALL-CAPS alphanumeric, saved to the user's own doc.
     if (!/^[A-Z0-9]{6}$/.test(String(u.userCode || ''))) {

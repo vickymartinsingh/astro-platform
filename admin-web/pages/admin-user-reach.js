@@ -106,15 +106,18 @@ export default function AdminUserReach() {
   useEffect(() => { setPage(1); }, [q, scope]);
 
   // Bucketize once per data load so every count + filter reads
-  // from the same source of truth.
+  // from the same source of truth. Tombstoned users (status='deleted',
+  // set by adminService.deleteUser) are excluded so deleted
+  // accounts never resurface here either.
   const buckets = useMemo(() => {
-    const list = users || [];
+    const live = (users || [])
+      .filter((u) => String(u.status || '').toLowerCase() !== 'deleted');
     return {
-      customer: list.filter((u) => roleOf(u) === 'client'),
+      customer: live.filter((u) => roleOf(u) === 'client'),
       astrologer: astros || [],
-      admin: list.filter((u) => roleOf(u) === 'admin'),
-      support: list.filter((u) => roleOf(u) === 'support'),
-      hr: list.filter((u) => roleOf(u) === 'hr'),
+      admin: live.filter((u) => roleOf(u) === 'admin'),
+      support: live.filter((u) => roleOf(u) === 'support'),
+      hr: live.filter((u) => roleOf(u) === 'hr'),
     };
   }, [users, astros]);
 
