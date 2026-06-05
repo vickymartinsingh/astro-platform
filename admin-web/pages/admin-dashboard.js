@@ -4,6 +4,7 @@ import { db, adminService, rupees } from '@astro/shared';
 import { collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
+import { flash } from '../lib/flash';
 
 // Convert any of Firestore Timestamp / Date / number / undefined into
 // milliseconds. Used by the analytics range filters.
@@ -40,7 +41,16 @@ export default function AdminDashboard() {
   const [allTxns, setAllTxns] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
   const [allSessions, setAllSessions] = useState([]);
-  const [preset, setPreset] = useState('today');
+  // Persist the operator's preferred default range across reloads.
+  // Saved per-browser in localStorage; reset by the "Reset to today"
+  // button below the range chips. Picks 'today' on first ever load.
+  const [preset, setPreset] = useState(() => {
+    try {
+      const v = (typeof window !== 'undefined')
+        && window.localStorage.getItem('adminDashPreset');
+      return v || 'today';
+    } catch (_) { return 'today'; }
+  });
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
 
@@ -470,6 +480,31 @@ function AnalyticsPanel({ users, txns, sessions, preset, setPreset,
           </button>
         </div>
       </div>
+      {/* Set-as-default / Reset row. Saving stores the current range
+          in localStorage; next time the operator opens /admin-
+          dashboard the page lands on that range without a click.
+          Reset blows the override away and returns to "today". */}
+      <div className="mb-3 flex flex-wrap items-center gap-2
+        text-[11px]">
+        <button onClick={() => {
+          try { window.localStorage.setItem('adminDashPreset',
+            preset); } catch (_) {}
+          flash(`Set "${PRESETS.find(([k]) => k === preset)?.[1]
+            || preset}" as the default range.`, 'success');
+        }} className="rounded-full bg-primary px-2.5 py-1 text-[11px]
+          font-bold text-white">
+          Set as default
+        </button>
+        <button onClick={() => {
+          try { window.localStorage.removeItem('adminDashPreset');
+          } catch (_) {}
+          setPreset('today');
+          flash('Default range reset to Today.', 'success');
+        }} className="rounded-full bg-bg-light px-2.5 py-1 text-[11px]
+          font-bold text-sub-text">
+          Reset default
+        </button>
+      </div>
       {preset === 'custom' && (
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <label className="flex items-center gap-1 text-xs">
@@ -488,30 +523,42 @@ function AnalyticsPanel({ users, txns, sessions, preset, setPreset,
           </label>
         </div>
       )}
+      {/* Tiles are <Link>s so a click jumps straight to the source
+          records (users / sessions / transactions) - "clickable
+          dashboard to the source" from the issues doc. */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Tile label="New users" value={stats.newUsers}
-          sub="created in range" />
+          sub="created in range"
+          href="/admin-user-reach?scope=customer" />
         <Tile label="Existing user activity"
           value={stats.existingUserActivity}
-          sub="sessions by older accounts" />
+          sub="sessions by older accounts"
+          href="/admin-sessions" />
         <Tile label="Sessions" value={stats.sessionCount}
-          sub="total in range" />
-        <Tile label="Revenue" value={`₹${stats.rev.toFixed(0)}`}
-          sub="paid sessions + orders" highlight />
+          sub="total in range"
+          href="/admin-sessions" />
+        <Tile label="Revenue" value={`${rupees(stats.rev)}`}
+          sub="paid sessions + orders" highlight
+          href="/admin-transactions" />
       </div>
       <div className="mt-3 grid grid-cols-3 gap-3">
         <Tile label="Chat" value={stats.svc.chat}
-          sub="conversations" />
-        <Tile label="Voice" value={stats.svc.call} sub="calls" />
-        <Tile label="Video" value={stats.svc.video} sub="calls" />
+          sub="conversations" href="/admin-sessions?type=chat" />
+        <Tile label="Voice" value={stats.svc.call} sub="calls"
+          href="/admin-sessions?type=call" />
+        <Tile label="Video" value={stats.svc.video} sub="calls"
+          href="/admin-sessions?type=video" />
       </div>
     </div>
   );
 }
-function Tile({ label, value, sub, highlight }) {
-  return (
-    <div className={`rounded-card border border-gray-200 p-3
-      ${highlight ? 'ring-1 ring-primary/30' : ''}`}>
+function Tile({ label, value, sub, highlight, href }) {
+  const cls = `rounded-card border border-gray-200 p-3 transition
+    ${highlight ? 'ring-1 ring-primary/30' : ''}
+    ${href ? 'hover:shadow-md hover:border-primary cursor-pointer'
+      : ''}`;
+  const inner = (
+    <>
       <div className="text-[10px] uppercase tracking-wider text-sub-text">
         {label}
       </div>
@@ -520,6 +567,10 @@ function Tile({ label, value, sub, highlight }) {
         {value}
       </div>
       <div className="text-[10px] text-sub-text">{sub}</div>
-    </div>
+    </>
   );
+  if (href) {
+    return <Link href={href} className={cls}>{inner}</Link>;
+  }
+  return <div className={cls}>{inner}</div>;
 }

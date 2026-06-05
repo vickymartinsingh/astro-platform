@@ -99,15 +99,68 @@ export default function AdminUserReach() {
     else router.push(`/admin-user-profile/${uid}`);
   }
 
+  // Role partition cards. Each card opens THIS page filtered to
+  // that role (no separate page). The dashboard pattern the user
+  // asked for: land on /admin-user-reach -> see Customer /
+  // Astrologer / Admin / Support / HR boxes, click one to drill,
+  // OR use the search box at the top to find an exact person when
+  // their role is unknown.
+  const roleCards = [
+    { id: 'customer', label: 'Customers',
+      n: customers.length, tone: 'amber' },
+    { id: 'astrologer', label: 'Astrologers',
+      n: (astros || []).length, tone: 'primary' },
+    { id: 'admin', label: 'Admin team',
+      n: (users || []).filter((u) => u.role === 'admin').length,
+      tone: 'slate' },
+    { id: 'support', label: 'Support',
+      n: (users || []).filter((u) => u.role === 'support').length,
+      tone: 'amber' },
+    { id: 'hr', label: 'HR',
+      n: (users || []).filter((u) => u.role === 'hr').length,
+      tone: 'emerald' },
+  ];
+
   return (
     <Layout>
       <h1 className="mb-1 text-2xl font-bold">People</h1>
       <p className="mb-3 text-sm text-sub-text">
-        Every customer and astrologer in one place. Use the scope
-        chips to narrow, type any name, email, phone, user code or
-        UID to search. Click a row to open the full profile with
-        actions (balance, gifts, roles, recordings, reset).
+        Tap a role tile to filter the list. Or search any name,
+        email, phone, user code or UID to find a person whose role
+        you do not yet know.
       </p>
+
+      <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+        {roleCards.map((c) => {
+          const active = scope === c.id
+            || (scope === 'all' && c.id === 'customer'
+              && customerMatches.length > 0);
+          const tint = c.tone === 'primary'
+            ? 'from-[#7F2020] to-[#a83232]'
+            : c.tone === 'emerald'
+              ? 'from-emerald-600 to-emerald-700'
+              : c.tone === 'slate'
+                ? 'from-slate-700 to-slate-800'
+                : 'from-amber-500 to-amber-600';
+          return (
+            <button key={c.id} onClick={() => {
+              setScope(c.id === 'customer' ? 'customer'
+                : c.id === 'astrologer' ? 'astrologer' : 'all');
+              setQ('');
+            }} className={`group rounded-2xl bg-gradient-to-br
+              ${tint} p-3 text-left text-white shadow-sm
+              transition hover:shadow-md ${active
+                ? 'ring-2 ring-white ring-offset-2' : ''}`}>
+              <div className="text-[10px] font-bold uppercase
+                tracking-widest opacity-80">{c.label}</div>
+              <div className="mt-1 text-2xl font-bold">{c.n}</div>
+              <div className="mt-1 text-[10px] opacity-80">
+                Tap to filter
+              </div>
+            </button>
+          );
+        })}
+      </div>
 
       <div className="card mb-3">
         <div className="flex flex-wrap items-center gap-2">

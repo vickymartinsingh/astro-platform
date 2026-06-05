@@ -186,21 +186,71 @@ export default function AdminSessions() {
                   : mon.status}{' '}· ₹{mon.cost || 0}
               </div>
             </div>
-            <div className="flex-1 space-y-2 overflow-y-auto bg-bg-gray p-4">
+            {/* WhatsApp-style chat view. Customer messages right
+                (maroon bubble), astrologer left (white bubble),
+                system center (small grey pill). Each bubble has a
+                12px timestamp. The astrologer name (resolved via
+                the names map) appears once at the top of each
+                consecutive astro-message run, not generic
+                "Astrologer". List auto-scrolls to the bottom on
+                every new message so the operator always sees the
+                most recent first. */}
+            <div ref={(el) => {
+              if (el) { el.scrollTop = el.scrollHeight; }
+            }} className="flex-1 space-y-2 overflow-y-auto
+              bg-[#0F1A2A] p-4">
               {msgs.length === 0 ? (
-                <div className="text-center text-sm text-sub-text">
+                <div className="text-center text-sm text-slate-300">
                   No messages in this conversation.
                 </div>
-              ) : msgs.map((m) => {
-                const who = m.senderId === mon.astroId ? 'Astrologer'
-                  : m.senderId === mon.userId ? 'Client'
-                  : 'System';
+              ) : msgs.map((m, idx) => {
+                const who = m.senderId === mon.astroId ? 'astro'
+                  : m.senderId === mon.userId ? 'client'
+                  : 'system';
+                const prev = msgs[idx - 1];
+                const showName = who === 'astro'
+                  && (!prev || prev.senderId !== m.senderId);
+                const ts = m.createdAt?.toDate
+                  ? m.createdAt.toDate() : null;
+                const time = ts
+                  ? ts.toLocaleTimeString([], { hour: '2-digit',
+                    minute: '2-digit' }) : '';
+                if (who === 'system') {
+                  return (
+                    <div key={m.id} className="text-center">
+                      <span className="inline-block rounded-full
+                        bg-white/10 px-2.5 py-0.5 text-[10.5px]
+                        font-semibold text-slate-300">
+                        {m.text}
+                      </span>
+                    </div>
+                  );
+                }
+                const isClient = who === 'client';
                 return (
-                  <div key={m.id} className="text-sm">
-                    <span className="text-xs font-semibold text-sub-text">
-                      {who}:
-                    </span>{' '}
-                    <span className="whitespace-pre-line">{m.text}</span>
+                  <div key={m.id}
+                    className={`flex ${isClient
+                      ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[78%] rounded-2xl
+                      px-3 py-1.5 text-[13px] shadow-sm
+                      ${isClient
+                        ? 'rounded-br-sm bg-[#7F2020] text-white'
+                        : 'rounded-bl-sm bg-white text-dark-text'}`}>
+                      {showName && (
+                        <div className="text-[10px] font-bold
+                          text-primary">
+                          {names[mon.astroId] || 'Astrologer'}
+                        </div>
+                      )}
+                      <div className="whitespace-pre-line">
+                        {m.text}
+                      </div>
+                      <div className={`mt-0.5 text-right
+                        text-[10px] ${isClient
+                          ? 'text-white/70' : 'text-sub-text'}`}>
+                        {time}
+                      </div>
+                    </div>
                   </div>
                 );
               })}
