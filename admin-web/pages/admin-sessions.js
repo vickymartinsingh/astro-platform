@@ -25,6 +25,15 @@ export default function AdminSessions() {
   const [mon, setMon] = useState(null);             // session being watched
   const [msgs, setMsgs] = useState([]);
   const unsubRef = useRef(null);
+  // Stick-to-bottom state for the live monitor scroll container.
+  // The old code re-set scrollTop=scrollHeight on EVERY render via a
+  // callback ref, so every live-listener tick (or any unrelated state
+  // change) yanked the admin back to the latest message while they
+  // were trying to scroll up. Now we only auto-scroll when the admin
+  // is already near the bottom; if they have scrolled up to read old
+  // messages, new messages append silently.
+  const scrollRef = useRef(null);
+  const [stickToBottom, setStickToBottom] = useState(true);
 
   async function resolveNames(ids) {
     const map = {};
@@ -74,6 +83,8 @@ export default function AdminSessions() {
 
   function openMonitor(s) {
     setMon(s); setMsgs([]);
+    // Fresh chat opens at the bottom (newest message visible).
+    setStickToBottom(true);
     if (unsubRef.current) unsubRef.current();
     const chatId = chatService.conversationId(s.userId, s.astroId);
     // VIEW-ONLY: just a live read of the thread. No writes, no presence,
@@ -85,6 +96,18 @@ export default function AdminSessions() {
     setMon(null); setMsgs([]);
   }
   useEffect(() => () => { if (unsubRef.current) unsubRef.current(); }, []);
+
+  // Auto-scroll the live monitor to the bottom ONLY when the admin is
+  // already there. If they have scrolled up to read older messages,
+  // new messages append silently - no more "yank back to recent on
+  // every tick" behavior.
+  useEffect(() => {
+    if (!mon) return;
+    if (!stickToBottom) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [msgs, mon, stickToBottom]);
 
   // HOOKS-ORDER FIX: all four hooks below (useRouter, useState,
   // useEffect, useMemo) USED to live AFTER the `if (loading) return`
@@ -230,12 +253,18 @@ export default function AdminSessions() {
                 12px timestamp. The astrologer name (resolved via
                 the names map) appears once at the top of each
                 consecutive astro-message run, not generic
-                "Astrologer". List auto-scrolls to the bottom on
-                every new message so the operator always sees the
-                most recent first. */}
-            <div ref={(el) => {
-              if (el) { el.scrollTop = el.scrollHeight; }
-            }} className="flex-1 space-y-2 overflow-y-auto
+                "Astrologer". Scroll behavior: sticks to the bottom
+                while the admin is at the bottom; if the admin
+                scrolls up to read history, new messages append
+                silently (no more auto-yank). */}
+            <div ref={scrollRef}
+              onScroll={(e) => {
+                const el = e.currentTarget;
+                const nearBottom = el.scrollHeight - el.scrollTop
+                  - el.clientHeight < 60;
+                setStickToBottom(nearBottom);
+              }}
+              className="flex-1 space-y-2 overflow-y-auto
               bg-[#0F1A2A] p-4">
               {msgs.length === 0 ? (
                 <div className="text-center text-sm text-slate-300">
