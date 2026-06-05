@@ -32,8 +32,15 @@ export function AuthProvider({ children }) {
       if (unsubProfile) { unsubProfile(); unsubProfile = null; }
       if (teardownPresence) { teardownPresence(); teardownPresence = null; }
       if (u) {
+        try { window.__lastAuthUid = u.uid; } catch (_) {}
         teardownPresence = presenceService.setupPresence(u.uid);
         userService.ensureUserDoc(u).catch(() => {});
+        // Capture lastSeenAt + IP + UA + platform so the admin user
+        // profile shows the freshest signal. setOnline was exported
+        // by userService but had no caller; admins saw stale "last
+        // seen 30 days ago" timestamps. Now it fires on every fresh
+        // sign-in / session resume.
+        userService.setOnline(u.uid).catch(() => {});
         pushService.registerForPush(u.uid).catch(() => {});
         const profSafety = setTimeout(() => {
           try { setLoading(false); } catch (_) {}

@@ -53,9 +53,17 @@ export function AuthProvider({ children }) {
       if (unsubProfile) { unsubProfile(); unsubProfile = null; }
       if (teardownPresence) { teardownPresence(); teardownPresence = null; }
       if (u) {
+        try { window.__lastAuthUid = u.uid; } catch (_) {}
         teardownPresence = presenceService.setupPresence(u.uid);
         // Create the user doc if the Cloud Function hasn't (Spark/no Blaze).
         userService.ensureUserDoc(u).catch(() => {});
+        // PRESENCE + IP/UA/PLATFORM CAPTURE. Was previously declared
+        // but never invoked, so /admin-user-profile/<uid>.lastIp /
+        // lastUserAgent / lastPlatform stayed null forever and admins
+        // saw stale "last seen X days ago" timestamps even when the
+        // customer was actively using the app. setOnline writes the
+        // full client signal block in one call.
+        userService.setOnline(u.uid).catch(() => {});
         // Native apps only: register for lock-screen push (no-op on web).
         pushService.registerForPush(u.uid).catch(() => {});
         // Track which app version this user is on so the admin can
@@ -118,11 +126,36 @@ export function AuthProvider({ children }) {
         setLoading(false);
       }
     });
+    // Re-bump lastSeenAt + the signal block every time the tab
+    // regains focus. Phones in particular fire visibilitychange on
+    // unlock so this picks up "user came back" cheaply.
+    function onVis() {
+      if (typeof document === 'undefined') return;
+      if (document.visibilityState !== 'visible') return;
+      // The freshest auth user is held on a closure via setUser;
+      // re-read by reaching into Firebase auth directly.
+      try {
+        const u = (typeof window !== 'undefined' && window.firebase
+          && window.firebase.auth) ? window.firebase.auth().currentUser
+          : null;
+        const targetUid = (u && u.uid)
+          || (typeof window !== 'undefined' && window.__lastAuthUid);
+        if (targetUid) {
+          userService.setOnline(targetUid).catch(() => {});
+        }
+      } catch (_) {}
+    }
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVis);
+    }
     return () => {
       clearTimeout(safety);
       unsub && unsub();
       unsubProfile && unsubProfile();
       teardownPresence && teardownPresence();
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', onVis);
+      }
     };
   }, []);
 
