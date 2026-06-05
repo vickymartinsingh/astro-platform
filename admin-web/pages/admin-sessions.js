@@ -86,24 +86,29 @@ export default function AdminSessions() {
   }
   useEffect(() => () => { if (unsubRef.current) unsubRef.current(); }, []);
 
-  if (loading || rows == null) {
-    return <Layout><div className="card">Loading…</div></Layout>;
-  }
-
-  // Read the ?type= query param so the dashboard analytics tiles
-  // (Chat / Voice / Video) can deep-link straight to the filtered
-  // view. Default = all. Click chips below to switch interactively.
+  // HOOKS-ORDER FIX: all four hooks below (useRouter, useState,
+  // useEffect, useMemo) USED to live AFTER the `if (loading) return`
+  // early exit on line 89, which violates the Rules of Hooks: on the
+  // initial loading render only six hooks ran, on the post-load render
+  // ten hooks ran, and React production threw #310 ("Rendered more
+  // hooks than during the previous render"). Lifting them above the
+  // early return makes the hook count deterministic per render.
   const router = useRouter();
   const typeFromUrl = typeof router.query.type === 'string'
     ? router.query.type : '';
   const [typeFilter, setTypeFilter] = useState(typeFromUrl);
   useEffect(() => { setTypeFilter(typeFromUrl); }, [typeFromUrl]);
   const filteredRows = useMemo(() => {
+    if (!rows) return [];
     if (!typeFilter) return rows;
     const norm = (typeFilter === 'voice' || typeFilter === 'call')
       ? 'call' : typeFilter;
     return rows.filter((s) => (s.type || 'chat') === norm);
   }, [rows, typeFilter]);
+
+  if (loading || rows == null) {
+    return <Layout><div className="card">Loading…</div></Layout>;
+  }
 
   const live = filteredRows.filter((s) => s.status === 'active'
     || s.status === 'accepted');
