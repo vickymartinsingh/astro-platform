@@ -196,6 +196,10 @@ async function endChatForInactivity(db, sessionId) {
   return out;
 }
 
+// Deploy marker: 2026-06-06T13:00 - Vercel missed every push-relay
+// build since d1031d4 (ping/manualUploadReport/presignManualUpload
+// all returned the legacy fall-through "dob required"). Adding this
+// comment to force a fresh build via the ignoreCommand diff check.
 // Pick the best fallback provider when we can't read settings from
 // Firestore. AstroSeer needs nothing more than its env-var base URL
 // to function, so it's the safest default whenever
