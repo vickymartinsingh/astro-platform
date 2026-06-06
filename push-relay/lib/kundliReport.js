@@ -1267,18 +1267,30 @@ async function _handleReportInner(req, res) {
     // guarantees still apply.
   }
 
-  // 1c. Stuck-order sweeper. Any *_generating order from this user
-  //     older than 5 minutes is considered failed - the relay's
-  //     previous run timed out before the PDF landed. (Threshold
-  //     extended from 90s to 300s on 2026-05-27 to accommodate
-  //     long premium reports like full_life / consolidated_premium
-  //     which legitimately take 60-90s on Render free tier.) Mark it
-  //     failed_timeout AND refund the wallet (paid kinds only) so
-  //     the customer is not stuck with a debit + the admin Order
-  //     Management list does not show "Generating..." indefinitely.
+  // 1c. Stuck-order sweeper. Operator policy (rewritten 2026-06-06):
   //
-  // Best-effort: any error here is swallowed; we still attempt the
-  // fresh generation below.
+  //   - GRACE_MS extended from 300s (5 min) to 4 HOURS. AstroSeer
+  //     hits transient quota / Render cold-start / weasyprint queue
+  //     pressure that can legitimately delay a PDF for hours. The
+  //     previous "fail at 5 min" was eagerly refunding customers
+  //     for reports the API later marked SENT - the operator's
+  //     report: "these reports are already got generated but they
+  //     got refunded and shown as failed."
+  //
+  //   - RESCUE FIRST, REFUND LAST. For every stale order, before
+  //     touching the wallet we ask AstroSeer's status endpoint. If
+  //     it returns {status:'sent', pdf_ready:true} we fetch the
+  //     PDF, push it to R2, mark the order ready, drop a wallet
+  //     notification + an in-app notification, and EXIT - NO
+  //     REFUND. Same idempotency the rescue endpoint uses.
+  //
+  //   - Only after 4 hours have passed AND the rescue attempt did
+  //     not succeed do we tip into failed_refunded.
+  //
+  //   - All failures are swallowed so the sweeper never blocks the
+  //     primary generate path below.
+  const GRACE_MS = 4 * 60 * 60 * 1000;      // 4 hours
+  const RESCUE_AFTER_MS = 2 * 60 * 1000;    // start polling after 2 min
   try {
     const stale = await db.collection('users').doc(uid)
       .collection('orders')
@@ -1291,11 +1303,169 @@ async function _handleReportInner(req, res) {
       const o = d.data() || {};
       const paidMs = (o.paidAt && o.paidAt.toMillis
         && o.paidAt.toMillis()) || 0;
-      if (!paidMs || (now - paidMs) < 300 * 1000) return;
+      const ageMs = paidMs ? (now - paidMs) : 0;
+      // Skip orders too fresh to bother sweeping (covers the normal
+      // happy path where the primary handleReport flow finishes
+      // within ~30-60s).
+      if (!paidMs || ageMs < RESCUE_AFTER_MS) return;
       const refundAmount = Number(o.amount || 0);
       writes.push((async () => {
+        // ---- RESCUE ATTEMPT ----
+        // 1. Ask AstroSeer if the order is SENT + pdf_ready.
+        let astroStatus = null;
+        try {
+          const base = process.env.ASTROSEER_API_URL
+            || 'https://astroseer-api.onrender.com';
+          const sr = await fetch(`${base}/api/orders/`
+            + `${encodeURIComponent(d.id)}/status`,
+          { method: 'GET' });
+          if (sr.ok) astroStatus = await sr.json()
+            .catch(() => null);
+        } catch (_) { /* network blip */ }
+        const isSent = astroStatus
+          && astroStatus.status === 'sent'
+          && astroStatus.pdf_ready;
+        if (isSent) {
+          // 2. Fetch PDF bytes from AstroSeer.
+          let pdfBuf;
+          try {
+            const base = process.env.ASTROSEER_API_URL
+              || 'https://astroseer-api.onrender.com';
+            const pr = await fetch(`${base}/api/orders/`
+              + `${encodeURIComponent(d.id)}/pdf`,
+            { method: 'GET' });
+            if (pr.ok) {
+              pdfBuf = Buffer.from(await pr.arrayBuffer());
+            }
+          } catch (_) { /* leave pdfBuf undefined */ }
+          // 3. Upload to R2 (or Vercel Blob fallback) at a
+          //    deterministic rescue key so re-runs are idempotent.
+          let pdfUrl = null;
+          if (pdfBuf) {
+            const rescueKey = `rescued/${d.id}.pdf`;
+            const r2OK = !!(process.env.R2_ACCOUNT_ID
+              && process.env.R2_ACCESS_KEY_ID
+              && process.env.R2_SECRET_ACCESS_KEY
+              && process.env.R2_BUCKET);
+            if (r2OK) {
+              try {
+                const { S3Client, PutObjectCommand } = require(
+                  '@aws-sdk/client-s3');
+                const client = new S3Client({
+                  region: 'auto',
+                  endpoint: `https://${process.env.R2_ACCOUNT_ID}.`
+                    + 'r2.cloudflarestorage.com',
+                  credentials: {
+                    accessKeyId: process.env.R2_ACCESS_KEY_ID,
+                    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+                  },
+                  forcePathStyle: true,
+                });
+                await client.send(new PutObjectCommand({
+                  Bucket: process.env.R2_BUCKET,
+                  Key: rescueKey,
+                  Body: pdfBuf,
+                  ContentType: 'application/pdf',
+                  CacheControl:
+                    'public, max-age=31536000, immutable',
+                }));
+                const r2Base = process.env.R2_PUBLIC_URL
+                  || `https://${process.env.R2_BUCKET}.r2.dev`;
+                pdfUrl = `${r2Base.replace(/\/+$/, '')}/${rescueKey}`;
+              } catch (_) {}
+            }
+            if (!pdfUrl && process.env.BLOB_READ_WRITE_TOKEN) {
+              try {
+                const { put } = require('@vercel/blob');
+                const blob = await put(rescueKey, pdfBuf, {
+                  access: 'public',
+                  contentType: 'application/pdf',
+                  cacheControlMaxAge: 31536000,
+                  addRandomSuffix: false,
+                });
+                pdfUrl = blob.url;
+              } catch (_) {}
+            }
+          }
+          if (pdfUrl) {
+            // 4. Mark order ready (same shape the primary flow uses)
+            //    and stamp where the rescue came from for forensics.
+            try {
+              await d.ref.update({
+                status: o.kind === 'free'
+                  ? 'ready_rescued' : 'paid_ready',
+                pdfUrl,
+                pdfReadyAt: admin.firestore.FieldValue
+                  .serverTimestamp(),
+                rescuedAt: admin.firestore.FieldValue
+                  .serverTimestamp(),
+                rescueSource: 'sweeper',
+                failReason: admin.firestore.FieldValue.delete(),
+              });
+            } catch (_) {}
+            // 5. In-app notification so the customer sees the
+            //    PDF available without refreshing the orders list.
+            try {
+              await db.collection('notifications').add({
+                userId: uid,
+                type: 'report_ready',
+                title: 'Your report is ready',
+                message: 'We finished generating your report. '
+                  + 'Open Orders to download it.',
+                orderId: d.id,
+                read: false,
+                createdAt: admin.firestore.FieldValue
+                  .serverTimestamp(),
+              });
+            } catch (_) {}
+            // 6. Push notification (best-effort).
+            try {
+              const uSnap = await db.collection('users').doc(uid)
+                .get();
+              const ud = uSnap.exists ? (uSnap.data() || {}) : {};
+              const toks = []
+                .concat(Array.isArray(ud.fcmTokens)
+                  ? ud.fcmTokens : [])
+                .concat(ud.fcmToken ? [ud.fcmToken] : [])
+                .filter(Boolean);
+              if (toks.length) {
+                await admin.messaging().sendEachForMulticast({
+                  tokens: [...new Set(toks)],
+                  notification: {
+                    title: 'Your report is ready',
+                    body: 'Open Orders to download your PDF.',
+                  },
+                  data: { type: 'report_ready', route: '/orders',
+                    orderId: String(d.id) },
+                  android: {
+                    priority: 'high',
+                    notification: {
+                      channelId: 'astro-default', sound: 'default',
+                    },
+                  },
+                });
+              }
+            } catch (_) {}
+            try {
+              logAstroSeerEvent({
+                orderId: d.id,
+                status: 'sent',
+                kind: o.kind,
+                userId: uid,
+                error: 'Rescued by sweeper - no refund.',
+              });
+            } catch (_) {}
+            return; // RESCUED. Do not refund.
+          }
+        }
+        // ---- NOT YET SENT. Decide refund vs leave-for-next-sweep ----
+        // Until 4 hours have passed we leave the order as
+        // *_generating so the next sweep can rescue it. Do NOT
+        // refund eagerly.
+        if (ageMs < GRACE_MS) return;
+        // 4 hours elapsed and AstroSeer still has no PDF. NOW we
+        // can safely refund.
         if (refundAmount > 0) {
-          // Atomic refund + status update.
           try {
             await db.runTransaction(async (tx) => {
               const uRef = db.collection('users').doc(uid);
@@ -1307,13 +1477,13 @@ async function _handleReportInner(req, res) {
               tx.update(d.ref, {
                 status: 'failed_refunded',
                 failedAt: admin.firestore.FieldValue.serverTimestamp(),
-                failReason: 'Generation timed out (>90s); '
-                  + 'wallet auto-refunded.',
+                failReason: 'Generation did not complete within '
+                  + '4 hours; wallet auto-refunded.',
               });
               const txRef = db.collection('transactions').doc();
               tx.set(txRef, {
                 userId: uid, amount: refundAmount, type: 'credit',
-                reason: 'Kundli report refund (generation timeout)',
+                reason: 'Kundli report refund (4h timeout)',
                 referenceId: d.id,
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
               });
@@ -1323,18 +1493,16 @@ async function _handleReportInner(req, res) {
           await d.ref.update({
             status: 'failed',
             failedAt: admin.firestore.FieldValue.serverTimestamp(),
-            failReason: 'Generation timed out (>90s).',
+            failReason: 'Generation did not complete within 4 hours.',
           }).catch(() => {});
         }
-        // Mirror the failure to the AstroSeer central Activity
-        // feed so admin sees the same red rows there too.
         try {
           logAstroSeerEvent({
             orderId: d.id,
             status: 'failed',
             kind: o.kind,
             userId: uid,
-            error: 'Generation timed out (>90s)'
+            error: 'Generation did not complete within 4 hours'
               + (refundAmount > 0 ? '; auto-refunded.' : '.'),
           });
         } catch (_) { /* swallow */ }
@@ -2057,51 +2225,46 @@ async function _handleReportStatusInner(req, res) {
       }
     }
 
-    // Already retried once (or retry POST itself failed). Atomic
-    // refund if this was a paid order that hadn't been marked
-    // failed_refunded yet.
+    // Already retried once (or retry POST itself failed).
+    //
+    // 4-HOUR-GRACE POLICY (rewritten 2026-06-06):
+    //  AstroSeer routinely throws transient errors (RESOURCE_EXHAUSTED
+    //  / Render cold-start / weasyprint queue pressure) that resolve
+    //  themselves minutes-to-hours later. The previous code refunded
+    //  the customer on the FIRST after-retry failure, then the
+    //  sweeper would later see the same order, find the PDF was
+    //  actually SENT, and the operator was stuck with a refunded
+    //  customer + a delivered report. Operator report: "these reports
+    //  are already got generated but they got refunded and shown as
+    //  failed."
+    //
+    //  New rule: do NOT refund here. Stamp the error on the order and
+    //  leave status='paid_generating' (or whatever it was) so the
+    //  4-hour sweeper above (handleReport) and handleSweepPending can
+    //  keep polling AstroSeer. The sweeper rescues the order if
+    //  AstroSeer eventually returns SENT, and only refunds at the
+    //  4-hour deadline if SENT never arrives.
     const chargedAmount = Number(o.amount || 0);
     try {
-      if (chargedAmount > 0 && o.status !== 'failed_refunded') {
-        await db.runTransaction(async (tx) => {
-          const uRef = db.collection('users').doc(uid);
-          const uSnap = await tx.get(uRef);
-          const w = Number((uSnap.data() || {}).wallet || 0);
-          tx.update(uRef, {
-            wallet: w + chargedAmount,
-            updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-          });
-          tx.update(orderRef, {
-            status: 'failed_refunded',
-            failedAt: admin.firestore.FieldValue.serverTimestamp(),
-            failReason: astroStatus.error
-              || 'AstroSeer reported failed after retry.',
-          });
-          const txRef = db.collection('transactions').doc();
-          tx.set(txRef, {
-            userId: uid, amount: chargedAmount, type: 'credit',
-            reason: 'Kundli report refund (generation failed)',
-            referenceId: orderId,
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          });
-        });
-      } else if (o.status !== 'failed') {
-        await orderRef.update({
-          status: 'failed',
-          failedAt: admin.firestore.FieldValue.serverTimestamp(),
-          failReason: astroStatus.error
-            || 'AstroSeer reported failed after retry.',
-        });
-      }
-    } catch (_) { /* refund retry is next poll's job */ }
+      await orderRef.update({
+        lastErrorAt: admin.firestore.FieldValue.serverTimestamp(),
+        lastErrorReason: astroStatus.error
+          || 'AstroSeer reported failed - sweeper will keep polling '
+            + 'for up to 4 hours before deciding.',
+        astroseerRetryCount: retried + 1,
+      });
+    } catch (_) { /* status update is best-effort */ }
     return res.status(200).json({
-      ok: false,
+      ok: true,
       orderId,
-      status: chargedAmount > 0 ? 'failed_refunded' : 'failed',
-      error: astroStatus.error
-        || 'Generation failed after auto-retry.',
-      refunded: chargedAmount > 0,
-      retried: retried >= 1,
+      status: 'generating',
+      retryCount: retried + 1,
+      retried: true,
+      warning: astroStatus.error
+        || 'Generation hiccup - we will keep checking for up to '
+        + '4 hours before deciding.',
+      pendingDecision: true,
+      paidAmount: chargedAmount,
       kind,
     });
   }
