@@ -3,6 +3,9 @@ const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ['@astro/shared'],
   images: { unoptimized: true },
+  // Audit log uses this to label every event - see admin-web
+  // next.config.js for the operator report (2026-06-06).
+  env: { NEXT_PUBLIC_APP: 'customer' },
   // Static export ONLY for the Capacitor APK/iOS build (writes ./out).
   // On Vercel (no CAPACITOR env) it stays a normal Next app -> .next,
   // matching vercel.json so web deployments keep working.

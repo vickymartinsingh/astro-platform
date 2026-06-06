@@ -586,12 +586,21 @@ function Inspector({ l, user }) {
         {m.action && <Kv k="Action" v={m.action} />}
       </Block>
       <Block title="Device / UA" full>
-        <div className="font-mono text-[10px] text-sub-text break-all">
+        {/* break-all keeps the long UA string from forcing a
+            horizontal scroll on the mobile card (operator report
+            2026-06-06: "must be mobile and pc friendly"). */}
+        <div className="font-mono text-[10px] text-sub-text break-all
+          whitespace-pre-wrap">
           {l.ua || '–'}
         </div>
       </Block>
       <Block title="Full meta payload" full>
-        <pre className="max-h-48 overflow-auto rounded bg-bg-light p-2
+        {/* whitespace-pre-wrap + break-all so the JSON wraps inside
+            the card instead of bleeding off the right edge. The
+            overflow-y caps the height and adds an inner scrollbar
+            for very large payloads only. */}
+        <pre className="max-h-48 overflow-y-auto overflow-x-hidden
+          whitespace-pre-wrap break-all rounded bg-bg-light p-2
           font-mono text-[10px] text-sub-text">
 {JSON.stringify(l.meta || {}, null, 2)}
         </pre>
@@ -602,11 +611,11 @@ function Inspector({ l, user }) {
 
 function Block({ title, full, children }) {
   return (
-    <div className={`rounded-2xl border border-gray-200 bg-white p-3
-      ${full ? 'sm:col-span-2' : ''}`}>
+    <div className={`min-w-0 rounded-2xl border border-gray-200
+      bg-white p-3 ${full ? 'sm:col-span-2' : ''}`}>
       <div className="mb-1 text-[10px] font-bold uppercase
         tracking-wider text-sub-text">{title}</div>
-      {children}
+      <div className="min-w-0 overflow-x-hidden">{children}</div>
     </div>
   );
 }

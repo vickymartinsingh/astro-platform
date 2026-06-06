@@ -20,6 +20,15 @@ function endpoint() {
 
 function detectApp() {
   if (typeof window === 'undefined') return 'server';
+  // Highest priority: NEXT_PUBLIC_APP baked in at build time. Each
+  // workspace's next.config.js sets this ('admin' / 'astrologer' /
+  // 'customer') so localhost + Vercel preview domains label
+  // correctly. The old hostname sniff missed localhost entirely and
+  // mis-labeled admin sessions as 'customer' (operator report
+  // 2026-06-06).
+  const env = (typeof process !== 'undefined' && process.env
+    && process.env.NEXT_PUBLIC_APP) || '';
+  if (env) return env;
   const h = String(window.location.hostname || '').toLowerCase();
   if (h.includes('admin')) return 'admin';
   if (h.includes('astro') && !h.includes('astroseer')) return 'astrologer';
