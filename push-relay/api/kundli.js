@@ -918,6 +918,17 @@ module.exports = async (req, res) => {
             catch (_) { return {}; } })()
         : (req.body || {}))
     : (req.query || {});
+  // DEFENSE IN DEPTH: callers can legitimately pass action either in
+  // the JSON body (preferred for POST) OR in the URL query string
+  // (preferred for GET, and a common copy/paste pattern from the
+  // browser address bar). If body.action is missing but query.action
+  // is set, lift it onto src so the dispatcher matches. Without this
+  // fallback the request fell through to the legacy kundli-generate
+  // handler and returned "dob required" - the operator's report on
+  // the manual Upload PDF flow.
+  if (!src.action && req.query && req.query.action) {
+    src.action = String(req.query.action);
+  }
 
   // PDF report action - folded under /api/kundli so the relay stays
   // at 12 serverless functions (Vercel Hobby cap). Caller sends
