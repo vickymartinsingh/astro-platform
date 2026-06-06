@@ -628,48 +628,73 @@ function ManualUploadModal({ state, setState, onSuccess }) {
     }
     patch({ busy: true, msg: '' });
     try {
-      // Read file as base64 and POST to the relay endpoint with
-      // the caller's Firebase ID token so the relay can verify
-      // admin role server-side.
-      const b64 = await new Promise((resolve, reject) => {
-        const r = new FileReader();
-        r.onload = () => {
-          const dataUrl = String(r.result || '');
-          const c = dataUrl.indexOf(',');
-          resolve(c >= 0 ? dataUrl.slice(c + 1) : dataUrl);
-        };
-        r.onerror = () => reject(r.error);
-        r.readAsDataURL(state.file);
-      });
       const { auth } = await import('@astro/shared');
       const cur = auth && auth.currentUser;
       const idToken = cur && await cur.getIdToken();
       const base = (typeof process !== 'undefined' && process.env
         && process.env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
-      const url = (base
+      const kundliUrl = (base
         || 'https://astro-platform-push-relay.vercel.app/api/sendPush')
-        .replace(/\/sendPush\/?$/, '/kundli')
-        + '?action=manualUploadReport';
-      const r = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
-        },
-        body: JSON.stringify({
-          orderId: state.orderId,
-          uid: state.uid,
-          pdfBase64: b64,
-          redebit: !!state.redebit,
-        }),
-      });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) {
+        .replace(/\/sendPush\/?$/, '/kundli');
+      // Step 1: ask the relay for a presigned R2 PUT URL.
+      // Vercel function bodies are capped at 4.5 MB; a 3 MB PDF
+      // becomes 4 MB after base64 and trips that cap. The presigned
+      // URL lets the browser PUT direct to R2 instead.
+      patch({ msg: 'Preparing upload...' });
+      const presignResp = await fetch(
+        `${kundliUrl}?action=presignManualUpload`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+          },
+          body: JSON.stringify({ orderId: state.orderId }),
+        });
+      const presignJ = await presignResp.json().catch(() => ({}));
+      if (!presignResp.ok || !presignJ.uploadUrl) {
         patch({ busy: false,
-          msg: j.error || `Upload failed (HTTP ${r.status}).` });
+          msg: presignJ.error
+            || `Could not prepare upload (HTTP ${presignResp.status}).` });
         return;
       }
-      patch({ busy: false, done: j });
+      // Step 2: PUT to R2 direct.
+      patch({ msg: `Uploading ${(state.file.size / 1024).toFixed(0)} KB...` });
+      const putResp = await fetch(presignJ.uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/pdf' },
+        body: state.file,
+      });
+      if (!putResp.ok) {
+        patch({ busy: false,
+          msg: `R2 upload rejected (HTTP ${putResp.status}).` });
+        return;
+      }
+      // Step 3: finalise the order on the relay (status, re-debit,
+      // notifications, email).
+      patch({ msg: 'Finalising order...' });
+      const finalResp = await fetch(
+        `${kundliUrl}?action=manualUploadReport`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+          },
+          body: JSON.stringify({
+            orderId: state.orderId,
+            uid: state.uid,
+            pdfUrl: presignJ.publicUrl,
+            redebit: !!state.redebit,
+          }),
+        });
+      const j = await finalResp.json().catch(() => ({}));
+      if (!finalResp.ok) {
+        patch({ busy: false,
+          msg: j.error || `Finalise failed (HTTP ${finalResp.status}).` });
+        return;
+      }
+      patch({ busy: false, done: j, msg: '' });
       if (onSuccess) onSuccess(j);
     } catch (e) {
       patch({ busy: false,

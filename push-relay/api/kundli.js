@@ -978,6 +978,96 @@ module.exports = async (req, res) => {
   }
 
   // ----------------------------------------------------------------
+  // Admin presign for a direct-to-R2 PUT.
+  //
+  // Vercel functions have a hard 4.5 MB request-body limit. Base64-
+  // encoded PDFs over ~3 MB raw cross that limit and the browser
+  // gets back a "Failed to fetch" with no CORS header. Instead of
+  // shipping bytes through the relay, we hand the browser a
+  // presigned R2 PUT URL and the file flows direct to Cloudflare -
+  // no Vercel involvement, no size cap.
+  //
+  // POST { action: 'presignManualUpload', orderId }
+  // Auth: Bearer (admin only).
+  // Returns: { uploadUrl, publicUrl, key, expiresInSec }.
+  // ----------------------------------------------------------------
+  if (src.action === 'presignManualUpload'
+    && req.method === 'POST') {
+    if (!initAdmin()) {
+      return res.status(503).json({
+        error: 'admin SDK not configured' });
+    }
+    try {
+      const dbA = admin.firestore();
+      const authz = req.headers.authorization || '';
+      const idToken = authz.startsWith('Bearer ')
+        ? authz.slice(7) : '';
+      if (!idToken) {
+        return res.status(401).json({ error: 'no token' });
+      }
+      const decoded = await admin.auth().verifyIdToken(idToken);
+      const callerSnap = await dbA.collection('users')
+        .doc(decoded.uid).get();
+      const callerData = callerSnap.exists
+        ? (callerSnap.data() || {}) : {};
+      const callerRoles = Array.isArray(callerData.roles)
+        ? callerData.roles : [callerData.role || ''];
+      const isAdmin = callerRoles.includes('admin')
+        || callerData.role === 'admin';
+      if (!isAdmin) {
+        return res.status(403).json({ error: 'not an admin' });
+      }
+      const orderId = String(src.orderId || '').trim();
+      if (!orderId) {
+        return res.status(400).json({ error: 'orderId required' });
+      }
+      const r2OK = !!(process.env.R2_ACCOUNT_ID
+        && process.env.R2_ACCESS_KEY_ID
+        && process.env.R2_SECRET_ACCESS_KEY
+        && process.env.R2_BUCKET);
+      if (!r2OK) {
+        return res.status(503).json({
+          error: 'R2 not configured on the relay' });
+      }
+      // eslint-disable-next-line global-require
+      const { S3Client, PutObjectCommand } = require(
+        '@aws-sdk/client-s3');
+      // eslint-disable-next-line global-require
+      const { getSignedUrl } = require(
+        '@aws-sdk/s3-request-presigner');
+      const client = new S3Client({
+        region: 'auto',
+        endpoint: `https://${process.env.R2_ACCOUNT_ID}.`
+          + 'r2.cloudflarestorage.com',
+        credentials: {
+          accessKeyId: process.env.R2_ACCESS_KEY_ID,
+          secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+        },
+        forcePathStyle: true,
+      });
+      const key = `rescued/${orderId}.pdf`;
+      const cmd = new PutObjectCommand({
+        Bucket: process.env.R2_BUCKET,
+        Key: key,
+        ContentType: 'application/pdf',
+        CacheControl: 'public, max-age=31536000, immutable',
+      });
+      const uploadUrl = await getSignedUrl(client, cmd,
+        { expiresIn: 600 });
+      const r2Base = process.env.R2_PUBLIC_URL
+        || `https://${process.env.R2_BUCKET}.r2.dev`;
+      const publicUrl = `${r2Base.replace(/\/+$/, '')}/${key}`;
+      return res.status(200).json({
+        ok: true, uploadUrl, publicUrl, key,
+        expiresInSec: 600,
+      });
+    } catch (e) {
+      return res.status(400).json({
+        error: String((e && e.message) || e) });
+    }
+  }
+
+  // ----------------------------------------------------------------
   // Admin manual upload of a PDF for an order.
   //
   // Used when AstroSeer has the PDF (status SENT) but the relay's
@@ -1021,19 +1111,11 @@ module.exports = async (req, res) => {
       const orderId = String(src.orderId || '').trim();
       const uid = String(src.uid || '').trim();
       const pdfB64 = String(src.pdfBase64 || '');
+      const providedPdfUrl = String(src.pdfUrl || '').trim();
       const redebit = !!src.redebit;
-      if (!orderId || !uid || !pdfB64) {
+      if (!orderId || !uid || (!pdfB64 && !providedPdfUrl)) {
         return res.status(400).json({
-          error: 'orderId, uid and pdfBase64 are required' });
-      }
-      // Decode the PDF (caller sends base64, optionally with a
-      // data:application/pdf;base64, prefix).
-      const cleaned = pdfB64.replace(
-        /^data:application\/pdf;base64,/, '');
-      const pdfBuf = Buffer.from(cleaned, 'base64');
-      if (!pdfBuf.length || pdfBuf.length > 25 * 1024 * 1024) {
-        return res.status(400).json({
-          error: 'PDF must be between 1 byte and 25 MB.' });
+          error: 'orderId, uid and (pdfBase64 OR pdfUrl) are required' });
       }
       // Load the order doc so we know amount + previous status.
       const orderRef = dbA.collection('users').doc(uid)
@@ -1045,58 +1127,74 @@ module.exports = async (req, res) => {
       const order = orderSnap.data() || {};
       const amount = Number(order.amount || 0);
       const wasRefunded = order.status === 'failed_refunded';
-      // 1) Upload to R2 (or Vercel Blob fallback) at the same
-      //    rescued/{orderId}.pdf key the auto-rescue uses.
+      // 1) Resolve the final PDF URL.
+      // PATH A: caller already uploaded direct to R2 via presigned
+      //   URL (new fast path - avoids Vercel's 4.5MB body limit).
+      //   We just take their URL as the final PDF location.
+      // PATH B: caller sent base64 in body (legacy small-file path).
+      //   We decode and upload here.
       const rescueKey = `rescued/${orderId}.pdf`;
       let pdfUrl = null;
-      const r2OK = !!(process.env.R2_ACCOUNT_ID
-        && process.env.R2_ACCESS_KEY_ID
-        && process.env.R2_SECRET_ACCESS_KEY
-        && process.env.R2_BUCKET);
-      if (r2OK) {
-        try {
-          const { S3Client, PutObjectCommand } = require(
-            '@aws-sdk/client-s3');
-          const client = new S3Client({
-            region: 'auto',
-            endpoint: `https://${process.env.R2_ACCOUNT_ID}.`
-              + 'r2.cloudflarestorage.com',
-            credentials: {
-              accessKeyId: process.env.R2_ACCESS_KEY_ID,
-              secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
-            },
-            forcePathStyle: true,
-          });
-          await client.send(new PutObjectCommand({
-            Bucket: process.env.R2_BUCKET,
-            Key: rescueKey,
-            Body: pdfBuf,
-            ContentType: 'application/pdf',
-            CacheControl: 'public, max-age=31536000, immutable',
-          }));
-          const r2Base = process.env.R2_PUBLIC_URL
-            || `https://${process.env.R2_BUCKET}.r2.dev`;
-          pdfUrl = `${r2Base.replace(/\/+$/, '')}/${rescueKey}`;
-        } catch (e) {
-          return res.status(502).json({
-            error: 'R2 upload failed: '
-              + String((e && e.message) || e) });
+      if (providedPdfUrl) {
+        pdfUrl = providedPdfUrl;
+      } else {
+        const cleaned = pdfB64.replace(
+          /^data:application\/pdf;base64,/, '');
+        const pdfBuf = Buffer.from(cleaned, 'base64');
+        if (!pdfBuf.length || pdfBuf.length > 25 * 1024 * 1024) {
+          return res.status(400).json({
+            error: 'PDF must be between 1 byte and 25 MB.' });
         }
-      }
-      if (!pdfUrl && process.env.BLOB_READ_WRITE_TOKEN) {
-        try {
-          const { put } = require('@vercel/blob');
-          const blob = await put(rescueKey, pdfBuf, {
-            access: 'public',
-            contentType: 'application/pdf',
-            cacheControlMaxAge: 31536000,
-            addRandomSuffix: false,
-          });
-          pdfUrl = blob.url;
-        } catch (e) {
-          return res.status(502).json({
-            error: 'Vercel Blob upload failed: '
-              + String((e && e.message) || e) });
+        const r2OK = !!(process.env.R2_ACCOUNT_ID
+          && process.env.R2_ACCESS_KEY_ID
+          && process.env.R2_SECRET_ACCESS_KEY
+          && process.env.R2_BUCKET);
+        if (r2OK) {
+          try {
+            const { S3Client, PutObjectCommand } = require(
+              '@aws-sdk/client-s3');
+            const client = new S3Client({
+              region: 'auto',
+              endpoint: `https://${process.env.R2_ACCOUNT_ID}.`
+                + 'r2.cloudflarestorage.com',
+              credentials: {
+                accessKeyId: process.env.R2_ACCESS_KEY_ID,
+                secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+              },
+              forcePathStyle: true,
+            });
+            await client.send(new PutObjectCommand({
+              Bucket: process.env.R2_BUCKET,
+              Key: rescueKey,
+              Body: pdfBuf,
+              ContentType: 'application/pdf',
+              CacheControl:
+                'public, max-age=31536000, immutable',
+            }));
+            const r2Base = process.env.R2_PUBLIC_URL
+              || `https://${process.env.R2_BUCKET}.r2.dev`;
+            pdfUrl = `${r2Base.replace(/\/+$/, '')}/${rescueKey}`;
+          } catch (e) {
+            return res.status(502).json({
+              error: 'R2 upload failed: '
+                + String((e && e.message) || e) });
+          }
+        }
+        if (!pdfUrl && process.env.BLOB_READ_WRITE_TOKEN) {
+          try {
+            const { put } = require('@vercel/blob');
+            const blob = await put(rescueKey, pdfBuf, {
+              access: 'public',
+              contentType: 'application/pdf',
+              cacheControlMaxAge: 31536000,
+              addRandomSuffix: false,
+            });
+            pdfUrl = blob.url;
+          } catch (e) {
+            return res.status(502).json({
+              error: 'Vercel Blob upload failed: '
+                + String((e && e.message) || e) });
+          }
         }
       }
       if (!pdfUrl) {

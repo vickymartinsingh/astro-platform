@@ -395,42 +395,74 @@ function ManualUploadModal({ o, onClose, onSuccess }) {
     }
     setBusy(true); setMsg('');
     try {
-      const b64 = await new Promise((resolve, reject) => {
-        const r = new FileReader();
-        r.onload = () => {
-          const s = String(r.result || '');
-          const c = s.indexOf(',');
-          resolve(c >= 0 ? s.slice(c + 1) : s);
-        };
-        r.onerror = () => reject(r.error);
-        r.readAsDataURL(file);
-      });
       const { auth } = await import('@astro/shared');
       const cur = auth && auth.currentUser;
       const idToken = cur && await cur.getIdToken();
       const base = (typeof process !== 'undefined' && process.env
         && process.env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
-      const url = (base
+      const kundliUrl = (base
         || 'https://astro-platform-push-relay.vercel.app/api/sendPush')
-        .replace(/\/sendPush\/?$/, '/kundli')
-        + '?action=manualUploadReport';
-      const r = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
-        },
-        body: JSON.stringify({
-          orderId: o.id, uid: o.userId, pdfBase64: b64,
-          redebit: !!redebit,
-        }),
-      });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        setMsg(j.error || `Upload failed (HTTP ${r.status}).`);
+        .replace(/\/sendPush\/?$/, '/kundli');
+      // Step 1: ask the relay for a presigned R2 PUT URL. This
+      // sidesteps Vercel's 4.5 MB function body limit - the PDF
+      // never travels through the relay, it goes browser -> R2
+      // direct.
+      setMsg('Preparing upload...');
+      const presignResp = await fetch(
+        `${kundliUrl}?action=presignManualUpload`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+          },
+          body: JSON.stringify({ orderId: o.id }),
+        });
+      const presignJ = await presignResp.json().catch(() => ({}));
+      if (!presignResp.ok || !presignJ.uploadUrl) {
+        setMsg(presignJ.error
+          || `Could not prepare upload (HTTP ${presignResp.status}).`);
         setBusy(false); return;
       }
-      setDone(j); setBusy(false);
+      // Step 2: PUT the file to R2 directly. No size limit
+      // applies here - this hits Cloudflare R2's edge, not Vercel.
+      setMsg(`Uploading ${(file.size / 1024).toFixed(0)} KB to R2...`);
+      const putResp = await fetch(presignJ.uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/pdf' },
+        body: file,
+      });
+      if (!putResp.ok) {
+        setMsg(`R2 upload rejected (HTTP ${putResp.status}).`);
+        setBusy(false); return;
+      }
+      // Step 3: tell the relay to finalise the order - mark ready,
+      // re-debit if requested, email + push the customer. The body
+      // is tiny now; only the orderId / uid / pdfUrl / redebit
+      // flags travel through Vercel.
+      setMsg('Finalising order...');
+      const finalResp = await fetch(
+        `${kundliUrl}?action=manualUploadReport`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+          },
+          body: JSON.stringify({
+            orderId: o.id, uid: o.userId,
+            pdfUrl: presignJ.publicUrl,
+            redebit: !!redebit,
+          }),
+        });
+      const finalJ = await finalResp.json().catch(() => ({}));
+      if (!finalResp.ok) {
+        setMsg(finalJ.error
+          || `Finalise failed (HTTP ${finalResp.status}).`);
+        setBusy(false); return;
+      }
+      setMsg('');
+      setDone(finalJ); setBusy(false);
     } catch (e) {
       setMsg(String((e && e.message) || e));
       setBusy(false);
