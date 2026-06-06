@@ -338,6 +338,20 @@ export default function AdminOrders() {
                         try { window.location.reload(); }
                         catch (_) {}
                       }, 700)} />
+                    {/* Debit wallet - standalone action for orders
+                        where the customer's wallet was never charged
+                        (e.g. the prepaid order delivered manually
+                        without the original debit having fired).
+                        Only shown when there is something to debit
+                        and the order has not already been marked
+                        debited. */}
+                    {o.amount > 0 && !o.debited && !o.redebited && (
+                      <DebitWalletButton o={o}
+                        onDone={() => setTimeout(() => {
+                          try { window.location.reload(); }
+                          catch (_) {}
+                        }, 700)} />
+                    )}
                   </div>
                 </div>
               </div>
@@ -349,6 +363,79 @@ export default function AdminOrders() {
       {/* The ManualUploadModal is mounted by the button itself, so
           there is nothing extra to render at the page root. */}
     </Layout>
+  );
+}
+
+// Inline "Debit wallet" button. Used when an order was delivered
+// (or manually attached) but the customer's wallet was never
+// debited - the operator can click this to atomically deduct the
+// order amount + log a transaction row. Skipped when the order
+// already carries debited / redebited flags so we never double-
+// charge.
+function DebitWalletButton({ o, onDone }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  async function run() {
+    const amt = Number(o.amount || 0);
+    if (!amt) return;
+    if (!window.confirm(
+      `Debit ${'₹'}${amt} from ${o.email || 'this customer'}'s `
+        + 'wallet now? This logs a debit transaction with reason '
+        + '"Kundli report (manual delivery)" and links it to '
+        + `order ${o.id}.`)) return;
+    setBusy(true); setMsg('');
+    try {
+      const { db } = await import('@astro/shared');
+      const {
+        doc, runTransaction, serverTimestamp, collection,
+      } = await import('firebase/firestore');
+      const uRef = doc(db, 'users', o.userId);
+      await runTransaction(db, async (tx) => {
+        const uSnap = await tx.get(uRef);
+        const w = Number((uSnap.data() || {}).wallet || 0);
+        const next = Math.max(0, w - amt);
+        tx.update(uRef, {
+          wallet: next,
+          updatedAt: serverTimestamp(),
+        });
+        const txCol = collection(db, 'transactions');
+        tx.set(doc(txCol), {
+          userId: o.userId,
+          amount: -amt,
+          type: 'debit',
+          reason: 'Kundli report (manual delivery)',
+          referenceId: o.id,
+          createdAt: serverTimestamp(),
+        });
+        // Mark the order so we don't offer the button twice.
+        const orderRef = doc(db, 'users', o.userId, 'orders', o.id);
+        tx.update(orderRef, {
+          debited: true,
+          debitedAmount: amt,
+          debitedAt: serverTimestamp(),
+        });
+      });
+      setMsg(`-${'₹'}${amt} debited.`);
+      if (onDone) onDone();
+    } catch (e) {
+      setMsg(String((e && e.message) || e));
+    } finally { setBusy(false); }
+  }
+  return (
+    <>
+      <button type="button" onClick={run} disabled={busy}
+        className="mt-1 block w-full rounded-full border
+          border-danger bg-white px-3 py-1 text-[11px]
+          font-bold text-danger hover:bg-danger/10
+          disabled:opacity-50">
+        {busy ? 'Debiting...' : `Debit ${'₹'}${Number(o.amount || 0)}`}
+      </button>
+      {msg && (
+        <div className="mt-1 text-[10px] font-semibold text-danger">
+          {msg}
+        </div>
+      )}
+    </>
   );
 }
 
