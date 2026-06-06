@@ -139,7 +139,15 @@ export default function UserTransactionsTab({ uid, user }) {
       // Bank convention: amount field already signed in newer rows
       // (debits = negative). Older rows used type='debit' with a
       // positive amount; we treat that as a debit.
-      const delta = (t.type === 'debit' && amt > 0) ? -amt : amt;
+      // RECONCILIATION rows are ignored in the running balance.
+      // They're just audit markers - the real ledger is the recharge
+      // / debit rows. Including them would double-count (the same
+      // bug that inflated wallets in recover-wallet.mjs prior to
+      // 2026-06-06).
+      const isRec = t.category === 'reconciliation';
+      const delta = isRec
+        ? 0
+        : ((t.type === 'debit' && amt > 0) ? -amt : amt);
       bal += delta;
       out.push({ ...t, delta, balanceAfter: bal });
     }
@@ -147,7 +155,9 @@ export default function UserTransactionsTab({ uid, user }) {
     return out.reverse();
   }, [rows]);
 
-  // Totals - drive the breakdown bar at the top.
+  // Totals - drive the breakdown bar at the top. Reconciliation
+  // rows are excluded from credits/debits totals for the same
+  // reason as above; they still count toward the per-category tile.
   const totals = useMemo(() => {
     const t = {
       credits: 0, debits: 0, count: 0,
@@ -155,16 +165,21 @@ export default function UserTransactionsTab({ uid, user }) {
     };
     (rows || []).forEach((r) => {
       const amt = Number(r.amount || 0);
-      const delta = (r.type === 'debit' && amt > 0) ? -amt : amt;
-      if (delta >= 0) t.credits += delta; else t.debits += -delta;
+      const isRec = r.category === 'reconciliation';
+      if (!isRec) {
+        const delta = (r.type === 'debit' && amt > 0) ? -amt : amt;
+        if (delta >= 0) t.credits += delta; else t.debits += -delta;
+      }
       t.count += 1;
       t.byCat[r.category] = (t.byCat[r.category] || 0) + 1;
     });
     return t;
   }, [rows]);
 
-  // Reconcile: sum should equal current wallet.
+  // Reconcile: sum (excluding reconciliation rows) should equal the
+  // current wallet field on users/{uid}.
   const sumBalance = (rows || []).reduce((s, r) => {
+    if (r.category === 'reconciliation') return s;
     const amt = Number(r.amount || 0);
     const delta = (r.type === 'debit' && amt > 0) ? -amt : amt;
     return s + delta;
