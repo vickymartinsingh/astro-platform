@@ -11,19 +11,39 @@ service cloud.firestore {
           .data.role == 'admin';
     }
 
-    // users: a user reads/writes own record; wallet & role stay immutable
-    // from the client (Hard Rule 4 & 6) UNLESS the caller is an admin
-    // (admin panel runs client-side when Cloud Functions are not deployed).
-    // DEMO MODE (no Cloud Functions / Blaze): wallet settlement runs
-    // client-side, so a signed-in user may update their own doc incl.
-    // wallet, and admins may update anyone. Role stays immutable for
-    // non-admins. In production with Cloud Functions deployed, tighten
-    // back to wallet-immutable (Hard Rules 4 & 6).
+    // users: a user reads/writes own record; wallet, role, status,
+    // userCode, isBlocked all stay immutable from the client.
+    //
+    // OPERATOR REPORT (2026-06-06): "Balance is showing zero to the
+    // user, kindly check user was having a balance but now its
+    // showing 0 wallet. This is happening many times to multiple
+    // users." Diagnosis: customer apps on legacy builds were
+    // overwriting users/{uid}.wallet -> 0 via the merge-creation
+    // race in shared/services/userService.js ensureUserDoc. Even
+    // after that source bug was fixed (commit e7a5212) the previous
+    // rules allowed ANY signed-in self-write to wallet so old
+    // installs kept doing the wipe. These rules now reject any
+    // self-write that changes wallet / role / status / userCode /
+    // isBlocked so the legacy clients are blocked at the rule
+    // boundary instead of being trusted to write correctly. All
+    // legitimate wallet writes already go through admin-role paths
+    // (relay admin SDK, adminService.adjustWallet) which match
+    // isAdmin().
     match /users/{uid} {
       allow read: if signedIn();
       allow create: if isSelf(uid) || isAdmin();
-      allow update: if isAdmin() ||
-        (isSelf(uid) && request.resource.data.role == resource.data.role);
+      allow update: if isAdmin()
+        || (isSelf(uid)
+          && (!('wallet' in request.resource.data)
+            || request.resource.data.wallet == resource.data.wallet)
+          && (!('role' in request.resource.data)
+            || request.resource.data.role == resource.data.role)
+          && (!('status' in request.resource.data)
+            || request.resource.data.status == resource.data.status)
+          && (!('userCode' in request.resource.data)
+            || request.resource.data.userCode == resource.data.userCode)
+          && (!('isBlocked' in request.resource.data)
+            || request.resource.data.isBlocked == resource.data.isBlocked));
       allow delete: if isAdmin();
     }
 
