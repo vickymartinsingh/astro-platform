@@ -85,24 +85,20 @@ const ROLE_META = {
   hr: { label: 'HR', accent: 'from-emerald-600 to-emerald-800',
     chip: 'bg-emerald-100 text-emerald-700', avatar: 'bg-emerald-600',
     icon: '\u{1F4BC}' },
-  // Archive + Restore tiles. These don't filter the list; they jump
-  // to /admin-archive prefiltered to the matching state.
-  archive: { label: 'Archive',
+  // Combined Archive + Restore tile. Jumps to /admin-archive
+  // (unfiltered) where the operator can pick between Archived /
+  // Restored chips.
+  archive: { label: 'Archive & restore',
     accent: 'from-amber-500 to-amber-700',
     chip: 'bg-amber-100 text-amber-700', avatar: 'bg-amber-500',
-    icon: '\u{1F4E6}', href: '/admin-archive?filter=archived' },
-  restore: { label: 'Restore',
-    accent: 'from-emerald-600 to-emerald-700',
-    chip: 'bg-emerald-100 text-emerald-700', avatar: 'bg-emerald-600',
-    icon: '\u{267B}\u{FE0F}', href: '/admin-archive?filter=restored' },
+    icon: '\u{1F4E6}', href: '/admin-archive' },
 };
 const SCOPE_ORDER = ['all', 'customer', 'astrologer',
   'admin', 'support', 'hr'];
-// Special tiles that navigate to /admin-archive instead of filtering
-// this list. Rendered alongside the role tiles so the operator can
-// jump straight from People to the deleted-accounts view without
-// having to find /admin-archive in the sidebar.
-const ARCHIVE_TILES = ['archive', 'restore'];
+// Special tile that navigates to /admin-archive instead of filtering
+// this list. Combines Archive + Restore into one card so it stays
+// proportional with the role tiles (7 total now).
+const ARCHIVE_TILES = ['archive'];
 const DEFAULT_SCOPE_KEY = 'astroseer.peopleDefaultScope';
 
 export default function AdminUserReach() {
@@ -274,13 +270,18 @@ export default function AdminUserReach() {
           straight to /admin-archive prefiltered, so deleted accounts
           and restored accounts are one click away from People. */}
       <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4
-        lg:grid-cols-8">
+        lg:grid-cols-7">
         {[...SCOPE_ORDER, ...ARCHIVE_TILES].map((id) => {
           const meta = ROLE_META[id];
           const isArchive = ARCHIVE_TILES.includes(id);
+          // For the combined Archive tile we show TWO numbers
+          // (archived + restored) inside one card. For role tiles
+          // the single bucket count is enough.
+          const archivedCount = archCounts.archived;
+          const restoredCount = archCounts.restored;
+          const totalArch = archivedCount + restoredCount;
           const n = isArchive
-            ? (id === 'archive' ? archCounts.archived
-              : archCounts.restored)
+            ? totalArch
             : id === 'all' ? totalAll
               : (buckets[id] || []).length;
           const active = !isArchive && scope === id;
@@ -309,18 +310,50 @@ export default function AdminUserReach() {
                   <span className="text-[10px] font-bold uppercase
                     tracking-widest opacity-90">{meta.label}</span>
                 </div>
-                <div className="mt-2 text-3xl font-bold leading-none">
-                  {n}
-                </div>
-                <div className="mt-1 text-[10px] opacity-80">
-                  {isArchive ? 'Open archive page'
-                    : active ? 'Filtered to this'
-                      : isDefault ? 'Default scope'
-                        : 'Tap to filter'}
-                </div>
+                {isArchive ? (
+                  <>
+                    <div className="mt-2 flex items-baseline gap-3">
+                      <div>
+                        <div className="text-3xl font-bold leading-none">
+                          {archivedCount}
+                        </div>
+                        <div className="mt-1 text-[9px] font-bold
+                          uppercase tracking-wider opacity-80">
+                          Archived
+                        </div>
+                      </div>
+                      <div className="opacity-50 text-lg leading-none">
+                        {'·'}
+                      </div>
+                      <div>
+                        <div className="text-3xl font-bold leading-none">
+                          {restoredCount}
+                        </div>
+                        <div className="mt-1 text-[9px] font-bold
+                          uppercase tracking-wider opacity-80">
+                          Restored
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-1 text-[10px] opacity-80">
+                      Open archive page
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="mt-2 text-3xl font-bold leading-none">
+                      {n}
+                    </div>
+                    <div className="mt-1 text-[10px] opacity-80">
+                      {active ? 'Filtered to this'
+                        : isDefault ? 'Default scope'
+                          : 'Tap to filter'}
+                    </div>
+                  </>
+                )}
               </button>
-              {/* Star pin only applies to role tiles, not archive
-                  shortcuts (they navigate elsewhere). */}
+              {/* Star pin only applies to role tiles, not the
+                  archive shortcut (which navigates elsewhere). */}
               {!isArchive && (
                 <button onClick={() => saveDefaultScope(
                   isDefault ? 'all' : id)}
