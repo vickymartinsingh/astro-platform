@@ -640,17 +640,20 @@ function ManualUploadModal({ state, setState, onSuccess }) {
       // Vercel function bodies are capped at 4.5 MB; a 3 MB PDF
       // becomes 4 MB after base64 and trips that cap. The presigned
       // URL lets the browser PUT direct to R2 instead.
+      // action MUST live in the BODY for POSTs - the relay reads
+      // src from req.body when method is POST.
       patch({ msg: 'Preparing upload...' });
-      const presignResp = await fetch(
-        `${kundliUrl}?action=presignManualUpload`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
-          },
-          body: JSON.stringify({ orderId: state.orderId }),
-        });
+      const presignResp = await fetch(kundliUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+        },
+        body: JSON.stringify({
+          action: 'presignManualUpload',
+          orderId: state.orderId,
+        }),
+      });
       const presignJ = await presignResp.json().catch(() => ({}));
       if (!presignResp.ok || !presignJ.uploadUrl) {
         patch({ busy: false,
@@ -673,21 +676,20 @@ function ManualUploadModal({ state, setState, onSuccess }) {
       // Step 3: finalise the order on the relay (status, re-debit,
       // notifications, email).
       patch({ msg: 'Finalising order...' });
-      const finalResp = await fetch(
-        `${kundliUrl}?action=manualUploadReport`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
-          },
-          body: JSON.stringify({
-            orderId: state.orderId,
-            uid: state.uid,
-            pdfUrl: presignJ.publicUrl,
-            redebit: !!state.redebit,
-          }),
-        });
+      const finalResp = await fetch(kundliUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+        },
+        body: JSON.stringify({
+          action: 'manualUploadReport',
+          orderId: state.orderId,
+          uid: state.uid,
+          pdfUrl: presignJ.publicUrl,
+          redebit: !!state.redebit,
+        }),
+      });
       const j = await finalResp.json().catch(() => ({}));
       if (!finalResp.ok) {
         patch({ busy: false,

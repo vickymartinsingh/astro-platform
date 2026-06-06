@@ -406,18 +406,22 @@ function ManualUploadModal({ o, onClose, onSuccess }) {
       // Step 1: ask the relay for a presigned R2 PUT URL. This
       // sidesteps Vercel's 4.5 MB function body limit - the PDF
       // never travels through the relay, it goes browser -> R2
-      // direct.
+      // direct. NOTE: action MUST live in the BODY for POSTs; the
+      // relay reads src from req.body when method is POST. Leaving
+      // it only in the query string falls through to the legacy
+      // kundli-generation handler ("dob required").
       setMsg('Preparing upload...');
-      const presignResp = await fetch(
-        `${kundliUrl}?action=presignManualUpload`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
-          },
-          body: JSON.stringify({ orderId: o.id }),
-        });
+      const presignResp = await fetch(kundliUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+        },
+        body: JSON.stringify({
+          action: 'presignManualUpload',
+          orderId: o.id,
+        }),
+      });
       const presignJ = await presignResp.json().catch(() => ({}));
       if (!presignResp.ok || !presignJ.uploadUrl) {
         setMsg(presignJ.error
@@ -441,20 +445,19 @@ function ManualUploadModal({ o, onClose, onSuccess }) {
       // is tiny now; only the orderId / uid / pdfUrl / redebit
       // flags travel through Vercel.
       setMsg('Finalising order...');
-      const finalResp = await fetch(
-        `${kundliUrl}?action=manualUploadReport`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
-          },
-          body: JSON.stringify({
-            orderId: o.id, uid: o.userId,
-            pdfUrl: presignJ.publicUrl,
-            redebit: !!redebit,
-          }),
-        });
+      const finalResp = await fetch(kundliUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+        },
+        body: JSON.stringify({
+          action: 'manualUploadReport',
+          orderId: o.id, uid: o.userId,
+          pdfUrl: presignJ.publicUrl,
+          redebit: !!redebit,
+        }),
+      });
       const finalJ = await finalResp.json().catch(() => ({}));
       if (!finalResp.ok) {
         setMsg(finalJ.error
