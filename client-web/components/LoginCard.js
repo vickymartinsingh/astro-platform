@@ -47,6 +47,44 @@ export default function LoginCard({ onDone, compact, initialMode }) {
   const [resetNewPass, setResetNewPass] = useState('');
   const [resetConfirm, setResetConfirm] = useState('');
   const [resetInfo, setResetInfo] = useState('');
+  // Live phone-validity + duplicate-check state.
+  //   phoneValid: PhoneInput's per-country length check (true once
+  //               the digits are in the right range for the chosen
+  //               country).
+  //   phoneInfo:  details from PhoneInput on every keystroke
+  //               (dialCode, national, length, etc.).
+  //   phoneDup:   {checking, exists, name?} - hydrated by the
+  //               debounced findUserByPhone call so the form can
+  //               show "Number already registered" BEFORE the user
+  //               wastes time on the OTP step.
+  const [phoneValid, setPhoneValid] = useState(false);
+  const [phoneInfo, setPhoneInfo] = useState(null);
+  const [phoneDup, setPhoneDup] = useState({
+    checking: false, exists: false, name: '',
+  });
+
+  // Debounced duplicate check. Fires 600ms after the user stops
+  // typing AND the per-country length is valid. We deliberately do
+  // not check while still invalid to avoid wasted Firestore reads.
+  useEffect(() => {
+    if (mode !== 'signup') return undefined;
+    if (!phoneValid) {
+      setPhoneDup({ checking: false, exists: false, name: '' });
+      return undefined;
+    }
+    const t = setTimeout(async () => {
+      setPhoneDup((p) => ({ ...p, checking: true }));
+      try {
+        const r = await userService.findUserByPhone(phone);
+        setPhoneDup({ checking: false,
+          exists: !!(r && r.exists),
+          name: (r && r.user && r.user.name) || '' });
+      } catch (_) {
+        setPhoneDup({ checking: false, exists: false, name: '' });
+      }
+    }, 600);
+    return () => clearTimeout(t);
+  }, [phone, phoneValid, mode]);
 
   // (Removed) Auto-OTP on mount. Per user: OTP is asked ONLY at
   // signup, never again on subsequent logins. The login flow does
@@ -108,16 +146,29 @@ export default function LoginCard({ onDone, compact, initialMode }) {
     // button in the "Please wait..." state.
     if (mode === 'signup') {
       if (!name.trim()) { setErr('Enter your full name.'); return; }
-      // PhoneInput emits "+CODE NATIONAL"; we just need at least 6
-      // digits in the national part for the number to be plausibly
-      // valid worldwide. The country code is stored alongside.
+      // PhoneInput emits "+CODE NATIONAL" and reports per-country
+      // validity via onValidityChange. Use BOTH the emitted info
+      // (most up-to-date) and a fallback parse so a copy-paste also
+      // works.
       const parts = String(phone || '').trim().split(/\s+/);
-      const dialCode = parts[0] && parts[0].startsWith('+')
-        ? parts[0] : '+91';
-      const nationalDigits = (parts.slice(1).join('') || parts[0] || '')
-        .replace(/\D/g, '');
-      if (nationalDigits.length < 6) {
-        setErr('Enter a valid mobile number.'); return;
+      const dialCode = (phoneInfo && phoneInfo.dialCode)
+        || (parts[0] && parts[0].startsWith('+') ? parts[0] : '+91');
+      const nationalDigits = (phoneInfo && phoneInfo.national
+        ? String(phoneInfo.national).replace(/\D/g, '')
+        : (parts.slice(1).join('') || parts[0] || '').replace(/\D/g, ''));
+      if (!phoneValid) {
+        setErr('Mobile number length does not match the selected '
+          + 'country. Please correct it.');
+        return;
+      }
+      if (phoneDup.exists) {
+        setErr('This number is already registered. Please login or '
+          + 'use a different number.');
+        return;
+      }
+      if (phoneDup.checking) {
+        setErr('Hold on - we are still checking the number...');
+        return;
       }
       if (!gender) {
         setErr('Please select your gender.'); return;
@@ -725,10 +776,27 @@ export default function LoginCard({ onDone, compact, initialMode }) {
                 {/* Country picker + national number. Default +91 India;
                     full world list rendered with flag emoji. Admin can
                     add / remove codes from /admin-country-codes which
-                    propagates here live via watchCountryList. */}
+                    propagates here live via watchCountryList.
+                    onValidityChange feeds the per-country length check
+                    back to this form so we can gate the submit button
+                    on it, and externalNote surfaces the
+                    "already registered" duplicate-check result. */}
                 <PhoneInput value={phone}
                   onChange={setPhone}
-                  placeholder="Mobile number" />
+                  onValidityChange={(v, info) => {
+                    setPhoneValid(v); setPhoneInfo(info);
+                  }}
+                  externalNote={
+                    phoneDup.checking
+                      ? 'Checking if this number is already registered...'
+                      : phoneDup.exists
+                        ? (`This number is already registered`
+                          + (phoneDup.name
+                            ? ` to ${phoneDup.name}` : '')
+                          + '. Please login or use a different number.')
+                        : ''
+                  }
+                  externalTone={phoneDup.checking ? '' : 'error'} />
                 {/* Gender is mandatory so we can offer the right
                     pronouns + a sensibly defaulted kundli profile. */}
                 <div className="flex gap-2">

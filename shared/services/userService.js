@@ -129,6 +129,42 @@ export async function adminSetUserRole(uid, role) {
   await updateDoc(doc(db, 'users', uid), { role });
 }
 
+// Check whether a phone number is already registered, so the signup
+// form can warn "Number already registered" BEFORE creating the
+// Firebase Auth user. We tolerate stored phones in two shapes:
+//   - "+CODE NATIONAL" (new PhoneInput format, e.g. "+44 7700900123")
+//   - bare national digits (legacy IN-only signup, e.g. "9876543210")
+// so the duplicate guard works for both old and new users.
+//
+// Returns { exists: bool, user: {uid, name, email, ...} | null }.
+export async function findUserByPhone(fullPhone) {
+  const raw = String(fullPhone || '').trim();
+  if (!raw) return { exists: false, user: null };
+  // Strip everything to digits; if a leading "+" was given,
+  // separate the dial code from the national portion.
+  const digitsOnly = raw.replace(/\D/g, '');
+  const tail = digitsOnly.slice(-10); // most common national length
+  const candidates = [
+    raw,                                  // exact "+44 7700900123"
+    raw.replace(/\s+/g, ''),              // "+447700900123"
+    digitsOnly,                           // "447700900123"
+    tail,                                 // last 10 digits
+  ].filter(Boolean);
+  for (const candidate of [...new Set(candidates)]) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const snap = await getDocs(query(
+        collection(db, 'users'),
+        where('phone', '==', candidate)));
+      if (!snap.empty) {
+        const d = snap.docs[0];
+        return { exists: true, user: { uid: d.id, ...d.data() } };
+      }
+    } catch (_) { /* tolerate offline / rules / etc. */ }
+  }
+  return { exists: false, user: null };
+}
+
 // Find a user doc by exact email (admin Team Access lookup).
 export async function findUserByEmail(email) {
   const e = String(email || '').trim().toLowerCase();

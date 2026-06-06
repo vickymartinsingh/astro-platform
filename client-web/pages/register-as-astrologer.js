@@ -148,6 +148,11 @@ export default function RegisterAsAstrologer() {
     if (!f.fullName.trim() || !f.email.trim() || !f.phone.trim()) {
       setErr('Name, email and phone are required.'); return;
     }
+    if (!f.phoneValid) {
+      setErr('Mobile number length does not match the selected '
+        + 'country. Please correct it.');
+      return;
+    }
     if (!otp.verified) {
       setErr('Please verify your email with the 6-digit code first.');
       return;
@@ -325,6 +330,7 @@ export default function RegisterAsAstrologer() {
             <F label="Phone *">
               <PhoneInput value={f.phone}
                 onChange={(v) => set('phone', v)}
+                onValidityChange={(v) => set('phoneValid', v)}
                 placeholder="Mobile number" />
             </F>
 

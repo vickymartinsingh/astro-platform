@@ -79,4 +79,5 @@ export {
 export {
   DEFAULT_COUNTRIES, DEFAULT_COUNTRY_CODE, DEFAULT_COUNTRY_ISO,
   buildCountryList, watchCountryList, splitPhone,
+  phoneLenFor, isPhoneValidFor,
 } from './countryCodes.js';
