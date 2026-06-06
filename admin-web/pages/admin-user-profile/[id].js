@@ -13,6 +13,8 @@ import ComplianceActivity from '../../components/ComplianceActivity';
 import ActivityHistory from '../../components/ActivityHistory';
 import UserActionBar from '../../components/UserActionBar';
 import UserRecordingsPanel from '../../components/UserRecordingsPanel';
+import UserTransactionsTab from '../../components/UserTransactionsTab';
+import UserGenerateReportTab from '../../components/UserGenerateReportTab';
 import { useRequireAdmin } from '../../lib/useAuth';
 
 const { sessionRefNo } = sessionService;
@@ -132,6 +134,10 @@ export default function AdminUserProfile() {
   // by the API because that is as per my need".
   const [pdfState, setPdfState] = useState({});   // { [k.id]: 'loading'|result|error-string }
   const [viewer, setViewer] = useState(null);     // { url, name } | null
+  // Tab selector for the new TransactionsTab + GenerateReportTab.
+  // 'overview' keeps the legacy layout (recordings, profile, kundli,
+  // sessions, compliance, danger zone) so muscle memory is intact.
+  const [tab, setTab] = useState('overview');
 
   // Compute the same birthSig the relay uses (push-relay/lib/
   // kundliReport.js line 713) so we can locate the matching
@@ -378,6 +384,21 @@ export default function AdminUserProfile() {
           onChange={(patch) => setU((cur) => ({ ...cur,
             ...(patch && typeof patch === 'object' ? patch : {}) }))} />
       )}
+
+      {/* Tab strip — switches between the original profile/session
+          view and the new Transactions ledger / Generate report
+          tabs. The original layout (Recordings, Profile, etc.)
+          stays under "Overview" so existing operator muscle memory
+          is unchanged. */}
+      <ProfileTabsStrip tab={tab} onTab={setTab} />
+
+      {tab === 'transactions' ? (
+        <UserTransactionsTab uid={id} user={u} />
+      ) : tab === 'generate' ? (
+        <UserGenerateReportTab uid={id} user={u}
+          onCreated={() => setTab('transactions')} />
+      ) : (
+        <>
 
       {/* CALL RECORDINGS for this customer (audio + video). Each
           recording is playable inline; download link opens the R2
@@ -639,6 +660,9 @@ export default function AdminUserProfile() {
         role={(u.role === 'astrologer') ? 'astrologer' : 'client'}
         name={u.name || u.email}
         onDone={() => router.reload()} />
+
+        </>
+      )}
 
       {/* Full-screen PDF viewer overlay, opens when admin clicks
           View PDF / Regenerate. Same component shape used in the
@@ -1300,6 +1324,33 @@ function safeText(v) {
   }
   return String(v);
 }
+// Tab strip on the user profile page. Three tabs:
+//   overview     legacy layout (recordings + profile + sessions +
+//                compliance + danger zone)
+//   transactions bank-style wallet ledger with PDF/CSV export
+//   generate     trigger a kundli report on behalf of this customer
+function ProfileTabsStrip({ tab, onTab }) {
+  const tabs = [
+    ['overview', 'Overview'],
+    ['transactions', 'Transactions'],
+    ['generate', 'Generate report'],
+  ];
+  return (
+    <div className="mt-4 flex flex-wrap gap-1 rounded-full bg-bg-light
+      p-1">
+      {tabs.map(([id, label]) => (
+        <button key={id} onClick={() => onTab(id)}
+          className={`rounded-full px-4 py-1.5 text-xs font-bold
+            transition ${tab === id
+              ? 'bg-white text-primary shadow-sm'
+              : 'text-sub-text hover:text-dark-text'}`}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function cleanMessageText(t) {
   if (typeof t !== 'string') return safeText(t);
   // Replace any literal "[object Object]" that snuck into a system
