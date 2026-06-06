@@ -7,6 +7,7 @@ import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
 import { flash } from '../lib/flash';
+import { InlineRefundButton } from '../components/RefundModal';
 
 // Admin-side view of every kundli PDF order across every customer.
 // Filterable by status + report kind + search-by-name/email. Each row
@@ -351,6 +352,22 @@ export default function AdminOrders() {
                           try { window.location.reload(); }
                           catch (_) {}
                         }, 700)} />
+                    )}
+                    {/* Inline Refund - operator can issue a wallet
+                        credit back to this customer for this order
+                        in two clicks. Hidden when there's nothing to
+                        refund (free order) and when the customer was
+                        never debited (still in the pre-debit state
+                        so use "Cancel" instead). */}
+                    {o.amount > 0 && o.uid && (o.debited || o.redebited) && (
+                      <InlineRefundButton uid={o.uid}
+                        user={{ name: o.userName }}
+                        prefill={{
+                          amount: Number(o.amount || 0),
+                          kind: o.kind === 'order' ? 'order' : 'report',
+                          referenceId: o.id,
+                          narration: '',
+                        }} />
                     )}
                   </div>
                 </div>

@@ -4,6 +4,7 @@ import { db, rupees } from '@astro/shared';
 import {
   collection, query, where, getDocs, orderBy,
 } from 'firebase/firestore';
+import { InlineRefundButton } from './RefundModal';
 
 // Bank-statement-style ledger for a customer. Pulls EVERY row from
 // /transactions where userId == uid (the single source of truth for
@@ -380,14 +381,29 @@ export default function UserTransactionsTab({ uid, user }) {
               <th className="px-3 py-2 text-right">Balance</th>
               <th className="px-3 py-2">Reason</th>
               <th className="px-3 py-2">Source</th>
+              <th className="px-3 py-2 text-right">Action</th>
             </tr>
           </thead>
           <tbody>
             {filtered.length === 0 ? (
-              <tr><td colSpan={6} className="p-4 text-center
+              <tr><td colSpan={7} className="p-4 text-center
                 text-sub-text">No transactions.</td></tr>
             ) : filtered.map((r) => {
               const isCredit = r.delta >= 0;
+              // Inline Refund button on every DEBIT row that's still
+              // a real debit (skip reconciliation noise + already-
+              // refunded rows). Pre-fills source from the category
+              // mapping (session/report/order/etc) and amount from
+              // the debit so the modal opens one click away.
+              const canRefund = !isCredit
+                && r.category !== 'reconciliation'
+                && r.category !== 'refund';
+              const refundKind = ({
+                session: 'chat',     // generic; admin can switch pill
+                report: 'report',
+                adjustment: 'other',
+                voucher: 'other',
+              })[r.category] || 'other';
               return (
                 <tr key={r.id} className="border-t border-gray-100
                   align-top hover:bg-bg-light/40">
@@ -415,6 +431,16 @@ export default function UserTransactionsTab({ uid, user }) {
                   </td>
                   <td className="px-3 py-2 text-[12px]">
                     <SourceLink t={r} />
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    {canRefund ? (
+                      <InlineRefundButton uid={uid} user={user}
+                        prefill={{
+                          amount: Math.abs(r.delta),
+                          kind: refundKind,
+                          referenceId: r.referenceId || '',
+                        }} />
+                    ) : null}
                   </td>
                 </tr>
               );

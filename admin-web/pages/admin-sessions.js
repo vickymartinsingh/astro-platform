@@ -6,6 +6,7 @@ import {
 } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
+import { InlineRefundButton } from '../components/RefundModal';
 
 const fmt = (secs) => {
   const s = Math.max(0, Math.floor(secs));
@@ -238,8 +239,28 @@ export default function AdminSessions() {
                     ? s.createdAt.toDate().toLocaleString() : ''}
                 </td>
                 <td className="p-2">
-                  <button onClick={() => openMonitor(s)}
-                    className="text-primary">View</button>
+                  <div className="flex flex-wrap items-center
+                    gap-2">
+                    <button onClick={() => openMonitor(s)}
+                      className="text-primary">View</button>
+                    {/* Refund the customer for THIS session/chat/call
+                        - one-click pre-filled. Skipped when cost is 0
+                        or session never billed. The Source pill
+                        defaults to the session type (chat/call/video)
+                        so the customer sees a coherent statement. */}
+                    {Number(s.cost || 0) > 0 && s.userId
+                      && s.status === 'ended' && (
+                      <InlineRefundButton uid={s.userId}
+                        user={{ name: nm(s.userId) }}
+                        prefill={{
+                          amount: Number(s.cost || 0),
+                          kind: (s.type === 'call' || s.type === 'video'
+                            || s.type === 'chat')
+                            ? s.type : 'chat',
+                          referenceId: s.friendlyId || s.id,
+                        }} />
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
