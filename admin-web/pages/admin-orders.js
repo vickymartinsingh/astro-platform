@@ -314,6 +314,17 @@ export default function AdminOrders() {
                         one-click way to recover stuck or stale PDFs
                         from inside Order Management. */}
                     <RegenerateButton o={o} u={u} />
+                    {/* Manual upload - operator pulls the PDF from
+                        AstroSeer manually (when it's marked SENT in
+                        the API but our auto-flow couldn't deliver)
+                        and attaches it here. If the order was
+                        previously refunded, the modal offers to
+                        re-debit the wallet in the same submit. */}
+                    <ManualUploadButton o={o}
+                      onDone={() => setTimeout(() => {
+                        try { window.location.reload(); }
+                        catch (_) {}
+                      }, 700)} />
                   </div>
                 </div>
               </div>
@@ -321,7 +332,220 @@ export default function AdminOrders() {
           })}
         </div>
       )}
+
+      {/* The ManualUploadModal is mounted by the button itself, so
+          there is nothing extra to render at the page root. */}
     </Layout>
+  );
+}
+
+// Inline "Upload PDF" button + the modal it opens. Lives next to the
+// Regenerate button on every order row. On submit the modal POSTs to
+// /api/kundli?action=manualUploadReport with the operator's Firebase
+// token; the relay verifies admin role, stores the PDF in R2 at the
+// same rescue key the auto-rescue uses, optionally re-debits the
+// wallet, marks the order ready, and emails + pushes the customer.
+function ManualUploadButton({ o, onDone }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}
+        className="mt-1 block w-full rounded-full border
+          border-primary bg-white px-3 py-1 text-[11px]
+          font-bold text-primary hover:bg-primary/10">
+        Upload PDF
+      </button>
+      {open && (
+        <ManualUploadModal o={o}
+          onClose={() => setOpen(false)}
+          onSuccess={() => { setOpen(false); onDone && onDone(); }} />
+      )}
+    </>
+  );
+}
+
+function ManualUploadModal({ o, onClose, onSuccess }) {
+  const amount = Number(o.amount || 0);
+  const wasRefunded = o.status === 'failed_refunded';
+  const [file, setFile] = useState(null);
+  const [redebit, setRedebit] = useState(wasRefunded && amount > 0);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [done, setDone] = useState(null);
+
+  async function submit() {
+    if (!file) { setMsg('Please choose a PDF file.'); return; }
+    if (file.type !== 'application/pdf'
+      && !/\.pdf$/i.test(file.name)) {
+      setMsg('File must be a PDF.'); return;
+    }
+    if (file.size > 25 * 1024 * 1024) {
+      setMsg('PDF must be under 25 MB.'); return;
+    }
+    // Belt + braces: confirm the re-debit decision before charging.
+    if (wasRefunded && amount > 0) {
+      const confirmed = window.confirm(
+        redebit
+          ? `Re-debit ${'₹'}${amount} from the customer's wallet `
+            + 'now? (They were refunded earlier when the order '
+            + 'looked failed.)'
+          : 'Upload WITHOUT re-debiting? The customer will receive '
+            + 'this report as goodwill (no wallet movement).');
+      if (!confirmed) return;
+    }
+    setBusy(true); setMsg('');
+    try {
+      const b64 = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => {
+          const s = String(r.result || '');
+          const c = s.indexOf(',');
+          resolve(c >= 0 ? s.slice(c + 1) : s);
+        };
+        r.onerror = () => reject(r.error);
+        r.readAsDataURL(file);
+      });
+      const { auth } = await import('@astro/shared');
+      const cur = auth && auth.currentUser;
+      const idToken = cur && await cur.getIdToken();
+      const base = (typeof process !== 'undefined' && process.env
+        && process.env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
+      const url = (base
+        || 'https://astro-platform-push-relay.vercel.app/api/sendPush')
+        .replace(/\/sendPush\/?$/, '/kundli')
+        + '?action=manualUploadReport';
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+        },
+        body: JSON.stringify({
+          orderId: o.id, uid: o.userId, pdfBase64: b64,
+          redebit: !!redebit,
+        }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setMsg(j.error || `Upload failed (HTTP ${r.status}).`);
+        setBusy(false); return;
+      }
+      setDone(j); setBusy(false);
+    } catch (e) {
+      setMsg(String((e && e.message) || e));
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center
+      bg-black/50 p-4" onClick={() => !busy && onClose()}>
+      <div className="w-full max-w-md rounded-card bg-white p-5
+        shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-bold">
+          {done ? 'Uploaded' : 'Manual report upload'}
+        </h3>
+        <p className="mt-1 text-xs text-sub-text">
+          Order <span className="font-mono">{o.id}</span>{' '}
+          {'·'} {o.kind || 'report'} {'·'}{' '}
+          {amount > 0 ? `₹${amount}` : 'free'}{' '}
+          {wasRefunded && (
+            <span className="font-semibold text-amber-700">
+              {'· '}previously refunded
+            </span>
+          )}
+        </p>
+        {done ? (
+          <div className="mt-4 space-y-2 text-sm">
+            <div className="rounded-card bg-emerald-50 p-3
+              text-emerald-700">
+              <div className="font-bold">
+                PDF delivered. Order now Ready.
+              </div>
+              <div className="mt-1 text-xs">
+                <a href={done.pdfUrl} target="_blank"
+                  rel="noreferrer" className="underline">
+                  Open PDF
+                </a>
+              </div>
+            </div>
+            {done.redebited && (
+              <div className="rounded-card bg-amber-50 p-3 text-xs
+                text-amber-800">
+                Re-debited ₹{done.redebitedAmount} from wallet
+                (previously refunded).
+              </div>
+            )}
+            <div className="rounded-card border border-gray-200 p-3
+              text-xs text-sub-text">
+              Customer notification + push fired. Email sent.
+            </div>
+            <div className="flex justify-end pt-2">
+              <button onClick={() => { onClose(); onSuccess(); }}
+                className="rounded-full bg-bg-light px-4 py-2
+                  text-sm font-semibold">Done</button>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-4 space-y-3">
+            <div className={`rounded-card p-3 text-xs ${wasRefunded
+              ? 'bg-amber-50 text-amber-800'
+              : 'bg-bg-light/60 text-sub-text'}`}>
+              {wasRefunded
+                ? `This order was refunded ${'₹'}${amount} earlier. `
+                  + 'If the report has been delivered now, tick '
+                  + '"Re-debit wallet" to charge the customer again.'
+                : 'Order is currently '
+                  + (o.status === 'paid_generating'
+                    ? 'generating' : o.status)
+                  + '. Upload alone will deliver the PDF.'}
+            </div>
+            <label className="block">
+              <span className="text-xs font-semibold text-sub-text">
+                PDF file (max 25 MB)
+              </span>
+              <input className="mt-1 block w-full text-sm"
+                type="file" accept="application/pdf,.pdf"
+                onChange={(e) => setFile(
+                  e.target.files && e.target.files[0])} />
+              {file && (
+                <div className="mt-1 text-[11px] text-sub-text">
+                  {file.name} {'·'}{' '}
+                  {(file.size / 1024).toFixed(0)} KB
+                </div>
+              )}
+            </label>
+            {wasRefunded && amount > 0 && (
+              <label className="flex items-start gap-2 rounded-card
+                border border-amber-300 bg-amber-50 p-2">
+                <input type="checkbox" checked={redebit}
+                  onChange={(e) => setRedebit(e.target.checked)}
+                  className="mt-0.5" />
+                <span className="text-xs text-amber-900">
+                  Re-debit ₹{amount} from the customer's wallet now
+                  (refund will be undone). Untick to deliver as
+                  goodwill with no wallet movement.
+                </span>
+              </label>
+            )}
+            {msg && (
+              <div className="rounded-card bg-danger/10 p-2 text-xs
+                font-semibold text-danger">{msg}</div>
+            )}
+            <div className="flex justify-end gap-2">
+              <button onClick={onClose} disabled={busy}
+                className="rounded-full bg-bg-light px-4 py-2
+                  text-sm font-semibold">Cancel</button>
+              <button onClick={submit}
+                disabled={busy || !file}
+                className="rounded-full bg-primary px-4 py-2 text-sm
+                  font-bold text-white disabled:opacity-60">
+                {busy ? 'Uploading...' : 'Upload + deliver'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
