@@ -52,6 +52,23 @@ export async function ensureUserDoc(authUser) {
       authUser.displayName || authUser.email);
   } catch { userCode = randCode(6); }
 
+  // WALLET-RACE FIX 2026-06-06: do NOT include wallet here.
+  //
+  // Earlier code wrote `wallet: 0` as part of the merge-first-creation
+  // payload. Between this function's getDoc (line ~17) and setDoc
+  // (line ~80) a parallel welcome-bonus credit can land - then this
+  // merge OVERWRITES the just-credited amount back to 0, and the
+  // customer's wallet appears empty even though the transactions
+  // ledger shows the credit (matches the operator's repeated report
+  // "wallet shows 0 even though they had money"). The audit run
+  // showed 6 affected customers totaling Rs 3,632 in lost wallet,
+  // all credited via transactions but zeroed by this code path.
+  //
+  // Fix: omit the wallet field entirely. All read sites already use
+  // Number(u.wallet || 0) so undefined is treated as 0 - no
+  // downstream change needed. Wallet starts existing only after the
+  // first credit (welcome bonus, recharge, gift card, etc.) which
+  // can never race against this code now.
   const data = {
     name: authUser.displayName || '',
     email: authUser.email || '',
@@ -59,7 +76,6 @@ export async function ensureUserDoc(authUser) {
     // Owner emails are always admin; never downgrade them to client.
     role: isAdminEmail(authUser.email) ? 'admin' : 'client',
     userCode,
-    wallet: 0,
     isOnline: true,
     isOnCall: false,
     isBlocked: false,
