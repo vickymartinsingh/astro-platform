@@ -206,6 +206,14 @@ export default function AdminUserReach() {
   function inDateWindow(u) {
     if (!createdFrom || !createdTo) return true;
     const ms = toMs(u.createdAt);
+    // Operator 2026-06-06: "i tried clicking on it and it was even
+    // showing me the earlier date users". Root cause: a user with
+    // a missing or 0 createdAt produced ms === 0 which satisfied
+    // ms >= createdFrom for any window (since createdFrom is a
+    // huge epoch ms). Excluding ms === 0 fixes the leak so the
+    // tile click only shows users whose creation timestamp falls
+    // inside the requested calendar window.
+    if (!ms) return false;
     return ms >= createdFrom && ms < createdTo;
   }
   // Bucketize once per data load so every count + filter reads
@@ -551,87 +559,102 @@ function Row({ u, kind, first, onClick, onAction }) {
     e.preventDefault(); e.stopPropagation();
     if (onAction) onAction(k);
   }
+  // Operator 2026-06-06: "make this more neat and compact, it should
+  // show the last seen, wallet balance, all must be same size and
+  // same fit." The old row varied in height (phone present vs not)
+  // and hid wallet+last-seen behind `lg:`. The new layout has a
+  // fixed 3-line block so every card is identical, with the meta
+  // strip always present on every breakpoint.
   return (
     <div onClick={onClick}
       className={`group relative cursor-pointer transition
         hover:bg-bg-light/40 ${first ? '' : 'border-t border-gray-100'}`}>
-      <div className="flex items-center gap-4 px-5 py-4">
-        {/* Avatar + presence dot - 44px gives the row visual weight */}
+      <div className="flex items-center gap-3 px-3 py-2.5 sm:px-4">
+        {/* Avatar - compact, fixed 36px so every row aligns */}
         <div className="relative shrink-0">
-          <span className={`flex h-11 w-11 items-center justify-center
-            rounded-full text-base font-bold text-white shadow-sm
+          <span className={`flex h-9 w-9 items-center justify-center
+            rounded-full text-sm font-bold text-white shadow-sm
             ${meta.avatar}`}>
             {(u.name || u.email || '?').charAt(0).toUpperCase()}
           </span>
           {online && (
             <span title="Online"
-              className="absolute -bottom-0.5 -right-0.5 grid h-3.5
-              w-3.5 place-items-center rounded-full border-2
-              border-white bg-emerald-500" />
+              className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5
+              rounded-full border-2 border-white bg-emerald-500" />
           )}
           {blocked && (
             <span title="Blocked"
-              className="absolute -bottom-0.5 -right-0.5 grid h-3.5
-              w-3.5 place-items-center rounded-full border-2
-              border-white bg-red-500" />
+              className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5
+              rounded-full border-2 border-white bg-red-500" />
           )}
         </div>
 
-        {/* Identity column */}
+        {/* Identity column - exactly 3 lines so all rows match */}
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="truncate text-[15px] font-semibold
+          {/* Line 1: name + chips */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="truncate text-[13px] font-bold
               text-dark-text">{u.name || '(no name)'}</span>
-            <span className={`rounded-full px-2 py-0.5 text-[9.5px]
+            <span className={`rounded-full px-1.5 py-0.5 text-[9px]
               font-bold uppercase tracking-wider ${meta.chip}`}>
               {kind === 'astrologer' ? 'astro'
                 : kind === 'customer' ? 'client' : kind}
             </span>
             {code && (
-              <span className="rounded-md bg-bg-light px-1.5 py-0.5
-                font-mono text-[10.5px] font-bold text-sub-text">
+              <span className="rounded bg-bg-light px-1 py-0.5
+                font-mono text-[9px] font-bold text-sub-text">
                 {code}
               </span>
             )}
             {blocked && (
-              <span className="rounded-full bg-red-100 px-2 py-0.5
-                text-[10px] font-bold text-red-700">Blocked</span>
+              <span className="rounded-full bg-red-100 px-1.5 py-0.5
+                text-[9px] font-bold text-red-700">Blocked</span>
             )}
           </div>
-          <div className="mt-1 flex flex-wrap items-center gap-x-3
-            gap-y-0.5 truncate text-[12px] text-sub-text">
-            {u.email && (
-              <Field icon={'✉'} value={u.email}
-                verified={!!(u.emailVerified || u.verifiedEmail)} />
+          {/* Line 2: email (always present so rows align) */}
+          <div className="mt-0.5 truncate text-[11px] text-sub-text">
+            <span className="mr-1">✉</span>
+            {u.email || '–'}
+          </div>
+          {/* Line 3: meta strip - wallet + last seen + phone. Always
+              rendered so every row is the same height. */}
+          <div className="mt-0.5 flex flex-wrap items-center
+            gap-x-2 gap-y-0 text-[10.5px] text-sub-text">
+            {kind === 'customer' && (
+              <span>
+                <span className="font-bold text-emerald-700">
+                  ₹{balance.toFixed(0)}
+                </span>{' '}
+                <span className="opacity-70">wallet</span>
+              </span>
             )}
+            {kind === 'astrologer' && (
+              <span>
+                <span className="font-bold text-amber-700">
+                  {rating ? rating.toFixed(1) : '–'}
+                </span>{' '}
+                <span className="opacity-70">★</span>
+              </span>
+            )}
+            <span className="opacity-40">·</span>
+            <span>
+              <span className={`font-semibold ${
+                seenLabel === 'just now'
+                  || seenLabel.endsWith('m ago')
+                  || seenLabel.startsWith('Today')
+                  ? 'text-emerald-700'
+                  : seenLabel.startsWith('Yest')
+                    ? 'text-amber-700' : 'text-sub-text'}`}>
+                {seenLabel || 'never'}
+              </span>
+            </span>
             {u.phone && (
-              <Field icon={'☎'} value={u.phone}
-                verified={!!(u.phoneVerified || u.verifiedPhone)} />
+              <>
+                <span className="opacity-40">·</span>
+                <span className="truncate">☎ {u.phone}</span>
+              </>
             )}
           </div>
-        </div>
-
-        {/* Stat columns - quieter, only on wide screens */}
-        <div className="hidden shrink-0 items-center gap-6 text-right
-          text-[11px] lg:flex">
-          {kind === 'customer' && (
-            <Stat label="Wallet"
-              value={`₹${balance.toFixed(0)}`}
-              tone="emerald" />
-          )}
-          {kind === 'astrologer' && (
-            <Stat label="Rating"
-              value={rating ? rating.toFixed(1) : '–'}
-              tone="amber" />
-          )}
-          <Stat label="Last seen"
-            value={seenLabel || 'never'}
-            tone={seenLabel.startsWith('Today')
-              || seenLabel === 'just now'
-              || seenLabel.endsWith('m ago')
-              ? 'emerald'
-              : seenLabel.startsWith('Yest')
-                ? 'amber' : 'gray'} />
         </div>
 
         {/* Icon action strip - reads clean at rest (subtle grey

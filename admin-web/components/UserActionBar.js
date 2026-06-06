@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { adminService, authService } from '@astro/shared';
 import RefundModal from './RefundModal';
+import GiftCardPreview from './GiftCardPreview';
 
 // Action bar that lives on the admin user profile (and could mount on
 // the astrologer profile too). Every action has a confirmation modal
@@ -27,6 +28,9 @@ export default function UserActionBar({ uid, user, onChange }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [success, setSuccess] = useState('');
+  // { code, amount } | null - shows the visual gift-card popup with
+  // download-as-JPG + redeem instructions when set.
+  const [giftCardPreview, setGiftCardPreview] = useState(null);
 
   const blocked = user?.status === 'blocked' || user?.isBlocked === true;
   const deleted = !!user?.deleted;
@@ -74,9 +78,14 @@ export default function UserActionBar({ uid, user, onChange }) {
     }
     await run(async () => {
       const r = await adminService.createGiftCard(amt);
-      setCode((r && (r.code || r.giftCode)) || '');
+      const c = (r && (r.code || r.giftCode)) || '';
+      setCode(c);
+      // Open the visual gift-card popup so the admin can download
+      // the JPG + share. Operator 2026-06-06: "make it downloadable
+      // in JPG, popup with close button + redeem instructions."
+      if (c) setGiftCardPreview({ code: c, amount: amt });
       return r;
-    }, 'Gift card created. Copy the code below.');
+    }, 'Gift card created.');
   }
   async function doVoucher() {
     const amt = Math.round(Number(amount) || 0);
@@ -179,6 +188,11 @@ export default function UserActionBar({ uid, user, onChange }) {
             setSuccess(`Refund ₹${out?.after - out?.before} credited.`);
             if (typeof onChange === 'function') onChange(out);
           }} />
+      )}
+      {giftCardPreview && (
+        <GiftCardPreview code={giftCardPreview.code}
+          amount={giftCardPreview.amount}
+          onClose={() => setGiftCardPreview(null)} />
       )}
       {modal === 'gift' && (
         <ActionModal title="Issue gift card"
