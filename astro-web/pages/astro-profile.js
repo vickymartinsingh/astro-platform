@@ -174,25 +174,13 @@ export default function AstroProfile() {
         </button>
       </div>
 
-      <h2 className="mb-2 mt-6 font-bold">Request Withdrawal</h2>
-      <div className="card space-y-3">
-        <input className="input" placeholder="Amount ₹"
-          type="number" value={payout.amount}
-          onChange={(e) => setPayout({ ...payout, amount: e.target.value })} />
-        <input className="input" placeholder="UPI ID / Bank details"
-          value={payout.bankDetails}
-          onChange={(e) =>
-            setPayout({ ...payout, bankDetails: e.target.value })} />
-        <button onClick={requestPayout} className="btn-primary w-full">
-          Request Payout
-        </button>
-        {payouts.map((p) => (
-          <div key={p.id} className="flex justify-between text-sm">
-            <span>₹{p.amount}</span>
-            <span className="capitalize text-sub-text">{p.status}</span>
-          </div>
-        ))}
-      </div>
+      <KycAndBank user={user} />
+
+      <p className="mt-4 text-center text-[11px] text-sub-text">
+        Withdrawals moved to{' '}
+        <a href="/astro-earnings" className="font-bold text-primary
+          underline">Earnings & payouts</a> - request a payout there.
+      </p>
 
       <button onClick={logout}
         className="mt-4 w-full rounded-card border border-danger py-3
@@ -211,6 +199,164 @@ function Field({ label, children }) {
     <div>
       <label className="text-sm text-sub-text">{label}</label>
       {children}
+    </div>
+  );
+}
+
+// KYC + Bank panel - lives on astro-profile.js so the astrologer
+// can self-serve the data the admin needs to release payouts.
+// Bank fields are editable until KYC is approved; afterwards a
+// support ticket is required to change them (admin gates the edit).
+function KycAndBank({ user }) {
+  const [astro, setAstro] = useState(null);
+  const [bank, setBank] = useState({ accountHolder: '', bankName: '',
+    accountNumber: '', ifsc: '', branch: '', upi: '' });
+  const [kyc, setKyc] = useState({});
+  const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    astrologerService.getAstrologer(user.uid).then((a) => {
+      setAstro(a);
+      setBank({ accountHolder: '', bankName: '', accountNumber: '',
+        ifsc: '', branch: '', upi: '', ...(a?.bank || {}) });
+      setKyc(a?.kyc || {});
+    });
+  }, [user]);
+
+  const kycStatus = kyc.status || 'incomplete';
+  const locked = kycStatus === 'approved';
+
+  async function saveBank() {
+    setBusy(true); setMsg('');
+    try {
+      await payoutService.updateBank(user.uid, bank, user.uid,
+        'astrologer self-edit');
+      setMsg('Bank details saved.');
+    } catch (e) {
+      setMsg(String((e && e.message) || e));
+    } finally { setBusy(false); }
+  }
+
+  async function uploadDoc(field, file) {
+    setMsg('');
+    try {
+      const r = ref(storage, `kyc/${user.uid}/${field}-${Date.now()}`);
+      await uploadBytes(r, file);
+      const url = await getDownloadURL(r);
+      const next = { ...kyc, [field]: url,
+        status: kyc.status === 'approved' ? 'approved' : 'pending' };
+      await payoutService.setKyc(user.uid, next, user.uid);
+      setKyc(next);
+      setMsg(`${field} uploaded.`);
+    } catch (e) {
+      setMsg(String((e && e.message) || e));
+    }
+  }
+
+  return (
+    <>
+      <h2 className="mb-2 mt-6 font-bold">KYC verification</h2>
+      <div className="card space-y-3">
+        <div className="flex items-center gap-2">
+          <span className={`rounded-full px-3 py-1 text-xs font-bold
+            uppercase ${kycStatus === 'approved'
+              ? 'bg-emerald-100 text-emerald-700'
+              : kycStatus === 'pending'
+                ? 'bg-amber-100 text-amber-800'
+                : kycStatus === 'rejected'
+                  ? 'bg-rose-100 text-rose-700'
+                  : 'bg-slate-100 text-slate-700'}`}>
+            {kycStatus}
+          </span>
+          <span className="text-[11px] text-sub-text">
+            {kycStatus === 'approved'
+              ? 'You can request payouts.'
+              : 'Upload documents below; admin reviews within 24h.'}
+          </span>
+        </div>
+        {kyc.rejectionReason && (
+          <div className="rounded-card bg-rose-50 p-2 text-xs
+            text-rose-700">
+            <b>Rejected:</b> {kyc.rejectionReason}
+          </div>
+        )}
+        <KycDoc label="Aadhaar card" field="aadhaarUrl" k={kyc}
+          onUpload={(f) => uploadDoc('aadhaarUrl', f)} />
+        <KycDoc label="PAN card" field="panUrl" k={kyc}
+          onUpload={(f) => uploadDoc('panUrl', f)} />
+        <KycDoc label="Bank passbook / cancelled cheque" field="passbookUrl"
+          k={kyc} onUpload={(f) => uploadDoc('passbookUrl', f)} />
+        <KycDoc label="Selfie holding ID" field="selfieUrl" k={kyc}
+          onUpload={(f) => uploadDoc('selfieUrl', f)} />
+      </div>
+
+      <h2 className="mb-2 mt-6 font-bold">
+        Bank details
+        {locked && (
+          <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5
+            text-[10px] font-bold uppercase text-slate-700">
+            Locked
+          </span>
+        )}
+      </h2>
+      <div className="card space-y-2">
+        {locked && (
+          <p className="rounded-card bg-bg-light/60 p-2 text-[11px]
+            text-sub-text">
+            Bank details are locked after KYC approval. Raise a
+            support ticket to change them - the admin will verify and
+            update.
+          </p>
+        )}
+        {['accountHolder','bankName','accountNumber','ifsc','branch',
+          'upi'].map((k) => (
+          <Field key={k} label={({
+            accountHolder: 'Account holder name',
+            bankName: 'Bank name',
+            accountNumber: 'Account number',
+            ifsc: 'IFSC code',
+            branch: 'Branch',
+            upi: 'UPI (optional)',
+          })[k]}>
+            <input className="input" disabled={locked}
+              value={bank[k] || ''}
+              onChange={(e) => setBank({ ...bank, [k]: e.target.value })} />
+          </Field>
+        ))}
+        {!locked && (
+          <button onClick={saveBank} disabled={busy}
+            className="btn-primary w-full">
+            {busy ? 'Saving…' : 'Save bank details'}
+          </button>
+        )}
+      </div>
+      {msg && (
+        <p className="mt-2 text-center text-[11px] text-sub-text">{msg}</p>
+      )}
+    </>
+  );
+}
+
+function KycDoc({ label, field, k, onUpload }) {
+  const url = k && k[field];
+  return (
+    <div className="flex items-center justify-between gap-2
+      rounded-card bg-bg-light/40 p-2">
+      <div className="min-w-0">
+        <div className="text-sm font-semibold">{label}</div>
+        <div className="truncate text-[10px] text-sub-text">
+          {url ? 'Uploaded - tap to replace' : 'Not uploaded yet'}
+        </div>
+      </div>
+      <label className="cursor-pointer rounded-full bg-primary px-3
+        py-1 text-[11px] font-bold text-white">
+        {url ? 'Replace' : 'Upload'}
+        <input type="file" accept="image/*,application/pdf" hidden
+          onChange={(e) => e.target.files && e.target.files[0]
+            && onUpload(e.target.files[0])} />
+      </label>
     </div>
   );
 }

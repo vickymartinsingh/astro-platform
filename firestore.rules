@@ -85,6 +85,16 @@ service cloud.firestore {
           && request.resource.data.approved == resource.data.approved
           && request.resource.data.status == resource.data.status);
       allow delete: if isAdmin();
+
+      // Edit history (Phase E) - every mutation that goes through
+      // payoutService.updateBank / setKyc / restoreField snapshots
+      // before+after here so admin can audit + restore. Read is
+      // admin-only (compliance) or the astrologer themselves.
+      match /history/{hid} {
+        allow read: if isAdmin() || isSelf(id);
+        allow create: if isAdmin() || isSelf(id);
+        allow update, delete: if false;
+      }
     }
 
     match /sessions/{id} {
