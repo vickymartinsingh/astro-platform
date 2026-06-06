@@ -632,7 +632,11 @@ function ManualUploadModal({ state, setState, onSuccess }) {
       // copy of this modal - see that comment block for the full
       // rationale (Vercel has been missing push-relay rebuilds).
       patch({ msg: `Uploading ${(state.file.size / 1024).toFixed(0)} KB...` });
-      const { storage, db } = await import('@astro/shared');
+      const sharedMod = await import('@astro/shared');
+      const { db, getStorageLazy } = sharedMod;
+      // shared/firebase.js exports `storage` as undefined; the real
+      // instance is lazy-loaded. Must await getStorageLazy() here.
+      const storage = await getStorageLazy();
       const { ref, uploadBytes, getDownloadURL } = await import(
         'firebase/storage');
       // /media is writeable by any signed-in user per the existing

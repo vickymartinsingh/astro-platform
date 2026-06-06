@@ -1,5 +1,8 @@
 // @astro/shared, single entry point reused by client-web, astro-web, admin-web.
-export { default as firebaseApp, auth, db, storage, functions, rtdb } from './firebase.js';
+export {
+  default as firebaseApp, auth, db, storage, functions, rtdb,
+  getStorageLazy, getFunctionsLazy, getRtdbLazy,
+} from './firebase.js';
 export * from './theme.js';
 export {
   APP_BUILD, APP_VERSION, APP_SUFFIX, appVersionName,

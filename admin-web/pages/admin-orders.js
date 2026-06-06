@@ -416,7 +416,13 @@ function ManualUploadModal({ o, onClose, onSuccess }) {
       //        kundli action dispatcher is stale because it lives
       //        on /api/sendPush).
       setMsg(`Uploading ${(file.size / 1024).toFixed(0)} KB to Storage...`);
-      const { storage, db } = await import('@astro/shared');
+      const sharedMod = await import('@astro/shared');
+      const { db, getStorageLazy } = sharedMod;
+      // shared/firebase.js exports `storage` as undefined and
+      // lazy-loads the real instance to keep the Firebase Storage
+      // SDK out of the initial bundle. Must await getStorageLazy()
+      // here instead of grabbing the named `storage` export.
+      const storage = await getStorageLazy();
       const { ref, uploadBytes, getDownloadURL } = await import(
         'firebase/storage');
       // /media is writeable by any signed-in user per
