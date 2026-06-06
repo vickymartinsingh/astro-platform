@@ -1,8 +1,11 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/router';
 import {
-  adminService, astrologerService, authService, rupees,
+  adminService, astrologerService, authService, rupees, db,
 } from '@astro/shared';
+import {
+  collection, getDocs, orderBy, limit, query,
+} from 'firebase/firestore';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import Layout from '../components/Layout';
 import { useRequireAdmin, useAuth } from '../lib/useAuth';
@@ -82,9 +85,24 @@ const ROLE_META = {
   hr: { label: 'HR', accent: 'from-emerald-600 to-emerald-800',
     chip: 'bg-emerald-100 text-emerald-700', avatar: 'bg-emerald-600',
     icon: '\u{1F4BC}' },
+  // Archive + Restore tiles. These don't filter the list; they jump
+  // to /admin-archive prefiltered to the matching state.
+  archive: { label: 'Archive',
+    accent: 'from-amber-500 to-amber-700',
+    chip: 'bg-amber-100 text-amber-700', avatar: 'bg-amber-500',
+    icon: '\u{1F4E6}', href: '/admin-archive?filter=archived' },
+  restore: { label: 'Restore',
+    accent: 'from-emerald-600 to-emerald-700',
+    chip: 'bg-emerald-100 text-emerald-700', avatar: 'bg-emerald-600',
+    icon: '\u{267B}\u{FE0F}', href: '/admin-archive?filter=restored' },
 };
 const SCOPE_ORDER = ['all', 'customer', 'astrologer',
   'admin', 'support', 'hr'];
+// Special tiles that navigate to /admin-archive instead of filtering
+// this list. Rendered alongside the role tiles so the operator can
+// jump straight from People to the deleted-accounts view without
+// having to find /admin-archive in the sidebar.
+const ARCHIVE_TILES = ['archive', 'restore'];
 const DEFAULT_SCOPE_KEY = 'astroseer.peopleDefaultScope';
 
 export default function AdminUserReach() {
@@ -141,6 +159,28 @@ export default function AdminUserReach() {
     }
   }, [router.isReady, router.query.scope]);
 
+  // Archive + Restore counts shown on the dedicated tiles. Archive
+  // = items in archives where restored != true; Restore = items
+  // where restored === true. Cheap aggregate read (capped to 500 to
+  // bound the bandwidth on operators with huge archive history).
+  const [archCounts, setArchCounts] = useState({
+    archived: 0, restored: 0,
+  });
+  function refreshArchCounts() {
+    (async () => {
+      try {
+        const snap = await getDocs(query(collection(db, 'archives'),
+          orderBy('createdAt', 'desc'), limit(500)));
+        let a = 0; let r = 0;
+        snap.docs.forEach((d) => {
+          const data = d.data() || {};
+          if (data.restored === true) r += 1; else a += 1;
+        });
+        setArchCounts({ archived: a, restored: r });
+      } catch (_) { /* tolerate */ }
+    })();
+  }
+
   useEffect(() => {
     if (loading) return;
     adminService.getAllUsers().then((list) =>
@@ -148,6 +188,7 @@ export default function AdminUserReach() {
     astrologerService.getAstrologers().then((list) =>
       setAstros((list || []).map(
         (a) => ({ ...a, uid: a.id || a.uid })))).catch(() => setAstros([]));
+    refreshArchCounts();
   }, [loading]);
 
   useEffect(() => { setPage(1); }, [q, scope]);
@@ -229,16 +270,28 @@ export default function AdminUserReach() {
 
       {/* Role partition tiles - "All users" sits first; every tile
           carries a star button that pins it as the default landing
-          scope. Tapping the body filters; tapping the star saves the
-          choice without filtering. */}
-      <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3
-        lg:grid-cols-6">
-        {SCOPE_ORDER.map((id) => {
+          scope. The last two tiles (Archive + Restore) navigate
+          straight to /admin-archive prefiltered, so deleted accounts
+          and restored accounts are one click away from People. */}
+      <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4
+        lg:grid-cols-8">
+        {[...SCOPE_ORDER, ...ARCHIVE_TILES].map((id) => {
           const meta = ROLE_META[id];
-          const n = id === 'all' ? totalAll
-            : (buckets[id] || []).length;
-          const active = scope === id;
-          const isDefault = defaultScope === id;
+          const isArchive = ARCHIVE_TILES.includes(id);
+          const n = isArchive
+            ? (id === 'archive' ? archCounts.archived
+              : archCounts.restored)
+            : id === 'all' ? totalAll
+              : (buckets[id] || []).length;
+          const active = !isArchive && scope === id;
+          const isDefault = !isArchive && defaultScope === id;
+          const onTileClick = () => {
+            if (isArchive && meta.href) {
+              router.push(meta.href);
+            } else {
+              setScope(id); setQ('');
+            }
+          };
           return (
             <div key={id}
               className={`group relative overflow-hidden rounded-2xl
@@ -246,7 +299,7 @@ export default function AdminUserReach() {
                 transition hover:shadow-md ${active
                   ? 'ring-2 ring-white ring-offset-2 ring-offset-[#f4f3ee]'
                   : 'opacity-95 hover:opacity-100'}`}>
-              <button onClick={() => { setScope(id); setQ(''); }}
+              <button onClick={onTileClick}
                 className="block w-full p-4 text-left">
                 <div className="flex items-center gap-2">
                   <span className="grid h-8 w-8 place-items-center
@@ -260,25 +313,29 @@ export default function AdminUserReach() {
                   {n}
                 </div>
                 <div className="mt-1 text-[10px] opacity-80">
-                  {active ? 'Filtered to this'
-                    : isDefault ? 'Default scope'
-                      : 'Tap to filter'}
+                  {isArchive ? 'Open archive page'
+                    : active ? 'Filtered to this'
+                      : isDefault ? 'Default scope'
+                        : 'Tap to filter'}
                 </div>
               </button>
-              {/* Star toggles the saved default. Tooltip explains. */}
-              <button onClick={() => saveDefaultScope(
-                isDefault ? 'all' : id)}
-                title={isDefault
-                  ? 'Pinned as default. Tap to unpin.'
-                  : 'Pin as default landing scope'}
-                className={`absolute right-2 top-2 grid h-7 w-7
-                  place-items-center rounded-full transition
-                  ${isDefault
-                    ? 'bg-white text-amber-500'
-                    : 'bg-white/15 text-white/70 hover:bg-white/25 '
-                      + 'hover:text-white'}`}>
-                {isDefault ? '★' : '☆'}
-              </button>
+              {/* Star pin only applies to role tiles, not archive
+                  shortcuts (they navigate elsewhere). */}
+              {!isArchive && (
+                <button onClick={() => saveDefaultScope(
+                  isDefault ? 'all' : id)}
+                  title={isDefault
+                    ? 'Pinned as default. Tap to unpin.'
+                    : 'Pin as default landing scope'}
+                  className={`absolute right-2 top-2 grid h-7 w-7
+                    place-items-center rounded-full transition
+                    ${isDefault
+                      ? 'bg-white text-amber-500'
+                      : 'bg-white/15 text-white/70 hover:bg-white/25 '
+                        + 'hover:text-white'}`}>
+                  {isDefault ? '★' : '☆'}
+                </button>
+              )}
             </div>
           );
         })}
@@ -410,6 +467,9 @@ export default function AdminUserReach() {
             // changes show on the row.
             adminService.getAllUsers().then((list) =>
               setUsers(list || [])).catch(() => {});
+            // Archive tile counts also need a refresh after a
+            // delete - that's the whole point of the tile.
+            refreshArchCounts();
           }} />
       )}
     </Layout>
@@ -973,6 +1033,8 @@ function InlineActionModal({ action, user, onClose, onDone }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [success, setSuccess] = useState('');
+  // Admin's own password - required for the destructive delete flow.
+  const [adminPwd, setAdminPwd] = useState('');
 
   useEffect(() => {
     if (!success) return undefined;
@@ -1019,8 +1081,12 @@ function InlineActionModal({ action, user, onClose, onDone }) {
         direction === 'debit' ? 'debited' : 'credited'}.`);
   }
   async function doDelete() {
-    await run(() => adminService.deleteUser(uid),
-      'Account soft-deleted. Recoverable from /admin-archive.');
+    if (!adminPwd) {
+      setErr('Please enter your admin password to confirm.'); return;
+    }
+    await run(() =>
+      adminService.deleteUserWithPassword(uid, adminPwd),
+    'Account soft-deleted. Now in /admin-archive (Archive tile).');
   }
   async function doResetPwd() {
     const target = String(user.email || '').trim();
@@ -1141,11 +1207,25 @@ function InlineActionModal({ action, user, onClose, onDone }) {
           </div>
         )}
         {!success && action === 'delete' && (
-          <p className="mt-3 text-xs text-sub-text">
-            Soft-delete: account is archived and recoverable from
-            /admin-archive. Their kundli + consultation history is
-            preserved for compliance.
-          </p>
+          <div className="mt-3 space-y-2">
+            <p className="text-xs text-sub-text">
+              Soft-delete: account moves to <b>/admin-archive</b>{' '}
+              under the Archive tile, recoverable via Restore. Their
+              kundli + consultation history stays preserved for
+              compliance. Permanent erase is only available from the
+              Archive page (and also requires your password).
+            </p>
+            <label className="block">
+              <span className="text-xs font-semibold text-sub-text">
+                Your admin password (to confirm)
+              </span>
+              <input className="input mt-1" type="password"
+                value={adminPwd}
+                placeholder="Enter your admin password"
+                onChange={(e) => setAdminPwd(e.target.value)}
+                autoFocus />
+            </label>
+          </div>
         )}
         {!success && action === 'resetPwd' && (
           <div className="mt-3 space-y-2">

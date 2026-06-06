@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/router';
 import { adminService, rupees } from '@astro/shared';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
@@ -80,6 +81,19 @@ export default function AdminArchive() {
   }
   useEffect(() => { if (!loading) load(); }, [loading]);
 
+  // Honour ?filter=archived|restored from the URL so the People
+  // directory's Archive + Restore tiles deep-link straight to the
+  // pre-filtered view.
+  const router = useRouter();
+  useEffect(() => {
+    if (!router.isReady) return;
+    const f = router.query.filter;
+    if (typeof f === 'string'
+      && ['all', 'archived', 'restored'].includes(f)) {
+      setFilter(f);
+    }
+  }, [router.isReady, router.query.filter]);
+
   async function openArchive(id) {
     if (openId === id) { setOpenId(null); setDetail(null); return; }
     setOpenId(id); setDetail('loading');
@@ -109,27 +123,47 @@ export default function AdminArchive() {
     } catch (e) { flash(`Purge failed: ${e.message || e}`, 'error'); }
     finally { setBusy(false); }
   }
+  // Open the password-gated permanent-erase modal. The two-stage
+  // browser confirm + the ERASE typed tag are kept as belt-and-
+  // braces friction before showing the password prompt. Submission
+  // re-authenticates with the admin's own Firebase Auth password
+  // before nuking the archive + user tombstone.
+  const [erasing, setErasing] = useState(null); // { id, pwd, err, busy }
   async function erase(id) {
     if (!window.confirm('ERASE FOREVER?\n\nThis nukes the archive, '
       + 'every other archive for this user, and the users doc itself. '
       + 'The user will be unrecoverable. Continue?')) return;
-    if (!window.confirm('Final check: type OK in the next prompt to '
-      + 'confirm permanent erase.')) return;
     const tag = window.prompt('Type ERASE to confirm.');
     if (String(tag || '').trim().toUpperCase() !== 'ERASE') {
       flash('Cancelled.'); return;
     }
-    setBusy(true);
+    setErasing({ id, pwd: '', err: '', busy: false });
+  }
+  async function submitErase() {
+    if (!erasing) return;
+    if (!erasing.pwd) {
+      setErasing((e) => ({ ...e, err: 'Enter your admin password.' }));
+      return;
+    }
+    setErasing((e) => ({ ...e, busy: true, err: '' }));
     try {
-      const r = await adminService.permanentlyEraseArchive(id);
+      const r = await adminService.permanentlyEraseArchiveWithPassword(
+        erasing.id, erasing.pwd);
       flash(`Erased${r.erasedUser ? ' (user doc removed)' : ''}`
         + (r.otherArchives > 1
           ? `, + ${r.otherArchives - 1} other archive(s) for same uid.`
           : '.'));
-      if (openId === id) { setOpenId(null); setDetail(null); }
+      if (openId === erasing.id) { setOpenId(null); setDetail(null); }
+      setErasing(null);
       load();
-    } catch (e) { flash(`Erase failed: ${e.message || e}`, 'error'); }
-    finally { setBusy(false); }
+    } catch (e) {
+      const msg = String((e && e.message) || e);
+      const friendly = /wrong-password|invalid-credential/.test(msg)
+        ? 'Wrong admin password. Try again.'
+        : msg;
+      setErasing((cur) => ({ ...(cur || {}), busy: false,
+        err: friendly }));
+    }
   }
 
   // Filter + search across the archive list.
@@ -213,6 +247,46 @@ export default function AdminArchive() {
               onPurge={() => purge(a.id)}
               onErase={() => erase(a.id)} />
           ))}
+        </div>
+      )}
+
+      {erasing && (
+        <div className="fixed inset-0 z-50 flex items-center
+          justify-center bg-black/50 p-4"
+          onClick={() => !erasing.busy && setErasing(null)}>
+          <div className="w-full max-w-sm rounded-card bg-white p-5
+            shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-danger">
+              Permanent erase
+            </h3>
+            <p className="mt-1 text-xs text-sub-text">
+              Type your admin password to permanently erase this
+              archive, every other archive for the same user, and
+              the user doc itself. This cannot be undone.
+            </p>
+            <input className="input mt-3" type="password" autoFocus
+              value={erasing.pwd}
+              placeholder="Admin password"
+              disabled={erasing.busy}
+              onChange={(e) => setErasing((cur) => ({
+                ...(cur || {}), pwd: e.target.value }))} />
+            {erasing.err && (
+              <div className="mt-2 rounded-card bg-danger/10 p-2
+                text-xs font-semibold text-danger">{erasing.err}</div>
+            )}
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setErasing(null)}
+                disabled={erasing.busy}
+                className="rounded-full bg-bg-light px-4 py-2 text-sm
+                  font-semibold">Cancel</button>
+              <button onClick={submitErase} disabled={erasing.busy
+                || !erasing.pwd}
+                className="rounded-full bg-danger px-4 py-2 text-sm
+                  font-bold text-white disabled:opacity-60">
+                {erasing.busy ? 'Erasing...' : 'Erase forever'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </Layout>

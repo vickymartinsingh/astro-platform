@@ -277,6 +277,12 @@ export async function mergeAccounts(primaryUid, secondaryUid, picks = {}) {
 // account, and a future "Restore" admin action can flip the flag.
 export function deleteUser(uid) {
   return tryCloud('adminDeleteUser', { uid }, async () => {
+    // Snapshot the user doc BEFORE tombstoning so the archive entry
+    // can carry the full identity (name + email + phone + code) for
+    // the operator to recognise without opening the live doc.
+    let snap = null;
+    try { snap = await getDoc(doc(db, 'users', uid)); } catch (_) {}
+    const u = (snap && snap.exists() && snap.data()) || {};
     try {
       await updateDoc(doc(db, 'users', uid), {
         status: 'deleted',
@@ -298,8 +304,68 @@ export function deleteUser(uid) {
     // Astrologer doc, if any, is fully removed - the marketplace
     // listing must not surface a deleted account.
     try { await deleteDoc(doc(db, 'astrologers', uid)); } catch (_) {}
+    // ARCHIVE ENTRY - so the deletion appears in /admin-archive and
+    // the operator can review / restore / permanently erase it. The
+    // previous deleteUser implementation tombstoned the user doc but
+    // skipped the archives collection, so deletes never showed up in
+    // the archive page. Operator report: "I just deleted one user...
+    // not showing in the archive."
+    //
+    // We deliberately store a SNAPSHOT of the user doc (not a deep
+    // copy of all sub-collections); restoreArchive can rewrite
+    // users/{uid} from this snapshot to reverse the tombstone. The
+    // bulk-reset path still uses resetAccountData() for full-tree
+    // archives.
+    try {
+      const archiveRef = doc(collection(db, 'archives'));
+      await setDoc(archiveRef, {
+        uid,
+        role: u.role || 'client',
+        name: u.name || '',
+        email: u.email || '',
+        phone: u.phone || '',
+        userCode: u.userCode || '',
+        userCreatedAt: u.createdAt || null,
+        parts: ['profile'],
+        counts: { users: 1 },
+        createdAt: serverTimestamp(),
+        source: 'deleteUser',
+        restored: false,
+      });
+      // The /admin-archive page reads detail items from
+      // archives/{id}/items - drop the user doc snapshot in there
+      // so Restore can rewrite it back to users/{uid} verbatim.
+      if (Object.keys(u).length > 0) {
+        try {
+          await setDoc(doc(collection(db,
+            `archives/${archiveRef.id}/items`)), {
+            coll: 'users',
+            docId: uid,
+            data: { ...u, status: 'active' },
+            archivedAt: serverTimestamp(),
+          });
+        } catch (_) {}
+      }
+    } catch (_) { /* archive is best-effort */ }
     return { success: true };
   });
+}
+
+// Password-gated delete. Re-authenticates the signed-in ADMIN with
+// their own Firebase Auth password BEFORE running deleteUser. Used
+// by the People directory inline delete + the per-profile Danger
+// Zone button so a misclick on a destructive action requires an
+// explicit "I am still me" check.
+export async function deleteUserWithPassword(uid, adminPassword) {
+  if (!adminPassword) throw new Error('Admin password is required.');
+  const cur = auth && auth.currentUser;
+  if (!cur || !cur.email) throw new Error('No admin is signed in.');
+  // Throws on wrong password (auth/wrong-password / auth/invalid-credential).
+  const { EmailAuthProvider, reauthenticateWithCredential } =
+    await import('firebase/auth');
+  const cred = EmailAuthProvider.credential(cur.email, adminPassword);
+  await reauthenticateWithCredential(cur, cred);
+  return deleteUser(uid);
 }
 
 // ---------------------------------------------------------------------
@@ -643,6 +709,23 @@ export async function deleteArchive(archiveId) {
   }
   await deleteDoc(doc(db, 'archives', archiveId));
   return { success: true };
+}
+
+// Password-gated permanent erase. Re-authenticates the admin with
+// their Firebase Auth password BEFORE calling permanentlyEraseArchive.
+// Used by /admin-archive "Erase forever" so this irreversible action
+// always requires an explicit "I am still me" check, matching the
+// password gate on delete.
+export async function permanentlyEraseArchiveWithPassword(archiveId,
+  adminPassword) {
+  if (!adminPassword) throw new Error('Admin password is required.');
+  const cur = auth && auth.currentUser;
+  if (!cur || !cur.email) throw new Error('No admin is signed in.');
+  const { EmailAuthProvider, reauthenticateWithCredential } =
+    await import('firebase/auth');
+  const cred = EmailAuthProvider.credential(cur.email, adminPassword);
+  await reauthenticateWithCredential(cur, cred);
+  return permanentlyEraseArchive(archiveId);
 }
 
 // Permanent erase: nukes the archive AND the tombstoned users/{uid}
