@@ -32,6 +32,11 @@ service cloud.firestore {
     match /users/{uid} {
       allow read: if signedIn();
       allow create: if isSelf(uid) || isAdmin();
+      // Phone also locked from self-writes once it holds a real value
+      // (operator report 2026-06-06: "user cannot register or delete
+      // the mobile number from the account"). A one-time fill is
+      // allowed when the stored phone is empty/missing so signupUser
+      // can land the captured phone the very first time.
       allow update: if isAdmin()
         || (isSelf(uid)
           && (!('wallet' in request.resource.data)
@@ -43,7 +48,12 @@ service cloud.firestore {
           && (!('userCode' in request.resource.data)
             || request.resource.data.userCode == resource.data.userCode)
           && (!('isBlocked' in request.resource.data)
-            || request.resource.data.isBlocked == resource.data.isBlocked));
+            || request.resource.data.isBlocked == resource.data.isBlocked)
+          && (!('phone' in request.resource.data)
+            || !('phone' in resource.data)
+            || resource.data.phone == null
+            || resource.data.phone == ''
+            || request.resource.data.phone == resource.data.phone));
       allow delete: if isAdmin();
     }
 

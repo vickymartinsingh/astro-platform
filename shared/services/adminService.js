@@ -778,6 +778,89 @@ export function deleteAstrologer(astroId) {
   });
 }
 
+// REFUND_TEMPLATES: narration presets shown in the admin Refund modal.
+// Operator can either pick one or type their own; the chosen text is
+// persisted on the transaction row as `narration` so the user-side
+// statement explains WHY the credit landed.
+export const REFUND_TEMPLATES = [
+  { id: 'poor_call_quality',
+    text: 'Refund for poor call quality / network issue.' },
+  { id: 'astrologer_no_show',
+    text: 'Refund - astrologer did not connect for the session.' },
+  { id: 'astrologer_late',
+    text: 'Refund for astrologer joining late.' },
+  { id: 'session_cut_short',
+    text: 'Refund for session being cut short due to technical fault.' },
+  { id: 'duplicate_charge',
+    text: 'Refund for duplicate charge / accidental double-debit.' },
+  { id: 'report_not_delivered',
+    text: 'Refund - report could not be delivered.' },
+  { id: 'report_incorrect',
+    text: 'Refund - incorrect report content / wrong chart.' },
+  { id: 'order_cancelled',
+    text: 'Refund for cancelled order at customer’s request.' },
+  { id: 'service_unsatisfactory',
+    text: 'Goodwill refund - customer was not satisfied with the service.' },
+  { id: 'wallet_recharge_failed',
+    text: 'Refund - wallet recharge failed at the gateway.' },
+];
+
+// adminRefund - issues a credit to the user's wallet AND records it
+// against a specific source (chat / call / video / live / report /
+// order / other) with a narration string. Distinct from
+// adjustWallet so the UserTransactionsTab can show a Refund chip
+// with the original session/order link, and so refunds are
+// reportable separately from generic admin adjustments.
+//
+// kind values: 'chat' | 'call' | 'video' | 'live' | 'report'
+//              | 'order' | 'other'.
+// referenceId is the linked doc id (sessionId, orderId, etc.) and
+// is rendered as a clickable Source column in the transactions
+// table.
+export function adminRefund({ uid, amount, kind, referenceId,
+  narration, notes }) {
+  const amt = Math.abs(Number(amount || 0));
+  if (!uid) return Promise.reject(new Error('uid required'));
+  if (!amt) return Promise.reject(new Error('amount must be > 0'));
+  const reason = `Refund: ${narration || 'admin refund'}`;
+  return tryCloud('adminRefund', {
+    uid, amount: amt, kind, referenceId, narration, notes,
+  }, async () => {
+    let beforeW = 0;
+    let afterW = 0;
+    await runTransaction(db, async (t) => {
+      const ref = doc(db, 'users', uid);
+      const s = await t.get(ref);
+      beforeW = Number((s.data() || {}).wallet || 0);
+      afterW = beforeW + amt;
+      t.update(ref, { wallet: afterW });
+      t.set(doc(collection(db, 'transactions')), {
+        userId: uid,
+        amount: amt,           // positive => credit
+        type: 'credit',
+        kind: 'refund',
+        source: kind || 'other',
+        referenceId: referenceId || '',
+        reason,
+        narration: narration || '',
+        notes: notes || '',
+        createdAt: serverTimestamp(),
+      });
+      t.set(doc(collection(db, 'users', uid, 'walletAudit')), {
+        before: beforeW, delta: amt, after: afterW,
+        reason, source: 'adminRefund',
+        kind: kind || 'other',
+        referenceId: referenceId || '',
+        narration: narration || '',
+        notes: notes || '',
+        at: serverTimestamp(),
+      });
+    });
+    await notifyWallet(uid, amt, narration || 'Refund credited');
+    return { success: true, before: beforeW, after: afterW };
+  });
+}
+
 export function adjustWallet(uid, amount, reason) {
   const amt = Number(amount);
   return tryCloud('adminAdjustWallet', { uid, amount: amt, reason },

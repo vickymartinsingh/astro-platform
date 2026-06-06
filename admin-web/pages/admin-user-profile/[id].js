@@ -100,11 +100,25 @@ export default function AdminUserProfile() {
         setAstroNames(Object.fromEntries(pairs));
       } catch (_) { /* ignore */ }
       try {
+        // We fetch ALL transactions (not just the latest 30) so the
+        // Spent stat at the top of the page reflects the FULL ledger
+        // - sessions + reports + orders + adjustments - not just the
+        // session-cost sum we used before. Operator report
+        // 2026-06-06: "not matching with the spent". Root cause was
+        // the old computation reading ONLY from sessions.cost while
+        // the customer also spends through reports / orders / etc.
         const snap = await getDocs(query(
           collection(db, 'transactions'),
-          where('userId', '==', id), orderBy('createdAt', 'desc'),
-          limit(30)));
-        setTxns(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+          where('userId', '==', id)));
+        const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        all.sort((a, b) => {
+          const am = a.createdAt && a.createdAt.toMillis
+            ? a.createdAt.toMillis() : 0;
+          const bm = b.createdAt && b.createdAt.toMillis
+            ? b.createdAt.toMillis() : 0;
+          return bm - am;
+        });
+        setTxns(all);
       } catch (_) { /* ignore (index may be missing - non-fatal) */ }
       try {
         setKundlis(await kundliService.getKundliProfiles(id) || []);
@@ -303,13 +317,31 @@ export default function AdminUserProfile() {
   }
 
   const ended = sessions.filter((s) => s.status === 'ended');
-  const totalSpent = ended.reduce((a, s) => a + Number(s.cost || 0), 0);
   const totalMinutes = ended.reduce(
     (a, s) => a + Math.round(Number(s.duration || 0) / 60), 0);
+  // Spent now comes from the ledger so Reports / Orders / Gift card
+  // burns / Admin debits all count - not just sessions. Reconciliation
+  // rows (script audit markers from recover-wallet.mjs) are skipped
+  // to keep the totals honest (see UserTransactionsTab for the
+  // matching exclusion).
+  const isRecRow = (r) => r.kind === 'reconciliation'
+    || /reconciliation|wallet[ _]recovery/i.test(r.reason || '')
+    || r.referenceId === 'wallet_recovery';
+  const totalSpent = (txns || []).reduce((a, r) => {
+    if (isRecRow(r)) return a;
+    const amt = Number(r.amount || 0);
+    const delta = (r.type === 'debit' && amt > 0) ? -amt : amt;
+    return a + (delta < 0 ? -delta : 0);
+  }, 0);
+  const totalRefundedLedger = (txns || []).reduce((a, r) => {
+    if (r.kind === 'refund') return a + Math.abs(Number(r.amount || 0));
+    return a;
+  }, 0);
   const refunded = sessions.filter((s) => s.refundRequest
     && s.refundRequest.status === 'processed');
-  const totalRefunded = refunded.reduce(
+  const sessionRefunded = refunded.reduce(
     (a, s) => a + Number(s.refundedAmount || 0), 0);
+  const totalRefunded = totalRefundedLedger + sessionRefunded;
 
   return (
     <Layout>
@@ -351,7 +383,31 @@ export default function AdminUserProfile() {
             </span>
           </div>
           <div className="mt-1 text-sm text-sub-text">
-            {u.email || '-'}{u.phone ? ` · ${u.phone}` : ''}
+            {u.email || '-'}
+          </div>
+          {/* Mobile is rendered on its own line + locked badge per
+              operator request 2026-06-06: "Users cannot register or
+              delete the mobile number from the account." The field
+              is rules-locked once it holds a value (firestore.rules
+              users/{uid} update predicate) so even the customer
+              client cannot wipe it from outside this admin UI. */}
+          <div className="mt-1 flex flex-wrap items-center gap-1.5
+            text-sm text-dark-text">
+            <span className="text-[10px] font-bold uppercase
+              tracking-wider text-sub-text">Mobile</span>
+            <span className="font-mono">
+              {u.phone && String(u.phone).trim() !== ''
+                ? u.phone
+                : <span className="text-rose-600">- not provided -</span>}
+            </span>
+            {u.phone && String(u.phone).trim() !== '' && (
+              <span className="rounded-full bg-slate-100 px-1.5 py-0.5
+                text-[9px] font-bold uppercase tracking-wider
+                text-slate-600" title="Locked: user cannot change
+                  or delete from app">
+                Locked
+              </span>
+            )}
           </div>
           <div className="mt-1 text-xs text-sub-text">
             Joined: <b>{fmtDate(u.createdAt)}</b>

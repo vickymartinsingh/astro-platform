@@ -1,6 +1,17 @@
 import { useState, useEffect } from 'react';
 import { adminService, authService } from '@astro/shared';
 
+const REFUND_TEMPLATES = adminService.REFUND_TEMPLATES || [];
+const REFUND_SOURCES = [
+  { id: 'chat', label: 'Chat' },
+  { id: 'call', label: 'Call' },
+  { id: 'video', label: 'Video' },
+  { id: 'live', label: 'Live stream' },
+  { id: 'report', label: 'Report' },
+  { id: 'order', label: 'Order' },
+  { id: 'other', label: 'Other' },
+];
+
 // Action bar that lives on the admin user profile (and could mount on
 // the astrologer profile too). Every action has a confirmation modal
 // instead of an instant click so a misclick on "Delete" never wipes
@@ -26,6 +37,13 @@ export default function UserActionBar({ uid, user, onChange }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [success, setSuccess] = useState('');
+  // Refund modal state - sits alongside the generic balance/bonus
+  // amount field because the refund flow needs both a source (which
+  // service this refund undoes) and a narration (why we refunded).
+  const [refundSource, setRefundSource] = useState('chat');
+  const [refundRefId, setRefundRefId] = useState('');
+  const [refundTemplate, setRefundTemplate] = useState('');
+  const [refundNarration, setRefundNarration] = useState('');
 
   const blocked = user?.status === 'blocked' || user?.isBlocked === true;
   const deleted = !!user?.deleted;
@@ -33,6 +51,8 @@ export default function UserActionBar({ uid, user, onChange }) {
   function open(key) {
     setModal(key); setErr(''); setSuccess('');
     setAmount(''); setNote(''); setCode('');
+    setRefundSource('chat'); setRefundRefId('');
+    setRefundTemplate(''); setRefundNarration('');
   }
   function close() {
     if (busy) return; setModal(null);
@@ -65,6 +85,23 @@ export default function UserActionBar({ uid, user, onChange }) {
     await run(() => adminService.adjustWallet(uid, amt,
       `bonus${note ? `: ${note}` : ''}`),
       `Bonus ₹${amt} credited.`);
+  }
+  async function doRefund() {
+    const amt = Math.round(Number(amount) || 0);
+    if (!amt || amt <= 0) {
+      setErr('Enter a positive amount.'); return;
+    }
+    const narration = (refundNarration || '').trim()
+      || (REFUND_TEMPLATES.find((t) => t.id === refundTemplate) || {}).text
+      || '';
+    if (!narration) {
+      setErr('Pick a narration template or type your own.'); return;
+    }
+    await run(() => adminService.adminRefund({
+      uid, amount: amt, kind: refundSource,
+      referenceId: refundRefId.trim(),
+      narration, notes: note,
+    }), `Refund ₹${amt} credited.`);
   }
   async function doGiftCard() {
     const amt = Math.round(Number(amount) || 0);
@@ -124,6 +161,9 @@ export default function UserActionBar({ uid, user, onChange }) {
         <BarBtn onClick={() => open('bonus')} tone="primary">
           + Bonus
         </BarBtn>
+        <BarBtn onClick={() => open('refund')} tone="amber">
+          Refund
+        </BarBtn>
         <BarBtn onClick={() => open('gift')} tone="amber">
           Gift card
         </BarBtn>
@@ -166,6 +206,70 @@ export default function UserActionBar({ uid, user, onChange }) {
           <AmtField value={amount} onChange={setAmount} />
           <NoteField value={note} onChange={setNote}
             placeholder="Bonus reason (welcome, retention, etc)" />
+        </ActionModal>
+      )}
+      {modal === 'refund' && (
+        <ActionModal title="Refund to wallet"
+          subtitle={`Issues a credit and tags it with the source +`
+            + ` narration. Appears in ${user?.name || 'the customer'}'s`
+            + ' statement as a Refund row with a clickable source.'}
+          onClose={close} onSubmit={doRefund} busy={busy}
+          err={err} success={success} cta="Issue refund">
+          <AmtField value={amount} onChange={setAmount} />
+          <div>
+            <label className="text-[10px] font-bold uppercase
+              tracking-wider text-sub-text">Source</label>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {REFUND_SOURCES.map((s) => (
+                <button key={s.id} type="button"
+                  onClick={() => setRefundSource(s.id)}
+                  className={`rounded-full border px-3 py-1 text-xs
+                    font-semibold transition ${refundSource === s.id
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-gray-200 text-sub-text '
+                        + 'hover:bg-bg-light'}`}>
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-[10px] font-bold uppercase
+              tracking-wider text-sub-text">
+              Reference id (session / order / report / chat id - optional)
+            </label>
+            <input className="input mt-1" value={refundRefId}
+              onChange={(e) => setRefundRefId(e.target.value)}
+              placeholder="e.g. T12345678 or kundli order id" />
+          </div>
+          <div>
+            <label className="text-[10px] font-bold uppercase
+              tracking-wider text-sub-text">Narration template</label>
+            <select className="input mt-1" value={refundTemplate}
+              onChange={(e) => {
+                setRefundTemplate(e.target.value);
+                const t = REFUND_TEMPLATES
+                  .find((x) => x.id === e.target.value);
+                if (t) setRefundNarration(t.text);
+              }}>
+              <option value="">- pick a template -</option>
+              {REFUND_TEMPLATES.map((t) => (
+                <option key={t.id} value={t.id}>{t.text}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-[10px] font-bold uppercase
+              tracking-wider text-sub-text">
+              Narration (shown to customer)
+            </label>
+            <textarea className="input mt-1" rows={2}
+              value={refundNarration}
+              onChange={(e) => setRefundNarration(e.target.value)}
+              placeholder="Type your own or edit the template..." />
+          </div>
+          <NoteField value={note} onChange={setNote}
+            placeholder="Internal notes (admin-only, not shown to customer)" />
         </ActionModal>
       )}
       {modal === 'gift' && (

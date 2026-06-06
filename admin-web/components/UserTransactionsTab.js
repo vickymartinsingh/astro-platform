@@ -47,6 +47,10 @@ function csvCell(v) {
 function categoriseOne(t) {
   const reason = String(t.reason || '').toLowerCase();
   const ref = String(t.referenceId || '').toLowerCase();
+  // Admin Refund modal writes kind='refund' explicitly - check that
+  // first so refunds never get mis-tagged when the narration text
+  // happens to mention a session id.
+  if (t.kind === 'refund') return 'refund';
   if (/recharge|topup|top-up|add money/.test(reason)) return 'recharge';
   if (/gift card|giftcard/.test(reason)) return 'gift_card';
   if (/refund|no activity/.test(reason)) return 'refund';

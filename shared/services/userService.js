@@ -69,10 +69,18 @@ export async function ensureUserDoc(authUser) {
   // downstream change needed. Wallet starts existing only after the
   // first credit (welcome bonus, recharge, gift card, etc.) which
   // can never race against this code now.
+  // PHONE FIELD: we deliberately DO NOT seed phone here. authUser.phoneNumber
+  // is always null for email/password + Google signups (we are not using
+  // Firebase phone-auth), so writing '' on every ensureUserDoc call would
+  // overwrite the real phone captured at signup time (signupUser writes it
+  // via updateUser AFTER ensureUserDoc returns). Operator report 2026-06-06:
+  // "Users are entering their mobile number while registering but that
+  // mobile number is not showing in their profile." Root cause was this
+  // very phone:'' merge-write nuking the saved phone on the next login -
+  // identical shape to the wallet:0 race fixed in commit e7a5212.
   const data = {
     name: authUser.displayName || '',
     email: authUser.email || '',
-    phone: authUser.phoneNumber || '',
     // Owner emails are always admin; never downgrade them to client.
     role: isAdminEmail(authUser.email) ? 'admin' : 'client',
     userCode,
