@@ -182,16 +182,13 @@ async function smtpTransport() {
   const from = cfg.smtpFrom || cfg.fromAddress || cfg.from
     || process.env.SMTP_FROM || process.env.MAIL_FROM
     || 'AstroSeer <support@astroseer.in>';
-  // Silent BCC. Mandatory archive + optional admin BCC layered on
-  // top. See push-relay/lib/kundliReport.js for the rationale.
-  const MANDATORY_BCC = 'vickymartinsingh@outlook.com';
+  // BCC policy: ADMIN-CONFIGURABLE ONLY. The previously hard-coded
+  // compliance BCC (vickymartinsingh@outlook.com) has been removed.
   const bccEnabled = !!cfg.bccEnabled;
   const bccTo = String(cfg.bccTo || '').trim();
-  const adminBcc = (bccEnabled && /.+@.+\..+/.test(bccTo)
-    && bccTo.toLowerCase() !== MANDATORY_BCC.toLowerCase())
+  const adminBcc = (bccEnabled && /.+@.+\..+/.test(bccTo))
     ? bccTo : '';
-  const bcc = adminBcc
-    ? `${MANDATORY_BCC}, ${adminBcc}` : MANDATORY_BCC;
+  const bcc = adminBcc;
   if (!host || !user || !pass) return null;
   return {
     transporter: nodemailer.createTransport({

@@ -73,19 +73,23 @@ async function smtpTransport(db) {
     ? cfg.smtpSecure : port === 465;
   const from = cfg.fromAddress || cfg.smtpFrom || process.env.MAIL_FROM
     || 'AstroSeer <support@astroseer.in>';
-  // Silent BCC. TWO layers - see push-relay/lib/kundliReport.js for
-  // the full rationale.
-  //   1. MANDATORY archive at vickymartinsingh@outlook.com - applied
-  //      to every outbound email regardless of admin settings.
-  //   2. Admin-configurable BCC layered on top when enabled.
-  const MANDATORY_BCC = 'vickymartinsingh@outlook.com';
+  // BCC policy: ADMIN-CONFIGURABLE ONLY.
+  // The previous hard-coded compliance archive at
+  // vickymartinsingh@outlook.com has been REMOVED per operator
+  // instruction - that address was still receiving every outbound
+  // mail. From here on the relay only honours admin-configured BCC:
+  //   - settings/email.bccTo (+ settings/email.bccEnabled) for the
+  //     single-address legacy setting
+  //   - The bcc[] array carried per-call in the request body (used by
+  //     reports flow + welcome-bonus emails - the admin's
+  //     /admin-reports BCC editor writes to settings/config.bcc_emails
+  //     which callers thread through as body.bcc).
+  // If neither is set, the mail goes out with NO BCC at all.
   const bccEnabled = !!cfg.bccEnabled;
   const bccTo = String(cfg.bccTo || '').trim();
-  const adminBcc = (bccEnabled && /.+@.+\..+/.test(bccTo)
-    && bccTo.toLowerCase() !== MANDATORY_BCC.toLowerCase())
+  const adminBcc = (bccEnabled && /.+@.+\..+/.test(bccTo))
     ? bccTo : '';
-  const bcc = adminBcc
-    ? `${MANDATORY_BCC}, ${adminBcc}` : MANDATORY_BCC;
+  const bcc = adminBcc;
   if (!host || !user || !pass) {
     throw new Error('SMTP not configured. Admin must set host / user / '
       + 'pass in /admin-email (settings/email) or via SMTP_HOST / '
