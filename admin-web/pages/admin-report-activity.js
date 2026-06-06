@@ -274,7 +274,7 @@ export default function AdminReportActivity() {
       amount: Number(o.amount || 0),
       status: o.status,
       wasRefunded: o.status === 'failed_refunded',
-      file: null,
+      pdfUrl: '',
       redebit: o.status === 'failed_refunded',
       busy: false,
       msg: '',
@@ -616,39 +616,23 @@ function ManualUploadModal({ state, setState, onSuccess }) {
   }
   function patch(p) { setState((cur) => ({ ...(cur || {}), ...p })); }
   async function submit() {
-    if (!state.file) {
-      patch({ msg: 'Please choose a PDF file first.' }); return;
+    const u = String(state.pdfUrl || '').trim();
+    if (!u) {
+      patch({ msg: 'Please paste the PDF URL.' }); return;
     }
-    if (state.file.type !== 'application/pdf'
-      && !/\.pdf$/i.test(state.file.name)) {
-      patch({ msg: 'File must be a PDF.' }); return;
-    }
-    if (state.file.size > 25 * 1024 * 1024) {
-      patch({ msg: 'PDF must be under 25 MB.' }); return;
+    if (!/^https?:\/\//.test(u)) {
+      patch({ msg: 'URL must start with http:// or https://' });
+      return;
     }
     patch({ busy: true, msg: '' });
     try {
-      // RELAY-INDEPENDENT PATH. Same shape as the admin-orders
-      // copy of this modal - see that comment block for the full
-      // rationale (Vercel has been missing push-relay rebuilds).
-      patch({ msg: `Uploading ${(state.file.size / 1024).toFixed(0)} KB...` });
-      const sharedMod = await import('@astro/shared');
-      const { db, getStorageLazy } = sharedMod;
-      // shared/firebase.js exports `storage` as undefined; the real
-      // instance is lazy-loaded. Must await getStorageLazy() here.
-      const storage = await getStorageLazy();
-      const { ref, uploadBytes, getDownloadURL } = await import(
-        'firebase/storage');
-      // /media is writeable by any signed-in user per the existing
-      // storage.rules - admin uses that path so no rules-deploy
-      // bottleneck. 'rescued/' segment kept for forensics.
-      const path = `media/rescued/${state.orderId}.pdf`;
-      const sref = ref(storage, path);
-      await uploadBytes(sref, state.file,
-        { contentType: 'application/pdf' });
-      const pdfUrl = await getDownloadURL(sref);
-
+      // URL-LINK PATH: Firebase Storage isn't available on the
+      // Spark plan and the Vercel relay is missing recent deploys.
+      // Operator hosts the PDF anywhere (Google Drive shareable
+      // link, Dropbox public URL, R2 public bucket, etc.) and
+      // pastes the URL - we attach it to the order doc.
       patch({ msg: 'Finalising order...' });
+      const { db } = await import('@astro/shared');
       const {
         doc, getDoc, updateDoc, runTransaction,
         serverTimestamp, deleteField, collection, addDoc,
@@ -686,7 +670,7 @@ function ManualUploadModal({ state, setState, onSuccess }) {
       await updateDoc(orderRef, {
         status: cur.kind === 'free'
           ? 'ready_rescued' : 'paid_ready',
-        pdfUrl,
+        pdfUrl: u,
         pdfReadyAt: serverTimestamp(),
         rescuedAt: serverTimestamp(),
         rescueSource: 'admin_manual',
@@ -720,7 +704,7 @@ function ManualUploadModal({ state, setState, onSuccess }) {
         });
       } catch (_) {}
       const j = {
-        ok: true, pdfUrl, redebited: redebitedAmount > 0,
+        ok: true, pdfUrl: u, redebited: redebitedAmount > 0,
         redebitedAmount,
       };
       patch({ busy: false, done: j, msg: '' });
@@ -785,20 +769,26 @@ function ManualUploadModal({ state, setState, onSuccess }) {
                 : 'Order has not been refunded - upload alone will'
                   + ' deliver the PDF.'}
             </div>
+            <div className="rounded-card border border-gray-200
+              bg-bg-light/30 p-3 text-[11px] text-sub-text
+              leading-relaxed">
+              <b className="text-dark-text">Where to host the PDF:</b>
+              <ul className="mt-1 list-disc pl-4 space-y-0.5">
+                <li>Google Drive: right-click {'>'} Share {'>'} Anyone
+                  with the link {'>'} copy link</li>
+                <li>Dropbox: Share {'>'} create link {'>'} copy</li>
+                <li>R2 / S3 public bucket URL</li>
+                <li>Any direct PDF URL the customer can open</li>
+              </ul>
+            </div>
             <label className="block">
               <span className="text-xs font-semibold text-sub-text">
-                PDF file (max 25 MB)
+                PDF URL
               </span>
-              <input className="mt-1 block w-full text-sm"
-                type="file" accept="application/pdf,.pdf"
-                onChange={(e) => patch({
-                  file: e.target.files && e.target.files[0] })} />
-              {state.file && (
-                <div className="mt-1 text-[11px] text-sub-text">
-                  {state.file.name} {'·'}{' '}
-                  {(state.file.size / 1024).toFixed(0)} KB
-                </div>
-              )}
+              <input className="input mt-1" type="url"
+                placeholder="https://drive.google.com/file/d/..."
+                value={state.pdfUrl || ''}
+                onChange={(e) => patch({ pdfUrl: e.target.value })} />
             </label>
             {state.wasRefunded && state.amount > 0 && (
               <label className="flex items-start gap-2 rounded-card
@@ -821,10 +811,10 @@ function ManualUploadModal({ state, setState, onSuccess }) {
                 className="rounded-full bg-bg-light px-4 py-2 text-sm
                   font-semibold">Cancel</button>
               <button onClick={submit}
-                disabled={state.busy || !state.file}
+                disabled={state.busy || !state.pdfUrl}
                 className="rounded-full bg-primary px-4 py-2 text-sm
                   font-bold text-white disabled:opacity-60">
-                {state.busy ? 'Uploading...' : 'Upload + deliver'}
+                {state.busy ? 'Saving...' : 'Attach + deliver'}
               </button>
             </div>
           </div>

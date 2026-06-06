@@ -367,75 +367,46 @@ function ManualUploadButton({ o, onDone }) {
 function ManualUploadModal({ o, onClose, onSuccess }) {
   const amount = Number(o.amount || 0);
   const wasRefunded = o.status === 'failed_refunded';
-  const [file, setFile] = useState(null);
+  // The modal now accepts a PUBLIC PDF URL instead of uploading a
+  // file. The Firebase Storage path hung because Storage isn't
+  // enabled on this Spark-plan project; the R2 relay path was
+  // missing recent deploys. The URL approach works no matter which
+  // infrastructure is up.
+  const [pdfUrl, setPdfUrl] = useState('');
   const [redebit, setRedebit] = useState(wasRefunded && amount > 0);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [done, setDone] = useState(null);
 
   async function submit() {
-    if (!file) { setMsg('Please choose a PDF file.'); return; }
-    if (file.type !== 'application/pdf'
-      && !/\.pdf$/i.test(file.name)) {
-      setMsg('File must be a PDF.'); return;
+    const u = String(pdfUrl || '').trim();
+    if (!u) { setMsg('Please paste the PDF URL.'); return; }
+    if (!/^https?:\/\//.test(u)) {
+      setMsg('URL must start with http:// or https://'); return;
     }
-    if (file.size > 25 * 1024 * 1024) {
-      setMsg('PDF must be under 25 MB.'); return;
-    }
-    // Belt + braces: confirm the re-debit decision before charging.
     if (wasRefunded && amount > 0) {
       const confirmed = window.confirm(
         redebit
           ? `Re-debit ${'₹'}${amount} from the customer's wallet `
             + 'now? (They were refunded earlier when the order '
             + 'looked failed.)'
-          : 'Upload WITHOUT re-debiting? The customer will receive '
-            + 'this report as goodwill (no wallet movement).');
+          : 'Attach the PDF WITHOUT re-debiting? The customer will '
+            + 'receive this report as goodwill (no wallet movement).');
       if (!confirmed) return;
     }
     setBusy(true); setMsg('');
     try {
-      // RELAY-INDEPENDENT PATH (June 2026):
-      //   Vercel has been ignoring push-relay rebuilds, so the
-      //   relay actions presignManualUpload + manualUploadReport
-      //   may not be deployed yet. To make Upload PDF work TODAY
-      //   we do everything client-side with the admin's existing
-      //   Firebase credentials:
-      //     1) Upload PDF straight to Firebase Storage (admin can
-      //        write to /reports/rescued/{orderId}.pdf via rules).
-      //     2) Update the order doc in Firestore - mark ready,
-      //        attach pdfUrl, set manualUpload fields. Admin role
-      //        is allowed direct write per existing security
-      //        rules (same as adminService.adjustWallet path).
-      //     3) If wallet was previously refunded AND admin opted
-      //        in, atomic wallet -= amount + write debit
-      //        transaction in a Firestore transaction (admin role
-      //        bypasses the no-self-wallet-write rule).
-      //     4) Drop an in-app notifications doc and best-effort
-      //        push via the relay (push works even when the
-      //        kundli action dispatcher is stale because it lives
-      //        on /api/sendPush).
-      setMsg(`Uploading ${(file.size / 1024).toFixed(0)} KB to Storage...`);
-      const sharedMod = await import('@astro/shared');
-      const { db, getStorageLazy } = sharedMod;
-      // shared/firebase.js exports `storage` as undefined and
-      // lazy-loads the real instance to keep the Firebase Storage
-      // SDK out of the initial bundle. Must await getStorageLazy()
-      // here instead of grabbing the named `storage` export.
-      const storage = await getStorageLazy();
-      const { ref, uploadBytes, getDownloadURL } = await import(
-        'firebase/storage');
-      // /media is writeable by any signed-in user per
-      // storage.rules; the operator is signed in as admin so the
-      // upload succeeds without needing a rules change. The path
-      // includes 'rescued' for forensics so this PDF is easy to
-      // tell apart from a legacy manually-uploaded asset.
-      const path = `media/rescued/${o.id}.pdf`;
-      const sref = ref(storage, path);
-      await uploadBytes(sref, file, { contentType: 'application/pdf' });
-      const pdfUrl = await getDownloadURL(sref);
-
+      // URL-LINK PATH (June 2026):
+      //   Firebase Storage is unavailable (project is on Spark; the
+      //   bucket doesn't exist) and the Vercel relay is missing
+      //   recent deploys, so neither browser-direct upload paths
+      //   work. The simplest reliable approach is for the operator
+      //   to host the PDF anywhere reachable (Google Drive shareable
+      //   link, Dropbox public URL, R2 public bucket, the AstroSeer
+      //   /pdf endpoint, etc.) and paste the URL here. We just
+      //   attach the URL to the order doc.
       setMsg('Finalising order...');
+      const { db } = await import('@astro/shared');
       const {
         doc, getDoc, updateDoc, runTransaction,
         serverTimestamp, deleteField,
@@ -473,11 +444,11 @@ function ManualUploadModal({ o, onClose, onSuccess }) {
         });
         redebitedAmount = amount;
       }
-      // Update the order doc.
+      // Update the order doc with the pasted PDF URL.
       await updateDoc(orderRef, {
         status: cur.kind === 'free'
           ? 'ready_rescued' : 'paid_ready',
-        pdfUrl,
+        pdfUrl: u,
         pdfReadyAt: serverTimestamp(),
         rescuedAt: serverTimestamp(),
         rescueSource: 'admin_manual',
@@ -580,27 +551,34 @@ function ManualUploadModal({ o, onClose, onSuccess }) {
               : 'bg-bg-light/60 text-sub-text'}`}>
               {wasRefunded
                 ? `This order was refunded ${'₹'}${amount} earlier. `
-                  + 'If the report has been delivered now, tick '
+                  + 'If the report has been delivered, tick '
                   + '"Re-debit wallet" to charge the customer again.'
                 : 'Order is currently '
                   + (o.status === 'paid_generating'
                     ? 'generating' : o.status)
-                  + '. Upload alone will deliver the PDF.'}
+                  + '. The link below will deliver the PDF.'}
+            </div>
+            <div className="rounded-card border border-gray-200
+              bg-bg-light/30 p-3 text-[11px] text-sub-text
+              leading-relaxed">
+              <b className="text-dark-text">Where to host the PDF:</b>
+              <ul className="mt-1 list-disc pl-4 space-y-0.5">
+                <li>Google Drive: right-click {'>'} Share {'>'} Anyone
+                  with the link {'>'} copy link</li>
+                <li>Dropbox: Share {'>'} create link {'>'} copy</li>
+                <li>R2 / S3 public bucket URL</li>
+                <li>Any direct PDF URL the customer can open in a
+                  browser</li>
+              </ul>
             </div>
             <label className="block">
               <span className="text-xs font-semibold text-sub-text">
-                PDF file (max 25 MB)
+                PDF URL
               </span>
-              <input className="mt-1 block w-full text-sm"
-                type="file" accept="application/pdf,.pdf"
-                onChange={(e) => setFile(
-                  e.target.files && e.target.files[0])} />
-              {file && (
-                <div className="mt-1 text-[11px] text-sub-text">
-                  {file.name} {'·'}{' '}
-                  {(file.size / 1024).toFixed(0)} KB
-                </div>
-              )}
+              <input className="input mt-1" type="url"
+                placeholder="https://drive.google.com/file/d/..."
+                value={pdfUrl}
+                onChange={(e) => setPdfUrl(e.target.value)} />
             </label>
             {wasRefunded && amount > 0 && (
               <label className="flex items-start gap-2 rounded-card
@@ -624,10 +602,10 @@ function ManualUploadModal({ o, onClose, onSuccess }) {
                 className="rounded-full bg-bg-light px-4 py-2
                   text-sm font-semibold">Cancel</button>
               <button onClick={submit}
-                disabled={busy || !file}
+                disabled={busy || !pdfUrl}
                 className="rounded-full bg-primary px-4 py-2 text-sm
                   font-bold text-white disabled:opacity-60">
-                {busy ? 'Uploading...' : 'Upload + deliver'}
+                {busy ? 'Saving...' : 'Attach + deliver'}
               </button>
             </div>
           </div>
