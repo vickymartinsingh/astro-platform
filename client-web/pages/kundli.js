@@ -6,6 +6,7 @@ import Layout from '../components/Layout';
 import { SkeletonList } from '../components/Skeleton';
 import { useRequireClient } from '../lib/useAuth';
 import { DateField, TimeField, CityField } from '../components/BirthInputs';
+import DuplicateOrderModal from '../components/DuplicateOrderModal';
 import ZodiacGlyph from '../components/ZodiacGlyph';
 
 // Form shape. lat/lng/tz are captured at place-pick time so the
@@ -3925,6 +3926,7 @@ function ReportButtons({ kundli }) {
   });
   // Holds the kind the user clicked. Non-null = confirm popup open.
   const [pending, setPending] = useState(null);
+  const [dup, setDup] = useState(null); // { match, kind } | null
   useEffect(() => {
     (async () => {
       try {
@@ -3937,12 +3939,24 @@ function ReportButtons({ kundli }) {
       } catch (_) { /* keep defaults */ }
     })();
   }, []);
-  async function buy(kind) {
+  async function buy(kind, force) {
     setError(null); setBusy(kind); setResult(null);
     try {
       const uid = kundli && kundli.userId;
       if (!uid || !kundli.id) {
         throw new Error('Save a kundli profile first.');
+      }
+      // Duplicate check (operator 2026-06-06): block in-progress
+      // dupes, warn on completed dupes. We're on a specific profile
+      // page so the picker step is skipped here per the spec.
+      if (!force) {
+        const dup = await kundliService.findDuplicateOrder({
+          uid, profile: kundli, kind }).catch(() => null);
+        if (dup) {
+          setBusy('');
+          setDup({ match: dup, kind });
+          return;
+        }
       }
       const out = await kundliService.requestReport({
         uid, kundliProfileId: kundli.id, kind,
@@ -4028,6 +4042,12 @@ function ReportButtons({ kundli }) {
         <DownloadPopup result={result}
           onClose={() => setResult(null)} />
       )}
+      <DuplicateOrderModal match={dup ? dup.match : null}
+        onCancel={() => setDup(null)}
+        onConfirm={() => {
+          const cur = dup; setDup(null);
+          if (cur) buy(cur.kind, true); // force, skip dedup
+        }} />
     </div>
   );
 }

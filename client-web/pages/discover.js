@@ -11,6 +11,8 @@ import {
 import Layout from '../components/Layout';
 import { useOptionalClient } from '../lib/useAuth';
 import { useAuthModal } from '../lib/authModal';
+import KundliPicker from '../components/KundliPicker';
+import DuplicateOrderModal from '../components/DuplicateOrderModal';
 
 // Discover page - every AstroSeer-API-backed reading rendered as a
 // monochrome icon card. Click → detail panel with the sections,
@@ -38,6 +40,11 @@ export default function Discover() {
   const router = useRouter();
   const [activeId, setActiveId] = useState(
     typeof router.query.f === 'string' ? router.query.f : '');
+  // Profile picker + duplicate guard - both 2026-06-06 spec.
+  // picker = { feature, kind, status, settle } | null
+  // dup    = { match, profile, ctx } | null
+  const [picker, setPicker] = useState(null);
+  const [dup, setDup] = useState(null);
   const [groupFilter, setGroupFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [cfg, setCfg] = useState({});
@@ -151,37 +158,47 @@ export default function Discover() {
       return;
     }
 
-    // Live + included path: fire the relay request in the background.
-    (async () => {
-      try {
-        const profiles = await kundliService
-          .getKundliProfiles(user.uid).catch(() => []);
-        const def = profiles.find((p) => p.isDefault) || profiles[0];
-        if (!def) {
-          settle(() => { setDone(null);
-            setError('Save a kundli profile first under the Kundli '
-              + 'tab.'); });
-          return;
-        }
-        const result = await kundliService.requestReport({
-          uid: user.uid, kundliProfileId: def.id, kind,
-        });
-        settle(() => setDone({ feature, status,
-          result: { ...result, pending: false } }));
-      } catch (e) {
-        const msg = e && e.message ? e.message : 'Could not process.';
-        if (/insufficient/i.test(msg) || (e && e.code
-          === 'insufficient_wallet')) {
-          settle(() => { setDone(null);
-            setRecharge({ feature, need: featurePrice(feature, cfg),
-              price: featurePrice(feature, cfg),
-              walletAt: Number(wallet || 0) }); });
-        } else {
-          settle(() => setDone({ feature, status,
-            result: { pending: false, error: msg } }));
+    // Live + included path: prompt for a kundli profile (per spec
+    // "if the user is not already on a specific Kundli profile
+    // page, the system must prompt the user to select a Kundli
+    // profile before proceeding"). Discover is a generic feature
+    // list - never tied to a single profile - so we ALWAYS show
+    // the picker here. Profile choice is then handed to
+    // continueReport(profile, kind, settle, ...).
+    setPicker({ feature, kind, status, settle });
+  }
+
+  // Continuation after the user picks a profile in the picker, OR
+  // after they confirm the Case-2 duplicate warning.
+  async function continueReport(profile, ctx, force) {
+    const { feature, kind, status, settle } = ctx;
+    try {
+      if (!force) {
+        const dup = await kundliService.findDuplicateOrder({
+          uid: user.uid, profile, kind });
+        if (dup) {
+          setDup({ match: dup, profile, ctx });
+          return; // wait for user confirmation
         }
       }
-    })();
+      const result = await kundliService.requestReport({
+        uid: user.uid, kundliProfileId: profile.id, kind,
+      });
+      settle(() => setDone({ feature, status,
+        result: { ...result, pending: false } }));
+    } catch (e) {
+      const msg = e && e.message ? e.message : 'Could not process.';
+      if (/insufficient/i.test(msg) || (e && e.code
+        === 'insufficient_wallet')) {
+        settle(() => { setDone(null);
+          setRecharge({ feature, need: featurePrice(feature, cfg),
+            price: featurePrice(feature, cfg),
+            walletAt: Number(wallet || 0) }); });
+      } else {
+        settle(() => setDone({ feature, status,
+          result: { pending: false, error: msg } }));
+      }
+    }
   }
 
   if (loading) {
@@ -371,6 +388,30 @@ export default function Discover() {
           {error}
         </div>
       )}
+      <KundliPicker uid={user?.uid} open={!!picker}
+        onClose={() => {
+          // Closing without picking aborts the pending request: clear
+          // the spinner state the caller seeded into `done` so the
+          // user can re-tap the feature card.
+          if (picker) picker.settle(() => setDone(null));
+          setPicker(null);
+        }}
+        onPick={(p) => {
+          const ctx = picker;
+          setPicker(null);
+          if (ctx) continueReport(p, ctx, false);
+        }} />
+      <DuplicateOrderModal match={dup ? dup.match : null}
+        onCancel={() => {
+          // Case 1 (in_progress) OR Case 2 cancel: drop the pending
+          // request entirely. setDone(null) hides the inline spinner.
+          if (dup && dup.ctx) dup.ctx.settle(() => setDone(null));
+          setDup(null);
+        }}
+        onConfirm={() => {
+          const cur = dup; setDup(null);
+          if (cur) continueReport(cur.profile, cur.ctx, true);
+        }} />
     </Layout>
   );
 }

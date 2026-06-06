@@ -186,12 +186,18 @@ export function AuthModalProvider({ children }) {
   const closeLogin = useCallback(() => { setOpen(false); }, []);
 
   function done() {
-    const cb = cbRef.current;
+    // Operator 2026-06-06: "After user login, the app should always
+    // redirect to the Home Page. Currently, users are sometimes
+    // landing on other pages." Previously a queued callback (recharge
+    // resume, chat-after-login, etc.) would override the home jump
+    // and leave the user on whatever screen kicked off the modal.
+    // The new contract: home wins, every time. Any post-login state
+    // continuation should be self-contained on the home page (e.g.
+    // a flash banner) rather than a URL jump.
     cbRef.current = null; dismissRef.current = null;
     setShown(false);
     setTimeout(() => setOpen(false), 180);
-    if (cb) setTimeout(cb, 420);
-    else setTimeout(() => router.replace('/dashboard'), 420);
+    setTimeout(() => router.replace('/'), 420);
   }
   function dismiss() {
     const d = dismissRef.current;

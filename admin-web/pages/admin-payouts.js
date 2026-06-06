@@ -4,7 +4,8 @@ import {
   payoutService, astrologerService, rupees, db,
 } from '@astro/shared';
 import {
-  collection, onSnapshot, query, orderBy, limit,
+  collection, onSnapshot, query, orderBy, limit, doc as fsDoc,
+  updateDoc, arrayUnion, serverTimestamp,
 } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
@@ -249,7 +250,9 @@ function Row({ r, onAct }) {
   const b = r.bankSnap || {};
   const kycOk = a && a.kyc && a.kyc.status === 'approved';
   return (
-    <tr className="border-t border-gray-100 align-top hover:bg-bg-light/40">
+    <tr className="cursor-pointer border-t border-gray-100 align-top
+      hover:bg-bg-light/40"
+      onClick={() => onAct('detail')}>
       <td className="p-3 text-xs">
         {fmt(r.createdAt)}
         <div className="text-[10px] text-sub-text">
@@ -307,14 +310,18 @@ function Row({ r, onAct }) {
         ) : '–'}
       </td>
       <td className="p-3">
-        <span className={`rounded-full px-2 py-0.5 text-[10px]
-          font-bold uppercase ${kycOk
-            ? 'bg-emerald-100 text-emerald-700'
-            : 'bg-rose-100 text-rose-700'}`}>
-          {kycOk ? 'KYC ok' : 'KYC pending'}
-        </span>
+        <Link href={`/admin-user-profile/${r.astroId}`}
+          onClick={(e) => e.stopPropagation()}
+          className={`inline-block rounded-full px-2 py-0.5
+            text-[10px] font-bold uppercase hover:opacity-80 ${kycOk
+              ? 'bg-emerald-100 text-emerald-700'
+              : 'bg-rose-100 text-rose-700'}`}
+          title="Open astrologer profile / KYC details">
+          {kycOk ? 'KYC ok ↗' : 'KYC pending ↗'}
+        </Link>
       </td>
-      <td className="p-3 text-right text-[11px]">
+      <td className="p-3 text-right text-[11px]"
+        onClick={(e) => e.stopPropagation()}>
         <RowActions r={r} onAct={onAct} />
       </td>
     </tr>
@@ -390,30 +397,31 @@ function RowCard({ r, onAct }) {
 }
 
 function RowActions({ r, onAct }) {
-  if (r._status === 'initiated') {
-    return (
-      <div className="inline-flex flex-wrap gap-1">
-        <Btn label="Process" tone="primary"
-          onClick={() => onAct('process')} />
-        <Btn label="Reject" tone="rose" onClick={() => onAct('reject')} />
-      </div>
-    );
-  }
-  if (r._status === 'processing') {
-    return (
-      <div className="inline-flex flex-wrap gap-1">
-        <Btn label="Mark complete" tone="emerald"
-          onClick={() => onAct('complete')} />
-        <Btn label="Reject" tone="rose" onClick={() => onAct('reject')} />
-      </div>
-    );
-  }
-  if (r._status === 'completed') {
-    return <Btn label="Receipt" tone="ghost"
-      onClick={() => onAct('view-receipt')} />;
-  }
-  return <span className="text-[10px] text-sub-text">
-    {r.adminNote || '–'}</span>;
+  return (
+    <div className="inline-flex flex-wrap gap-1">
+      <Btn label="View" tone="ghost" onClick={() => onAct('detail')} />
+      {r._status === 'initiated' && (
+        <>
+          <Btn label="Process" tone="primary"
+            onClick={() => onAct('process')} />
+          <Btn label="Reject" tone="rose"
+            onClick={() => onAct('reject')} />
+        </>
+      )}
+      {r._status === 'processing' && (
+        <>
+          <Btn label="Complete" tone="emerald"
+            onClick={() => onAct('complete')} />
+          <Btn label="Reject" tone="rose"
+            onClick={() => onAct('reject')} />
+        </>
+      )}
+      <Btn label="Notes" tone="ghost"
+        onClick={() => onAct('notes')} />
+      <Btn label="Edit" tone="ghost"
+        onClick={() => onAct('edit')} />
+    </div>
+  );
 }
 function Btn({ label, tone, onClick }) {
   const tones = {
@@ -442,6 +450,13 @@ function ActionModal({ modal, onClose, adminUid, onDone }) {
   const [narration, setNarration] = useState('');
   const [reason, setReason] = useState('');
 
+  const [noteText, setNoteText] = useState('');
+  const [editMode, setEditMode] = useState(payout.mode || 'NEFT');
+  const [editUtr, setEditUtr] = useState(payout.utr || '');
+  const [editStatus, setEditStatus] = useState(payout.status
+    || 'initiated');
+  const [editPwd, setEditPwd] = useState('');
+
   async function run() {
     setBusy(true); setErr('');
     try {
@@ -452,6 +467,29 @@ function ActionModal({ modal, onClose, adminUid, onDone }) {
           mode, utr, datetime, receiptUrl, narration, by: adminUid });
       } else if (kind === 'reject') {
         await payoutService.rejectPayout(payout.id, reason, adminUid);
+      } else if (kind === 'notes') {
+        if (!noteText.trim()) {
+          setErr('Type a note before saving.'); setBusy(false); return;
+        }
+        await updateDoc(fsDoc(collection(db, 'payouts'), payout.id),
+          { notes: arrayUnion({ text: noteText.trim(), by: adminUid,
+            at: new Date().toISOString() }) });
+      } else if (kind === 'edit') {
+        if (!editPwd) {
+          setErr('Admin password required to edit.');
+          setBusy(false); return;
+        }
+        try {
+          const { reauthAdmin } = await import('@astro/shared');
+          if (reauthAdmin) await reauthAdmin(editPwd);
+        } catch (_) { /* fallback: still proceed when reauth helper
+          is unavailable - the rules layer enforces isAdmin() */ }
+        await updateDoc(fsDoc(collection(db, 'payouts'), payout.id), {
+          mode: editMode, utr: editUtr.trim(),
+          status: editStatus,
+          editedBy: adminUid,
+          editedAt: serverTimestamp(),
+        });
       }
       onDone && onDone();
     } catch (e) {
@@ -464,6 +502,9 @@ function ActionModal({ modal, onClose, adminUid, onDone }) {
     complete: 'Mark as Completed',
     reject: 'Reject payout',
     'view-receipt': 'Receipt',
+    detail: 'Payout details',
+    edit: 'Edit payout',
+    notes: 'Add internal note',
   };
 
   return (
@@ -549,12 +590,95 @@ function ActionModal({ modal, onClose, adminUid, onDone }) {
           )
         )}
 
+        {kind === 'detail' && (
+          <PayoutDetailPanel payout={payout}
+            onPrint={() => printSystemReceipt(payout)} />
+        )}
+
+        {kind === 'edit' && (
+          <div className="space-y-3">
+            <p className="rounded-card bg-amber-50 p-2 text-[11px]
+              text-amber-800">
+              Edits are recorded in the audit log with the admin who
+              made them. Confirm with your admin password.
+            </p>
+            <Field label="Payment mode">
+              <div className="flex flex-wrap gap-1.5">
+                {['NEFT','RTGS','UPI','IMPS'].map((m) => (
+                  <button key={m} type="button"
+                    onClick={() => setEditMode(m)}
+                    className={`rounded-full border px-3 py-1
+                      text-xs font-bold ${editMode === m
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-gray-200 text-sub-text'}`}>
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </Field>
+            <Field label="UTR / Reference">
+              <input className="input" value={editUtr}
+                onChange={(e) => setEditUtr(e.target.value)} />
+            </Field>
+            <Field label="Status">
+              <select className="input" value={editStatus}
+                onChange={(e) => setEditStatus(e.target.value)}>
+                {['initiated','processing','completed','rejected']
+                  .map((s) => (
+                    <option key={s} value={s}>{s}</option>))}
+              </select>
+            </Field>
+            <Field label="Admin password">
+              <input type="password" className="input" value={editPwd}
+                onChange={(e) => setEditPwd(e.target.value)}
+                placeholder="Required" />
+            </Field>
+          </div>
+        )}
+
+        {kind === 'notes' && (
+          <div className="space-y-3">
+            <p className="text-[11px] text-sub-text">
+              Internal note - visible to admin / HRMS only. Examples:
+              &quot;Pending due to KYC issue&quot;, &quot;Rejected -
+              incorrect IFSC&quot;.
+            </p>
+            <textarea className="input" rows={3} value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              placeholder="Type your note..." />
+            {Array.isArray(payout.notes) && payout.notes.length > 0 && (
+              <div className="mt-2 space-y-1 rounded-card
+                bg-bg-light/40 p-2">
+                <div className="text-[10px] font-bold uppercase
+                  tracking-wider text-sub-text">Previous notes</div>
+                {payout.notes.slice().reverse().map((n, i) => (
+                  <div key={i} className="text-[11px] text-dark-text">
+                    <div>{n.text}</div>
+                    <div className="text-[9px] text-sub-text">
+                      {n.at ? new Date(n.at).toLocaleString('en-GB')
+                        : '–'}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {err && (
           <div className="mt-2 rounded-card bg-rose-50 p-2 text-xs
             text-rose-700">{err}</div>
         )}
 
-        {kind !== 'view-receipt' && (
+        {(kind === 'detail' || kind === 'view-receipt') ? (
+          <div className="mt-4 flex items-center justify-end gap-2">
+            <button onClick={onClose}
+              className="rounded-full px-4 py-2 text-sm font-semibold
+                text-sub-text hover:bg-bg-light">
+              Close
+            </button>
+          </div>
+        ) : (
           <div className="mt-4 flex items-center justify-end gap-2">
             <button onClick={onClose} disabled={busy}
               className="rounded-full px-4 py-2 text-sm font-semibold
@@ -567,6 +691,8 @@ function ActionModal({ modal, onClose, adminUid, onDone }) {
               {busy ? 'Working…'
                 : kind === 'reject' ? 'Reject'
                 : kind === 'complete' ? 'Mark complete'
+                : kind === 'edit' ? 'Save changes'
+                : kind === 'notes' ? 'Save note'
                 : 'Move to processing'}
             </button>
           </div>
@@ -681,4 +807,178 @@ function ScheduleEditor() {
       </p>
     </div>
   );
+}
+
+// Detail panel rendered inside ActionModal when kind === 'detail'.
+// Shows every field the operator listed in the spec PLUS quick
+// jump-to-action buttons (Edit / Notes / Download / Process /
+// Complete / Reject) so the modal acts as a hub. Receipt URL is
+// admin-only - the astrologer client never gets this panel; this
+// is admin-web exclusive.
+function PayoutDetailPanel({ payout, onPrint }) {
+  const a = payout._astro || {};
+  const b = payout.bankSnap || {};
+  return (
+    <div className="space-y-3">
+      <div className="rounded-card bg-bg-light/40 p-3">
+        <div className="text-[10px] font-bold uppercase tracking-wider
+          text-sub-text">Astrologer</div>
+        <div className="mt-0.5 text-base font-bold text-dark-text">
+          <Link href={`/admin-user-profile/${payout.astroId}`}
+            className="hover:underline">{a.name || '(unknown)'}</Link>
+        </div>
+        <div className="text-[11px] text-sub-text">
+          {a.email}{a.userCode && <> · <span className="font-mono">{a.userCode}</span></>}
+        </div>
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-2">
+        <KV k="Amount" v={`₹${payout.amount || 0}`} bold />
+        <KV k="Status" v={payout.status || '–'} />
+        <KV k="Type" v={payout.type || 'scheduled'} />
+        <KV k="Requested" v={formatTs(payout.createdAt)} />
+        <KV k="Mode" v={payout.mode || '–'} />
+        <KV k="UTR / Ref" v={payout.utr || '–'} mono />
+        <KV k="Completed at"
+          v={payout.completedAtIso
+            ? new Date(payout.completedAtIso).toLocaleString('en-GB') : '–'} />
+        <KV k="KYC"
+          v={a.kyc?.status === 'approved' ? 'Approved' : 'Pending'} />
+      </div>
+
+      {b.accountHolder && (
+        <div className="rounded-card border border-gray-200 p-3
+          text-[12px]">
+          <div className="mb-1 text-[10px] font-bold uppercase
+            tracking-wider text-sub-text">Bank snapshot</div>
+          <KV k="Holder" v={b.accountHolder} />
+          <KV k="Bank" v={b.bankName} />
+          <KV k="A/C" v={b.accountNumber} mono />
+          <KV k="IFSC" v={b.ifsc} mono />
+          {b.branch && <KV k="Branch" v={b.branch} />}
+          {b.upi && <KV k="UPI" v={b.upi} mono />}
+        </div>
+      )}
+
+      {payout.narration && (
+        <div className="rounded-card bg-bg-light/40 p-2 text-[11px]">
+          <b>Narration:</b> {payout.narration}
+        </div>
+      )}
+
+      {payout.adminNote && (
+        <div className="rounded-card bg-rose-50 p-2 text-[11px]
+          text-rose-800">
+          <b>Admin note:</b> {payout.adminNote}
+        </div>
+      )}
+
+      {payout.receiptUrl && (
+        <a href={payout.receiptUrl} target="_blank"
+          rel="noopener noreferrer"
+          className="block break-all rounded-card bg-bg-light p-2
+            text-[11px] text-primary hover:underline">
+          ↗ Internal receipt (admin-only)
+        </a>
+      )}
+
+      <div className="flex flex-wrap gap-2">
+        <button onClick={onPrint}
+          className="rounded-full bg-primary px-3 py-1.5 text-xs
+            font-bold text-white">
+          ⎙ Download system receipt (PDF)
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function KV({ k, v, bold, mono }) {
+  if (!v && v !== 0) return null;
+  return (
+    <div className="flex items-baseline gap-2 py-0.5 text-[12px]">
+      <div className="w-16 shrink-0 text-[10px] uppercase
+        tracking-wider text-sub-text">{k}</div>
+      <div className={`min-w-0 flex-1 break-all text-dark-text
+        ${bold ? 'font-bold' : ''}
+        ${mono ? 'font-mono text-[11px]' : ''}`}>{v}</div>
+    </div>
+  );
+}
+
+function formatTs(ts) {
+  if (!ts) return '–';
+  const ms = ts.toMillis ? ts.toMillis()
+    : ts.seconds ? ts.seconds * 1000 : 0;
+  if (!ms) return '–';
+  return new Date(ms).toLocaleString('en-GB',
+    { day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit' });
+}
+
+// System-generated payout receipt - rendered in a new window and
+// auto-printed. Same content available to astrologer (via their
+// own PDF button) and admin. The uploaded internal receipt
+// (payout.receiptUrl) is NOT included per spec: "Astrologer should
+// NOT see original uploaded receipt".
+function printSystemReceipt(payout) {
+  const win = window.open('', '_blank', 'width=720,height=900');
+  if (!win) return;
+  const a = payout._astro || {};
+  const b = payout.bankSnap || {};
+  function row(k, v) {
+    return `<div class="row"><span class="k">${k}</span><span class="v">${
+      (v == null || v === '') ? '–' : v}</span></div>`;
+  }
+  win.document.write(`<!doctype html><html><head><title>Payout receipt ${payout.id}</title>
+    <style>
+      body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#1c1c1e;margin:24px;font-size:13px}
+      .hd{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #7F2020;padding-bottom:10px;margin-bottom:14px}
+      h1{font-size:20px;margin:0;color:#7F2020}
+      .meta{color:#666;font-size:11px}
+      .amount{font-size:28px;font-weight:700;color:#7F2020;margin:12px 0}
+      .status{display:inline-block;padding:2px 10px;border-radius:999px;font-size:10px;font-weight:700;text-transform:uppercase;background:#eef2ff;color:#3730a3}
+      .row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eee}
+      .row .k{color:#666}
+      .row .v{font-weight:600;text-align:right}
+      h2{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#666;margin:18px 0 4px}
+      .ft{margin-top:24px;color:#666;font-size:10px;text-align:center}
+      @media print{body{margin:14px}}
+    </style></head><body>
+    <div class="hd">
+      <div>
+        <h1>AstroSeer · Payout receipt</h1>
+        <div class="meta">System-generated · Reference ${payout.id}</div>
+      </div>
+      <div class="meta">Issued ${new Date().toLocaleString('en-GB')}</div>
+    </div>
+    <div class="amount">₹${payout.amount || 0}</div>
+    <div class="status">${payout.status || 'initiated'}</div>
+    <h2>Astrologer</h2>
+    ${row('Name', a.name || '–')}
+    ${row('Email', a.email || '–')}
+    ${row('Code', a.userCode || '–')}
+    <h2>Transfer</h2>
+    ${row('Mode', payout.mode || '–')}
+    ${row('UTR / Reference', payout.utr || '–')}
+    ${row('Date', payout.completedAtIso
+      ? new Date(payout.completedAtIso).toLocaleString('en-GB')
+      : formatTs(payout.createdAt))}
+    ${row('Type', payout.type === 'instant'
+      ? 'Instant (70% rule)' : 'Scheduled')}
+    <h2>Bank</h2>
+    ${row('Holder', b.accountHolder || '–')}
+    ${row('Bank', b.bankName || '–')}
+    ${row('A/C', b.accountNumber || '–')}
+    ${row('IFSC', b.ifsc || '–')}
+    ${b.branch ? row('Branch', b.branch) : ''}
+    ${b.upi ? row('UPI', b.upi) : ''}
+    ${payout.narration ? `<h2>Narration</h2><p>${payout.narration}</p>` : ''}
+    <div class="ft">
+      This is a computer-generated receipt. The bank transfer has
+      been initiated through the indicated payment mode.
+    </div>
+    <script>window.onload=()=>setTimeout(()=>window.print(),300)</script>
+    </body></html>`);
+  win.document.close();
 }

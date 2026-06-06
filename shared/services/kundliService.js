@@ -318,6 +318,68 @@ export async function listAllOrdersAdmin({ limit: lim = 500 } = {}) {
   }
 }
 
+// Identity helper - the four fields the operator chose for the dedupe
+// rule (2026-06-06): "An order should be considered duplicate if all
+// below fields match: Name, Date of Birth (DOB), Time of Birth (TOB),
+// Place of Birth (POB). If any one field is different, it should be
+// treated as a new order."
+function profileFingerprint(p) {
+  if (!p) return '';
+  const norm = (v) => String(v || '').trim().toLowerCase();
+  return [norm(p.name), norm(p.dob),
+    norm(p.tob || p.timeOfBirth),
+    norm(p.pob || p.placeOfBirth || p.birthPlace || p.place)]
+    .join('|');
+}
+
+// IN_PROGRESS_STATUSES: an order is still alive (admin / relay may
+// finish it shortly) for these. New orders against the same
+// fingerprint should be BLOCKED until one of these clears, per the
+// operator spec Case 1 popup "You have already placed an order ...
+// it is currently in progress. Please wait until it is completed."
+const IN_PROGRESS_STATUSES = new Set([
+  'pending', 'queued', 'processing', 'generating', 'paid',
+  'paid_pending', 'paid_processing', 'in_progress',
+]);
+
+// Inspect the user's order history and decide whether a new report
+// request for `profile` + `kind` would be a duplicate.
+// Returns:
+//   { type: 'in_progress', order } -> block; show Case 1 popup
+//   { type: 'completed',   order } -> warn; show Case 2 popup
+//   null                           -> safe; proceed
+export async function findDuplicateOrder({ uid, profile, kind }) {
+  if (!uid || !profile) return null;
+  const fp = profileFingerprint(profile);
+  if (!fp) return null;
+  const orders = await listOrders(uid).catch(() => []);
+  // Same `kind` only. A "Career report" + "Marriage report" against
+  // the same profile are intentionally distinct purchases - this
+  // function must not flag those as duplicates of each other.
+  const sameKind = orders.filter((o) =>
+    String(o.kind || '').toLowerCase() === String(kind || '').toLowerCase());
+  for (const o of sameKind) {
+    // Match either by direct profile id or by fingerprint of the
+    // snapshot stored on the order. Orders prior to this commit may
+    // not carry every field - the fingerprint helper coerces empty
+    // strings so absent fields don't accidentally match.
+    const oFp = profileFingerprint(o.profile || o);
+    const sameId = o.kundliProfileId && o.kundliProfileId === profile.id;
+    if (sameId || (oFp && oFp === fp)) {
+      const status = String(o.status || '').toLowerCase();
+      if (IN_PROGRESS_STATUSES.has(status)) {
+        return { type: 'in_progress', order: o };
+      }
+      // Completed / refunded / cancelled / failed / paid_ready etc.
+      // All of these mean the customer already has (or had) a copy
+      // and a fresh request would be a duplicate purchase. Per spec
+      // we WARN with the Case 2 popup but allow Continue.
+      return { type: 'completed', order: o };
+    }
+  }
+  return null;
+}
+
 // List the user's PDF orders (paid + free), most recent first.
 // Used by /orders and the Orders tab on /kundli.
 export async function listOrders(uid) {
