@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { auditService } from '@astro/shared';
+import { auditService, db } from '@astro/shared';
+import { doc, onSnapshot } from 'firebase/firestore';
 
 // Admin-only compliance + activity panel. Shows the user's last sign-in
 // device, IP, and the audit log of their recent events (signup, login,
@@ -8,13 +9,33 @@ import { auditService } from '@astro/shared';
 function fmt(ts) {
   try {
     const ms = ts && ts.toMillis ? ts.toMillis()
-      : ts && ts.seconds ? ts.seconds * 1000 : 0;
+      : ts && ts.seconds ? ts.seconds * 1000
+      : typeof ts === 'string' ? Date.parse(ts)
+      : typeof ts === 'number' ? ts : 0;
     if (!ms) return '-';
     return new Date(ms).toLocaleString('en-GB', {
       day: '2-digit', month: 'short', year: 'numeric',
       hour: '2-digit', minute: '2-digit', second: '2-digit',
     });
   } catch (_) { return '-'; }
+}
+function relTime(ts) {
+  try {
+    const ms = ts && ts.toMillis ? ts.toMillis()
+      : ts && ts.seconds ? ts.seconds * 1000
+      : typeof ts === 'string' ? Date.parse(ts)
+      : typeof ts === 'number' ? ts : 0;
+    if (!ms) return '';
+    const sec = Math.floor((Date.now() - ms) / 1000);
+    if (sec < 0) return 'just now';
+    if (sec < 60) return `${sec}s ago`;
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min}m ago`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr}h ago`;
+    const d = Math.floor(hr / 24);
+    return `${d}d ago`;
+  } catch (_) { return ''; }
 }
 function parseUa(ua) {
   if (!ua) return 'Unknown';
@@ -33,18 +54,47 @@ function parseUa(ua) {
 
 export default function ComplianceActivity({ uid, profile }) {
   const [events, setEvents] = useState(null);
+  // Live profile snapshot via onSnapshot - so when the customer's
+  // app calls setOnline() (on sign-in AND on every
+  // visibilitychange / app-resume) the admin's view reflects the
+  // new lastSeenAt within Firestore's snapshot latency (~1s),
+  // even while this profile page is open. Without this the panel
+  // used to show whatever was on the doc at first paint and
+  // never updated.
+  const [live, setLive] = useState(null);
+  useEffect(() => {
+    if (!uid) return undefined;
+    return onSnapshot(doc(db, 'users', uid), (s) => {
+      setLive(s.exists() ? s.data() : null);
+    }, () => {});
+  }, [uid]);
   useEffect(() => {
     if (!uid) return;
     auditService.getAuditByUser(uid, 100).then(setEvents)
       .catch(() => setEvents([]));
   }, [uid]);
 
-  const lastIp = profile && (profile.lastSignInIp
-    || profile.lastIp || '');
-  const lastUa = profile && (profile.lastSignInUa
-    || profile.lastUa || '');
-  const lastAt = profile && (profile.lastSignInAt
-    || profile.lastSeen || profile.updatedAt);
+  // Re-render the "X seconds ago" relative-time chip every 15s so
+  // the admin can see the timestamp "freshen" as the customer
+  // continues to use the app, even without a Firestore snapshot
+  // (e.g. when the customer's last activity was a minute ago and
+  // hasn't fired another setOnline yet).
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => tick((n) => n + 1), 15_000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Merge live snapshot over the initial prop so we never paint
+  // an empty card during the first frame after mount.
+  const p = { ...(profile || {}), ...(live || {}) };
+  // The field NAME the customer apps write is lastSeenAt (with At
+  // suffix) via userService.setOnline. Older code had a typo
+  // checking profile.lastSeen (no suffix) which never matched,
+  // so the panel only ever fell through to updatedAt.
+  const lastIp = p.lastSignInIp || p.lastIp || '';
+  const lastUa = p.lastSignInUa || p.lastUserAgent || p.lastUa || '';
+  const lastAt = p.lastSeenAt || p.lastSignInAt || p.updatedAt;
 
   return (
     <div className="surface mt-4 border border-amber-200 p-4">
@@ -59,9 +109,13 @@ export default function ComplianceActivity({ uid, profile }) {
         and compliance review.
       </p>
 
-      {/* Last sign-in snapshot */}
+      {/* Last sign-in / last seen. Renders the absolute timestamp +
+          a WhatsApp-style "X min ago" chip that re-evaluates every
+          15s so the operator can see the value freshen as the
+          customer keeps using the app. */}
       <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
-        <Snap label="Last sign-in" value={fmt(lastAt)} />
+        <Snap label="Last seen" value={fmt(lastAt)}
+          hint={relTime(lastAt)} />
         <Snap label="Last IP"
           value={lastIp || '-'} mono />
         <Snap label="Last device" value={parseUa(lastUa)} />
@@ -129,10 +183,19 @@ export default function ComplianceActivity({ uid, profile }) {
   );
 }
 
-const Snap = ({ label, value, mono = false }) => (
+const Snap = ({ label, value, hint, mono = false }) => (
   <div className="rounded-card bg-bg-light p-2">
-    <div className="text-[10px] font-bold uppercase tracking-wider
-      text-sub-text">{label}</div>
+    <div className="flex items-center justify-between gap-1">
+      <div className="text-[10px] font-bold uppercase tracking-wider
+        text-sub-text">{label}</div>
+      {hint && (
+        <span className="rounded-full bg-emerald-100 px-1.5 py-0.5
+          text-[9px] font-bold uppercase tracking-wider
+          text-emerald-700">
+          {hint}
+        </span>
+      )}
+    </div>
     <div className={`mt-0.5 text-sm ${mono ? 'font-mono' : 'font-semibold'
     } text-dark-text break-all`}>{value}</div>
   </div>
