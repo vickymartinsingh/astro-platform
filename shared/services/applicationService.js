@@ -141,9 +141,62 @@ export async function canApply(email) {
 // form we don't have a uid yet - the OTP cooldown / used-flag on the
 // emailOtps doc is our proof, so we pass `emailVerified: true` only
 // when the caller has just verified.
+// Public-profile username (the slug that becomes the astrologer's
+// shareable URL: /a/<username>). Lower-cased letters + digits +
+// dash + underscore, 3-24 chars. Uniqueness is checked against both
+// LIVE astrologers (collection 'astrologers') AND in-flight
+// applications (collection 'astroApplications') so two applicants
+// in parallel can't both claim the same slug.
+export function normaliseUsername(raw) {
+  return String(raw || '').toLowerCase().trim()
+    .replace(/[^a-z0-9_-]/g, '').slice(0, 24);
+}
+
+export async function isUsernameAvailable(raw) {
+  const u = normaliseUsername(raw);
+  if (!u) return { available: false, reason: 'empty' };
+  if (u.length < 3) {
+    return { available: false, reason: 'too_short' };
+  }
+  const reserved = ['admin', 'support', 'help', 'astro', 'astroseer',
+    'login', 'signup', 'register', 'profile', 'system', 'root'];
+  if (reserved.includes(u)) {
+    return { available: false, reason: 'reserved' };
+  }
+  try {
+    // 1) Already taken by a live astrologer.
+    const live = await getDocs(query(collection(db, 'astrologers'),
+      where('username', '==', u)));
+    if (!live.empty) return { available: false, reason: 'taken' };
+    // 2) Claimed by another in-flight application.
+    const apps = await getDocs(query(
+      collection(db, 'astroApplications'),
+      where('username', '==', u)));
+    if (!apps.empty) {
+      return { available: false, reason: 'pending' };
+    }
+    return { available: true, username: u };
+  } catch (e) {
+    return { available: false, reason: 'check_failed',
+      message: String((e && e.message) || e) };
+  }
+}
+
 export async function submitApplication(data) {
   const email = String(data.email || '').trim().toLowerCase();
   if (!email) throw new Error('Email is required.');
+  // Username + applicant-chosen password. Both are optional at the
+  // schema level (legacy applications had neither) but the public
+  // form makes both required so every modern astrologer has a
+  // profile URL and a working login on day one.
+  const username = normaliseUsername(data.username);
+  if (username) {
+    const av = await isUsernameAvailable(username);
+    if (!av.available) {
+      throw new Error('That username is no longer available.');
+    }
+  }
+  const password = String(data.password || '');
   // Gate: no duplicate active users, no >6 rejected.
   const guard = await canApply(email);
   if (!guard.allowed) {
@@ -186,6 +239,10 @@ export async function submitApplication(data) {
     referredBy: String(data.referredBy || '').trim().toUpperCase(),
     emailVerified: !!data.emailVerified,
     priorRejections: guard.priorRejections || 0,
+    // Public-profile slug + applicant-chosen password (hashed by the
+    // relay when the application is finally approved + provisioned).
+    username: username || '',
+    chosenPassword: password || '',
     status: 'submitted',
     // Onboarding sub-state (filled in by the applicant via the
     // /astro-onboarding/[token] page once recruitment moves the

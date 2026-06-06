@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { authService, userService, db, auth as firebaseAuth } from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
 import { DateField } from './BirthInputs';
+import PhoneInput from './PhoneInput';
 import { useSettings } from '../lib/useSettings';
 
 // Email + Google sign-in card. Reused by the /login page and the login
@@ -107,12 +108,16 @@ export default function LoginCard({ onDone, compact, initialMode }) {
     // button in the "Please wait..." state.
     if (mode === 'signup') {
       if (!name.trim()) { setErr('Enter your full name.'); return; }
-      // Indian mobile numbers are exactly 10 digits. The form strips
-      // anything non-digit (spaces, dashes, leading +91 if user typed
-      // it) before checking the length.
-      const digits = phone.replace(/\D/g, '').replace(/^91/, '');
-      if (digits.length !== 10) {
-        setErr('Mobile number must be exactly 10 digits.'); return;
+      // PhoneInput emits "+CODE NATIONAL"; we just need at least 6
+      // digits in the national part for the number to be plausibly
+      // valid worldwide. The country code is stored alongside.
+      const parts = String(phone || '').trim().split(/\s+/);
+      const dialCode = parts[0] && parts[0].startsWith('+')
+        ? parts[0] : '+91';
+      const nationalDigits = (parts.slice(1).join('') || parts[0] || '')
+        .replace(/\D/g, '');
+      if (nationalDigits.length < 6) {
+        setErr('Enter a valid mobile number.'); return;
       }
       if (!gender) {
         setErr('Please select your gender.'); return;
@@ -151,8 +156,11 @@ export default function LoginCard({ onDone, compact, initialMode }) {
         setStepLabel('Creating account…');
         user = await withTimeout(
           authService.signupUser(name.trim(), email.trim(),
-            password, { phone: phone.replace(/\D/g, '').replace(/^91/, ''),
-              dob, gender }),
+            password, {
+              phone: `${dialCode} ${nationalDigits}`,
+              phoneCountry: dialCode,
+              dob, gender,
+            }),
           15000, 'Signup');
         // Admin-toggled email verification:
         // settings/features.email_verification === true forces a
@@ -237,20 +245,32 @@ export default function LoginCard({ onDone, compact, initialMode }) {
             setBusy(false);
             return;
           } catch (e3) {
-            // OTP SEND FAILED. Clear the flag so the modal can close
-            // and the customer can retry. The Firebase user still
-            // exists with emailVerified:false - on the next signup
-            // attempt with the same email, they will hit
-            // auth/email-already-in-use; they need to wait a few
-            // minutes or contact support.
+            // OTP SEND FAILED. Per rule "Without OTP signup must not
+            // be processed" we ROLL BACK the freshly-created Firebase
+            // Auth user so the next signup attempt with the same
+            // email is not blocked by auth/email-already-in-use.
+            // Without this rollback the customer hit a dead-end loop
+            // ("could not send verification email", then on retry
+            // "account already exists") with no way out except
+            // contacting support.
             try {
               if (typeof window !== 'undefined') {
                 delete window.__pendingSignupOtp;
               }
             } catch (_) {}
-            setErr('Could not send the verification email: '
-              + (e3 && e3.message || 'unknown')
-              + '. Please tap Sign up again to retry.');
+            try {
+              await authService.rollbackPendingSignup(user);
+            } catch (_) { /* never block error UI on rollback */ }
+            const why = String((e3 && e3.message) || 'unknown')
+              .toLowerCase();
+            const friendly = /socket|timeout|econnreset|enotfound/
+              .test(why)
+              ? 'Could not send the verification email: unexpected '
+                + 'socket close. Please tap Sign up again to retry.'
+              : 'Could not send the verification email: '
+                + (e3 && e3.message || 'unknown')
+                + '. Please tap Sign up again to retry.';
+            setErr(friendly);
             setBusy(false);
             return;
           }
@@ -702,22 +722,13 @@ export default function LoginCard({ onDone, compact, initialMode }) {
                 <input className="input" placeholder="Full name"
                   value={name}
                   onChange={(e) => setName(e.target.value)} required />
-                {/* Indian mobile only - +91 stamped as a non-editable
-                    prefix chip so the user just types their 10 digits.
-                    The submit handler strips anything non-digit (and a
-                    leading 91 if the user pastes it). */}
-                <div className="flex items-stretch gap-2">
-                  <div className="flex items-center rounded-xl border
-                    border-gray-200 bg-bg-light px-3 text-sm font-bold
-                    text-sub-text">+91</div>
-                  <input className="input flex-1" type="tel"
-                    inputMode="numeric" maxLength={10}
-                    placeholder="10-digit mobile number"
-                    value={phone}
-                    onChange={(e) => setPhone(
-                      e.target.value.replace(/\D/g, '').slice(0, 10))}
-                    required />
-                </div>
+                {/* Country picker + national number. Default +91 India;
+                    full world list rendered with flag emoji. Admin can
+                    add / remove codes from /admin-country-codes which
+                    propagates here live via watchCountryList. */}
+                <PhoneInput value={phone}
+                  onChange={setPhone}
+                  placeholder="Mobile number" />
                 {/* Gender is mandatory so we can offer the right
                     pronouns + a sensibly defaulted kundli profile. */}
                 <div className="flex gap-2">

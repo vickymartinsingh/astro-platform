@@ -6,6 +6,7 @@ import {
 } from '@astro/shared';
 import Layout from '../components/Layout';
 import { DateField, CityField } from '../components/BirthInputs';
+import PhoneInput from '../components/PhoneInput';
 
 // Public astrologer recruitment / onboarding form. Anyone with the
 // link (including customers via the "Join as astrologer" link) can
@@ -22,10 +23,11 @@ import { DateField, CityField } from '../components/BirthInputs';
 //      link. Same token + link go out in the confirmation email.
 //      Admin reviews in /admin-astro-applications.
 const EMPTY = {
-  fullName: '', email: '', phone: '', gender: 'female', dob: '',
+  fullName: '', email: '', phone: '+91', gender: 'female', dob: '',
   city: '', cityMeta: null,
   languages: [], skills: [], experienceYears: '', bio: '',
   expectedRate: '', referredBy: '', why: '',
+  username: '', password: '', password2: '',
 };
 
 export default function RegisterAsAstrologer() {
@@ -38,6 +40,40 @@ export default function RegisterAsAstrologer() {
     sent: false, verified: false, code: '', sending: false,
     verifying: false, message: '',
   });
+  // Username availability state. `state` cycles idle -> checking
+  // -> available | taken | invalid.
+  const [uname, setUname] = useState({ state: 'idle', message: '' });
+  async function checkUsername() {
+    const v = applicationService.normaliseUsername(f.username);
+    setF((p) => ({ ...p, username: v }));
+    if (!v || v.length < 3) {
+      setUname({ state: 'invalid',
+        message: 'Use 3-24 lowercase letters, digits, _ or -.' });
+      return;
+    }
+    setUname({ state: 'checking', message: 'Checking availability...' });
+    try {
+      const r = await applicationService.isUsernameAvailable(v);
+      if (r.available) {
+        setUname({ state: 'available',
+          message: `astroseer.in/a/${v} is yours.` });
+      } else {
+        const reasons = {
+          empty: 'Username is required.',
+          too_short: 'Username must be at least 3 characters.',
+          reserved: 'That username is reserved.',
+          taken: 'Already taken by another astrologer.',
+          pending: 'Another applicant has claimed this username.',
+          check_failed: r.message || 'Could not check right now.',
+        };
+        setUname({ state: 'taken',
+          message: reasons[r.reason] || 'Not available.' });
+      }
+    } catch (e) {
+      setUname({ state: 'invalid',
+        message: 'Could not check right now. Try again.' });
+    }
+  }
 
   function set(k, v) { setF((p) => ({ ...p, [k]: v })); }
 
@@ -128,6 +164,23 @@ export default function RegisterAsAstrologer() {
     if (!f.why.trim() || f.why.trim().length < 20) {
       setErr('Please tell us why you would like to join '
         + '(at least 20 characters).');
+      return;
+    }
+    // Username gate. Required + must have passed availability check.
+    if (!f.username || uname.state !== 'available') {
+      setErr('Please choose a username and confirm availability '
+        + 'before submitting.');
+      return;
+    }
+    // Applicant-chosen password so they can log in immediately and
+    // track their KYC / upload progress. Minimum 8 chars + must
+    // match confirmation.
+    if (!f.password || f.password.length < 8) {
+      setErr('Choose a password (at least 8 characters).');
+      return;
+    }
+    if (f.password !== f.password2) {
+      setErr('Passwords do not match. Re-enter the confirmation.');
       return;
     }
     setBusy(true);
@@ -269,10 +322,10 @@ export default function RegisterAsAstrologer() {
               )}
             </F>
 
-            <F label="Phone (with country code) *">
-              <input className="input" type="tel" value={f.phone}
-                onChange={(e) => set('phone', e.target.value)}
-                required />
+            <F label="Phone *">
+              <PhoneInput value={f.phone}
+                onChange={(v) => set('phone', v)}
+                placeholder="Mobile number" />
             </F>
 
             <F label="Date of birth (dd-mm-yyyy)">
@@ -338,6 +391,78 @@ export default function RegisterAsAstrologer() {
                 onChange={(e) =>
                   set('expectedRate', e.target.value)} />
             </F>
+          </div>
+
+          {/* Public profile URL + login password. Each astrologer's
+              public page lives at astroseer.in/a/<username>, so we
+              ask the applicant to pick their slug here with a live
+              availability check. The password lets them sign into
+              the astrologer app immediately to track KYC, upload
+              docs, chat with the recruitment team etc. - so they
+              don't have to wait for admin to provision an account. */}
+          <div className="rounded-2xl border border-gray-200
+            bg-bg-light/30 p-4">
+            <h2 className="mb-2 text-sm font-bold uppercase
+              tracking-wider text-sub-text">
+              Profile URL + login
+            </h2>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <F label="Username (public profile slug) *">
+                <div className="flex gap-2">
+                  <div className="flex items-center rounded-xl
+                    border border-gray-200 bg-white px-2 text-xs
+                    text-sub-text">astroseer.in/a/</div>
+                  <input className="input flex-1 font-mono"
+                    placeholder="e.g. saira-kapoor"
+                    value={f.username}
+                    onChange={(e) => {
+                      set('username', e.target.value
+                        .toLowerCase()
+                        .replace(/[^a-z0-9_-]/g, ''));
+                      setUname({ state: 'idle', message: '' });
+                    }} />
+                  <button type="button" onClick={checkUsername}
+                    disabled={!f.username
+                      || uname.state === 'checking'}
+                    className="shrink-0 rounded-full bg-primary
+                      px-3 py-1 text-[11px] font-bold text-white
+                      disabled:opacity-50">
+                    {uname.state === 'checking' ? '...' : 'Check'}
+                  </button>
+                </div>
+                {uname.message && (
+                  <p className={`mt-1 text-[11px] font-semibold
+                    ${uname.state === 'available'
+                      ? 'text-success'
+                      : uname.state === 'taken'
+                        || uname.state === 'invalid'
+                        ? 'text-danger'
+                        : 'text-sub-text'}`}>
+                    {uname.state === 'available' ? '✓ ' : ''}
+                    {uname.message}
+                  </p>
+                )}
+              </F>
+              <F label="Password (min 8 chars) *">
+                <input className="input" type="password"
+                  minLength={8}
+                  placeholder="At least 8 characters"
+                  value={f.password}
+                  onChange={(e) => set('password', e.target.value)} />
+              </F>
+              <F label="Confirm password *">
+                <input className="input" type="password"
+                  minLength={8}
+                  placeholder="Re-enter the password"
+                  value={f.password2}
+                  onChange={(e) => set('password2', e.target.value)} />
+              </F>
+            </div>
+            <p className="mt-2 text-[11px] text-sub-text">
+              You can sign in to the astrologer app immediately with
+              this username + password to track your KYC, upload
+              documents, and chat with the recruitment team.
+            </p>
           </div>
 
           <F label="Short bio">

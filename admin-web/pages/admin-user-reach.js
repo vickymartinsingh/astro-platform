@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import {
   adminService, astrologerService, authService, rupees,
 } from '@astro/shared';
+import { sendPasswordResetEmail } from 'firebase/auth';
 import Layout from '../components/Layout';
 import { useRequireAdmin, useAuth } from '../lib/useAuth';
 import { flash } from '../lib/flash';
@@ -530,6 +531,8 @@ function Row({ u, kind, first, onClick, onAction }) {
             onClick={(e) => fire(e, 'gift')}>{'\u{1F381}'}</IconBtn>
           <IconBtn label="Wallet ±" tone="primary"
             onClick={(e) => fire(e, 'wallet')}>{'₹'}</IconBtn>
+          <IconBtn label="Reset password" tone="primary"
+            onClick={(e) => fire(e, 'resetPwd')}>{'\u{1F511}'}</IconBtn>
           <IconBtn label={blocked ? 'Unblock' : 'Block'}
             tone={blocked ? 'emerald' : 'amber'}
             onClick={(e) => fire(e, 'block')}>
@@ -1019,6 +1022,14 @@ function InlineActionModal({ action, user, onClose, onDone }) {
     await run(() => adminService.deleteUser(uid),
       'Account soft-deleted. Recoverable from /admin-archive.');
   }
+  async function doResetPwd() {
+    const target = String(user.email || '').trim();
+    if (!target) {
+      setErr('No email on file for this account.'); return;
+    }
+    await run(() => authService.adminSendPasswordReset(target),
+      `Reset link emailed to ${target}.`);
+  }
 
   const titles = {
     edit: 'Edit profile',
@@ -1026,21 +1037,25 @@ function InlineActionModal({ action, user, onClose, onDone }) {
     block: blocked ? 'Unblock account' : 'Block account',
     wallet: 'Wallet adjustment',
     delete: 'Delete account',
+    resetPwd: 'Send password reset link',
   };
   const ctas = {
     edit: 'Save', gift: 'Create gift card',
     block: blocked ? 'Unblock' : 'Block',
     wallet: direction === 'debit' ? 'Debit wallet' : 'Credit wallet',
     delete: 'Delete account',
+    resetPwd: 'Send reset link',
   };
   const tones = {
     edit: 'primary', gift: 'primary',
     block: blocked ? 'primary' : 'warn',
     wallet: 'primary', delete: 'danger',
+    resetPwd: 'primary',
   };
   const submit = {
     edit: doEdit, gift: doGift, block: doBlock,
     wallet: doWallet, delete: doDelete,
+    resetPwd: doResetPwd,
   }[action];
 
   return (
@@ -1131,6 +1146,25 @@ function InlineActionModal({ action, user, onClose, onDone }) {
             /admin-archive. Their kundli + consultation history is
             preserved for compliance.
           </p>
+        )}
+        {!success && action === 'resetPwd' && (
+          <div className="mt-3 space-y-2">
+            <p className="text-xs text-sub-text">
+              Email a Firebase password reset link to{' '}
+              <b>{user.email || '(no email on file)'}</b>. They open
+              the link and choose a new password - the old password
+              stops working as soon as they save. Use this for both
+              customers and astrologers when they forget their
+              password.
+            </p>
+            {!user.email && (
+              <p className="rounded-card bg-amber-50 p-2 text-xs
+                font-semibold text-amber-700">
+                No email is on file for this account so the reset
+                link cannot be sent. Add an email via Edit first.
+              </p>
+            )}
+          </div>
         )}
 
         {err && (

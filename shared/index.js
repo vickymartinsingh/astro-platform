@@ -75,3 +75,8 @@ export * as welcomeBonusService from './services/welcomeBonusService.js';
 export {
   REPORT_TYPES, reportType, resolvePrice,
 } from './reportTypes.js';
+
+export {
+  DEFAULT_COUNTRIES, DEFAULT_COUNTRY_CODE, DEFAULT_COUNTRY_ISO,
+  buildCountryList, watchCountryList, splitPhone,
+} from './countryCodes.js';

@@ -117,6 +117,8 @@ const ADMIN_GROUPS = [
     ['/admin-ai', 'AI assistant', 'LLM keys', 'ai'],
     ['/admin-ai-log', 'AI diagnostics', 'Token usage', 'ailog'],
     ['/admin-email', 'Email & alerts', 'SMTP + delivery log', 'email'],
+    ['/admin-country-codes', 'Country codes',
+      'Phone dial codes catalogue', 'countryCodes'],
   ]],
   ['Compliance', [
     ['/admin-reset', 'Account reset', 'Clear user data', 'reset'],

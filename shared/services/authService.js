@@ -82,6 +82,71 @@ export async function loginUser(email, password) {
   return cred.user;
 }
 
+// Roll back a freshly-created Firebase Auth user when the OTP email
+// could not be sent (SMTP socket close, transient bounce, etc.). The
+// rule is "Without OTP signup must not be processed" - so a half-
+// created account that cannot be verified must NOT survive the
+// failed attempt and block the next signup with
+// auth/email-already-in-use.
+//
+// We:
+//   1) Sign the auth user out (clean session)
+//   2) Best-effort delete the Firebase Auth user via the admin relay
+//   3) Tombstone the Firestore users/{uid} doc to mark it as rolled
+//      back so ensureUserDoc bounces on any lingering session.
+//
+// Caller does not have to await us - we never throw.
+// Admin-triggered password reset. Fires the standard Firebase Auth
+// password-reset email to the chosen recipient. The Firebase Auth
+// console is the source of truth so the link itself is valid for 1h
+// and revoked after the first use. We log the action to /logs for
+// the audit trail.
+export async function adminSendPasswordReset(email) {
+  if (!email) throw new Error('Email is required.');
+  const { sendPasswordResetEmail } = await import('firebase/auth');
+  await sendPasswordResetEmail(auth, String(email).trim());
+  try { logAudit('admin_password_reset', { email }); } catch (_) {}
+  return { ok: true, email };
+}
+
+export async function rollbackPendingSignup(user) {
+  if (!user || !user.uid) return;
+  const uid = user.uid;
+  try { await user.delete(); }
+  catch (_) {
+    // delete() throws if the account is too old / requires recent
+    // auth; in that case we fall back to the admin relay.
+    try {
+      const push = (typeof process !== 'undefined' && process.env
+        && process.env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
+      const base = push
+        || 'https://astro-platform-push-relay.vercel.app/api/sendPush';
+      const url = base.replace(/\/sendPush\/?$/, '/emailOtp');
+      const token = await user.getIdToken();
+      await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ action: 'rollback', uid }),
+      });
+    } catch (_) {}
+  }
+  try {
+    const { signOut, getAuth } = await import('firebase/auth');
+    await signOut(getAuth());
+  } catch (_) {}
+  // Tombstone the Firestore doc as a belt-and-braces guard in case
+  // the auth-side delete failed. ensureUserDoc bounces tombstoned
+  // status='deleted' docs on next sign-in.
+  try {
+    const { doc: fdoc, updateDoc } = await import('firebase/firestore');
+    await updateDoc(fdoc(db, 'users', uid),
+      { status: 'deleted', deletedReason: 'otp_send_failed' });
+  } catch (_) {}
+}
+
 // ---- Email OTP signup verification ----------------------------------
 // Talks to the relay's /api/emailOtp endpoint. Two actions:
 //   requestEmailOtp(email, name)  -> sends a 6-digit code from

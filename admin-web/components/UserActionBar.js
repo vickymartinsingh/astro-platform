@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { adminService } from '@astro/shared';
+import { adminService, authService } from '@astro/shared';
 
 // Action bar that lives on the admin user profile (and could mount on
 // the astrologer profile too). Every action has a confirmation modal
@@ -103,6 +103,14 @@ export default function UserActionBar({ uid, user, onChange }) {
     await run(() => adminService.deleteUser(uid),
       'Account soft-deleted. Recoverable from /admin-archive.');
   }
+  async function doResetPassword() {
+    const target = String(user?.email || '').trim();
+    if (!target) {
+      setErr('No email on file for this account.'); return;
+    }
+    await run(() => authService.adminSendPasswordReset(target),
+      `Reset link emailed to ${target}.`);
+  }
 
   return (
     <>
@@ -127,6 +135,9 @@ export default function UserActionBar({ uid, user, onChange }) {
         </BarBtn>
         <BarBtn onClick={() => open('roles')} tone="neutral">
           Roles
+        </BarBtn>
+        <BarBtn onClick={() => open('resetPwd')} tone="neutral">
+          Reset password
         </BarBtn>
         <BarBtn onClick={() => open('block')} tone="warn">
           {blocked ? 'Unblock' : 'Block'}
@@ -216,6 +227,17 @@ export default function UserActionBar({ uid, user, onChange }) {
           onClose={close} onSubmit={doBlock} busy={busy}
           err={err} success={success}
           cta={blocked ? 'Unblock' : 'Block'} ctaTone="warn" />
+      )}
+      {modal === 'resetPwd' && (
+        <ActionModal title="Send password reset link"
+          subtitle={`Email a Firebase password reset link to
+            ${user?.email || 'the user'}. They follow the link to
+            choose a new password - the old one stops working as
+            soon as they save the new one. Use this when a user or
+            astrologer says they forgot their password.`}
+          onClose={close} onSubmit={doResetPassword} busy={busy}
+          err={err} success={success}
+          cta="Send reset link" ctaTone="primary" />
       )}
       {modal === 'delete' && (
         <ActionModal title="Delete account"
