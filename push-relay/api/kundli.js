@@ -978,6 +978,265 @@ module.exports = async (req, res) => {
   }
 
   // ----------------------------------------------------------------
+  // Admin manual upload of a PDF for an order.
+  //
+  // Used when AstroSeer has the PDF (status SENT) but the relay's
+  // auto-rescue did not deliver it - the operator pulls the PDF
+  // from AstroSeer manually and uploads it through this endpoint.
+  // Optional redebit=true re-charges the wallet if it was previously
+  // refunded (so the operator does not have to manually adjust two
+  // ledgers).
+  //
+  // POST { action: 'manualUploadReport', orderId, uid, pdfBase64,
+  //        redebit?: bool }
+  // Auth: caller must be an admin (verified via Bearer + users role).
+  // ----------------------------------------------------------------
+  if (src.action === 'manualUploadReport'
+    && req.method === 'POST') {
+    if (!initAdmin()) {
+      return res.status(503).json({
+        error: 'admin SDK not configured' });
+    }
+    try {
+      const dbA = admin.firestore();
+      // Auth: verify the caller is an admin.
+      const authz = req.headers.authorization || '';
+      const idToken = authz.startsWith('Bearer ')
+        ? authz.slice(7) : '';
+      if (!idToken) {
+        return res.status(401).json({ error: 'no token' });
+      }
+      const decoded = await admin.auth().verifyIdToken(idToken);
+      const callerSnap = await dbA.collection('users')
+        .doc(decoded.uid).get();
+      const callerData = callerSnap.exists
+        ? (callerSnap.data() || {}) : {};
+      const callerRoles = Array.isArray(callerData.roles)
+        ? callerData.roles : [callerData.role || ''];
+      const isAdmin = callerRoles.includes('admin')
+        || callerData.role === 'admin';
+      if (!isAdmin) {
+        return res.status(403).json({ error: 'not an admin' });
+      }
+      const orderId = String(src.orderId || '').trim();
+      const uid = String(src.uid || '').trim();
+      const pdfB64 = String(src.pdfBase64 || '');
+      const redebit = !!src.redebit;
+      if (!orderId || !uid || !pdfB64) {
+        return res.status(400).json({
+          error: 'orderId, uid and pdfBase64 are required' });
+      }
+      // Decode the PDF (caller sends base64, optionally with a
+      // data:application/pdf;base64, prefix).
+      const cleaned = pdfB64.replace(
+        /^data:application\/pdf;base64,/, '');
+      const pdfBuf = Buffer.from(cleaned, 'base64');
+      if (!pdfBuf.length || pdfBuf.length > 25 * 1024 * 1024) {
+        return res.status(400).json({
+          error: 'PDF must be between 1 byte and 25 MB.' });
+      }
+      // Load the order doc so we know amount + previous status.
+      const orderRef = dbA.collection('users').doc(uid)
+        .collection('orders').doc(orderId);
+      const orderSnap = await orderRef.get();
+      if (!orderSnap.exists) {
+        return res.status(404).json({ error: 'order not found' });
+      }
+      const order = orderSnap.data() || {};
+      const amount = Number(order.amount || 0);
+      const wasRefunded = order.status === 'failed_refunded';
+      // 1) Upload to R2 (or Vercel Blob fallback) at the same
+      //    rescued/{orderId}.pdf key the auto-rescue uses.
+      const rescueKey = `rescued/${orderId}.pdf`;
+      let pdfUrl = null;
+      const r2OK = !!(process.env.R2_ACCOUNT_ID
+        && process.env.R2_ACCESS_KEY_ID
+        && process.env.R2_SECRET_ACCESS_KEY
+        && process.env.R2_BUCKET);
+      if (r2OK) {
+        try {
+          const { S3Client, PutObjectCommand } = require(
+            '@aws-sdk/client-s3');
+          const client = new S3Client({
+            region: 'auto',
+            endpoint: `https://${process.env.R2_ACCOUNT_ID}.`
+              + 'r2.cloudflarestorage.com',
+            credentials: {
+              accessKeyId: process.env.R2_ACCESS_KEY_ID,
+              secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+            },
+            forcePathStyle: true,
+          });
+          await client.send(new PutObjectCommand({
+            Bucket: process.env.R2_BUCKET,
+            Key: rescueKey,
+            Body: pdfBuf,
+            ContentType: 'application/pdf',
+            CacheControl: 'public, max-age=31536000, immutable',
+          }));
+          const r2Base = process.env.R2_PUBLIC_URL
+            || `https://${process.env.R2_BUCKET}.r2.dev`;
+          pdfUrl = `${r2Base.replace(/\/+$/, '')}/${rescueKey}`;
+        } catch (e) {
+          return res.status(502).json({
+            error: 'R2 upload failed: '
+              + String((e && e.message) || e) });
+        }
+      }
+      if (!pdfUrl && process.env.BLOB_READ_WRITE_TOKEN) {
+        try {
+          const { put } = require('@vercel/blob');
+          const blob = await put(rescueKey, pdfBuf, {
+            access: 'public',
+            contentType: 'application/pdf',
+            cacheControlMaxAge: 31536000,
+            addRandomSuffix: false,
+          });
+          pdfUrl = blob.url;
+        } catch (e) {
+          return res.status(502).json({
+            error: 'Vercel Blob upload failed: '
+              + String((e && e.message) || e) });
+        }
+      }
+      if (!pdfUrl) {
+        return res.status(503).json({
+          error: 'no storage backend configured' });
+      }
+      // 2) Re-debit the wallet ONLY if the order was previously
+      //    refunded AND the operator explicitly opted in. Same-shape
+      //    transaction the original deduction uses.
+      let redebitedAmount = 0;
+      if (redebit && wasRefunded && amount > 0) {
+        try {
+          await dbA.runTransaction(async (tx) => {
+            const uRef = dbA.collection('users').doc(uid);
+            const uSnap = await tx.get(uRef);
+            const w = Number((uSnap.data() || {}).wallet || 0);
+            const nextWallet = Math.max(0, w - amount);
+            tx.update(uRef, {
+              wallet: nextWallet,
+              updatedAt: admin.firestore.FieldValue
+                .serverTimestamp(),
+            });
+            const txRef = dbA.collection('transactions').doc();
+            tx.set(txRef, {
+              userId: uid,
+              amount: -amount,
+              type: 'debit',
+              reason: 'Kundli report (manual delivery '
+                + 'after earlier refund)',
+              referenceId: orderId,
+              createdAt: admin.firestore.FieldValue
+                .serverTimestamp(),
+            });
+          });
+          redebitedAmount = amount;
+        } catch (e) {
+          return res.status(500).json({
+            error: 'Re-debit failed: '
+              + String((e && e.message) || e) });
+        }
+      }
+      // 3) Update the order doc to ready, clear the failure
+      //    fields, and stamp the manual-upload provenance.
+      await orderRef.update({
+        status: order.kind === 'free'
+          ? 'ready_rescued' : 'paid_ready',
+        pdfUrl,
+        pdfReadyAt: admin.firestore.FieldValue.serverTimestamp(),
+        rescuedAt: admin.firestore.FieldValue.serverTimestamp(),
+        rescueSource: 'admin_manual',
+        manualUpload: true,
+        manualUploadBy: decoded.uid,
+        manualUploadAt: admin.firestore.FieldValue
+          .serverTimestamp(),
+        failReason: admin.firestore.FieldValue.delete(),
+        lastErrorReason: admin.firestore.FieldValue.delete(),
+        redebited: redebitedAmount > 0,
+        redebitedAmount,
+      });
+      // 4) In-app notification.
+      try {
+        await dbA.collection('notifications').add({
+          userId: uid,
+          type: 'report_ready',
+          title: 'Your report is ready',
+          message: 'We finished generating your report. '
+            + 'Open Orders to download it.',
+          orderId,
+          read: false,
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      } catch (_) {}
+      // 5) Push notification (best-effort).
+      try {
+        const u = await dbA.collection('users').doc(uid).get();
+        const ud = u.exists ? (u.data() || {}) : {};
+        const toks = []
+          .concat(Array.isArray(ud.fcmTokens) ? ud.fcmTokens : [])
+          .concat(ud.fcmToken ? [ud.fcmToken] : [])
+          .filter(Boolean);
+        if (toks.length) {
+          await admin.messaging().sendEachForMulticast({
+            tokens: [...new Set(toks)],
+            notification: {
+              title: 'Your report is ready',
+              body: 'Open Orders to download your PDF.',
+            },
+            data: { type: 'report_ready', route: '/orders',
+              orderId: String(orderId) },
+            android: {
+              priority: 'high',
+              notification: {
+                channelId: 'astro-default', sound: 'default',
+              },
+            },
+          });
+        }
+      } catch (_) {}
+      // 6) Email the customer the PDF link via the emailOtp relay.
+      try {
+        const u = await dbA.collection('users').doc(uid).get();
+        const ud = u.exists ? (u.data() || {}) : {};
+        const to = String(ud.email || order.email || '').trim();
+        if (to) {
+          const origin = req.headers['x-forwarded-host']
+            ? `https://${req.headers['x-forwarded-host']}`
+            : `https://${req.headers.host || ''}`;
+          const subject = 'Your AstroSeer report is ready';
+          const html = `<p>Hi ${ud.name || ''},</p>`
+            + '<p>Your astrology report is ready. You can open it '
+            + 'in the app from <b>Orders</b>, or download it '
+            + `directly from this link:</p><p><a href="${pdfUrl}">`
+            + `${pdfUrl}</a></p>`
+            + `<p>Order reference: <b>${orderId}</b></p>`
+            + '<p>Thank you for using AstroSeer.</p>';
+          await fetch(`${origin}/api/emailOtp`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'send',
+              to, subject, html,
+            }),
+          });
+        }
+      } catch (_) { /* email is best-effort */ }
+      return res.status(200).json({
+        ok: true,
+        orderId,
+        pdfUrl,
+        wasRefunded,
+        redebited: redebitedAmount > 0,
+        redebitedAmount,
+      });
+    } catch (e) {
+      return res.status(400).json({
+        error: String((e && e.message) || e) });
+    }
+  }
+
+  // ----------------------------------------------------------------
   // Live audience bot tick. Pinged every N seconds by an external
   // cron (e.g. cron-job.org -> https://.../api/kundli?action=liveBotTick).
   // Reads settings/config.live_bots_*, finds every currently-active

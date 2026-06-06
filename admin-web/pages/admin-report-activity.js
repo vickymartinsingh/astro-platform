@@ -98,6 +98,11 @@ export default function AdminReportActivity() {
   const [search, setSearch] = useState('');
   const [busyRow, setBusyRow] = useState('');
   const [viewer, setViewer] = useState(null);
+  // Manual-upload modal state. Operator picks a PDF for an order
+  // the relay couldn't auto-rescue, chooses whether to re-debit
+  // the wallet (only if the order was previously refunded), and
+  // submits to /api/kundli?action=manualUploadReport.
+  const [manualUpload, setManualUpload] = useState(null);
   const [msg, setMsg] = useState('');
 
   const load = useCallback(async () => {
@@ -260,6 +265,21 @@ export default function AdminReportActivity() {
     if (!url) { setMsg('PDF not yet cached on this order.'); return; }
     setViewer({ url, name: o.pdfName
       || `AstroSeer-${KIND_LABEL[o.kind] || 'kundli'}.pdf` });
+  }
+  function openManualUpload(o) {
+    setManualUpload({
+      orderId: o.id,
+      uid: o.userId,
+      kind: o.kind,
+      amount: Number(o.amount || 0),
+      status: o.status,
+      wasRefunded: o.status === 'failed_refunded',
+      file: null,
+      redebit: o.status === 'failed_refunded',
+      busy: false,
+      msg: '',
+      done: null,
+    });
   }
   async function regenRow(o) {
     if (!o || !o.userId || !o.kundliProfileId) return;
@@ -533,6 +553,19 @@ export default function AdminReportActivity() {
                           text-accent disabled:opacity-50">
                         {busyRow === o.id ? 'Regen...' : 'Regen'}
                       </button>
+                      {/* Manual upload: operator pulls the PDF from
+                          AstroSeer manually and attaches it here. If
+                          the order was previously refunded, the modal
+                          offers to re-debit the wallet in the same
+                          submit. Useful for orders that the auto-
+                          rescue did not deliver within 3h+. */}
+                      <button type="button"
+                        onClick={() => openManualUpload(o)}
+                        className="rounded-full border border-primary
+                          bg-white px-2 py-1 text-[10px] font-bold
+                          text-primary hover:bg-primary/10">
+                        Upload PDF
+                      </button>
                       <Link href={`/admin-user-profile/${o.userId}`}
                         className="rounded-full border border-gray-200
                           bg-white px-2 py-1 text-[10px] font-bold
@@ -557,7 +590,193 @@ export default function AdminReportActivity() {
         <ReportPdfViewer url={viewer.url} name={viewer.name}
           onClose={() => setViewer(null)} />
       )}
+
+      {manualUpload && (
+        <ManualUploadModal state={manualUpload}
+          setState={setManualUpload}
+          onSuccess={() => {
+            setMsg('Manual upload complete. Customer notified.');
+            setTimeout(load, 800);
+          }} />
+      )}
     </Layout>
+  );
+}
+
+// Manual PDF upload modal. Used when AstroSeer has the PDF (status
+// SENT) but our auto-rescue did not deliver it. Operator picks the
+// PDF, optionally re-debits the wallet (only valid if the order
+// was previously refunded), and submits. Server marks the order
+// ready, links the PDF on R2, sends email + push, and the customer's
+// orders page reflects the change on the next snapshot.
+function ManualUploadModal({ state, setState, onSuccess }) {
+  function close() {
+    if (state.busy) return;
+    setState(null);
+  }
+  function patch(p) { setState((cur) => ({ ...(cur || {}), ...p })); }
+  async function submit() {
+    if (!state.file) {
+      patch({ msg: 'Please choose a PDF file first.' }); return;
+    }
+    if (state.file.type !== 'application/pdf'
+      && !/\.pdf$/i.test(state.file.name)) {
+      patch({ msg: 'File must be a PDF.' }); return;
+    }
+    if (state.file.size > 25 * 1024 * 1024) {
+      patch({ msg: 'PDF must be under 25 MB.' }); return;
+    }
+    patch({ busy: true, msg: '' });
+    try {
+      // Read file as base64 and POST to the relay endpoint with
+      // the caller's Firebase ID token so the relay can verify
+      // admin role server-side.
+      const b64 = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => {
+          const dataUrl = String(r.result || '');
+          const c = dataUrl.indexOf(',');
+          resolve(c >= 0 ? dataUrl.slice(c + 1) : dataUrl);
+        };
+        r.onerror = () => reject(r.error);
+        r.readAsDataURL(state.file);
+      });
+      const { auth } = await import('@astro/shared');
+      const cur = auth && auth.currentUser;
+      const idToken = cur && await cur.getIdToken();
+      const base = (typeof process !== 'undefined' && process.env
+        && process.env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
+      const url = (base
+        || 'https://astro-platform-push-relay.vercel.app/api/sendPush')
+        .replace(/\/sendPush\/?$/, '/kundli')
+        + '?action=manualUploadReport';
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
+        },
+        body: JSON.stringify({
+          orderId: state.orderId,
+          uid: state.uid,
+          pdfBase64: b64,
+          redebit: !!state.redebit,
+        }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        patch({ busy: false,
+          msg: j.error || `Upload failed (HTTP ${r.status}).` });
+        return;
+      }
+      patch({ busy: false, done: j });
+      if (onSuccess) onSuccess(j);
+    } catch (e) {
+      patch({ busy: false,
+        msg: String((e && e.message) || e) });
+    }
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center
+      bg-black/50 p-4" onClick={close}>
+      <div className="w-full max-w-md rounded-card bg-white p-5
+        shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-lg font-bold">
+          {state.done ? 'Uploaded' : 'Manual report upload'}
+        </h3>
+        <p className="mt-1 text-xs text-sub-text">
+          Order <span className="font-mono">{state.orderId}</span>{' '}
+          {'·'} {state.kind || 'report'} {'·'} {' '}
+          {state.amount > 0 ? `₹${state.amount}` : 'free'}
+        </p>
+        {state.done ? (
+          <div className="mt-4 space-y-2 text-sm">
+            <div className="rounded-card bg-emerald-50 p-3
+              text-emerald-700">
+              <div className="font-bold">PDF delivered.</div>
+              <div className="mt-1 text-xs">
+                Stored at the rescue URL.{' '}
+                <a href={state.done.pdfUrl} target="_blank"
+                  rel="noreferrer"
+                  className="underline">Open PDF</a>
+              </div>
+            </div>
+            {state.done.redebited && (
+              <div className="rounded-card bg-amber-50 p-3 text-xs
+                text-amber-800">
+                Re-debited ₹{state.done.redebitedAmount} from
+                wallet (previously refunded).
+              </div>
+            )}
+            <div className="rounded-card border border-gray-200 p-3
+              text-xs text-sub-text">
+              Customer notification + push fired. Email queued.
+            </div>
+            <div className="flex justify-end pt-2">
+              <button onClick={close}
+                className="rounded-full bg-bg-light px-4 py-2
+                  text-sm font-semibold">Done</button>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-4 space-y-3">
+            <div className={`rounded-card p-3 text-xs ${
+              state.wasRefunded
+                ? 'bg-amber-50 text-amber-800'
+                : 'bg-bg-light/60 text-sub-text'}`}>
+              {state.wasRefunded
+                ? `This order was previously refunded ${'₹'}${state.amount}.`
+                + ' If the customer should be charged again on this'
+                + ' delivery, tick "Re-debit wallet" below.'
+                : 'Order has not been refunded - upload alone will'
+                  + ' deliver the PDF.'}
+            </div>
+            <label className="block">
+              <span className="text-xs font-semibold text-sub-text">
+                PDF file (max 25 MB)
+              </span>
+              <input className="mt-1 block w-full text-sm"
+                type="file" accept="application/pdf,.pdf"
+                onChange={(e) => patch({
+                  file: e.target.files && e.target.files[0] })} />
+              {state.file && (
+                <div className="mt-1 text-[11px] text-sub-text">
+                  {state.file.name} {'·'}{' '}
+                  {(state.file.size / 1024).toFixed(0)} KB
+                </div>
+              )}
+            </label>
+            {state.wasRefunded && state.amount > 0 && (
+              <label className="flex items-start gap-2 rounded-card
+                border border-amber-300 bg-amber-50 p-2">
+                <input type="checkbox" checked={!!state.redebit}
+                  onChange={(e) => patch({ redebit: e.target.checked })}
+                  className="mt-0.5" />
+                <span className="text-xs text-amber-900">
+                  Re-debit ₹{state.amount} from the customer's wallet
+                  (they were refunded earlier).
+                </span>
+              </label>
+            )}
+            {state.msg && (
+              <div className="rounded-card bg-danger/10 p-2 text-xs
+                font-semibold text-danger">{state.msg}</div>
+            )}
+            <div className="flex justify-end gap-2">
+              <button onClick={close} disabled={state.busy}
+                className="rounded-full bg-bg-light px-4 py-2 text-sm
+                  font-semibold">Cancel</button>
+              <button onClick={submit}
+                disabled={state.busy || !state.file}
+                className="rounded-full bg-primary px-4 py-2 text-sm
+                  font-bold text-white disabled:opacity-60">
+                {state.busy ? 'Uploading...' : 'Upload + deliver'}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
