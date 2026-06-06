@@ -360,9 +360,16 @@ export default function LoginCard({ onDone, compact, initialMode }) {
       } else if (code === 'auth/network-request-failed') {
         setErr('Network request failed. Are you online?');
       } else if (mode === 'signup') {
+        // Surface the real reason. Firestore errors don't carry a
+        // `.code` like Auth errors do, so we also include `.message`
+        // when no code is present - the user can screenshot it and
+        // support can act on it without guesswork.
         setErr(code === 'auth/email-already-in-use'
           ? 'That email is already registered.'
-          : `Could not create account${code ? ` (${code})` : ''}.`);
+          : code
+            ? `Could not create account (${code}).`
+            : `Could not create account. ${msg
+              || 'Please try again.'}`.trim());
       } else {
         // Show the real Firebase error code so we can debug iOS
         // edge cases instead of blanket "Invalid email or password".
