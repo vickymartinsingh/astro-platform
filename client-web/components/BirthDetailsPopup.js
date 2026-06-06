@@ -17,6 +17,7 @@ import { DateField, TimeField, CityField } from './BirthInputs';
 // Mounted globally from Layout so it follows the user across pages
 // the first time they land in the app post-signup.
 const KEY = 'birthOnboardingDone';
+const SESSION_KEY = 'birthOnboardingShownThisSession';
 
 export default function BirthDetailsPopup() {
   const { user, profile } = useAuth();
@@ -31,13 +32,22 @@ export default function BirthDetailsPopup() {
   });
 
   // Decide whether to show. We poll lightweight conditions on auth
-  // changes - never on every render.
+  // changes - never on every render. THIS USED TO REOPEN if `profile`
+  // ticked (e.g. lastSeenAt updated by the presence service) while
+  // the user was mid-edit. Reports came in of the popup reappearing
+  // the moment they reached the Time of birth field. Fix:
+  //   1. Persistent localStorage flag set the FIRST time we open so
+  //      it never re-fires across reloads (was set only on save /
+  //      close button).
+  //   2. Session-scoped flag set on open so a mid-edit profile tick
+  //      cannot re-trigger the effect.
   useEffect(() => {
     if (!user || !user.uid) { setOpen(false); return; }
     if (typeof window === 'undefined') return;
     let cancelled = false;
     try {
       if (window.localStorage.getItem(KEY) === '1') return;
+      if (window.sessionStorage.getItem(SESSION_KEY) === '1') return;
       if (window.localStorage.getItem('appTourDone') !== '1') return;
     } catch (_) { /* private mode */ }
     // Only show if the user has no kundli profiles yet (so we don't
@@ -53,6 +63,15 @@ export default function BirthDetailsPopup() {
             gender: profile?.gender || '',
             dob: profile?.dob || '',
           }));
+          // Set BOTH flags the moment we decide to open so the
+          // useEffect can never re-fire this popup in the same
+          // session - even if profile changes mid-edit. The user
+          // gets exactly one chance per device; if they dismiss
+          // without saving they can rebuild from the side menu.
+          try {
+            window.localStorage.setItem(KEY, '1');
+            window.sessionStorage.setItem(SESSION_KEY, '1');
+          } catch (_) {}
           setOpen(true);
         }
       } catch (_) { /* tolerate */ }
@@ -61,7 +80,10 @@ export default function BirthDetailsPopup() {
   }, [user, profile]);
 
   function markDone() {
-    try { window.localStorage.setItem(KEY, '1'); } catch (_) {}
+    try {
+      window.localStorage.setItem(KEY, '1');
+      window.sessionStorage.setItem(SESSION_KEY, '1');
+    } catch (_) {}
     setOpen(false);
   }
 

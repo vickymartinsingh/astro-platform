@@ -5,6 +5,7 @@ import { userService, authService, ZODIAC,
   kundliService } from '@astro/shared';
 import Layout from '../components/Layout';
 import Avatar from '../components/Avatar';
+import PhoneInput from '../components/PhoneInput';
 import ZodiacGlyph from '../components/ZodiacGlyph';
 import { SkeletonList } from '../components/Skeleton';
 import { useRequireClient } from '../lib/useAuth';
@@ -413,9 +414,9 @@ export default function Profile() {
               </select>
             </Field>
             <Field label="Mobile number">
-              <input className="input" value={phone} type="tel"
-                placeholder="Add / change mobile"
-                onChange={(e) => setPhone(e.target.value)} />
+              <PhoneInput value={phone}
+                onChange={setPhone}
+                placeholder="Add / change mobile" />
             </Field>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label="Email">
