@@ -15,21 +15,27 @@ import { useRequireAdmin } from '../lib/useAuth';
 // admin can download / view / regenerate / resend directly from
 // this page without any AstroSeer round-trip on the cached path.
 
+// paid_ready added 2026-06-06: the manual-upload finalisation status
+// for a paid order. Visually equivalent to 'ready' / 'ready_rescued'
+// so the operator sees it as a SENT report with the same green chip
+// + downstream actions (Download / Resend) enabled.
 const STATUS_CHIP = {
   ready: 'bg-success/15 text-success border-success/40',
+  paid_ready: 'bg-success/15 text-success border-success/40',
+  ready_rescued: 'bg-success/15 text-success border-success/40',
   paid_generating: 'bg-warning/15 text-warning border-warning/40',
   free_generating: 'bg-warning/15 text-warning border-warning/40',
   failed: 'bg-danger/15 text-danger border-danger/40',
   failed_refunded: 'bg-danger/15 text-danger border-danger/40',
-  ready_rescued: 'bg-success/15 text-success border-success/40',
 };
 const STATUS_LABEL = {
   ready: 'SENT',
+  paid_ready: 'SENT',
+  ready_rescued: 'SENT',
   paid_generating: 'GENERATING',
   free_generating: 'GENERATING',
   failed: 'FAILED',
   failed_refunded: 'FAILED',
-  ready_rescued: 'SENT',
 };
 
 const KIND_LABEL = {
@@ -203,7 +209,9 @@ export default function AdminReportActivity() {
         if (o.status !== 'paid_generating'
           && o.status !== 'free_generating') return false;
       } else if (status === 'sent') {
-        if (o.status !== 'ready' && o.status !== 'ready_rescued') {
+        if (o.status !== 'ready'
+          && o.status !== 'ready_rescued'
+          && o.status !== 'paid_ready') {
           return false;
         }
       } else if (status === 'failed') {
@@ -239,7 +247,8 @@ export default function AdminReportActivity() {
       if (o.status === 'paid_generating'
         || o.status === 'free_generating') t.generating += 1;
       else if (o.status === 'ready'
-        || o.status === 'ready_rescued') {
+        || o.status === 'ready_rescued'
+        || o.status === 'paid_ready') {
         t.generated += 1; t.sent += 1;
       } else if (o.status === 'failed'
         || o.status === 'failed_refunded') t.failed += 1;
@@ -436,7 +445,8 @@ export default function AdminReportActivity() {
             {filtered && filtered.map((o) => {
               const u = usersById[o.userId] || {};
               const isReady = o.status === 'ready'
-                || o.status === 'ready_rescued';
+                || o.status === 'ready_rescued'
+                || o.status === 'paid_ready';
               const isGen = o.status === 'paid_generating'
                 || o.status === 'free_generating';
               const url = realUrl(o);

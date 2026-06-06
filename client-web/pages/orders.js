@@ -110,6 +110,7 @@ export default function Orders() {
     switch (o.status) {
       case 'ready':
       case 'ready_rescued':
+      case 'paid_ready':
         return ok('Ready');
       case 'paid_generating':
       case 'free_generating':

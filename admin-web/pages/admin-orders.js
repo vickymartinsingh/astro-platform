@@ -39,8 +39,19 @@ function fmt(ts) {
   } catch (_) { return '·'; }
 }
 
+// ready statuses: 'ready' is the original auto-delivery path,
+// 'paid_ready' is the manual-upload finalisation for a paid order,
+// 'ready_rescued' is the manual-upload / sweeper-rescue finalisation
+// for a free order. All three are visually equivalent ("Ready") for
+// the operator + customer.
+const READY_STATUSES = new Set([
+  'ready', 'paid_ready', 'ready_rescued',
+]);
+function isReadyStatus(s) { return READY_STATUSES.has(s); }
 const STATUS_CHIP = {
   ready: 'bg-success/10 text-success',
+  paid_ready: 'bg-success/10 text-success',
+  ready_rescued: 'bg-success/10 text-success',
   paid_generating: 'bg-warning/10 text-warning',
   free_generating: 'bg-warning/10 text-warning',
   failed: 'bg-danger/10 text-danger',
@@ -48,6 +59,8 @@ const STATUS_CHIP = {
 };
 const STATUS_LABEL = {
   ready: 'Ready',
+  paid_ready: 'Ready',
+  ready_rescued: 'Ready',
   paid_generating: 'Generating…',
   free_generating: 'Generating…',
   failed: 'Failed',
@@ -163,10 +176,10 @@ export default function AdminOrders() {
   }
 
   const totalRevenue = rows
-    .filter((o) => o.status === 'ready' && o.amount > 0)
+    .filter((o) => isReadyStatus(o.status) && o.amount > 0)
     .reduce((s, o) => s + Number(o.amount || 0), 0);
   const totalFree = rows.filter((o) => o.amount === 0
-    && (o.status === 'ready' || o.kind === 'free')).length;
+    && (isReadyStatus(o.status) || o.kind === 'free')).length;
   const totalFailed = rows.filter((o) =>
     o.status === 'failed' || o.status === 'failed_refunded').length;
 
@@ -293,7 +306,7 @@ export default function AdminOrders() {
                     <div className="mt-1 text-sm font-bold">
                       {o.amount > 0 ? `₹${o.amount}` : 'Free'}
                     </div>
-                    {o.status === 'ready' && href && (
+                    {isReadyStatus(o.status) && href && (
                       <>
                         <button type="button"
                           onClick={() =>
