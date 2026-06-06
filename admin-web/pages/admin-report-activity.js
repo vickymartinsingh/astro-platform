@@ -628,74 +628,97 @@ function ManualUploadModal({ state, setState, onSuccess }) {
     }
     patch({ busy: true, msg: '' });
     try {
-      const { auth } = await import('@astro/shared');
-      const cur = auth && auth.currentUser;
-      const idToken = cur && await cur.getIdToken();
-      const base = (typeof process !== 'undefined' && process.env
-        && process.env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
-      const kundliUrl = (base
-        || 'https://astro-platform-push-relay.vercel.app/api/sendPush')
-        .replace(/\/sendPush\/?$/, '/kundli');
-      // Step 1: ask the relay for a presigned R2 PUT URL.
-      // Vercel function bodies are capped at 4.5 MB; a 3 MB PDF
-      // becomes 4 MB after base64 and trips that cap. The presigned
-      // URL lets the browser PUT direct to R2 instead.
-      // action MUST live in the BODY for POSTs - the relay reads
-      // src from req.body when method is POST.
-      patch({ msg: 'Preparing upload...' });
-      const presignResp = await fetch(kundliUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
-        },
-        body: JSON.stringify({
-          action: 'presignManualUpload',
-          orderId: state.orderId,
-        }),
-      });
-      const presignJ = await presignResp.json().catch(() => ({}));
-      if (!presignResp.ok || !presignJ.uploadUrl) {
-        patch({ busy: false,
-          msg: presignJ.error
-            || `Could not prepare upload (HTTP ${presignResp.status}).` });
-        return;
-      }
-      // Step 2: PUT to R2 direct.
+      // RELAY-INDEPENDENT PATH. Same shape as the admin-orders
+      // copy of this modal - see that comment block for the full
+      // rationale (Vercel has been missing push-relay rebuilds).
       patch({ msg: `Uploading ${(state.file.size / 1024).toFixed(0)} KB...` });
-      const putResp = await fetch(presignJ.uploadUrl, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/pdf' },
-        body: state.file,
-      });
-      if (!putResp.ok) {
-        patch({ busy: false,
-          msg: `R2 upload rejected (HTTP ${putResp.status}).` });
-        return;
-      }
-      // Step 3: finalise the order on the relay (status, re-debit,
-      // notifications, email).
+      const { storage, db } = await import('@astro/shared');
+      const { ref, uploadBytes, getDownloadURL } = await import(
+        'firebase/storage');
+      // /media is writeable by any signed-in user per the existing
+      // storage.rules - admin uses that path so no rules-deploy
+      // bottleneck. 'rescued/' segment kept for forensics.
+      const path = `media/rescued/${state.orderId}.pdf`;
+      const sref = ref(storage, path);
+      await uploadBytes(sref, state.file,
+        { contentType: 'application/pdf' });
+      const pdfUrl = await getDownloadURL(sref);
+
       patch({ msg: 'Finalising order...' });
-      const finalResp = await fetch(kundliUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
-        },
-        body: JSON.stringify({
-          action: 'manualUploadReport',
-          orderId: state.orderId,
-          uid: state.uid,
-          pdfUrl: presignJ.publicUrl,
-          redebit: !!state.redebit,
-        }),
-      });
-      const j = await finalResp.json().catch(() => ({}));
-      if (!finalResp.ok) {
-        patch({ busy: false,
-          msg: j.error || `Finalise failed (HTTP ${finalResp.status}).` });
-        return;
+      const {
+        doc, getDoc, updateDoc, runTransaction,
+        serverTimestamp, deleteField, collection, addDoc,
+      } = await import('firebase/firestore');
+      const orderRef = doc(db, 'users', state.uid, 'orders',
+        state.orderId);
+      const orderSnap = await getDoc(orderRef);
+      if (!orderSnap.exists()) {
+        patch({ busy: false, msg: 'Order not found.' }); return;
       }
+      const cur = orderSnap.data() || {};
+      const amount = Number(cur.amount || 0);
+      const wasRefunded = cur.status === 'failed_refunded';
+
+      let redebitedAmount = 0;
+      if (state.redebit && wasRefunded && amount > 0) {
+        const uRef = doc(db, 'users', state.uid);
+        await runTransaction(db, async (tx) => {
+          const uSnap = await tx.get(uRef);
+          const w = Number((uSnap.data() || {}).wallet || 0);
+          const next = Math.max(0, w - amount);
+          tx.update(uRef, { wallet: next,
+            updatedAt: serverTimestamp() });
+          const txCol = collection(db, 'transactions');
+          tx.set(doc(txCol), {
+            userId: state.uid, amount: -amount, type: 'debit',
+            reason: 'Kundli report (manual delivery after '
+              + 'earlier refund)',
+            referenceId: state.orderId,
+            createdAt: serverTimestamp(),
+          });
+        });
+        redebitedAmount = amount;
+      }
+      await updateDoc(orderRef, {
+        status: cur.kind === 'free'
+          ? 'ready_rescued' : 'paid_ready',
+        pdfUrl,
+        pdfReadyAt: serverTimestamp(),
+        rescuedAt: serverTimestamp(),
+        rescueSource: 'admin_manual',
+        manualUpload: true,
+        manualUploadAt: serverTimestamp(),
+        failReason: deleteField(),
+        lastErrorReason: deleteField(),
+        redebited: redebitedAmount > 0,
+        redebitedAmount,
+      });
+      try {
+        await addDoc(collection(db, 'notifications'), {
+          userId: state.uid,
+          type: 'report_ready',
+          title: 'Your report is ready',
+          message: 'We finished generating your report. '
+            + 'Open Orders to download it.',
+          orderId: state.orderId,
+          read: false,
+          createdAt: serverTimestamp(),
+        });
+      } catch (_) {}
+      try {
+        const { pushService } = await import('@astro/shared');
+        await pushService.sendPushToUser({
+          uid: state.uid,
+          title: 'Your report is ready',
+          body: 'Open Orders to download your PDF.',
+          data: { type: 'report_ready', route: '/orders',
+            orderId: String(state.orderId) },
+        });
+      } catch (_) {}
+      const j = {
+        ok: true, pdfUrl, redebited: redebitedAmount > 0,
+        redebitedAmount,
+      };
       patch({ busy: false, done: j, msg: '' });
       if (onSuccess) onSuccess(j);
     } catch (e) {

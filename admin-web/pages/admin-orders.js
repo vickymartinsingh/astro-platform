@@ -395,77 +395,124 @@ function ManualUploadModal({ o, onClose, onSuccess }) {
     }
     setBusy(true); setMsg('');
     try {
-      const { auth } = await import('@astro/shared');
-      const cur = auth && auth.currentUser;
-      const idToken = cur && await cur.getIdToken();
-      const base = (typeof process !== 'undefined' && process.env
-        && process.env.NEXT_PUBLIC_PUSH_ENDPOINT) || '';
-      const kundliUrl = (base
-        || 'https://astro-platform-push-relay.vercel.app/api/sendPush')
-        .replace(/\/sendPush\/?$/, '/kundli');
-      // Step 1: ask the relay for a presigned R2 PUT URL. This
-      // sidesteps Vercel's 4.5 MB function body limit - the PDF
-      // never travels through the relay, it goes browser -> R2
-      // direct. NOTE: action MUST live in the BODY for POSTs; the
-      // relay reads src from req.body when method is POST. Leaving
-      // it only in the query string falls through to the legacy
-      // kundli-generation handler ("dob required").
-      setMsg('Preparing upload...');
-      const presignResp = await fetch(kundliUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
-        },
-        body: JSON.stringify({
-          action: 'presignManualUpload',
-          orderId: o.id,
-        }),
-      });
-      const presignJ = await presignResp.json().catch(() => ({}));
-      if (!presignResp.ok || !presignJ.uploadUrl) {
-        setMsg(presignJ.error
-          || `Could not prepare upload (HTTP ${presignResp.status}).`);
-        setBusy(false); return;
-      }
-      // Step 2: PUT the file to R2 directly. No size limit
-      // applies here - this hits Cloudflare R2's edge, not Vercel.
-      setMsg(`Uploading ${(file.size / 1024).toFixed(0)} KB to R2...`);
-      const putResp = await fetch(presignJ.uploadUrl, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/pdf' },
-        body: file,
-      });
-      if (!putResp.ok) {
-        setMsg(`R2 upload rejected (HTTP ${putResp.status}).`);
-        setBusy(false); return;
-      }
-      // Step 3: tell the relay to finalise the order - mark ready,
-      // re-debit if requested, email + push the customer. The body
-      // is tiny now; only the orderId / uid / pdfUrl / redebit
-      // flags travel through Vercel.
+      // RELAY-INDEPENDENT PATH (June 2026):
+      //   Vercel has been ignoring push-relay rebuilds, so the
+      //   relay actions presignManualUpload + manualUploadReport
+      //   may not be deployed yet. To make Upload PDF work TODAY
+      //   we do everything client-side with the admin's existing
+      //   Firebase credentials:
+      //     1) Upload PDF straight to Firebase Storage (admin can
+      //        write to /reports/rescued/{orderId}.pdf via rules).
+      //     2) Update the order doc in Firestore - mark ready,
+      //        attach pdfUrl, set manualUpload fields. Admin role
+      //        is allowed direct write per existing security
+      //        rules (same as adminService.adjustWallet path).
+      //     3) If wallet was previously refunded AND admin opted
+      //        in, atomic wallet -= amount + write debit
+      //        transaction in a Firestore transaction (admin role
+      //        bypasses the no-self-wallet-write rule).
+      //     4) Drop an in-app notifications doc and best-effort
+      //        push via the relay (push works even when the
+      //        kundli action dispatcher is stale because it lives
+      //        on /api/sendPush).
+      setMsg(`Uploading ${(file.size / 1024).toFixed(0)} KB to Storage...`);
+      const { storage, db } = await import('@astro/shared');
+      const { ref, uploadBytes, getDownloadURL } = await import(
+        'firebase/storage');
+      // /media is writeable by any signed-in user per
+      // storage.rules; the operator is signed in as admin so the
+      // upload succeeds without needing a rules change. The path
+      // includes 'rescued' for forensics so this PDF is easy to
+      // tell apart from a legacy manually-uploaded asset.
+      const path = `media/rescued/${o.id}.pdf`;
+      const sref = ref(storage, path);
+      await uploadBytes(sref, file, { contentType: 'application/pdf' });
+      const pdfUrl = await getDownloadURL(sref);
+
       setMsg('Finalising order...');
-      const finalResp = await fetch(kundliUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
-        },
-        body: JSON.stringify({
-          action: 'manualUploadReport',
-          orderId: o.id, uid: o.userId,
-          pdfUrl: presignJ.publicUrl,
-          redebit: !!redebit,
-        }),
-      });
-      const finalJ = await finalResp.json().catch(() => ({}));
-      if (!finalResp.ok) {
-        setMsg(finalJ.error
-          || `Finalise failed (HTTP ${finalResp.status}).`);
-        setBusy(false); return;
+      const {
+        doc, getDoc, updateDoc, runTransaction,
+        serverTimestamp, deleteField,
+        collection, addDoc,
+      } = await import('firebase/firestore');
+      const orderRef = doc(db, 'users', o.userId, 'orders', o.id);
+      const orderSnap = await getDoc(orderRef);
+      if (!orderSnap.exists()) {
+        setMsg('Order not found.'); setBusy(false); return;
       }
+      const cur = orderSnap.data() || {};
+      const amount = Number(cur.amount || 0);
+      const wasRefunded = cur.status === 'failed_refunded';
+
+      // Re-debit (transactional) if applicable.
+      let redebitedAmount = 0;
+      if (redebit && wasRefunded && amount > 0) {
+        const uRef = doc(db, 'users', o.userId);
+        await runTransaction(db, async (tx) => {
+          const uSnap = await tx.get(uRef);
+          const w = Number((uSnap.data() || {}).wallet || 0);
+          const next = Math.max(0, w - amount);
+          tx.update(uRef, { wallet: next,
+            updatedAt: serverTimestamp() });
+          const txCol = collection(db, 'transactions');
+          tx.set(doc(txCol), {
+            userId: o.userId,
+            amount: -amount,
+            type: 'debit',
+            reason: 'Kundli report (manual delivery after '
+              + 'earlier refund)',
+            referenceId: o.id,
+            createdAt: serverTimestamp(),
+          });
+        });
+        redebitedAmount = amount;
+      }
+      // Update the order doc.
+      await updateDoc(orderRef, {
+        status: cur.kind === 'free'
+          ? 'ready_rescued' : 'paid_ready',
+        pdfUrl,
+        pdfReadyAt: serverTimestamp(),
+        rescuedAt: serverTimestamp(),
+        rescueSource: 'admin_manual',
+        manualUpload: true,
+        manualUploadAt: serverTimestamp(),
+        failReason: deleteField(),
+        lastErrorReason: deleteField(),
+        redebited: redebitedAmount > 0,
+        redebitedAmount,
+      });
+      // In-app notification.
+      try {
+        await addDoc(collection(db, 'notifications'), {
+          userId: o.userId,
+          type: 'report_ready',
+          title: 'Your report is ready',
+          message: 'We finished generating your report. '
+            + 'Open Orders to download it.',
+          orderId: o.id,
+          read: false,
+          createdAt: serverTimestamp(),
+        });
+      } catch (_) { /* tolerate */ }
+      // Best-effort push via the relay (separate endpoint, not
+      // affected by the kundli dispatcher).
+      try {
+        const { pushService } = await import('@astro/shared');
+        await pushService.sendPushToUser({
+          uid: o.userId,
+          title: 'Your report is ready',
+          body: 'Open Orders to download your PDF.',
+          data: { type: 'report_ready', route: '/orders',
+            orderId: String(o.id) },
+        });
+      } catch (_) { /* push is best-effort */ }
       setMsg('');
-      setDone(finalJ); setBusy(false);
+      setDone({
+        ok: true, pdfUrl, redebited: redebitedAmount > 0,
+        redebitedAmount,
+      });
+      setBusy(false);
     } catch (e) {
       setMsg(String((e && e.message) || e));
       setBusy(false);
