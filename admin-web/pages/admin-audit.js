@@ -47,8 +47,13 @@ export default function AdminAudit() {
     // collection name comes from auditService - logAudit() writes
     // each row there. Limit caps the page at 500 most recent rows
     // so a 10k-row collection doesn't blow the client memory.
-    const unsub = onSnapshot(query(collection(db, 'logs'),
-      orderBy('timestamp', 'desc'), limit(500)),
+    // Collection is `audits` (push-relay/api/audit.js writes there),
+    // ordered by createdAt. The old code read `logs` ordered by
+    // `timestamp` - wrong collection AND wrong field - which is why
+    // the page showed "Live" but never rendered any rows. Operator
+    // report 2026-06-06.
+    const unsub = onSnapshot(query(collection(db, 'audits'),
+      orderBy('createdAt', 'desc'), limit(500)),
       (s) => {
         const next = s.docs.map((d) => ({ id: d.id, ...d.data() }));
         setRows(next);
@@ -87,7 +92,9 @@ export default function AdminAudit() {
         return false;
       }
       if (!term) return true;
-      return [r.action, r.type, r.target, r.role, r.uid, r.ip, r.ua]
+      const m = r.meta && typeof r.meta === 'object' ? r.meta : {};
+      return [r.type, r.app, r.uid, r.ip, r.ua,
+        m.path, m.target, m.email, m.action, m.method]
         .filter(Boolean).map((x) => String(x).toLowerCase())
         .some((x) => x.includes(term));
     });
@@ -148,26 +155,37 @@ export default function AdminAudit() {
               <tr>
                 <th className="p-3">When</th>
                 <th className="p-3">Type</th>
-                <th className="p-3">Action</th>
-                <th className="p-3">Role</th>
+                <th className="p-3">App</th>
                 <th className="p-3">Code</th>
-                <th className="p-3">Target</th>
+                <th className="p-3">Detail</th>
                 <th className="p-3">IP</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((l) => (
+              {filtered.map((l) => {
+                // Writer stores `meta` as an object; flatten the
+                // most useful fields (path / method / target / etc)
+                // into a single human-readable detail string so the
+                // row stays scannable without an expand-each-row UX.
+                const m = l.meta && typeof l.meta === 'object' ? l.meta : {};
+                const detail = [
+                  m.path && `path=${m.path}`,
+                  m.method && `method=${m.method}`,
+                  m.target && `target=${m.target}`,
+                  m.email && `email=${m.email}`,
+                  m.action && `action=${m.action}`,
+                ].filter(Boolean).join(' · ');
+                return (
                 <tr key={l.id} className="border-t border-gray-200
                   align-top">
-                  <td className="p-3 text-xs">{fmt(l.timestamp)}</td>
+                  <td className="p-3 text-xs">{fmt(l.createdAt)}</td>
                   <td className="p-3">
                     <span className="rounded-full bg-bg-light
                       px-2 py-0.5 text-[10px] font-bold">
                       {l.type || 'other'}
                     </span>
                   </td>
-                  <td className="p-3 text-xs">{l.action || '–'}</td>
-                  <td className="p-3 text-xs">{l.role || '–'}</td>
+                  <td className="p-3 text-xs">{l.app || '–'}</td>
                   <td className="p-3 font-mono text-[10px]">
                     {l.uid
                       ? (codeMap[l.uid] || (codeMap[l.uid] === null
@@ -176,13 +194,13 @@ export default function AdminAudit() {
                   </td>
                   <td className="p-3 font-mono text-[10px]
                     break-all">
-                    {String(l.target || '').slice(0, 40) || '–'}
+                    {detail || '–'}
                   </td>
                   <td className="p-3 font-mono text-[10px]">
                     {l.ip || '–'}
                   </td>
                 </tr>
-              ))}
+              ); })}
             </tbody>
           </table>
         </div>

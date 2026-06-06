@@ -155,6 +155,17 @@ service cloud.firestore {
       allow create: if signedIn();
       allow update, delete: if false;
     }
+
+    // Audit trail (push-relay/api/audit.js writes here for every
+    // signed-in login / signup / route / admin action). Reads are
+    // admin-only - this is the compliance source of truth and must
+    // not be visible to the customer / astrologer apps. Writes are
+    // server-only (relay uses the Admin SDK and bypasses rules) so
+    // we explicitly forbid client writes.
+    match /audits/{id} {
+      allow read: if isAdmin();
+      allow write: if false;
+    }
     match /reports/{id} {
       allow read: if signedIn();
       allow write: if isAdmin();
