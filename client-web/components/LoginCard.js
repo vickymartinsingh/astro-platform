@@ -59,17 +59,26 @@ export default function LoginCard({ onDone, compact, initialMode }) {
   //               wastes time on the OTP step.
   const [phoneValid, setPhoneValid] = useState(false);
   const [phoneInfo, setPhoneInfo] = useState(null);
+  // PRIVACY: only the booleans are kept here. The matched user's
+  // identity (name, email, uid) is intentionally NEVER stored client-
+  // side so it cannot leak into the UI, React DevTools, or telemetry.
   const [phoneDup, setPhoneDup] = useState({
-    checking: false, exists: false, name: '',
+    checking: false, exists: false,
   });
 
   // Debounced duplicate check. Fires 600ms after the user stops
   // typing AND the per-country length is valid. We deliberately do
   // not check while still invalid to avoid wasted Firestore reads.
+  //
+  // PRIVACY: we ONLY store the boolean exists flag here. The
+  // existing user's name / email is NEVER kept in client state - if
+  // the number is registered we simply say so, without disclosing
+  // whose account it is. This is per the operator's instruction
+  // ("privacy violation" if we name them).
   useEffect(() => {
     if (mode !== 'signup') return undefined;
     if (!phoneValid) {
-      setPhoneDup({ checking: false, exists: false, name: '' });
+      setPhoneDup({ checking: false, exists: false });
       return undefined;
     }
     const t = setTimeout(async () => {
@@ -77,10 +86,9 @@ export default function LoginCard({ onDone, compact, initialMode }) {
       try {
         const r = await userService.findUserByPhone(phone);
         setPhoneDup({ checking: false,
-          exists: !!(r && r.exists),
-          name: (r && r.user && r.user.name) || '' });
+          exists: !!(r && r.exists) });
       } catch (_) {
-        setPhoneDup({ checking: false, exists: false, name: '' });
+        setPhoneDup({ checking: false, exists: false });
       }
     }, 600);
     return () => clearTimeout(t);
@@ -144,6 +152,14 @@ export default function LoginCard({ onDone, compact, initialMode }) {
     if (busy) return;
     // Validate BEFORE flipping busy, so a bad field never traps the
     // button in the "Please wait..." state.
+    //
+    // dialCode + nationalDigits MUST be declared at function scope
+    // (NOT inside the if-signup block) because the signup branch
+    // below uses them when calling authService.signupUser. The old
+    // code had them inside the validation block, which threw
+    // "dialCode is not defined" at submit time.
+    let dialCode = '+91';
+    let nationalDigits = '';
     if (mode === 'signup') {
       if (!name.trim()) { setErr('Enter your full name.'); return; }
       // PhoneInput emits "+CODE NATIONAL" and reports per-country
@@ -151,9 +167,9 @@ export default function LoginCard({ onDone, compact, initialMode }) {
       // (most up-to-date) and a fallback parse so a copy-paste also
       // works.
       const parts = String(phone || '').trim().split(/\s+/);
-      const dialCode = (phoneInfo && phoneInfo.dialCode)
+      dialCode = (phoneInfo && phoneInfo.dialCode)
         || (parts[0] && parts[0].startsWith('+') ? parts[0] : '+91');
-      const nationalDigits = (phoneInfo && phoneInfo.national
+      nationalDigits = (phoneInfo && phoneInfo.national
         ? String(phoneInfo.national).replace(/\D/g, '')
         : (parts.slice(1).join('') || parts[0] || '').replace(/\D/g, ''));
       if (!phoneValid) {
@@ -162,8 +178,13 @@ export default function LoginCard({ onDone, compact, initialMode }) {
         return;
       }
       if (phoneDup.exists) {
-        setErr('This number is already registered. Please login or '
-          + 'use a different number.');
+        // Privacy: do NOT name the existing owner here. Telling a
+        // would-be signup whose number that is leaks identity. Just
+        // tell them the number is taken so they can login or use a
+        // different one.
+        setErr('This number is already registered in our records. '
+          + 'Please login with the same account or use a '
+          + 'different number.');
         return;
       }
       if (phoneDup.checking) {
@@ -795,15 +816,14 @@ export default function LoginCard({ onDone, compact, initialMode }) {
                   }}
                   externalNote={
                     phoneDup.checking
-                      ? 'Checking if this number is already registered...'
+                      ? ''
                       : phoneDup.exists
-                        ? (`This number is already registered`
-                          + (phoneDup.name
-                            ? ` to ${phoneDup.name}` : '')
-                          + '. Please login or use a different number.')
+                        ? 'This number is already registered in our '
+                          + 'records. Please login with the same '
+                          + 'account or use a different number.'
                         : ''
                   }
-                  externalTone={phoneDup.checking ? '' : 'error'} />
+                  externalTone={phoneDup.exists ? 'error' : ''} />
                 {/* Gender is mandatory so we can offer the right
                     pronouns + a sensibly defaulted kundli profile. */}
                 <div className="flex gap-2">
