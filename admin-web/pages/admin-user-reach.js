@@ -189,21 +189,43 @@ export default function AdminUserReach() {
 
   useEffect(() => { setPage(1); }, [q, scope]);
 
+  // Optional createdAt range from the dashboard tile click. When the
+  // URL has ?createdFrom=<ms>&createdTo=<ms> we restrict every
+  // bucket to users whose createdAt falls inside that window. This
+  // is what makes the dashboard "New users" tile a true drill-down -
+  // clicking the count opens the exact 6 users the tile counted.
+  const createdFrom = Number(router.query.createdFrom) || 0;
+  const createdTo = Number(router.query.createdTo) || 0;
+  function toMs(v) {
+    if (!v) return 0;
+    if (typeof v.toMillis === 'function') return v.toMillis();
+    if (v instanceof Date) return v.getTime();
+    if (typeof v === 'number') return v;
+    return 0;
+  }
+  function inDateWindow(u) {
+    if (!createdFrom || !createdTo) return true;
+    const ms = toMs(u.createdAt);
+    return ms >= createdFrom && ms < createdTo;
+  }
   // Bucketize once per data load so every count + filter reads
   // from the same source of truth. Tombstoned users (status='deleted',
   // set by adminService.deleteUser) are excluded so deleted
   // accounts never resurface here either.
   const buckets = useMemo(() => {
     const live = (users || [])
-      .filter((u) => String(u.status || '').toLowerCase() !== 'deleted');
+      .filter((u) => String(u.status || '').toLowerCase() !== 'deleted'
+        && !u.deleted)
+      .filter(inDateWindow);
+    const astroLive = (astros || []).filter(inDateWindow);
     return {
       customer: live.filter((u) => roleOf(u) === 'client'),
-      astrologer: astros || [],
+      astrologer: astroLive,
       admin: live.filter((u) => roleOf(u) === 'admin'),
       support: live.filter((u) => roleOf(u) === 'support'),
       hr: live.filter((u) => roleOf(u) === 'hr'),
     };
-  }, [users, astros]);
+  }, [users, astros, createdFrom, createdTo]);
   // Total across every bucket - drives the "All users" tile count.
   const totalAll = (buckets.customer || []).length
     + (buckets.astrologer || []).length

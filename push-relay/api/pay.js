@@ -239,6 +239,17 @@ module.exports = async (req, res) => {
         : 'https://api.cashfree.com/pg';
       if (action === 'create') {
         const amount = Math.round(Number(body.amount));
+        // Cashfree REQUIRES a real customer_phone and rejects the
+        // 9999999999 placeholder we used to send. Surface a clean
+        // error to the client so the UI can prompt for a mobile
+        // number rather than dumping the gateway's cryptic message.
+        const phoneClean = String(body.phone || '').trim();
+        if (!phoneClean) {
+          return res.status(400).json({
+            error: 'phone_required',
+            message: 'Please add your mobile number before recharging.',
+          });
+        }
         const orderId = `w_${uid}_${Date.now()}`;
         const r = await fetch(`${baseUrl}/orders`, {
           method: 'POST',
@@ -249,7 +260,7 @@ module.exports = async (req, res) => {
             order_currency: 'INR',
             customer_details: {
               customer_id: uid,
-              customer_phone: body.phone || '9999999999',
+              customer_phone: phoneClean,
               customer_email: body.email || 'user@astroconnect.app',
               customer_name: body.name || 'AstroSeer User',
             },

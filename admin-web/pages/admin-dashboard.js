@@ -416,7 +416,14 @@ function AnalyticsPanel({ users, txns, sessions, preset, setPreset,
   const stats = useMemo(() => {
     const [from, to] = resolveRange(preset, customStart, customEnd);
     const inRange = (ms) => ms >= from && ms < to;
-    const customers = users.filter((u) => (u.role || 'client') === 'client');
+    // "New users" = client signups in this range that are still
+    // live (NOT deleted/archived). Operator report 2026-06-06:
+    // "if after registering the account is deleted then that should
+    // not show in the new users." Without this filter the tile
+    // counts ghost accounts that the admin already wiped.
+    const customers = users.filter((u) => (u.role || 'client') === 'client'
+      && String(u.status || '').toLowerCase() !== 'deleted'
+      && !u.deleted);
     const newUsers = customers.filter((u) =>
       inRange(toMs(u.createdAt))).length;
     const sessionsInRange = sessions.filter((s) =>
@@ -529,7 +536,8 @@ function AnalyticsPanel({ users, txns, sessions, preset, setPreset,
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Tile label="New users" value={stats.newUsers}
           sub="created in range"
-          href="/admin-user-reach?scope=customer" />
+          href={`/admin-user-reach?scope=customer&createdFrom=${
+            stats.from}&createdTo=${stats.to}`} />
         <Tile label="Existing user activity"
           value={stats.existingUserActivity}
           sub="sessions by older accounts"

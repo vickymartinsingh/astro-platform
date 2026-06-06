@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import Link from 'next/link';
 import {
-  walletService, db, sessionService, astrologerService, rupees,
+  walletService, userService, db, sessionService, astrologerService, rupees,
 } from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { SkeletonList } from '../components/Skeleton';
 import { useRequireClient } from '../lib/useAuth';
 import { useRazorpay } from '../lib/useRazorpay';
+import PhoneInput from '../components/PhoneInput';
 
 const QUICK = [10, 50, 100, 500, 1000];
 const MIN_RECHARGE = 10;
@@ -31,6 +32,15 @@ export default function Wallet() {
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
   const [gwName, setGwName] = useState('');
+  // Add-mobile gate: payment gateways (Cashfree especially) require a
+  // valid mobile number for the customer object. When the profile has
+  // no phone we open this modal BEFORE creating the gateway order so
+  // the user fills it in once and the recharge succeeds. Operator
+  // report 2026-06-06: "while adding money it showing customer mobile
+  // number error" - root cause was the relay falling back to
+  // 9999999999 which Cashfree rejects. Also covers the "mobile must
+  // be mandatory" rule from the same report.
+  const [phoneModal, setPhoneModal] = useState(false);
   useEffect(() => {
     getDoc(doc(db, 'settings', 'payments')).then((s) => {
       const id = (s.exists() && s.data().active) || '';
@@ -112,6 +122,13 @@ export default function Wallet() {
       setMsg({ ok: false, t: `Minimum recharge is ${rupees(MIN_RECHARGE)}.` });
       return;
     }
+    // Mobile is mandatory for the gateway (Cashfree validates the
+    // customer_phone server-side and rejects placeholders). Open the
+    // add-mobile modal instead of attempting the order with an
+    // unusable number.
+    if (!profile?.phone || !String(profile.phone).trim()) {
+      setPhoneModal(true); return;
+    }
     setBusy(true);
     const back = typeof router.query.return === 'string'
       ? router.query.return : null;
@@ -148,7 +165,8 @@ export default function Wallet() {
           name: 'AstroSeer',
           description: 'Wallet recharge',
           order_id: order.orderId,
-          prefill: { name: profile?.name, email: profile?.email },
+          prefill: { name: profile?.name, email: profile?.email,
+            contact: profile?.phone || '' },
           theme: { color: '#6C2BD9' },
           handler: async (resp) => {
             try {
@@ -433,7 +451,73 @@ export default function Wallet() {
           )}
         </div>
       )}
+      {phoneModal && (
+        <AddPhoneModal uid={user?.uid}
+          onClose={() => setPhoneModal(false)}
+          onSaved={() => { setPhoneModal(false);
+            setMsg({ ok: true,
+              t: 'Mobile saved. Tap Pay again to continue.' }); }} />
+      )}
     </Layout>
+  );
+}
+
+// Inline mobile-capture used when the customer hits Pay without a
+// number on file. PhoneInput already enforces per-country digit length
+// so we don't re-validate here; just save and close. Rules-locked
+// once written so the user can't accidentally wipe it.
+function AddPhoneModal({ uid, onClose, onSaved }) {
+  const [val, setVal] = useState('');
+  const [ok, setOk] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  async function save() {
+    setBusy(true); setErr('');
+    try {
+      const trimmed = String(val || '').trim();
+      if (!trimmed || !ok) {
+        setErr('Enter a valid mobile number.'); setBusy(false); return;
+      }
+      await userService.updateUser(uid, { phone: trimmed });
+      if (onSaved) onSaved(trimmed);
+    } catch (e) {
+      setErr(String((e && e.message) || e));
+    } finally { setBusy(false); }
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center
+      bg-black/40 p-3 sm:items-center" onClick={busy ? undefined : onClose}>
+      <div className="w-full max-w-sm rounded-2xl bg-white p-4
+        shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-base font-bold text-dark-text">
+          Add your mobile number
+        </h3>
+        <p className="mt-1 text-xs text-sub-text">
+          Required by the payment gateway. We use this for receipts +
+          transaction alerts only. Cannot be removed once saved.
+        </p>
+        <div className="mt-3">
+          <PhoneInput value={val}
+            onChange={(v, valid) => { setVal(v); setOk(!!valid); }} />
+        </div>
+        {err && (
+          <div className="mt-2 rounded-card bg-rose-50 p-2 text-xs
+            text-rose-700">{err}</div>
+        )}
+        <div className="mt-4 flex items-center justify-end gap-2">
+          <button onClick={onClose} disabled={busy}
+            className="rounded-full px-4 py-2 text-sm font-semibold
+              text-sub-text hover:bg-bg-light disabled:opacity-50">
+            Cancel
+          </button>
+          <button onClick={save} disabled={busy || !ok}
+            className="rounded-full bg-primary px-4 py-2 text-sm
+              font-bold text-white disabled:opacity-50">
+            {busy ? 'Saving…' : 'Save and continue'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
