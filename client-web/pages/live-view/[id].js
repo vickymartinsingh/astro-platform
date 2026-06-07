@@ -53,6 +53,45 @@ function IconShare() {
     </svg>
   );
 }
+function IconMic({ off }) {
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+      <path d="M12 14a3 3 0 003-3V7a3 3 0 00-6 0v4a3 3 0 003 3z
+        M19 11a7 7 0 11-14 0M12 18v3M8 21h8" stroke="white"
+        strokeWidth="2" strokeLinecap="round" fill="none" />
+      {off && (
+        <path d="M4 4l16 16" stroke="#FF3B5C" strokeWidth="2.5"
+          strokeLinecap="round" />
+      )}
+    </svg>
+  );
+}
+function IconVideo({ off }) {
+  return (
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+      <path d="M3 7a2 2 0 012-2h9a2 2 0 012 2v10a2 2 0 01-2 2H5a2
+        2 0 01-2-2V7zm13 4l5-3v10l-5-3" stroke="white" strokeWidth="2"
+        fill="none" strokeLinejoin="round" />
+      {off && (
+        <path d="M4 4l16 16" stroke="#FF3B5C" strokeWidth="2.5"
+          strokeLinecap="round" />
+      )}
+    </svg>
+  );
+}
+function IconEndCall() {
+  return (
+    <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
+      <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07
+        19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3
+        a2 2 0 012 1.72c.13.96.37 1.9.72 2.81a2 2 0 01-.45 2.11L8.09
+        9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.91.35 1.85.59
+        2.81.72A2 2 0 0122 16.92z"
+        fill="white" stroke="white" strokeWidth="1.5"
+        strokeLinejoin="round" transform="rotate(135 12 12)" />
+    </svg>
+  );
+}
 function IconPhone() {
   // Live Call icon - replaces the abstract Join arrow per operator
   // screenshot ref. Phone glyph reads as "tap to call" / "tap to
@@ -152,6 +191,12 @@ export default function LiveView() {
   // Countdown ticker during a connected call. ms remaining derived
   // from wallet/rate; updated every second.
   const [callRemain, setCallRemain] = useState(0);
+  // In-call control toggles. Operator 2026-06-07: "once connect both
+  // should have the option like Mute, Unmute, Video on/off, Call
+  // end." We track local toggle state here and surface it via the
+  // CallControls bar; the Agora handlers fire on toggle.
+  const [micOn, setMicOn] = useState(true);
+  const [camOn, setCamOn] = useState(true);
   const remoteRef = useRef(null);
   const joinedRef = useRef(false);
   const cRef = useRef(null);
@@ -340,19 +385,18 @@ export default function LiveView() {
     });
   }
 
-  // Countdown ticker: once the request reaches 'connected' status,
-  // start a 1Hz timer that drains the wallet at livePrice/min. When
-  // it crosses 0 we end the request so the astrologer drops the
-  // connection. The session ledger writes happen on the relay
-  // (existing call-end accounting); this is just the user-facing
-  // timer.
+  // Countdown ticker: starts ONLY when the request is in 'connected'
+  // status AND the server-stamped connectedAt is present. Operator
+  // 2026-06-07: "without joining only the counter has been charged
+  // only after connected the call counter should start". So we
+  // refuse to tick on a pending/queued/astro_ok request and we wait
+  // for the real connectedAt timestamp (no fallback to Date.now)
+  // so the math is honest.
   useEffect(() => {
-    if (!myRequest || myRequest.status !== 'connected') {
-      setCallRemain(0); return undefined;
-    }
-    const startMs = myRequest.connectedAt?.toMillis
-      ? myRequest.connectedAt.toMillis()
-      : Date.now();
+    const startMs = myRequest && myRequest.status === 'connected'
+      && myRequest.connectedAt?.toMillis
+      ? myRequest.connectedAt.toMillis() : 0;
+    if (!startMs) { setCallRemain(0); return undefined; }
     const totalSec = Math.floor((Number(walletBal || 0) / livePrice) * 60);
     function tick() {
       const elapsed = Math.floor((Date.now() - startMs) / 1000);
@@ -472,38 +516,73 @@ export default function LiveView() {
           </span>
           <span className="mt-0.5">{info?.likes || 0}</span>
         </button>
-        <button onClick={onRequestJoin}
-          disabled={myRequest && myRequest.status !== 'connected'}
-          className="flex flex-col items-center text-[10px] font-semibold
-            disabled:opacity-60" aria-label="Request live call">
-          {/* Royal-palette gradient pill - amber to maroon, matches
-              the Follow chip in the top bar. Operator 2026-06-07:
-              show price beside it + strike-through when a live
-              offer is active. */}
-          <span className="grid h-12 w-12 place-items-center rounded-full
-            shadow-lg" style={{
-              background: 'linear-gradient(135deg,#D4A12A,#7F2020)' }}>
-            <IconPhone />
-          </span>
-          {myRequest && myRequest.status === 'connected' ? (
-            <span className="mt-0.5 font-mono text-[11px]
-              text-emerald-300">
-              {fmtClock(callRemain)}
-            </span>
-          ) : (
-            <>
-              <span className="mt-0.5">Live call</span>
-              <span className="text-[9px] opacity-80">
-                {rate.discounted && (
-                  <span className="line-through mr-0.5 opacity-60">
-                    ₹{rate.base}
-                  </span>
-                )}
-                ₹{livePrice}/min
+        {/* Live call button morphs through 4 states:
+              idle         -> gradient pill + ₹/min subtitle
+              pending /
+              queued       -> rose pill + "Cancel" subtitle so the
+                              user can pull their own request without
+                              looking for a separate kill switch
+              astro_ok     -> banner above handles Accept/Decline -
+                              keep the pill as a status hint
+              connected    -> countdown timer (m:ss) */}
+        {(() => {
+          const s = myRequest?.status;
+          const inQueue = s === 'pending' || s === 'queued';
+          const isConnected = s === 'connected';
+          const onTap = () => {
+            if (inQueue || s === 'astro_ok') {
+              if (myRequest?.id) liveService.endJoinRequest(
+                myRequest.id, 'user').catch(() => {});
+              return;
+            }
+            if (isConnected) return; // controls bar handles end
+            onRequestJoin();
+          };
+          return (
+            <button onClick={onTap}
+              className="flex flex-col items-center text-[10px]
+                font-semibold" aria-label="Live call control">
+              <span className="grid h-12 w-12 place-items-center
+                rounded-full shadow-lg"
+                style={{ background: inQueue
+                  ? '#DC2626'
+                  : 'linear-gradient(135deg,#D4A12A,#7F2020)' }}>
+                <IconPhone />
               </span>
-            </>
-          )}
-        </button>
+              {isConnected ? (
+                <span className="mt-0.5 font-mono text-[11px]
+                  text-emerald-300">
+                  {fmtClock(callRemain)}
+                </span>
+              ) : inQueue ? (
+                <>
+                  <span className="mt-0.5">Cancel</span>
+                  <span className="text-[9px] opacity-80">
+                    {s === 'queued' ? 'waitlist' : 'waiting...'}
+                  </span>
+                </>
+              ) : s === 'astro_ok' ? (
+                <>
+                  <span className="mt-0.5 text-emerald-300">
+                    Tap Accept ↑
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="mt-0.5">Live call</span>
+                  <span className="text-[9px] opacity-80">
+                    {rate.discounted && (
+                      <span className="line-through mr-0.5 opacity-60">
+                        ₹{rate.base}
+                      </span>
+                    )}
+                    ₹{livePrice}/min
+                  </span>
+                </>
+              )}
+            </button>
+          );
+        })()}
         <button onClick={() => {
           try { navigator.share?.({
             title: `${info?.name || 'Astrologer'} is live now`,
@@ -555,6 +634,49 @@ export default function LiveView() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* In-call control bar (operator 2026-06-07: "once connected
+          both should have Mute/Unmute, Video on/off, Call end"). Sits
+          just above the comment overlay and only shows while the
+          request is in 'connected' status. The Recharge pill lets
+          the user top up mid-call without disconnecting. */}
+      {myRequest?.status === 'connected' && (
+        <div className="absolute inset-x-0 bottom-[calc(28vh+72px)]
+          z-30 flex items-center justify-center gap-3">
+          <button onClick={() => {
+            const next = !micOn; setMicOn(next);
+            // callService.setMuted takes the MUTED state (inverse).
+            try { callService.setMuted(!next); } catch (_) {}
+          }}
+            className="grid h-12 w-12 place-items-center rounded-full
+              bg-white/15 backdrop-blur" aria-label="Mic">
+            <IconMic off={!micOn} />
+          </button>
+          <button onClick={() => {
+            const next = !camOn; setCamOn(next);
+            try { callService.setCameraEnabled(next); } catch (_) {}
+          }}
+            className="grid h-12 w-12 place-items-center rounded-full
+              bg-white/15 backdrop-blur" aria-label="Camera">
+            <IconVideo off={!camOn} />
+          </button>
+          <button onClick={() => router.push(
+            `/wallet?recharge=${Math.max(50, livePrice * 10)}`)}
+            className="grid h-12 px-3 place-items-center rounded-full
+              bg-emerald-600/90 text-[11px] font-bold backdrop-blur"
+            aria-label="Recharge">
+            + Recharge
+          </button>
+          <button onClick={() => {
+            if (myRequest?.id) liveService.endJoinRequest(
+              myRequest.id, 'user').catch(() => {});
+          }}
+            className="grid h-14 w-14 place-items-center rounded-full
+              bg-red-600 shadow-lg" aria-label="End call">
+            <IconEndCall />
+          </button>
         </div>
       )}
 
@@ -623,8 +745,8 @@ export default function LiveView() {
           canJoin={canJoin} minMins={MIN_JOIN_MINS}
           onClose={() => setSheet(null)}
           onConfirm={submitJoinRequest}
-          onRecharge={() => router.push(
-            `/wallet?recharge=${Math.max(50, livePrice * MIN_JOIN_MINS)}`)} />
+          onRecharge={(amt) => router.push(
+            `/wallet?recharge=${amt}`)} />
       )}
     </div>
   );
@@ -639,12 +761,46 @@ function fmtClock(sec) {
 // Pre-call estimator (operator 2026-06-07): shows rate (with
 // strikethrough when an offer applies), wallet balance, computed
 // max minutes, the 3-min minimum gate, and a Continue / Recharge
-// CTA. Mirrors the friendly disclosure pattern Astrotalk uses
-// before charging.
+// CTA with SMART RECOMMENDATIONS.
+//
+// Recommendation logic (operator 2026-06-07: "minimum balance
+// requirement should also ask when balance is not meeting...
+// if the user is having half amount of the minimum balance then
+// it should recommend to add more xyz amount along with the add
+// wallet button"):
+//   - Below half of minimum: top up to a comfortable 10-minute
+//     buffer (more headroom).
+//   - Between half-minimum and minimum: top up just enough to
+//     clear the minimum + a small cushion so they're not gated
+//     again seconds into the call.
+//   - At-or-above minimum: no recommendation, show Continue.
 function EstimateSheet({ info, rate, walletBal, maxMins, canJoin,
   minMins, onClose, onConfirm, onRecharge }) {
   const ratePerMin = rate.final;
   const need = ratePerMin * minMins;
+  const wallet = Number(walletBal || 0);
+  const shortfall = Math.max(0, need - wallet);
+  const halfMin = need / 2;
+  // Recommended top-up amount, rounded to nearest ₹10 for a clean
+  // CTA label and an easier wallet-pad value.
+  const ten = ratePerMin * 10;
+  let recommended = 0;
+  if (!canJoin) {
+    recommended = wallet >= halfMin
+      ? Math.ceil((shortfall + ratePerMin * 2) / 10) * 10
+      : Math.ceil(ten / 10) * 10;
+  }
+  function reason() {
+    if (canJoin) return '';
+    if (wallet >= halfMin) {
+      return `You're ₹${shortfall} short of the minimum. Add `
+        + `₹${recommended} so you can talk past the first ${minMins} `
+        + 'minutes comfortably.';
+    }
+    return `Wallet ₹${wallet} is less than half of the minimum (₹`
+      + `${need}). Add ₹${recommended} for a ${Math.round(recommended
+        / ratePerMin)}-minute buffer.`;
+  }
   return (
     <div className="fixed inset-0 z-40 flex items-end justify-center
       bg-black/50 backdrop-blur-sm" onClick={onClose}>
@@ -700,11 +856,26 @@ function EstimateSheet({ info, rate, walletBal, maxMins, canJoin,
         </div>
 
         {!canJoin && (
-          <div className="mt-3 rounded-card bg-rose-50 p-3 text-[12px]
-            text-rose-800">
-            You need at least <b>₹{need}</b> in your wallet to start a
-            live call ({minMins} minute minimum). Recharge and try
-            again.
+          <div className="mt-3 rounded-card border border-rose-200
+            bg-rose-50 p-3">
+            <div className="text-[12px] text-rose-800">
+              {reason()}
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              {[recommended, recommended + ten,
+                recommended + 2 * ten].map((amt, i) => (
+                <button key={amt} onClick={() => onRecharge(amt)}
+                  className={`rounded-full px-3 py-1.5 text-[11px]
+                    font-bold ${i === 0
+                      ? 'bg-primary text-white'
+                      : 'border border-gray-300 text-sub-text'}`}>
+                  + ₹{amt}
+                  {i === 0 && (
+                    <span className="ml-1 opacity-80">recommended</span>
+                  )}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
@@ -712,7 +883,8 @@ function EstimateSheet({ info, rate, walletBal, maxMins, canJoin,
           You will be added to the astrologer&apos;s waitlist. Once
           they accept, you have to confirm one more time before the
           call begins. The countdown timer in the call button shows
-          your remaining minutes in real time.
+          your remaining minutes in real time. You can recharge
+          mid-call without disconnecting.
         </p>
 
         <div className="mt-4 flex flex-wrap items-center
@@ -731,10 +903,10 @@ function EstimateSheet({ info, rate, walletBal, maxMins, canJoin,
               Continue & request
             </button>
           ) : (
-            <button onClick={onRecharge}
+            <button onClick={() => onRecharge(recommended)}
               className="rounded-full bg-primary px-5 py-2 text-sm
                 font-bold text-white">
-              Recharge wallet
+              + Wallet ₹{recommended}
             </button>
           )}
         </div>
