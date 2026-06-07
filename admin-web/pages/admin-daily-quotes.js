@@ -204,28 +204,27 @@ export default function AdminDailyQuotes() {
         )}
       </section>
 
-      {/* Toggle + copy */}
+      {/* Visibility (per-device, same pattern as the hero banner) +
+          copy. The banner is shown only on the devices the operator
+          enabled; both off => fully hidden. */}
       <section className="surface mb-4 p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="text-sm font-bold text-dark-text">
-              {state.enabled ? 'Banner is showing' : 'Banner is hidden'}
-            </div>
-            <div className="text-[11px] text-sub-text">
-              Toggle off to instantly hide the card from every
-              customer; toggle on + Save to roll it out.
-            </div>
-          </div>
-          <button type="button"
-            onClick={() =>
-              setState((s) => ({ ...s, enabled: !s.enabled }))}
-            className={`relative h-7 w-12 rounded-full transition ${
-              state.enabled ? 'bg-emerald-500' : 'bg-slate-300'}`}>
-            <span className={`absolute top-1 inline-block h-5 w-5
-              rounded-full bg-white shadow transition ${
-                state.enabled ? 'left-6' : 'left-1'}`} />
-          </button>
+        <h2 className="text-sm font-bold uppercase tracking-wider
+          text-sub-text">Visibility</h2>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <DeviceToggle label="Show on mobile / app"
+            on={!!state.showMobile}
+            onChange={(v) => setState((s) =>
+              ({ ...s, showMobile: v, enabled: v || s.showDesktop }))} />
+          <DeviceToggle label="Show on desktop / web"
+            on={!!state.showDesktop}
+            onChange={(v) => setState((s) =>
+              ({ ...s, showDesktop: v, enabled: v || s.showMobile }))} />
         </div>
+        <p className="mt-2 text-[11px] text-sub-text">
+          Both off hides the card everywhere. Mirror of the home hero
+          pattern so you can flip mobile on first, watch how it
+          looks, then enable desktop.
+        </p>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <Field label="Title">
@@ -407,5 +406,23 @@ function Field({ label, children }) {
         text-sub-text">{label}</label>
       <div className="mt-1">{children}</div>
     </div>
+  );
+}
+
+function DeviceToggle({ label, on, onChange }) {
+  return (
+    <button type="button" onClick={() => onChange(!on)}
+      className={`flex items-center justify-between rounded-card
+        px-4 py-3 text-sm font-semibold transition ${on
+          ? 'bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200'
+          : 'bg-slate-50 text-slate-500 ring-1 ring-slate-200'}`}>
+      <span>{label}</span>
+      <span className={`relative inline-block h-5 w-9 rounded-full
+        transition ${on ? 'bg-emerald-500' : 'bg-slate-300'}`}>
+        <span className={`absolute top-0.5 inline-block h-4 w-4
+          rounded-full bg-white shadow transition ${on
+            ? 'left-[18px]' : 'left-0.5'}`} />
+      </span>
+    </button>
   );
 }

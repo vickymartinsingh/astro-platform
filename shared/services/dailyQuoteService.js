@@ -31,6 +31,12 @@ import {
 import { db } from '../firebase.js';
 
 export const DEFAULTS = {
+  // 2026-06-07: per-device toggles to match the home hero banner. Both
+  // default OFF so the card stays hidden until the operator opts in.
+  // The legacy `enabled` field is still honoured when reading older
+  // docs (true means both devices on; false means both off).
+  showMobile: false,
+  showDesktop: false,
   enabled: false,
   title: 'Hey, Cosmic Explorer',
   // Subtitle is optional (operator: "no need to specify as Quote for
@@ -100,20 +106,35 @@ export function isValidQuote(raw) {
   return sanitiseQuote(raw).length > 0;
 }
 
+// Normalise a Firestore doc into the shape the UI expects.
+//   - showMobile / showDesktop are the new per-device toggles
+//   - legacy docs that only carry `enabled` get migrated on the fly
+//     (true -> both on, false -> both off) so a flip in the admin
+//     never silently regresses what the customer used to see
+function hydrate(d) {
+  const hasNew = (d.showMobile != null || d.showDesktop != null);
+  return {
+    showMobile: hasNew ? !!d.showMobile : !!d.enabled,
+    showDesktop: hasNew ? !!d.showDesktop : !!d.enabled,
+    // Keep enabled as a convenience mirror so other call sites that
+    // only care about "is it on anywhere" can keep working.
+    enabled: hasNew
+      ? (!!d.showMobile || !!d.showDesktop)
+      : !!d.enabled,
+    title: d.title || DEFAULTS.title,
+    subtitle: d.subtitle || DEFAULTS.subtitle,
+    quotes: Array.isArray(d.quotes) && d.quotes.length
+      ? d.quotes.map(sanitiseQuote).filter(Boolean)
+      : [...DEFAULTS.quotes],
+  };
+}
+
 // Public read.
 export async function getDailyQuotes() {
   try {
     const s = await getDoc(doc(db, 'settings', 'dailyQuotes'));
     if (!s.exists()) return { ...DEFAULTS };
-    const d = s.data() || {};
-    return {
-      enabled: !!d.enabled,
-      title: d.title || DEFAULTS.title,
-      subtitle: d.subtitle || DEFAULTS.subtitle,
-      quotes: Array.isArray(d.quotes) && d.quotes.length
-        ? d.quotes.map(sanitiseQuote).filter(Boolean)
-        : [...DEFAULTS.quotes],
-    };
+    return hydrate(s.data() || {});
   } catch (_) {
     return { ...DEFAULTS };
   }
@@ -121,15 +142,7 @@ export async function getDailyQuotes() {
 
 export function listenDailyQuotes(cb) {
   return onSnapshot(doc(db, 'settings', 'dailyQuotes'), (s) => {
-    const d = s.exists() ? (s.data() || {}) : {};
-    cb({
-      enabled: !!d.enabled,
-      title: d.title || DEFAULTS.title,
-      subtitle: d.subtitle || DEFAULTS.subtitle,
-      quotes: Array.isArray(d.quotes) && d.quotes.length
-        ? d.quotes.map(sanitiseQuote).filter(Boolean)
-        : [...DEFAULTS.quotes],
-    });
+    cb(hydrate(s.exists() ? (s.data() || {}) : {}));
   }, () => cb({ ...DEFAULTS }));
 }
 
@@ -147,8 +160,15 @@ export async function saveDailyQuotes(state) {
     seen.add(key);
     cleaned.push(s);
   });
+  const showMobile = !!state.showMobile;
+  const showDesktop = !!state.showDesktop;
   await setDoc(doc(db, 'settings', 'dailyQuotes'), {
-    enabled: !!state.enabled,
+    showMobile,
+    showDesktop,
+    // enabled stays in the doc as a convenience mirror so older
+    // readers (or any cron / relay code that checks "is it on")
+    // see a single boolean. True iff either device is on.
+    enabled: showMobile || showDesktop,
     title: sanitiseQuote(state.title) || DEFAULTS.title,
     subtitle: sanitiseQuote(state.subtitle) || '',
     quotes: cleaned,

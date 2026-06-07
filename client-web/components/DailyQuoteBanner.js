@@ -2,19 +2,28 @@ import { useEffect, useState } from 'react';
 import { dailyQuoteService } from '@astro/shared';
 
 // Daily quote banner ("Hey, Cosmic Explorer" + a rotating quote).
-// Default off; only renders when settings/dailyQuotes.enabled === true.
 // Subscribes via onSnapshot so the moment the admin flips the toggle
 // in /admin-daily-quotes the customer sees it (or it disappears)
 // without a refresh.
+//
+// 2026-06-08: per-device visibility - same pattern as the home hero
+// banner. showMobile / showDesktop both default OFF; the customer
+// sees the card only on the devices the admin enabled.
 export default function DailyQuoteBanner() {
   const [state, setState] = useState(null);
   useEffect(() => dailyQuoteService.listenDailyQuotes(setState), []);
-  if (!state || !state.enabled) return null;
+  if (!state) return null;
+  const showMobile = state.showMobile !== false && !!state.showMobile;
+  const showDesktop = state.showDesktop !== false && !!state.showDesktop;
+  if (!showMobile && !showDesktop) return null;
+  const visibility = showMobile && showDesktop ? ''
+    : showMobile ? 'md:hidden' : 'hidden md:block';
   const quote = dailyQuoteService.quoteForToday(state.quotes,
     new Date());
   return (
     <div
-      className="mt-4 overflow-hidden rounded-2xl text-white shadow-sm"
+      className={`mt-4 overflow-hidden rounded-2xl text-white shadow-sm
+        ${visibility}`}
       style={{
         background: 'linear-gradient(135deg, #2A1410 0%, #4a1212 45%, '
           + '#7F2020 100%)',
