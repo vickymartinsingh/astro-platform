@@ -98,18 +98,14 @@ export default function UpdateModal() {
         </p>
 
         {/* App card row: icon + name + meta. Operator screenshot
-            shows star rating, size, age rating. */}
+            shows star rating, size, age rating. Logo is the real
+            brand /logo.png served from public so the modal matches
+            what Play Store would display. */}
         <div className="mt-4 flex items-center gap-3">
-          <div className="grid h-12 w-12 shrink-0 place-items-center
-            overflow-hidden rounded-xl bg-amber-400">
-            <svg viewBox="0 0 64 64" width="40" height="40">
-              <circle cx="32" cy="32" r="26" fill="#1A0F0F" />
-              <circle cx="32" cy="32" r="22" fill="none"
-                stroke="#D4A12A" strokeWidth="2" />
-              <circle cx="32" cy="22" r="3" fill="#D4A12A" />
-              <path d="M22 38 L32 32 L42 38" stroke="#D4A12A"
-                strokeWidth="2" fill="none" strokeLinecap="round" />
-            </svg>
+          <div className="h-12 w-12 shrink-0 overflow-hidden
+            rounded-xl bg-[#1A0F0F]">
+            <img src="/logo.png" alt="AstroSeer"
+              className="h-full w-full object-contain" />
           </div>
           <div className="min-w-0 flex-1">
             <div className="truncate text-[15px] font-semibold">

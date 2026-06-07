@@ -53,6 +53,7 @@ export * as reportService from './services/reportService.js';
 export * as cmsService from './services/cmsService.js';
 export * as remedyService from './services/remedyService.js';
 export * as liveService from './services/liveService.js';
+export * as offerService from './services/offerService.js';
 export * as liveBotService from './services/liveBotService.js';
 export * as themeService from './services/themeService.js';
 export * as brandingService from './services/brandingService.js';

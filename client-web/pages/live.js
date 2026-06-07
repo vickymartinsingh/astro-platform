@@ -31,8 +31,26 @@ export default function LivePage() {
   const [upcoming, setUpcoming] = useState([]);
   const [, setTick] = useState(0);
 
-  useEffect(() => liveService.listenLiveAstrologers(
-    (l) => setLives(l)), []);
+  useEffect(() => {
+    // Operator screenshot 2026-06-07: "/live shows just Loading."
+    // Root cause: listenLiveAstrologers does not auto-error when
+    // rules / connectivity reject the subscription, so the
+    // initial null state never advances. We seed an empty list
+    // after 4 seconds so the page either shows real lives OR the
+    // empty CTA ("Browse astrologers") - never stays stuck.
+    let unsub = null;
+    let settled = false;
+    try {
+      unsub = liveService.listenLiveAstrologers((l) => {
+        settled = true;
+        setLives(l || []);
+      });
+    } catch (_) { setLives([]); settled = true; }
+    const safety = setTimeout(() => {
+      if (!settled) setLives([]);
+    }, 4000);
+    return () => { clearTimeout(safety); if (unsub) unsub(); };
+  }, []);
   useEffect(() => liveService.listenScheduledLives(
     (l) => setUpcoming(l)), []);
   useEffect(() => {

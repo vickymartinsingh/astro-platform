@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import {
   callService, liveService, walletService, astrologerService,
+  offerService,
 } from '@astro/shared';
 import { useOptionalClient } from '../../lib/useAuth';
 import { useSettings } from '../../lib/useSettings';
@@ -142,8 +143,15 @@ export default function LiveView() {
   // Bottom sheets that overlay the live without leaving it:
   //   'profile' -> in-live astrologer profile card (ref screenshot 2)
   //   'grid'    -> other lives grid (ref screenshot 3)
+  //   'estimate' -> pre-call charges + max-minutes estimator with
+  //                 3-min minimum balance gate.
   const [sheet, setSheet] = useState(null);
   const [profileData, setProfileData] = useState(null);
+  const [walletBal, setWalletBal] = useState(0);
+  const [offer, setOffer] = useState(null);
+  // Countdown ticker during a connected call. ms remaining derived
+  // from wallet/rate; updated every second.
+  const [callRemain, setCallRemain] = useState(0);
   const remoteRef = useRef(null);
   const joinedRef = useRef(false);
   const cRef = useRef(null);
@@ -196,6 +204,20 @@ export default function LiveView() {
     if (!astroUid || !user?.uid) return undefined;
     return liveService.listenMyJoinRequest(astroUid, user.uid, setMyRequest);
   }, [astroUid, user?.uid]);
+
+  // Live offer subscription - drives the strikethrough rate display
+  // + the estimator math.
+  useEffect(() => {
+    if (!astroUid) return undefined;
+    return offerService.listenAstroOffer(astroUid, setOffer);
+  }, [astroUid]);
+
+  // Live wallet balance - the estimator needs it to compute max
+  // minutes and gate at the 3-minute minimum.
+  useEffect(() => {
+    if (!user?.uid) return undefined;
+    return walletService.listenWallet(user.uid, setWalletBal);
+  }, [user?.uid]);
 
   // Lazy-load the full astrologer profile only when the in-live
   // profile sheet opens. Saves a round trip for viewers who never
@@ -275,8 +297,19 @@ export default function LiveView() {
     ...fakes.map((f) => ({ ...f, _t: f._ts })),
   ].sort((a, b) => a._t - b._t);
   const vcount = liveService.liveSimViewers(info, features);
-  const livePrice = Number(info?.livePrice
+  // Base rate the astrologer set for live consultations. The offer
+  // can knock this down (see rate.final below) when active for the
+  // 'live' scope.
+  const baseLivePrice = Number(info?.livePrice
     || info?.priceCall || 30);
+  const rate = offerService.computeRate(baseLivePrice, offer, 'live');
+  const livePrice = rate.final;
+  // Max minutes the customer can talk on their current wallet, and
+  // the 3-minute minimum gate.
+  const maxMins = livePrice > 0
+    ? Math.floor(Number(walletBal || 0) / livePrice) : 0;
+  const MIN_JOIN_MINS = 3;
+  const canJoin = maxMins >= MIN_JOIN_MINS;
 
   async function sendComment() {
     const v = text.trim();
@@ -291,25 +324,48 @@ export default function LiveView() {
     await liveService.toggleFollow(astroUid,
       { uid: user.uid, name: profile?.name || 'Guest' });
   }
-  async function onRequestJoin() {
+  function onRequestJoin() {
     if (!user?.uid) { router.push('/login'); return; }
-    // Confirm + pricing pre-check.
-    const wallet = await walletService.getWallet(user.uid)
-      .catch(() => 0);
-    if (Number(wallet || 0) < livePrice) {
-      // Bounce to wallet recharge prefilled to the live price.
-      router.push(`/wallet?recharge=${livePrice}`);
-      return;
-    }
-    if (!window.confirm(`Request to join ${info?.name || 'this astrologer'}'`
-      + `s live? ₹${livePrice}/min applies once you both connect.`)) {
-      return;
-    }
+    // Open the pre-call estimator instead of a plain confirm() so the
+    // customer sees charges + max minutes BEFORE the request lands
+    // on the astrologer overlay. The actual liveRequest doc is
+    // created from inside the estimator's primary CTA.
+    setSheet('estimate');
+  }
+  async function submitJoinRequest() {
+    setSheet(null);
     await liveService.requestJoinLive({
       astroUid, user: { uid: user.uid, name: profile?.name || 'Guest' },
       astroBusy: !!info?.busy,
     });
   }
+
+  // Countdown ticker: once the request reaches 'connected' status,
+  // start a 1Hz timer that drains the wallet at livePrice/min. When
+  // it crosses 0 we end the request so the astrologer drops the
+  // connection. The session ledger writes happen on the relay
+  // (existing call-end accounting); this is just the user-facing
+  // timer.
+  useEffect(() => {
+    if (!myRequest || myRequest.status !== 'connected') {
+      setCallRemain(0); return undefined;
+    }
+    const startMs = myRequest.connectedAt?.toMillis
+      ? myRequest.connectedAt.toMillis()
+      : Date.now();
+    const totalSec = Math.floor((Number(walletBal || 0) / livePrice) * 60);
+    function tick() {
+      const elapsed = Math.floor((Date.now() - startMs) / 1000);
+      const rem = Math.max(0, totalSec - elapsed);
+      setCallRemain(rem);
+      if (rem === 0 && myRequest.id) {
+        liveService.endJoinRequest(myRequest.id, 'user').catch(() => {});
+      }
+    }
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, [myRequest, walletBal, livePrice]);
   async function onCancelJoin() {
     if (myRequest?.id) await liveService.endJoinRequest(myRequest.id, 'user');
   }
@@ -345,8 +401,23 @@ export default function LiveView() {
             <div className="text-[12px] font-bold">
               {info?.name || 'Astrologer'}
             </div>
-            <div className="text-[10px] opacity-80">
-              ₹{livePrice}/min
+            <div className="flex items-center gap-1 text-[10px]
+              opacity-90">
+              {rate.discounted && (
+                <span className="line-through opacity-60">
+                  ₹{rate.base}
+                </span>
+              )}
+              <span className={rate.discounted
+                ? 'font-bold text-amber-300' : ''}>
+                ₹{livePrice}/min
+              </span>
+              {rate.discounted && (
+                <span className="rounded bg-emerald-500/80 px-1
+                  text-[9px] font-bold">
+                  -{rate.percentOff}%
+                </span>
+              )}
             </div>
           </div>
         </button>
@@ -402,17 +473,36 @@ export default function LiveView() {
           <span className="mt-0.5">{info?.likes || 0}</span>
         </button>
         <button onClick={onRequestJoin}
-          disabled={!!myRequest}
+          disabled={myRequest && myRequest.status !== 'connected'}
           className="flex flex-col items-center text-[10px] font-semibold
             disabled:opacity-60" aria-label="Request live call">
           {/* Royal-palette gradient pill - amber to maroon, matches
-              the Follow chip in the top bar. */}
+              the Follow chip in the top bar. Operator 2026-06-07:
+              show price beside it + strike-through when a live
+              offer is active. */}
           <span className="grid h-12 w-12 place-items-center rounded-full
             shadow-lg" style={{
               background: 'linear-gradient(135deg,#D4A12A,#7F2020)' }}>
             <IconPhone />
           </span>
-          <span className="mt-0.5">Live call</span>
+          {myRequest && myRequest.status === 'connected' ? (
+            <span className="mt-0.5 font-mono text-[11px]
+              text-emerald-300">
+              {fmtClock(callRemain)}
+            </span>
+          ) : (
+            <>
+              <span className="mt-0.5">Live call</span>
+              <span className="text-[9px] opacity-80">
+                {rate.discounted && (
+                  <span className="line-through mr-0.5 opacity-60">
+                    ₹{rate.base}
+                  </span>
+                )}
+                ₹{livePrice}/min
+              </span>
+            </>
+          )}
         </button>
         <button onClick={() => {
           try { navigator.share?.({
@@ -514,7 +604,7 @@ export default function LiveView() {
         )}
       </div>
 
-      {/* IN-LIVE OVERLAYS - both close on backdrop tap or close btn */}
+      {/* IN-LIVE OVERLAYS - all close on backdrop tap or close btn */}
       {sheet === 'profile' && (
         <ProfileSheet astroUid={astroUid} info={info}
           profile={profileData} following={following}
@@ -527,6 +617,138 @@ export default function LiveView() {
           onPick={(uid) => router.replace(`/live-view/${uid}`)}
           onClose={() => setSheet(null)} />
       )}
+      {sheet === 'estimate' && (
+        <EstimateSheet info={info} rate={rate}
+          walletBal={walletBal} maxMins={maxMins}
+          canJoin={canJoin} minMins={MIN_JOIN_MINS}
+          onClose={() => setSheet(null)}
+          onConfirm={submitJoinRequest}
+          onRecharge={() => router.push(
+            `/wallet?recharge=${Math.max(50, livePrice * MIN_JOIN_MINS)}`)} />
+      )}
+    </div>
+  );
+}
+
+function fmtClock(sec) {
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+// Pre-call estimator (operator 2026-06-07): shows rate (with
+// strikethrough when an offer applies), wallet balance, computed
+// max minutes, the 3-min minimum gate, and a Continue / Recharge
+// CTA. Mirrors the friendly disclosure pattern Astrotalk uses
+// before charging.
+function EstimateSheet({ info, rate, walletBal, maxMins, canJoin,
+  minMins, onClose, onConfirm, onRecharge }) {
+  const ratePerMin = rate.final;
+  const need = ratePerMin * minMins;
+  return (
+    <div className="fixed inset-0 z-40 flex items-end justify-center
+      bg-black/50 backdrop-blur-sm" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md rounded-t-3xl bg-white p-4
+          text-dark-text shadow-2xl"
+        style={{ maxHeight: '80vh', overflowY: 'auto' }}>
+        <div className="mx-auto mb-3 h-1 w-12 rounded-full bg-gray-200" />
+        <h3 className="text-base font-bold">
+          Connect with {info?.name || 'astrologer'}
+        </h3>
+        <p className="mt-0.5 text-[11px] text-sub-text">
+          Live call rate. The timer starts only when both of you
+          accept and the audio connects. You can disconnect any time -
+          only minutes you attended are debited.
+        </p>
+
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <Tile k="Rate" v={(
+            <span className="flex items-baseline gap-1">
+              {rate.discounted && (
+                <span className="text-[12px] text-sub-text line-through">
+                  ₹{rate.base}
+                </span>
+              )}
+              <span className="text-base font-bold">
+                ₹{ratePerMin}
+              </span>
+              <span className="text-[11px] text-sub-text">/min</span>
+              {rate.discounted && (
+                <span className="rounded bg-emerald-100 px-1
+                  text-[10px] font-bold text-emerald-700">
+                  -{rate.percentOff}%
+                </span>
+              )}
+            </span>
+          )} />
+          <Tile k="Wallet" v={(
+            <span className="text-base font-bold text-emerald-700">
+              ₹{Math.round(walletBal)}
+            </span>
+          )} />
+          <Tile k="You can talk for"
+            v={(
+              <span className={`text-base font-bold ${canJoin
+                ? 'text-dark-text' : 'text-rose-700'}`}>
+                {canJoin ? `up to ${maxMins} mins`
+                  : `${maxMins} mins (need ${minMins})`}
+              </span>
+            )} />
+          <Tile k="Minimum balance"
+            v={`₹${need} (${minMins} min)`} />
+        </div>
+
+        {!canJoin && (
+          <div className="mt-3 rounded-card bg-rose-50 p-3 text-[12px]
+            text-rose-800">
+            You need at least <b>₹{need}</b> in your wallet to start a
+            live call ({minMins} minute minimum). Recharge and try
+            again.
+          </div>
+        )}
+
+        <p className="mt-3 text-[10.5px] leading-relaxed text-sub-text">
+          You will be added to the astrologer&apos;s waitlist. Once
+          they accept, you have to confirm one more time before the
+          call begins. The countdown timer in the call button shows
+          your remaining minutes in real time.
+        </p>
+
+        <div className="mt-4 flex flex-wrap items-center
+          justify-end gap-2">
+          <button onClick={onClose}
+            className="rounded-full px-4 py-2 text-sm font-semibold
+              text-sub-text hover:bg-bg-light">
+            Cancel
+          </button>
+          {canJoin ? (
+            <button onClick={onConfirm}
+              className="rounded-full px-5 py-2 text-sm font-bold
+                text-white"
+              style={{ background:
+                'linear-gradient(135deg,#D4A12A,#7F2020)' }}>
+              Continue & request
+            </button>
+          ) : (
+            <button onClick={onRecharge}
+              className="rounded-full bg-primary px-5 py-2 text-sm
+                font-bold text-white">
+              Recharge wallet
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Tile({ k, v }) {
+  return (
+    <div className="rounded-card bg-bg-light/40 p-2.5">
+      <div className="text-[10px] font-bold uppercase tracking-wider
+        text-sub-text">{k}</div>
+      <div className="mt-0.5">{v}</div>
     </div>
   );
 }
