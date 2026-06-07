@@ -251,6 +251,22 @@ export default function AdminAppUpdate() {
 
   return (
     <Layout>
+      {/* Operator 2026-06-07: "very confusing where did you add the
+          update popup option?" - this is the LEGACY OTA-bundle
+          release tool. The new per-app Play-Store-style modal config
+          lives at /admin-app-update. Banner makes the split obvious
+          so admins don't confuse them. */}
+      <div className="surface mb-3 flex flex-wrap items-center gap-2
+        border border-amber-300 bg-amber-50 p-3 text-amber-900">
+        <span className="text-[11px] font-bold uppercase tracking-wider">
+          Looking for the Play-Store update popup?
+        </span>
+        <a href="/admin-app-update"
+          className="ml-auto rounded-full bg-amber-600 px-3 py-1
+            text-[11px] font-bold text-white hover:bg-amber-700">
+          Open /admin-app-update →
+        </a>
+      </div>
       <h1 className="mb-1 text-xl font-bold">App Update &amp; Splash</h1>
       <p className="mb-3 text-sm text-sub-text">
         Pick a published build below. The instant you click <b>Publish

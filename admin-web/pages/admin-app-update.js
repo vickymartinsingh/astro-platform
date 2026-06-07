@@ -77,8 +77,21 @@ export default function AdminAppUpdate() {
     <Layout>
       <header className="mb-3">
         <h1 className="text-2xl font-bold text-dark-text">
-          App update links
+          In-app update popup
         </h1>
+        <div className="mt-1 inline-flex flex-wrap items-center gap-2
+          rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-bold
+          text-emerald-700">
+          <span>✓ This is the right place</span>
+          <span className="opacity-70">·</span>
+          <a href="/admin-appupdate"
+            className="underline opacity-80 hover:opacity-100">
+            Legacy OTA tool lives at /admin-appupdate
+          </a>
+        </div>
+        <h2 className="mt-3 text-lg font-bold text-dark-text">
+          App update links
+        </h2>
         <p className="mt-0.5 text-sm text-sub-text">
           Configure the Play Store URL + latest build per app. The
           in-app banner fires automatically the moment installed{' '}
