@@ -78,6 +78,14 @@ export default function AstroLive() {
   const joinedRef = useRef(false);
   const cRef = useRef(null);
 
+  // Join requests from viewers (2026-06-07 spec). Streamed straight
+  // into the broadcaster's overlay so Accept / Decline is one tap
+  // away while staying on the live feed. When the astro is on
+  // another call, new requests land with status='queued' and show
+  // in a Waitlist section underneath; once the call ends the
+  // broadcaster can promote one with Accept.
+  const [joinRequests, setJoinRequests] = useState([]);
+
   useEffect(() => {
     if (!user) return undefined;
     astrologerService.getAstrologer(user.uid).then(setAstro)
@@ -86,7 +94,9 @@ export default function AstroLive() {
     const u2 = liveService.listenLiveComments(user.uid, setComments);
     const u3 = liveService.listenScheduledLive(user.uid, setSched);
     const u4 = liveService.listenLiveHistory(user.uid, setHistory);
-    return () => { u1 && u1(); u2 && u2(); u3 && u3(); u4 && u4(); };
+    const u5 = liveService.listenJoinRequests(user.uid, setJoinRequests);
+    return () => { u1 && u1(); u2 && u2(); u3 && u3(); u4 && u4();
+      u5 && u5(); };
   }, [user]);
 
   useEffect(() => {
@@ -395,10 +405,75 @@ export default function AstroLive() {
             rounded-full bg-black/40 text-lg backdrop-blur">x</button>
       </div>
 
+      {/* Join requests overlay (2026-06-07 spec). Sits at the top
+          of the broadcaster UI so the astrologer sees who wants in,
+          and one tap accepts. Queued requests appear below the
+          active set with a "Waitlist" label. */}
+      {live && joinRequests.length > 0 && (
+        <div className="absolute left-3 right-3 top-16 z-20 space-y-1.5">
+          {joinRequests.filter((r) => r.status === 'pending'
+            || r.status === 'astro_ok' || r.status === 'connected')
+            .slice(0, 3).map((r) => (
+            <div key={r.id} className="flex items-center gap-2
+              rounded-2xl bg-black/70 px-3 py-1.5 backdrop-blur">
+              <Avatar name={r.userName} />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[13px] font-bold">
+                  {r.userName}
+                </div>
+                <div className="text-[10px] opacity-75">
+                  {r.status === 'astro_ok' ? 'Waiting on user...'
+                    : r.status === 'connected' ? 'Connected'
+                    : 'wants to join'}
+                </div>
+              </div>
+              {r.status === 'pending' && (
+                <>
+                  <button onClick={() => liveService
+                    .astroAcceptJoin(r.id)}
+                    className="rounded-full bg-emerald-500 px-3 py-1
+                      text-[11px] font-bold text-white">
+                    Accept
+                  </button>
+                  <button onClick={() => liveService
+                    .astroDeclineJoin(r.id)}
+                    className="rounded-full bg-white/15 px-3 py-1
+                      text-[11px] font-bold">
+                    Decline
+                  </button>
+                </>
+              )}
+              {r.status === 'astro_ok' && (
+                <button onClick={() => liveService
+                  .astroDeclineJoin(r.id)}
+                  className="rounded-full bg-white/15 px-3 py-1
+                    text-[11px] font-bold">Cancel</button>
+              )}
+            </div>
+          ))}
+          {joinRequests.filter((r) => r.status === 'queued').length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5
+              rounded-2xl bg-black/55 px-3 py-1.5 backdrop-blur">
+              <span className="text-[10px] font-bold uppercase
+                tracking-wider opacity-75">Waitlist</span>
+              {joinRequests.filter((r) => r.status === 'queued')
+                .slice(0, 6).map((r) => (
+                <button key={r.id}
+                  onClick={() => liveService.astroAcceptJoin(r.id)}
+                  className="rounded-full bg-white/10 px-2 py-0.5
+                    text-[11px] font-semibold hover:bg-emerald-500/30">
+                  {r.userName} - Promote
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Comments overlay - lower-left, scrolls up, on the video */}
       {live && (
         <div ref={cRef}
-          className="absolute bottom-20 left-0 z-10 max-h-[46%] w-[74%]
+          className="absolute bottom-20 left-0 z-10 max-h-[50vh] w-[80%]
             space-y-2 overflow-y-auto px-3"
           style={{
             maskImage: 'linear-gradient(to top, #000 75%, transparent)',

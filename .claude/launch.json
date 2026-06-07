@@ -18,6 +18,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--workspace=admin-web"],
       "port": 3002
+    },
+    {
+      "name": "astro-web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--workspace=astro-web"],
+      "port": 3001
     }
   ]
 }

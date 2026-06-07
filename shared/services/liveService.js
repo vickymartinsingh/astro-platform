@@ -332,3 +332,150 @@ export function listenLiveComments(astroUid, callback) {
     (snap) => callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }))
       .reverse()));
 }
+
+// ---- Live join request lifecycle (2026-06-07 spec) -------------------
+// Path: liveRequests/{liveRequestId}
+// status: 'pending'   - user tapped Request to join, astro hasn't seen
+//         'queued'    - astro is on an active call/join; user is in
+//                       the waitlist
+//         'astro_ok'  - astro tapped Accept; waiting on user confirm
+//         'connected' - user tapped Accept after astro_ok; both joined
+//         'declined'  - astro declined OR user declined OR cancelled
+//         'expired'   - astro went offline before accepting
+
+function liveReqs() { return collection(db, 'liveRequests'); }
+
+// User taps "Request to join". `astroBusy=true` puts them in the
+// waitlist; false makes the request immediately actionable.
+export async function requestJoinLive({ astroUid, user, astroBusy }) {
+  if (!astroUid || !user || !user.uid) return null;
+  const r = await addDoc(liveReqs(), {
+    astroUid,
+    userId: user.uid,
+    userName: user.name || 'Guest',
+    userPhoto: user.photo || '',
+    status: astroBusy ? 'queued' : 'pending',
+    createdAt: serverTimestamp(),
+  });
+  // Surface in the live feed so everyone sees who's queued.
+  try {
+    await addDoc(liveMsgs(astroUid), {
+      type: 'join_request',
+      name: user.name || 'Guest',
+      uid: user.uid,
+      text: astroBusy ? 'wants to join (queued)' : 'wants to join',
+      createdAt: serverTimestamp(),
+    });
+  } catch (_) {}
+  return r.id;
+}
+
+// Astrologer's view of incoming requests (pending + queued + astro_ok).
+export function listenJoinRequests(astroUid, callback) {
+  return onSnapshot(
+    query(liveReqs(),
+      where('astroUid', '==', astroUid),
+      where('status', 'in',
+        ['pending', 'queued', 'astro_ok', 'connected']),
+      orderBy('createdAt', 'asc'), limit(20)),
+    (snap) => callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
+}
+
+// User's own request (so we can show "waiting...", "accepted - tap to
+// join", etc.).
+export function listenMyJoinRequest(astroUid, userId, callback) {
+  if (!astroUid || !userId) {
+    callback(null);
+    return () => {};
+  }
+  return onSnapshot(
+    query(liveReqs(),
+      where('astroUid', '==', astroUid),
+      where('userId', '==', userId),
+      where('status', 'in',
+        ['pending', 'queued', 'astro_ok', 'connected']),
+      orderBy('createdAt', 'desc'), limit(1)),
+    (snap) => callback(snap.docs[0]
+      ? { id: snap.docs[0].id, ...snap.docs[0].data() } : null));
+}
+
+// Astrologer taps Accept on the overlay - move to astro_ok so the
+// user gets the second confirmation.
+export async function astroAcceptJoin(requestId) {
+  if (!requestId) return;
+  await updateDoc(doc(db, 'liveRequests', requestId), {
+    status: 'astro_ok',
+    astroAcceptedAt: serverTimestamp(),
+  });
+}
+
+// Astrologer declines / cancels a join request.
+export async function astroDeclineJoin(requestId) {
+  if (!requestId) return;
+  await updateDoc(doc(db, 'liveRequests', requestId), {
+    status: 'declined',
+    declinedAt: serverTimestamp(),
+    declinedBy: 'astro',
+  });
+}
+
+// User confirms the handshake - moves to 'connected'. Caller is
+// responsible for joining the Agora channel afterwards.
+export async function userAcceptJoin(requestId) {
+  if (!requestId) return;
+  await updateDoc(doc(db, 'liveRequests', requestId), {
+    status: 'connected',
+    connectedAt: serverTimestamp(),
+  });
+}
+
+// User declines after astro accepted - back out cleanly.
+export async function userDeclineJoin(requestId) {
+  if (!requestId) return;
+  await updateDoc(doc(db, 'liveRequests', requestId), {
+    status: 'declined',
+    declinedAt: serverTimestamp(),
+    declinedBy: 'user',
+  });
+}
+
+// Used by both sides to drop a request when the user leaves.
+export async function endJoinRequest(requestId, by) {
+  if (!requestId) return;
+  await updateDoc(doc(db, 'liveRequests', requestId), {
+    status: 'declined',
+    endedAt: serverTimestamp(),
+    declinedBy: by || 'user',
+  });
+}
+
+// ---- Follow + unfollow during live (2026-06-07 spec) -----------------
+// Backed by /astrologers/{astroUid}/followers/{userId}.
+function followerRef(astroUid, userId) {
+  return doc(db, 'astrologers', astroUid, 'followers', userId);
+}
+
+export function listenIsFollowing(astroUid, userId, callback) {
+  if (!astroUid || !userId) { callback(false); return () => {}; }
+  return onSnapshot(followerRef(astroUid, userId),
+    (s) => callback(s.exists()));
+}
+
+export async function toggleFollow(astroUid, user) {
+  if (!astroUid || !user || !user.uid) return false;
+  const ref = followerRef(astroUid, user.uid);
+  const s = await getDoc(ref);
+  if (s.exists()) {
+    await deleteDoc(ref);
+    return false;
+  }
+  await setDoc(ref, {
+    userId: user.uid,
+    name: user.name || 'Guest',
+    photo: user.photo || '',
+    followedAt: serverTimestamp(),
+  });
+  // Announce in the live feed so the broadcaster + viewers see it.
+  try { await announceFollow(astroUid, user); } catch (_) {}
+  return true;
+}
