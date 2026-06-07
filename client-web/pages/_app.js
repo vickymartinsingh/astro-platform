@@ -17,6 +17,7 @@ import { KundliGateProvider } from '../lib/kundliGate';
 import { PendingSessionProvider } from '../lib/pendingSession';
 import useNativeBack from '../lib/useNativeBack';
 import SplashScreen from '../components/SplashScreen';
+import UpdateModal from '../components/UpdateModal';
 import NativeBack from '../components/NativeBack';
 import ErrorBoundary from '../components/ErrorBoundary';
 
@@ -194,6 +195,7 @@ export default function App({ Component, pageProps }) {
         <ActiveSessionBar />
         <AdminLiveEditor />
       </AuthProvider>
+      <UpdateModal />
       <GuidedTour />
       <NativeBack />
       <SplashScreen />

@@ -12,6 +12,7 @@ import useNativeBack from '../lib/useNativeBack';
 import ErrorBoundary from '../components/ErrorBoundary';
 import SplashScreen from '../components/SplashScreen';
 import NativeBack from '../components/NativeBack';
+import UpdateModal from '../components/UpdateModal';
 
 // Perf: chrome that doesn't drive first paint is dynamic + ssr:false
 // so it ships in its own chunk fetched after hydration. Keeps the
@@ -82,6 +83,7 @@ export default function App({ Component, pageProps }) {
         <AdminLiveEditor />
         <AiAutoResponder />
       </AuthProvider>
+      <UpdateModal />
       <NativeBack />
       <SplashScreen />
       <ConfirmModalHost />

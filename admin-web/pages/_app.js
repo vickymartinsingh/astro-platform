@@ -12,6 +12,7 @@ import useNativeBack from '../lib/useNativeBack';
 import ErrorBoundary from '../components/ErrorBoundary';
 import SplashScreen from '../components/SplashScreen';
 import NativeBack from '../components/NativeBack';
+import UpdateModal from '../components/UpdateModal';
 
 // Perf: portal switcher is only meaningful when an authenticated admin
 // opens the floating widget. Lazy-load + ssr:false keeps it out of the
@@ -76,6 +77,7 @@ export default function App({ Component, pageProps }) {
         <Component {...pageProps} />
         <PortalSwitcher />
       </AuthProvider>
+      <UpdateModal />
       <NativeBack />
       <SplashScreen />
     </ErrorBoundary>

@@ -1,0 +1,42 @@
+name: Check Play Store versions (twice daily)
+
+# Runs every 12 hours and writes the current Play Store version for
+# each app into Firestore settings/appLinks, so the in-app UpdateModal
+# pops the moment a new release goes live. Operator 2026-06-07: "it
+# must show only when the new update is available in the play store
+# so you will have to check the play store of the update is available
+# every day twice."
+
+on:
+  schedule:
+    # 00:30 + 12:30 UTC. Offset 30 min so we don't compete with
+    # GitHub's busy cron slots.
+    - cron: '30 0,12 * * *'
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+
+      - name: Install firebase-admin
+        run: npm i --no-save firebase-admin
+
+      - name: Decode service account
+        env:
+          KEY_B64: ${{ secrets.FIREBASE_KEY_B64 }}
+        run: |
+          if [ -z "$KEY_B64" ]; then
+            echo "FIREBASE_KEY_B64 secret not set"; exit 1
+          fi
+          echo "$KEY_B64" | base64 -d > firebase-key.json
+
+      - name: Scrape Play Store + write back
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace
+            }}/firebase-key.json
+        run: node scripts/check-play-versions.mjs
