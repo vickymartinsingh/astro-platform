@@ -317,11 +317,12 @@ export async function sendEmail({
   if (text) body.text = text;
   if (attachment) body.attachment = attachment;
   // Optional BCC list from the caller. The previously hard-coded
-  // compliance BCC (vickymartinsingh@outlook.com) has been REMOVED
+  // compliance BCC address (an old outlook archive) has been REMOVED
   // from the relay - it now only honours admin-configured BCC. This
   // array (typically read by callers from settings/config.bcc_emails
   // via the admin's /admin-reports BCC editor) is the ONLY way a
-  // BCC address gets attached to outgoing mail.
+  // BCC address gets attached to outgoing mail. Operator ops inbox
+  // is now vickymartinsing@gmail.com (admin-configurable).
   if (Array.isArray(bcc) && bcc.length > 0) {
     body.bcc = bcc.map((e) => String(e).trim()).filter(Boolean);
   }

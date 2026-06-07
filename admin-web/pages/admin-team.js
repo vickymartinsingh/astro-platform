@@ -58,7 +58,7 @@ export default function AdminTeam() {
             className="flex-1 rounded-lg border border-gray-300
               px-3 py-2 text-sm" />
           <button onClick={lookup} disabled={busy || !email.trim()}
-            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm
+            className="rounded-lg bg-primary px-4 py-2 text-sm
               font-bold text-white disabled:opacity-50">
             Find
           </button>
@@ -81,7 +81,7 @@ export default function AdminTeam() {
                   className={`rounded-full px-3 py-1.5 text-xs
                     font-bold ${found.role === r
                     ? 'bg-emerald-100 text-emerald-700'
-                    : 'bg-indigo-600 text-white'} disabled:opacity-60`}>
+                    : 'bg-primary text-white'} disabled:opacity-60`}>
                   {found.role === r ? `✓ ${r}` : `Set ${r}`}
                 </button>
               ))}

@@ -89,6 +89,10 @@ const ADMIN_GROUPS = [
     ['/admin-disputes', 'Disputes', 'Refund requests', 'disputes'],
   ]],
   ['Content', [
+    ['/admin-home-hero', 'Home hero banner',
+      '"Stars have answers" card on customer home', 'cms'],
+    ['/admin-daily-quotes', 'Daily quote banner',
+      '"Hey, Cosmic Explorer" + rotating quote of the day', 'cms'],
     ['/admin-content-text', 'Text & copy editor',
       'Edit every visible string', 'content'],
     ['/admin-cms', 'CMS builder', 'Pages + banners', 'cms'],
@@ -113,6 +117,9 @@ const ADMIN_GROUPS = [
       'Play-Store-style modal config per app', 'appupdate'],
     ['/admin-appupdate', 'App update & splash (legacy)',
       'Old OTA bundle release tool', 'appupdate'],
+    ['/admin-profile-nudge', 'Profile nudge',
+      'Ask customers to complete missing profile fields',
+      'appupdate'],
     ['/admin-testers', 'Invite testers', 'Play closed track', 'testers'],
     ['/admin-sounds', 'Sounds & ringtones', 'Per-event sound', 'sounds'],
     ['/admin-theme', 'Theme & colours', 'Brand palette', 'theme'],
@@ -236,8 +243,8 @@ function portalLabel(p) {
 }
 function portalTint(p) {
   if (p === 'developer') return {
-    side: 'from-[#1a103a] to-[#10081f]',
-    chip: 'bg-violet-500/20 text-violet-200',
+    side: 'from-[#1A0F0F] to-[#0F0708]',
+    chip: 'bg-amber-500/20 text-amber-200',
   };
   if (p === 'support') return {
     side: 'from-amber-900 to-amber-950',

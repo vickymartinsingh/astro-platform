@@ -240,8 +240,20 @@ export default function AdminOrders() {
               <div key={o.id} className="surface p-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
-                    <div className="font-semibold">
-                      {KIND_LABEL[o.kind] || o.kind || 'Report'}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="font-semibold">
+                        {KIND_LABEL[o.kind] || o.kind || 'Report'}
+                      </div>
+                      {o.complimentary && (
+                        <span className="rounded-full bg-amber-50
+                          px-2 py-0.5 text-[10px] font-bold
+                          text-amber-700">
+                          Complimentary
+                          {o.originalPrice
+                            ? ` · was ₹${o.originalPrice}`
+                            : ''}
+                        </span>
+                      )}
                     </div>
                     <div className="text-xs text-sub-text">
                       Order <span className="font-mono">{o.id}</span>
@@ -258,8 +270,17 @@ export default function AdminOrders() {
                           </span>
                         )}
                       </div>
+                      {/* Blueprint constraint: NO raw Firebase UIDs
+                          in admin UI. Show user code only - falls
+                          back to a short hash of the uid when a
+                          legacy customer doesn't have one yet. */}
                       <div className="text-sub-text">
-                        UID <span className="font-mono">{o.userId}</span>
+                        Code <span className="font-mono">
+                          {u.userCode
+                            || (o.userId
+                              ? `…${String(o.userId).slice(-6)}`
+                              : '-')}
+                        </span>
                         {u.phone ? ` · ${u.phone}` : ''}
                         {u.wallet != null ? ` · ₹${u.wallet} wallet`
                           : ''}

@@ -9,6 +9,7 @@ import {
 import Layout from '../components/Layout';
 import PdfPreviewModal from '../components/PdfPreviewModal';
 import SendPdfByEmailModal from '../components/SendPdfByEmailModal';
+import SupportTicketModal from '../components/SupportTicketModal';
 import { useRequireClient } from '../lib/useAuth';
 
 // Orders = every PDF report (free + paid) the user has bought.
@@ -33,6 +34,8 @@ export default function Orders() {
   const [rows, setRows] = useState(null);
   const [preview, setPreview] = useState(null);   // { url, name } | null
   const [emailing, setEmailing] = useState(null); // order | null
+  // 2026-06-07: per-order Help / Support ticket popup.
+  const [supportFor, setSupportFor] = useState(null); // order | null
 
   useEffect(() => {
     if (!user) return undefined;
@@ -158,6 +161,7 @@ export default function Orders() {
   }
   function amountLabel(o) {
     if (o.amount > 0) return `₹${o.amount}`;
+    if (o.complimentary) return 'Complimentary';
     return 'Free';
   }
   function pdfHref(o) {
@@ -202,9 +206,23 @@ export default function Orders() {
                 <div className="flex items-start justify-between
                   gap-3 px-4 pt-4">
                   <div className="min-w-0">
-                    <div className="truncate text-base font-bold
-                      text-dark-text">
-                      {pretty(o.kind)}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="truncate text-base font-bold
+                        text-dark-text">
+                        {pretty(o.kind)}
+                      </div>
+                      {/* Complimentary chip - admin-issued gift. Order
+                          doc carries complimentary:true (set by the
+                          relay's complimentary branch) so the customer
+                          sees "Gift from AstroSeer" instead of a paid
+                          purchase. */}
+                      {o.complimentary && (
+                        <span className="rounded-full bg-amber-50
+                          px-2 py-0.5 text-[10px] font-bold
+                          text-amber-700">
+                          Gift from AstroSeer
+                        </span>
+                      )}
                     </div>
                     {who && (
                       <div className="mt-0.5 truncate text-xs
@@ -308,6 +326,30 @@ export default function Orders() {
                     </b>
                   </div>
                 )}
+                {/* Help / Support row - always visible so a customer
+                    can raise a ticket against this specific order
+                    (PDF not received, wrong content, refund, etc.). */}
+                <div className="flex items-center justify-between
+                  border-t border-gray-200/70 px-4 py-2 text-[11px]
+                  text-sub-text">
+                  <span>Need help with this order?</span>
+                  <button type="button"
+                    onClick={() => setSupportFor(o)}
+                    className="inline-flex items-center gap-1
+                      rounded-full border border-primary/40 bg-white
+                      px-3 py-1 text-[11px] font-bold text-primary
+                      hover:bg-primary/5">
+                    <svg width="12" height="12" viewBox="0 0 24 24"
+                      fill="none" stroke="currentColor"
+                      strokeWidth="2.4" strokeLinecap="round"
+                      strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10" />
+                      <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+                      <line x1="12" y1="17" x2="12.01" y2="17" />
+                    </svg>
+                    Get help
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -323,6 +365,17 @@ export default function Orders() {
           defaultEmail={profile?.email || user?.email || ''}
           onClose={() => setEmailing(null)} />
       )}
+      {/* Help / Support modal for the picked order. The button next
+          to each row sets supportFor; closing clears it. */}
+      <SupportTicketModal
+        open={!!supportFor}
+        kind="order"
+        refId={supportFor ? orderRef(supportFor) : ''}
+        refLabel={supportFor
+          ? `${pretty(supportFor.kind)} - Order #${orderRef(supportFor)}`
+          : ''}
+        user={{ uid: user?.uid, profile }}
+        onClose={() => setSupportFor(null)} />
     </Layout>
   );
 }

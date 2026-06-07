@@ -64,6 +64,8 @@ export * as horoscopeService from './services/horoscopeService.js';
 export * as soundService from './services/soundService.js';
 export * as supportService from './services/supportService.js';
 export * as ticketService from './services/ticketService.js';
+export * as profileNudgeService from './services/profileNudgeService.js';
+export * as dailyQuoteService from './services/dailyQuoteService.js';
 export * as abuseService from './services/abuseService.js';
 export * as followService from './services/followService.js';
 export * as tarotService from './services/tarotService.js';

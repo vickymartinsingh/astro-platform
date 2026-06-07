@@ -509,6 +509,7 @@ export default function AdminUserReach() {
       {mergeOpen && (
         <MergeAccountsModal
           allCustomers={buckets.customer}
+          allAstrologers={buckets.astrologer}
           adminEmail={adminUser?.email}
           onClose={() => setMergeOpen(false)}
           onDone={async () => {
@@ -763,6 +764,24 @@ const MERGE_FIELDS = [
   ['gender', 'Gender'],
 ];
 
+// Extra fields visible only when the merge scope is 'astrologer'.
+// These map to fields on the astrologers/{uid} marketplace doc which
+// the backend folds into the primary's listing when picked.
+const MERGE_FIELDS_ASTRO = [
+  ['username', 'Username'],
+  ['displayName', 'Display name'],
+  ['profileImage', 'Profile image'],
+  ['bio', 'Bio'],
+  ['tagline', 'Tagline'],
+  ['skills', 'Skills'],
+  ['languages', 'Languages'],
+  ['experienceYears', 'Experience (years)'],
+  ['pricePerMinChat', 'Chat rate (₹/min)'],
+  ['pricePerMinCall', 'Call rate (₹/min)'],
+  ['pricePerMinVideo', 'Video rate (₹/min)'],
+  ['priceLive', 'Live rate (₹/min)'],
+];
+
 function asDisplay(v) {
   if (v == null || v === '') return '–';
   if (typeof v === 'object') {
@@ -771,8 +790,15 @@ function asDisplay(v) {
   return String(v);
 }
 
-function MergeAccountsModal({ allCustomers, adminEmail, onClose,
-  onDone }) {
+function MergeAccountsModal({ allCustomers, allAstrologers, adminEmail,
+  onClose, onDone }) {
+  // 2026-06-07: scope toggle so the same merge tool serves astrologers
+  // too. The backend is role-agnostic (it operates on users/{uid} +
+  // deletes any astrologers/{secondaryUid} listing), so we just switch
+  // the candidate pool here and pass a kind hint to the merge call
+  // so it ALSO reassigns astrologer-side foreign keys (sessions.astroId,
+  // reviews.astroId etc.) when an astrologer is being absorbed.
+  const [scope, setScope] = useState('customer'); // 'customer' | 'astrologer'
   const [primary, setPrimary] = useState(null);
   const [secondary, setSecondary] = useState(null);
   const [picks, setPicks] = useState({});
@@ -780,8 +806,21 @@ function MergeAccountsModal({ allCustomers, adminEmail, onClose,
   const [busy, setBusy] = useState(false);
   const [step, setStep] = useState(1); // 1 = pick | 2 = compare | 3 = confirm
 
-  const candidates = (allCustomers || []).filter((u) =>
+  const pool = scope === 'astrologer'
+    ? (allAstrologers || []) : (allCustomers || []);
+  const candidates = pool.filter((u) =>
     String(u.status || '').toLowerCase() !== 'deleted');
+
+  // When the operator flips scope, drop any partial selection so they
+  // never accidentally merge a customer with an astrologer.
+  function switchScope(next) {
+    if (next === scope) return;
+    setScope(next);
+    setPrimary(null);
+    setSecondary(null);
+    setPicks({});
+    setStep(1);
+  }
 
   function pickField(field, winner) {
     setPicks((p) => ({ ...p, [field]: winner }));
@@ -806,11 +845,16 @@ function MergeAccountsModal({ allCustomers, adminEmail, onClose,
       const out = await adminService.mergeAccounts(
         primary.uid || primary.id,
         secondary.uid || secondary.id,
-        picks);
+        picks,
+        { kind: scope });
+      const extra = scope === 'astrologer'
+        ? ` · ${out.movedAstroSessions || 0} astro-session(s) `
+          + `· ${out.movedAstroReviews || 0} review(s)`
+        : '';
       flash(`Merge complete. Wallet ${rupees(out.walletMoved || 0)} `
         + `moved · ${out.movedSessions} session(s) · `
         + `${out.movedTxns} txn(s) · ${out.movedKundli} kundli `
-        + `· ${out.movedOrders} order(s) transferred.`,
+        + `· ${out.movedOrders} order(s) transferred${extra}.`,
         'success');
       onDone && onDone();
     } catch (e) {
@@ -851,13 +895,47 @@ function MergeAccountsModal({ allCustomers, adminEmail, onClose,
         <div className="flex-1 overflow-y-auto p-5">
           {step === 1 && (
             <div className="space-y-4">
+              {/* Scope toggle - operator picks whether they're
+                  merging two customer accounts or two astrologer
+                  accounts. The candidate pool filters accordingly,
+                  and the merge call adds the astrologer-side
+                  reassignment (sessions.astroId, reviews.astroId)
+                  when scope is 'astrologer'. */}
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-bold uppercase
+                  tracking-wider text-sub-text">
+                  Merging
+                </span>
+                <div className="inline-flex rounded-full bg-bg-light
+                  p-1">
+                  {[['customer', 'Customers'],
+                    ['astrologer', 'Astrologers']].map(([k, label]) => (
+                    <button key={k}
+                      onClick={() => switchScope(k)}
+                      className={`rounded-full px-3 py-1 text-[11px]
+                        font-bold transition ${scope === k
+                          ? 'bg-primary text-white shadow-sm'
+                          : 'text-sub-text hover:text-dark-text'}`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <p className="text-[12px] text-sub-text">
                 Pick the PRIMARY account (the one that survives) and
                 the SECONDARY (the one being absorbed into the
                 primary). Wallet balance, sessions, kundli profiles
-                and orders move to the primary. The secondary is
-                soft-deleted and the user is signed out on next
-                attempt to sign in.
+                and orders move to the primary.
+                {scope === 'astrologer' && (
+                  <>
+                    {' '}For astrologers we also reassign sessions
+                    and reviews that were tied to the secondary so
+                    the primary inherits the entire history; the
+                    secondary's marketplace listing is removed.
+                  </>
+                )}
+                {' '}The secondary is soft-deleted and the user is
+                signed out on next attempt to sign in.
               </p>
               <AccountPicker label="Primary (survivor)"
                 value={primary} onChange={setPrimary}
@@ -898,7 +976,9 @@ function MergeAccountsModal({ allCustomers, adminEmail, onClose,
                     </tr>
                   </thead>
                   <tbody>
-                    {MERGE_FIELDS.map(([f, lbl]) => {
+                    {[...MERGE_FIELDS, ...(scope === 'astrologer'
+                      ? MERGE_FIELDS_ASTRO : [])]
+                      .map(([f, lbl]) => {
                       const pv = asDisplay(primary[f]);
                       const sv = asDisplay(secondary[f]);
                       const same = pv === sv;

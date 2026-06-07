@@ -615,11 +615,12 @@ async function smtpTransport(db) {
   const from = cfg.fromAddress || cfg.smtpFrom || process.env.MAIL_FROM
     || 'AstroSeer <support@astroseer.in>';
   // BCC policy: ADMIN-CONFIGURABLE ONLY.
-  // The previous hard-coded compliance archive at
-  // vickymartinsingh@outlook.com has been REMOVED per operator
-  // instruction. The relay only honours the admin's own BCC entries
-  // now (settings/email.bccTo + bccEnabled). If neither is set, the
-  // kundli-report email goes out with NO BCC at all.
+  // The previous hard-coded compliance archive (an old outlook
+  // address) has been REMOVED per operator instruction. The relay
+  // only honours the admin's own BCC entries now
+  // (settings/email.bccTo + bccEnabled). If neither is set, the
+  // kundli-report email goes out with NO BCC at all. Operator's
+  // working inbox is vickymartinsing@gmail.com.
   const bccEnabled = !!cfg.bccEnabled;
   const bccTo = String(cfg.bccTo || '').trim();
   const adminBcc = (bccEnabled && /.+@.+\..+/.test(bccTo))
@@ -641,13 +642,15 @@ async function smtpTransport(db) {
 }
 
 // Defensive scrubber: drop addresses the operator has explicitly
-// asked us never to email (2026-06-07: "still emails being sent on
-// vickymartinsingh@outlook.com despite the BCC change"). Settings +
-// FB Auth + every doc audited - no in-app source - so the leak is
-// almost certainly a Zoho-side forwarding rule. Stripping here
-// makes the relay safe even if a stale setting tries to add it back.
+// asked us never to email. 2026-06-07 (second pass): operator
+// instructed every reference to the old outlook compliance address
+// be removed from code entirely. If emails are STILL landing in
+// that inbox after this scrub + relay deploy, the source is OUTSIDE
+// this codebase - almost certainly a Zoho-side forwarding rule on
+// support@astroseer.in. The scrubber infrastructure stays in place
+// so future operator bans can be enforced without code edits.
+// Operator's working inbox is vickymartinsing@gmail.com.
 const BLOCKED_RECIPIENTS = new Set([
-  'vickymartinsingh@outlook.com',
 ]);
 function scrubBcc(raw) {
   if (!raw) return '';
@@ -1557,7 +1560,13 @@ async function _handleReportInner(req, res) {
   let orderRef = db.collection('users').doc(uid)
     .collection('orders').doc(orderId);
   let chargedAmount = 0;
-  if (price > 0 && !body.regenerate && !body.prepayForAll) {
+  // 2026-06-07 bugfix: when admin generates a report and ticks
+  // "complimentary", we MUST NOT debit the wallet. Previously this
+  // gate omitted !body.complimentary so admin gifts were charged
+  // anyway (operator: "selected as complimentary but still money was
+  // debited from the client wallet").
+  if (price > 0 && !body.regenerate && !body.prepayForAll
+    && !body.complimentary) {
     const userRef = db.collection('users').doc(uid);
     try {
       await db.runTransaction(async (tx) => {
@@ -1645,6 +1654,31 @@ async function _handleReportInner(req, res) {
       profilePlace: profile.place || '',
       paidAt: admin.firestore.FieldValue.serverTimestamp(),
       regeneratedFrom: body.fromOrderId || '',
+    });
+  } else if (price > 0 && body.complimentary) {
+    // COMPLIMENTARY path (2026-06-07). Admin generates a paid-tier
+    // report as a gift for the customer. No wallet debit, no
+    // transactions row. Order doc carries amount:0 + complimentary
+    // markers so:
+    //   - /orders shows it labelled "Complimentary"
+    //   - the email + push templates pick up the complimentary
+    //     copy (loadOrderForEmail already reads .complimentary)
+    //   - revenue dashboards exclude it from real-revenue totals
+    // Status stays "paid_generating" so the same fulfilment pipeline
+    // (AstroSeer call -> R2 upload -> deliver) runs unchanged.
+    await orderRef.set({
+      kind, kundliProfileId: profileId, amount: 0,
+      status: 'paid_generating',
+      birthSig: sig,
+      profileName: profile.name || '',
+      profileDob: profile.dob || '',
+      profileTob: profile.tob || '',
+      profileAmpm: profile.ampm || '',
+      profilePlace: profile.place || '',
+      paidAt: admin.firestore.FieldValue.serverTimestamp(),
+      complimentary: true,
+      issuedByAdmin: true,
+      originalPrice: price,
     });
   } else if (price > 0 && body.prepayForAll) {
     // PRE-GENERATION path (user requirement 2026-05-28). The

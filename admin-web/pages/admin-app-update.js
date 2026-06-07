@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { db } from '@astro/shared';
+import { db, APP_BUILD } from '@astro/shared';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
@@ -29,6 +29,59 @@ const BLANK = {
   minRequiredBuild: 0, sizeMb: '', rating: '4.6', notes: '',
   popupEnabled: true,
 };
+
+// FireStatus mirrors client-web/lib/appUpdate.js so the admin can see
+// at a glance whether a saved row will actually trigger the in-app
+// modal. The hook fires only when:
+//   popupEnabled !== false AND latestBuild > installed APP_BUILD AND
+//   storeUrl is set.
+// APP_BUILD here is THIS admin app's build, so the chip is labelled
+// "vs this admin build" - a live customer phone's APP_BUILD can be
+// anything (whatever they installed). 2026-06-07: lexically declared
+// BEFORE AdminAppUpdate so neither hoisting nor stale HMR chunks can
+// produce a ReferenceError.
+function FireStatus({ latest, storeUrl, popupEnabled, appKey }) {
+  const installed = APP_BUILD;
+  let tone = 'bg-slate-100 text-slate-600';
+  let label = 'Idle';
+  let why = '';
+  if (!popupEnabled) {
+    tone = 'bg-slate-100 text-slate-500';
+    label = 'Disabled';
+    why = 'Toggle is off';
+  } else if (!storeUrl) {
+    tone = 'bg-amber-50 text-amber-700';
+    label = 'No store URL';
+    why = 'Set Play Store URL to arm';
+  } else if (!latest || latest <= 0) {
+    tone = 'bg-amber-50 text-amber-700';
+    label = 'No latest build';
+    why = 'Set Latest build to arm';
+  } else if (latest > installed) {
+    tone = 'bg-emerald-50 text-emerald-700';
+    label = `Will fire (${latest} > ${installed})`;
+    why = 'Users on older builds will see the popup';
+  } else if (latest === installed) {
+    tone = 'bg-slate-100 text-slate-600';
+    label = `No fire (${latest} = ${installed})`;
+    why = 'Bump Latest build above installed to test';
+  } else {
+    tone = 'bg-rose-50 text-rose-700';
+    label = `No fire (${latest} < ${installed})`;
+    why = 'Latest build is older than installed - check value';
+  }
+  return (
+    <div className="flex flex-col items-end gap-0.5">
+      <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold
+        ${tone}`} title={`${appKey} – ${why}`}>
+        {label}
+      </span>
+      <span className="text-[10px] text-sub-text">
+        vs this admin build ({installed})
+      </span>
+    </div>
+  );
+}
 
 export default function AdminAppUpdate() {
   const { loading } = useRequireAdmin();
@@ -125,11 +178,18 @@ export default function AdminAppUpdate() {
                     Package: <span className="font-mono">{a.pkg}</span>
                   </p>
                 </div>
-                <button onClick={() => save(a.key)} disabled={busy}
-                  className="rounded-full bg-primary px-4 py-2
-                    text-xs font-bold text-white disabled:opacity-50">
-                  Save
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <FireStatus latest={Number(cur.latestBuild) || 0}
+                    storeUrl={cur.storeUrl}
+                    popupEnabled={cur.popupEnabled !== false}
+                    appKey={a.key} />
+                  <button onClick={() => save(a.key)} disabled={busy}
+                    className="rounded-full bg-primary px-4 py-2
+                      text-xs font-bold text-white
+                      disabled:opacity-50">
+                    Save
+                  </button>
+                </div>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Play Store URL"
@@ -214,3 +274,4 @@ function Field({ label, hint, children, span }) {
     </div>
   );
 }
+

@@ -122,6 +122,72 @@ export async function activeTicketForCategory(uid, category) {
   return list.find((t) => t.category === category && isActive(t)) || null;
 }
 
+// LINKED ticket: raised against a specific order / session / payment.
+// Skips the single-active-per-category guard so a customer can open one
+// ticket per problematic entity (operator 2026-06-07: "help / support on
+// every order and session"). Subject is auto-prefixed with the entity
+// id so the admin can see at a glance which order the ticket is about.
+// Accepts a screenshot URL (uploaded by the caller via the existing R2
+// presign flow or Firebase Storage) and records it alongside the first
+// message so the admin sees it in the ticket thread.
+export async function createLinkedTicket(uid, data) {
+  if (!uid) throw new Error('Please sign in.');
+  const category = data.category || 'order';
+  const ticketNo = genTicketNo();
+  const id = `ticket_${ticketNo}`;
+  const email = data.email || await lookupEmail(uid);
+  const linkLabel = data.orderRef
+    ? `Order #${data.orderRef}`
+    : data.sessionRef ? `Session ${String(data.sessionRef).slice(0, 8)}`
+    : 'Issue';
+  const subject = (data.subject
+    || `${linkLabel} - ${data.issueLabel || 'support request'}`)
+    .slice(0, 120);
+  await setDoc(doc(db, 'chats', id), {
+    isTicket: true,
+    ticketNo,
+    userId: uid,
+    email,
+    name: data.name || 'User',
+    role: data.role || 'client',
+    category,
+    team: teamFor(category),
+    subject,
+    orderRef: data.orderRef || '',
+    sessionRef: data.sessionRef || '',
+    paymentRef: data.paymentRef || '',
+    linkedKind: data.linkedKind || '',
+    issueCode: data.issueCode || '',
+    status: 'open',
+    lastMessage: (data.message || '').slice(0, 120),
+    screenshotUrl: data.screenshotUrl || '',
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+  await addDoc(collection(db, 'chats', id, 'messages'), {
+    senderId: uid, role: 'user',
+    text: String(data.message || '').slice(0, 2000),
+    screenshotUrl: data.screenshotUrl || '',
+    createdAt: serverTimestamp(),
+  });
+  sendPushToUser({
+    toUid: uid,
+    title: `Ticket ${ticketNo} created`,
+    body: `${subject}. Our ${teamFor(category)} will reply soon.`,
+    data: { type: 'ticket', route: '/support' },
+  });
+  alertAdminsTicket(
+    `New ${data.role || 'client'} ticket ${ticketNo}`,
+    `${data.name || 'User'}: ${subject.slice(0, 60)}`);
+  if (email) {
+    queueEmail({
+      to: email, kind: 'ticket_created', ticketId: id, ticketNo,
+      vars: { ticketNo, subject, name: data.name, category },
+    });
+  }
+  return { id, ticketNo };
+}
+
 export async function createTicket(uid, data) {
   if (!uid) throw new Error('Please sign in.');
   const category = data.category || 'other';

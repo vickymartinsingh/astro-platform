@@ -45,10 +45,10 @@ const TABS = [
 const STAGE_COLOR = {
   submitted: 'bg-blue-100 text-blue-700',
   reviewing: 'bg-amber-100 text-amber-700',
-  interview: 'bg-violet-100 text-violet-700',
-  kyc: 'bg-indigo-100 text-indigo-700',
+  interview: 'bg-amber-100 text-amber-800',
+  kyc: 'bg-sky-100 text-sky-700',
   bank: 'bg-cyan-100 text-cyan-700',
-  declaration: 'bg-fuchsia-100 text-fuchsia-700',
+  declaration: 'bg-rose-100 text-rose-700',
   approved: 'bg-emerald-100 text-emerald-700',
   rejected: 'bg-red-100 text-red-700',
 };
@@ -240,8 +240,8 @@ export default function AdminAstroApplications() {
                         || a.status}
                     </span>
                     {a.kyc && a.kyc.panNumber && (
-                      <span className="rounded-full bg-indigo-50 px-2
-                        py-0.5 text-[10px] font-bold text-indigo-700">
+                      <span className="rounded-full bg-sky-50 px-2
+                        py-0.5 text-[10px] font-bold text-sky-700">
                         KYC ✓
                       </span>
                     )}
@@ -252,8 +252,8 @@ export default function AdminAstroApplications() {
                       </span>
                     )}
                     {a.declaration && a.declaration.signedAt && (
-                      <span className="rounded-full bg-fuchsia-50 px-2
-                        py-0.5 text-[10px] font-bold text-fuchsia-700">
+                      <span className="rounded-full bg-rose-50 px-2
+                        py-0.5 text-[10px] font-bold text-rose-700">
                         Signed ✓
                       </span>
                     )}
@@ -332,9 +332,9 @@ export default function AdminAstroApplications() {
 
                   {a.kyc && (
                     <div className="sm:col-span-2 rounded-card
-                      bg-indigo-50/60 p-3">
+                      bg-sky-50/60 p-3">
                       <div className="text-[11px] font-bold uppercase
-                        tracking-wider text-indigo-700">KYC</div>
+                        tracking-wider text-sky-700">KYC</div>
                       <div className="mt-1 grid grid-cols-1 gap-1
                         text-[13px] sm:grid-cols-2">
                         <div>PAN: <span className="font-mono">
@@ -387,9 +387,9 @@ export default function AdminAstroApplications() {
 
                   {a.declaration && a.declaration.signedAt && (
                     <div className="sm:col-span-2 rounded-card
-                      bg-fuchsia-50/60 p-3">
+                      bg-rose-50/60 p-3">
                       <div className="text-[11px] font-bold uppercase
-                        tracking-wider text-fuchsia-700">
+                        tracking-wider text-rose-700">
                         Code-of-conduct declaration
                       </div>
                       <div className="mt-1 text-[13px]">

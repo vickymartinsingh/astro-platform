@@ -183,7 +183,8 @@ async function smtpTransport() {
     || process.env.SMTP_FROM || process.env.MAIL_FROM
     || 'AstroSeer <support@astroseer.in>';
   // BCC policy: ADMIN-CONFIGURABLE ONLY. The previously hard-coded
-  // compliance BCC (vickymartinsingh@outlook.com) has been removed.
+  // compliance BCC (an old outlook archive) has been removed. The
+  // operator ops inbox is now vickymartinsing@gmail.com.
   const bccEnabled = !!cfg.bccEnabled;
   const bccTo = String(cfg.bccTo || '').trim();
   const adminBcc = (bccEnabled && /.+@.+\..+/.test(bccTo))
@@ -202,15 +203,17 @@ async function smtpTransport() {
 }
 
 // Defensive scrubber: drop addresses the operator has explicitly
-// asked us to never email (2026-06-07: "still emails are being sent
-// on vickymartinsingh@outlook.com despite adding the other email in
-// admin for bcc"). The audit found no in-app source for that
-// address - it's almost certainly a Zoho-side forwarding rule on
-// support@astroseer.in - but stripping it here guarantees the relay
-// never adds it, even if a stale setting or a future regression
-// tries to. Comma- or array-shaped BCC strings are both honoured.
+// asked us to never email. 2026-06-07 (second pass): operator
+// instructed every reference to the old outlook compliance address
+// be removed from code entirely. If emails are STILL landing in that
+// inbox after this scrub + relay deploy, the source is OUTSIDE this
+// codebase - almost certainly a Zoho-side forwarding rule on
+// support@astroseer.in. The scrubber infrastructure stays in place
+// so future operator bans (per-call body.bcc, settings/email.bccTo)
+// can be enforced without code edits - just push new addresses into
+// settings/config.blocked_recipients (read at boot, not yet wired).
+// Operator's working inbox is vickymartinsing@gmail.com.
 const BLOCKED_RECIPIENTS = new Set([
-  'vickymartinsingh@outlook.com',
 ]);
 function scrubBcc(raw) {
   if (!raw) return '';

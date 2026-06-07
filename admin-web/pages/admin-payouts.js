@@ -33,7 +33,7 @@ const TABS = [
   { id: 'processing', label: 'Processing', tone: 'bg-sky-100 text-sky-700' },
   { id: 'completed',  label: 'Completed',  tone: 'bg-emerald-100 text-emerald-700' },
   { id: 'rejected',   label: 'Rejected',   tone: 'bg-rose-100 text-rose-700' },
-  { id: 'schedule',   label: 'Schedule',   tone: 'bg-violet-100 text-violet-700' },
+  { id: 'schedule',   label: 'Schedule',   tone: 'bg-amber-100 text-amber-800' },
 ];
 
 function fmt(ts) {
@@ -937,7 +937,7 @@ function printSystemReceipt(payout) {
       h1{font-size:20px;margin:0;color:#7F2020}
       .meta{color:#666;font-size:11px}
       .amount{font-size:28px;font-weight:700;color:#7F2020;margin:12px 0}
-      .status{display:inline-block;padding:2px 10px;border-radius:999px;font-size:10px;font-weight:700;text-transform:uppercase;background:#eef2ff;color:#3730a3}
+      .status{display:inline-block;padding:2px 10px;border-radius:999px;font-size:10px;font-weight:700;text-transform:uppercase;background:#FFF5EC;color:#7F2020}
       .row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eee}
       .row .k{color:#666}
       .row .v{font-weight:600;text-align:right}

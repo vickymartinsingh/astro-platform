@@ -138,15 +138,25 @@ export function blockUser(uid, blocked = true) {
 //
 // Returns { success, movedSessions, movedTxns, movedKundli,
 //          movedOrders, walletMoved }.
-export async function mergeAccounts(primaryUid, secondaryUid, picks = {}) {
+export async function mergeAccounts(primaryUid, secondaryUid, picks = {},
+  opts = {}) {
   if (!primaryUid || !secondaryUid) {
     throw new Error('Both primary and secondary uids are required.');
   }
   if (primaryUid === secondaryUid) {
     throw new Error('Primary and secondary cannot be the same uid.');
   }
+  // 2026-06-07: opts.kind ('customer' | 'astrologer') is a hint from
+  // the admin UI. When merging two ASTROLOGER accounts we also need
+  // to reassign astrologer-side foreign keys (sessions.astroId,
+  // reviews.astroId) AND copy the secondary's marketplace listing
+  // fields into the primary's astrologers/{uid} doc - otherwise the
+  // secondary's session history vanishes and the primary's listing
+  // misses the bio/skills the operator wanted to keep.
+  const kind = (opts && opts.kind) === 'astrologer'
+    ? 'astrologer' : 'customer';
   return tryCloud('adminMergeAccounts',
-    { primaryUid, secondaryUid, picks }, async () => {
+    { primaryUid, secondaryUid, picks, kind }, async () => {
       const pRef = doc(db, 'users', primaryUid);
       const sRef = doc(db, 'users', secondaryUid);
       const [pSnap, sSnap] = await Promise.all([
@@ -245,6 +255,83 @@ export async function mergeAccounts(primaryUid, secondaryUid, picks = {}) {
           isBlocked: true,
         });
       } catch (_) { /* swallow */ }
+
+      // 6) Astrologer-specific reassignment (only when the operator
+      //    flagged this merge as astrologer-scope). Sessions and
+      //    reviews carry astroId / astrologerId pointing at the
+      //    astrologer's uid; we move them to the primary so the
+      //    history is preserved on the surviving listing. We also
+      //    fold any kept-from-secondary marketplace fields into the
+      //    primary's astrologers/{uid} doc before deleting the
+      //    secondary's listing.
+      let movedAstroSessions = 0;
+      let movedAstroReviews = 0;
+      if (kind === 'astrologer') {
+        async function reassignAstro(name, field) {
+          let moved = 0;
+          try {
+            const snap = await getDocs(query(collection(db, name),
+              where(field, '==', secondaryUid)));
+            const docs = snap.docs;
+            for (let i = 0; i < docs.length; i += 400) {
+              const batch = writeBatch(db);
+              docs.slice(i, i + 400).forEach((d) => {
+                batch.update(d.ref, { [field]: primaryUid });
+              });
+              // eslint-disable-next-line no-await-in-loop
+              await batch.commit();
+              moved += Math.min(400, docs.length - i);
+            }
+          } catch (_) { /* swallow */ }
+          return moved;
+        }
+        // sessions carry either astroId or astrologerId depending on
+        // when the row was written - reassign both.
+        movedAstroSessions = (await reassignAstro('sessions', 'astroId'))
+          + (await reassignAstro('sessions', 'astrologerId'));
+        movedAstroReviews = (await reassignAstro('reviews', 'astroId'))
+          + (await reassignAstro('reviews', 'astrologerId'));
+
+        // Fold the secondary's marketplace fields into the primary's
+        // astrologers/{uid} so a "secondary" pick survives. Only the
+        // operator-selected fields are merged; everything else on the
+        // primary listing stays intact.
+        const ASTRO_FIELDS = [
+          'name', 'displayName', 'username', 'profileImage', 'bio',
+          'tagline', 'skills', 'languages', 'experience',
+          'experienceYears', 'specialities', 'pricePerMinChat',
+          'pricePerMinCall', 'pricePerMinVideo', 'priceLive',
+          'gender', 'dob',
+        ];
+        try {
+          const [pAstro, sAstro] = await Promise.all([
+            getDoc(doc(db, 'astrologers', primaryUid)),
+            getDoc(doc(db, 'astrologers', secondaryUid)),
+          ]);
+          if (sAstro.exists()) {
+            const sa = sAstro.data() || {};
+            const astroPatch = {};
+            for (const f of ASTRO_FIELDS) {
+              if (picks && picks[f] === 'secondary' && sa[f] != null) {
+                astroPatch[f] = sa[f];
+              }
+            }
+            // If the primary HAS no listing at all (rare - a half-built
+            // astrologer profile), seed it from the secondary so we
+            // don't lose the marketplace presence.
+            if (!pAstro.exists() && Object.keys(sa).length > 0) {
+              await setDoc(doc(db, 'astrologers', primaryUid),
+                { ...sa, mergedFrom: secondaryUid,
+                  mergedAt: serverTimestamp() },
+                { merge: true });
+            } else if (Object.keys(astroPatch).length > 0) {
+              await updateDoc(doc(db, 'astrologers', primaryUid),
+                astroPatch);
+            }
+          }
+        } catch (_) { /* swallow */ }
+      }
+
       // Remove astrologer marketplace listing if the secondary had one.
       try {
         await deleteDoc(doc(db, 'astrologers', secondaryUid));
@@ -252,11 +339,14 @@ export async function mergeAccounts(primaryUid, secondaryUid, picks = {}) {
 
       return {
         success: true,
+        kind,
         walletMoved,
         movedSessions,
         movedTxns,
         movedKundli,
         movedOrders,
+        movedAstroSessions,
+        movedAstroReviews,
       };
     });
 }

@@ -10,6 +10,7 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { SkeletonList } from '../components/Skeleton';
 import AstrologerCard from '../components/AstrologerCard';
+import DailyQuoteBanner from '../components/DailyQuoteBanner';
 import ZodiacPicker from '../components/ZodiacPicker';
 import ZodiacGlyph from '../components/ZodiacGlyph';
 import { Icon } from '../components/Icons';
@@ -67,6 +68,12 @@ export default function Dashboard() {
     title: 'The stars have answers',
     subtitle: 'Speak with verified astrologers on chat, call or video. '
       + 'Clarity on love, career, marriage and the road ahead.',
+    // 2026-06-07: button targets are admin-editable from
+    // /admin-home-hero. Defaults preserve the legacy behaviour
+    // (primary -> /astrologers, secondary -> open signup modal).
+    primaryHref: '/astrologers',
+    secondaryHref: '',
+    secondarySignup: true,
   });
   const [sec, setSec] = useState({}); // section show/hide from admin
   const [statsCfg, setStatsCfg] = useState(null); // [{n,l}] from admin
@@ -79,10 +86,18 @@ export default function Dashboard() {
     // LIVE so an admin change is reflected immediately and a screen
     // switch / refresh never shows the old content.
     const apply = (d) => {
-      if (d.homeHeroTitle || d.homeHeroSubtitle) {
+      if (d.homeHeroTitle || d.homeHeroSubtitle
+        || d.hero_btn_primary_href != null
+        || d.hero_btn_secondary_href != null
+        || d.hero_btn_secondary_signup != null) {
         setHero((h) => ({
+          ...h,
           title: d.homeHeroTitle || h.title,
           subtitle: d.homeHeroSubtitle || h.subtitle,
+          primaryHref: d.hero_btn_primary_href || h.primaryHref,
+          secondaryHref: d.hero_btn_secondary_href != null
+            ? d.hero_btn_secondary_href : h.secondaryHref,
+          secondarySignup: d.hero_btn_secondary_signup !== false,
         }));
       }
       setStatsCfg(Array.isArray(d.home_stats) ? d.home_stats : null);
@@ -222,25 +237,50 @@ export default function Dashboard() {
               <p className="mt-2 max-w-lg text-sm opacity-90 md:text-base">
                 {hero.subtitle}
               </p>
+              {/* 2026-06-07: primary + secondary buttons are now
+                  admin-driven (see /admin-home-hero). Primary always
+                  navigates. Secondary either opens the signup modal
+                  (legacy default, guest-only) OR navigates to a path
+                  the admin set. Empty secondary label hides the
+                  button entirely. */}
               <div className="mt-5 flex flex-wrap gap-2">
-                <Link href="/astrologers"
+                <Link href={hero.primaryHref || '/astrologers'}
                   className="rounded-full bg-white px-5 py-2.5
                              font-semibold text-primary">
                   {T('home.browseCta', 'Browse astrologers')}
                 </Link>
-                {!user && (
-                  <button
-                    onClick={() => openLogin(undefined, { mode: 'signup' })}
-                    className="rounded-full bg-white/20 px-5 py-2.5
-                               font-semibold">
-                    {T('home.getStarted', 'Get started')}
-                  </button>
-                )}
+                {T('home.getStarted', 'Get started') && (() => {
+                  if (hero.secondarySignup) {
+                    if (user) return null;
+                    return (
+                      <button
+                        onClick={() =>
+                          openLogin(undefined, { mode: 'signup' })}
+                        className="rounded-full bg-white/20 px-5
+                                   py-2.5 font-semibold">
+                        {T('home.getStarted', 'Get started')}
+                      </button>
+                    );
+                  }
+                  if (!hero.secondaryHref) return null;
+                  return (
+                    <Link href={hero.secondaryHref}
+                      className="rounded-full bg-white/20 px-5 py-2.5
+                                 font-semibold text-white">
+                      {T('home.getStarted', 'Get started')}
+                    </Link>
+                  );
+                })()}
               </div>
             </div>
           </div>
         );
       })()}
+
+      {/* Daily quote banner ("Hey, Cosmic Explorer"). Self-gating -
+          renders nothing unless settings/dailyQuotes.enabled is true,
+          so the admin toggle is the single show / hide lever. */}
+      <DailyQuoteBanner />
 
       {/* Quick actions. 4-column grid wraps to two rows of four when
           we have 8+ tiles. Tarot / Kundli / Matching / Horoscope are

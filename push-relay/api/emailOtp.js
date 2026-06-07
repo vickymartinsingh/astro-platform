@@ -74,10 +74,11 @@ async function smtpTransport(db) {
   const from = cfg.fromAddress || cfg.smtpFrom || process.env.MAIL_FROM
     || 'AstroSeer <support@astroseer.in>';
   // BCC policy: ADMIN-CONFIGURABLE ONLY.
-  // The previous hard-coded compliance archive at
-  // vickymartinsingh@outlook.com has been REMOVED per operator
-  // instruction - that address was still receiving every outbound
-  // mail. From here on the relay only honours admin-configured BCC:
+  // The previous hard-coded compliance archive (an old outlook
+  // address) has been REMOVED per operator instruction - that
+  // address was still receiving every outbound mail. From here on
+  // the relay only honours admin-configured BCC. Operator's working
+  // inbox is vickymartinsing@gmail.com:
   //   - settings/email.bccTo (+ settings/email.bccEnabled) for the
   //     single-address legacy setting
   //   - The bcc[] array carried per-call in the request body (used by
@@ -102,11 +103,11 @@ async function smtpTransport(db) {
 }
 
 // Defensive scrubber - see adminTools.js / kundliReport.js for the
-// 2026-06-07 operator report. Belt-and-suspenders: even if a stale
-// setting or future regression sneaks the address back in, every
-// send path filters through here.
+// 2026-06-07 operator report. Belt-and-suspenders infrastructure
+// kept in place so future operator bans can be enforced; the
+// outlook address that prompted this has been removed from code
+// per the second-pass operator instruction.
 const BLOCKED_RECIPIENTS = new Set([
-  'vickymartinsingh@outlook.com',
 ]);
 function scrubBcc(raw) {
   if (!raw) return '';

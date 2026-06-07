@@ -20,6 +20,7 @@ import SplashScreen from '../components/SplashScreen';
 import UpdateModal from '../components/UpdateModal';
 import NativeBack from '../components/NativeBack';
 import ErrorBoundary from '../components/ErrorBoundary';
+import ProfileNudgePopup from '../components/ProfileNudgePopup';
 
 // Perf: lazy-load chrome that doesn't need to be on the first-paint
 // path. Each ssr:false dynamic() ships its component code in its OWN
@@ -196,6 +197,7 @@ export default function App({ Component, pageProps }) {
         <AdminLiveEditor />
       </AuthProvider>
       <UpdateModal />
+      <ProfileNudgePopup />
       <GuidedTour />
       <NativeBack />
       <SplashScreen />

@@ -78,7 +78,7 @@ const TYPE_TONE = {
   signup:  'bg-emerald-100 text-emerald-700',
   login:   'bg-sky-100 text-sky-700',
   logout:  'bg-slate-100 text-slate-700',
-  route:   'bg-violet-100 text-violet-700',
+  route:   'bg-amber-100 text-amber-800',
   recharge:'bg-amber-100 text-amber-800',
   refund:  'bg-rose-100 text-rose-700',
   admin_password_reset: 'bg-rose-100 text-rose-700',
@@ -256,7 +256,7 @@ export default function AdminAudit() {
         table{width:100%;border-collapse:collapse;font-size:11px}
         th,td{border-bottom:1px solid #e5e7eb;padding:6px 8px;vertical-align:top;text-align:left}
         th{background:#f9fafb;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:#555}
-        .chip{background:#eef2ff;color:#3730a3;padding:1px 6px;border-radius:999px;font-size:9px;font-weight:700;text-transform:uppercase}
+        .chip{background:#FFF5EC;color:#7F2020;padding:1px 6px;border-radius:999px;font-size:9px;font-weight:700;text-transform:uppercase}
         .who-name{font-weight:600}
         .who-sub{color:#666;font-size:10px}
         .mono{font-family:Menlo,Consolas,monospace;font-size:10px;color:#374151;word-break:break-all}

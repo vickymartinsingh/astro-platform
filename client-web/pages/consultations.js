@@ -8,6 +8,7 @@ import {
 import Layout from '../components/Layout';
 import { SkeletonList, EmptyState } from '../components/Skeleton';
 import AudioPlayer from '../components/AudioPlayer';
+import SupportTicketModal from '../components/SupportTicketModal';
 import { useRequireClient } from '../lib/useAuth';
 import { useAstroActions } from '../lib/useAstroActions';
 
@@ -86,10 +87,12 @@ function TypeIcon({ type, className = 'h-3.5 w-3.5' }) {
 }
 
 export default function Consultations() {
-  const { user, loading } = useRequireClient();
+  const { user, profile, loading } = useRequireClient();
   const { go } = useAstroActions();
   const [rows, setRows] = useState(null);
   const [filter, setFilter] = useState('all'); // all | chat | call | video
+  // 2026-06-07: per-session Help / Support ticket popup.
+  const [supportFor, setSupportFor] = useState(null); // session | null
 
   useEffect(() => {
     if (!user) return;
@@ -283,12 +286,40 @@ export default function Consultations() {
                       {repeatLabel}
                     </button>
                   )}
+                  {/* Help / Support per-session. Always present so
+                      the customer can raise an issue (no connect,
+                      poor quality, wrong charge, refund, etc.). */}
+                  <button onClick={() => setSupportFor(s)}
+                    className="inline-flex items-center gap-1
+                      rounded-full border border-primary/40 bg-white
+                      px-2.5 py-1 text-[11px] font-semibold
+                      text-primary hover:bg-primary/5">
+                    <svg width="11" height="11" viewBox="0 0 24 24"
+                      fill="none" stroke="currentColor"
+                      strokeWidth="2.4" strokeLinecap="round"
+                      strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10" />
+                      <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+                      <line x1="12" y1="17" x2="12.01" y2="17" />
+                    </svg>
+                    Get help
+                  </button>
                 </div>
               </div>
             );
           })}
         </div>
       )}
+      <SupportTicketModal
+        open={!!supportFor}
+        kind="session"
+        refId={supportFor ? supportFor.id : ''}
+        refLabel={supportFor
+          ? `${TYPE_LABEL[supportFor.type] || 'Session'} with `
+            + `${supportFor.astro?.name || 'Astrologer'}`
+          : ''}
+        user={{ uid: user?.uid, profile }}
+        onClose={() => setSupportFor(null)} />
     </Layout>
   );
 }

@@ -75,7 +75,7 @@ const CAT_META = {
   bonus: { label: 'Bonus', tone: 'bg-emerald-100 text-emerald-700' },
   voucher: { label: 'Vouchers', tone: 'bg-amber-100 text-amber-700' },
   report: { label: 'Reports', tone: 'bg-primary/15 text-primary' },
-  session: { label: 'Sessions', tone: 'bg-violet-100 text-violet-700' },
+  session: { label: 'Sessions', tone: 'bg-amber-100 text-amber-800' },
   adjustment: { label: 'Admin adjust',
     tone: 'bg-slate-100 text-slate-700' },
   reconciliation: { label: 'Reconciliation',

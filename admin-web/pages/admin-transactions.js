@@ -45,6 +45,10 @@ export default function AdminTransactions() {
   const [sourceFilter, setSourceFilter] = useState('all');
   const [sel, setSel] = useState({});
   const [busy, setBusy] = useState(false);
+  // usersById lets the User column render a human name + user code
+  // instead of the raw Firebase UID prefix (blueprint constraint:
+  // no raw Firebase UIDs in admin UI, operator QA 2026-06-07).
+  const [usersById, setUsersById] = useState({});
 
   async function load() {
     const list = await adminService.getAllTransactions(filter
@@ -57,6 +61,20 @@ export default function AdminTransactions() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, filter]);
+
+  // Pull users once (admin already loads ~all users for every other
+  // admin page) so the transactions table can show name + userCode.
+  useEffect(() => {
+    if (loading) return;
+    (async () => {
+      try {
+        const list = await adminService.getAllUsers();
+        const m = {};
+        (list || []).forEach((u) => { m[u.id] = u; });
+        setUsersById(m);
+      } catch (_) { /* table still renders, just shorter user col */ }
+    })();
+  }, [loading]);
 
   const shown = useMemo(() => {
     const list = rows || [];
@@ -257,8 +275,32 @@ export default function AdminTransactions() {
                   {t.createdAt?.toDate
                     ? t.createdAt.toDate().toLocaleString() : ''}
                 </td>
-                <td className="p-3 font-mono text-[11px]">
-                  {String(t.userId || '').slice(0, 10)}
+                {/* User cell: name + userCode, NO raw Firebase UID.
+                    Falls back to a short hash of the uid when the
+                    user record isn't loaded yet (newly created users
+                    that landed mid-snapshot) so the cell is never
+                    empty. Clickable -> opens the customer profile. */}
+                <td className="p-3 text-xs">
+                  {(() => {
+                    const u = usersById[t.userId] || {};
+                    const name = u.name || u.email || '(unknown)';
+                    const code = u.userCode
+                      || (t.userId
+                        ? `…${String(t.userId).slice(-6)}`
+                        : '-');
+                    return (
+                      <a href={`/admin-user-profile/${t.userId}`}
+                        className="block hover:underline">
+                        <div className="font-semibold text-dark-text">
+                          {name}
+                        </div>
+                        <div className="font-mono text-[10px]
+                          text-sub-text">
+                          {code}
+                        </div>
+                      </a>
+                    );
+                  })()}
                 </td>
                 <td className="p-3 capitalize">{t.type}</td>
                 <td className="p-3">

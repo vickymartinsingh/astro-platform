@@ -79,14 +79,18 @@ export default function AdminLogin() {
     } finally { setBusy(false); setStep(''); }
   }
 
+  // Royal palette ONLY (maroon + amber). The previous gradient used
+  // purple (#1f1147 / #2d1b66 / #1a0e3a) which violates the no-purple
+  // blueprint rule. Now: deep tarot-brown background with maroon +
+  // amber glow accents to match the rest of the suite.
   return (
     <div className="relative min-h-screen overflow-hidden bg-gradient-to-br
-      from-[#1f1147] via-[#2d1b66] to-[#1a0e3a] px-4 py-12 text-white">
-      {/* Soft glow accents */}
+      from-[#1A0F0F] via-[#2A1410] to-[#0F0708] px-4 py-12 text-white">
+      {/* Soft glow accents - maroon top-left, amber bottom-right */}
       <div className="pointer-events-none absolute -left-24 -top-24 h-72
-        w-72 rounded-full bg-primary/40 blur-3xl" />
+        w-72 rounded-full bg-[#7F2020]/40 blur-3xl" />
       <div className="pointer-events-none absolute -bottom-24 -right-24
-        h-80 w-80 rounded-full bg-amber-500/20 blur-3xl" />
+        h-80 w-80 rounded-full bg-[#D4A12A]/25 blur-3xl" />
 
       <div className="relative mx-auto max-w-sm">
         {/* Brand header */}

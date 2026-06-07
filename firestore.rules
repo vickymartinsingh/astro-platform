@@ -55,6 +55,51 @@ service cloud.firestore {
             || resource.data.phone == ''
             || request.resource.data.phone == resource.data.phone));
       allow delete: if isAdmin();
+
+      // walletAudit (paper-trail subcollection). EVERY admin wallet
+      // move - adjustWallet, adminRefund - writes a row here inside
+      // the same Firestore transaction that updates users.wallet.
+      // Without a matching rule the whole transaction is denied
+      // ("Missing or insufficient permissions"), which broke the
+      // admin Add bonus + Refund actions (operator report
+      // 2026-06-07). Read is admin or the owner; create is admin
+      // only (these are server-truth records, never edited).
+      match /walletAudit/{aid} {
+        allow read: if isAdmin() || isSelf(uid);
+        allow create: if isAdmin();
+        allow update, delete: if false;
+      }
+
+      // Kundli PDF orders (per-customer view).
+      //
+      // OPERATOR REPORT 2026-06-07: "Customers are unable to see
+      // their reports in their mobile app, orders placed in last 1
+      // month not showing." Root cause: the recursive wildcard
+      // /{document=**}/orders/{orderId} rule below was added to
+      // unblock the /admin-orders collectionGroup query, but it
+      // gates reads on resource.data.uid == auth.uid. The relay
+      // does NOT write uid into the order DOC - the uid lives only
+      // in the PATH - so resource.data.uid is always undefined and
+      // the comparison fails. That silently denied every customer
+      // read; the onSnapshot error handler swallowed the failure
+      // and set rows to [] so the UI showed "No orders yet" forever.
+      //
+      // Fix: this rule lets the customer read their own orders by
+      // matching the PATH uid against auth.uid (the relay still
+      // does all writes via Admin SDK so writes stay admin-only).
+      // The recursive wildcard rule below still serves the
+      // collectionGroup query for admin pages.
+      match /orders/{orderId} {
+        allow read: if isAdmin() || isSelf(uid);
+        allow write: if isAdmin();
+        // Chunked PDF storage (pdfChunked tier). The relay writes
+        // chunks; the customer reads them inline to assemble the
+        // PDF for preview/download.
+        match /pdfChunks/{idx} {
+          allow read: if isAdmin() || isSelf(uid);
+          allow write: if isAdmin();
+        }
+      }
     }
 
     // transactions: every wallet change still writes a transaction
@@ -236,6 +281,40 @@ service cloud.firestore {
     match /waitlist/{wid} {
       allow create: if signedIn();
       allow read, update, delete: if isAdmin();
+    }
+
+    // Astrologer recruitment pipeline (admin-managed). Written by
+    // signed-in applicants from the public /register-as-astrologer
+    // form; admins move them through reviewing -> kyc -> bank ->
+    // declaration -> approved. Without this rule the admin page
+    // /admin-astro-applications failed with "Missing or insufficient
+    // permissions" (operator report 2026-06-07).
+    match /astroApplications/{aid} {
+      allow read: if isAdmin();
+      allow create: if signedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // ===============================================================
+    // PERMANENT CATCH-ALL: admin-read on every collection.
+    //
+    // Why: every time the admin app reads a NEW collection that didn't
+    // have a rule yet, the page exploded with "Missing or insufficient
+    // permissions" (astroApplications today; walletAudit last week;
+    // users/{uid}/orders the week before). Each one took a deploy to
+    // fix. This recursive read rule means an admin can read any
+    // document under the database, including any future collection a
+    // new admin page might query. Writes are NOT included - they
+    // still have to go through the explicit per-collection rules
+    // above, which is safer (a single buggy admin client cannot
+    // corrupt an unrelated collection).
+    //
+    // Multiple matches OR together in Firestore, so this rule only
+    // ADDS read permission for admins - it never weakens any of the
+    // narrower rules above (those keep their own allow/deny for
+    // non-admin paths).
+    match /{document=**} {
+      allow read: if isAdmin();
     }
   }
 }
