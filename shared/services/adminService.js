@@ -931,6 +931,36 @@ export async function listGiftCards() {
   return j.cards || [];
 }
 
+// GIFT_STATUSES (2026-06-06 spec): admin needs to be able to
+// revoke / suspend / mark-as-used / mark-as-expired any unredeemed
+// card so a leaked code cannot be misused. The relay's /api/giftCard
+// redeem path rejects anything whose status !== 'active' (with the
+// pre-existing redeemed status handled separately - redeemed cards
+// are immutable once spent).
+export const GIFT_STATUSES = [
+  { id: 'active',    label: 'Active', tone:
+    'bg-emerald-100 text-emerald-700' },
+  { id: 'suspended', label: 'Suspended', tone:
+    'bg-amber-100 text-amber-800' },
+  { id: 'revoked',   label: 'Revoked', tone:
+    'bg-rose-100 text-rose-700' },
+  { id: 'used',      label: 'Used', tone:
+    'bg-slate-100 text-slate-700' },
+  { id: 'expired',   label: 'Expired', tone:
+    'bg-slate-100 text-slate-700' },
+];
+
+// Admin: change a gift card's lifecycle status. Operator-driven so
+// the relay handles the rules check (admin token); we just dispatch.
+// `note` is an optional reason captured in the audit log.
+export async function setGiftCardStatus(code, status, note) {
+  if (!code) throw new Error('code required');
+  if (!status) throw new Error('status required');
+  const j = await giftCall({ action: 'setStatus', code,
+    status, note: note || '' });
+  return j;
+}
+
 // Assign one or more roles to a user. Primary `role` stays a single
 // value (used by gating) = admin > astrologer > support > client; the
 // full set is stored in `roles` (checked by hasRole / isAdminUser).

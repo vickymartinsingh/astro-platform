@@ -77,11 +77,53 @@ module.exports = async (req, res) => {
       await db.collection('giftCards').doc(code).set({
         code,
         amount,
+        status: 'active',
         redeemed: false,
         redeemedBy: null,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
       });
       return res.status(200).json({ success: true, code, amount });
+    }
+
+    // Admin status update (revoke / suspend / mark-used / expire).
+    // Operator 2026-06-06: "add the option as revoke or suspend or
+    // mark as already used or expired to avoid misuse." Statuses
+    // other than 'active' cause the redeem path below to reject.
+    if (action === 'setStatus') {
+      if (!isAdmin) return res.status(403).json({ error: 'not an admin' });
+      const code = String(body.code || '').trim().toUpperCase();
+      const status = String(body.status || '').trim().toLowerCase();
+      const allowed = ['active','suspended','revoked','used','expired'];
+      if (!code) return res.status(400).json({ error: 'code required' });
+      if (!allowed.includes(status)) {
+        return res.status(400).json({ error: 'invalid status' });
+      }
+      const ref = db.collection('giftCards').doc(code);
+      const g = await ref.get();
+      if (!g.exists) return res.status(404).json({ error: 'not found' });
+      const gc = g.data() || {};
+      // Once redeemed the card is immutable - status can be reset to
+      // 'used' (no-op) but nothing else, to keep the audit trail
+      // honest.
+      if (gc.redeemed && status !== 'used') {
+        return res.status(409).json({
+          error: 'card already redeemed; cannot change status' });
+      }
+      await ref.update({
+        status,
+        statusNote: String(body.note || '').slice(0, 240),
+        statusBy: callerUid,
+        statusAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      try {
+        await db.collection('audits').add({
+          uid: callerUid, email: decoded.email || '',
+          type: 'gift_status_change', app: 'admin',
+          meta: { code, status, note: body.note || '' },
+          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      } catch (_) { /* non-fatal */ }
+      return res.status(200).json({ success: true, code, status });
     }
 
     if (action === 'list') {
@@ -122,6 +164,23 @@ module.exports = async (req, res) => {
         if (!g.exists) throw new Error('Invalid gift card code');
         const gc = g.data() || {};
         if (gc.redeemed) throw new Error('This gift card was already used');
+        // Admin can park a card in suspended / revoked / expired so a
+        // leaked code can't drain the wallet. 'active' (or the legacy
+        // 'unused' / missing field) is the only redeemable state.
+        const status = String(gc.status || 'active').toLowerCase();
+        if (status === 'revoked') {
+          throw new Error('This gift card has been revoked by support.');
+        }
+        if (status === 'suspended') {
+          throw new Error('This gift card is temporarily suspended. '
+            + 'Contact support.');
+        }
+        if (status === 'expired') {
+          throw new Error('This gift card has expired.');
+        }
+        if (status === 'used') {
+          throw new Error('This gift card was already used.');
+        }
         const amount = Math.round(Number(gc.amount) || 0);
         if (!(amount > 0)) throw new Error('Invalid gift card');
         const uRef = db.collection('users').doc(callerUid);

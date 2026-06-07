@@ -119,12 +119,20 @@ export default function LoginCard({ onDone, compact, initialMode }) {
 
   async function finish(user) {
     setStepLabel('Loading profile…');
-    // (Removed) Login-time OTP re-check. Per user: OTP is enforced
-    // ONLY at signup; login never re-asks even if the previous
-    // signup didn't complete verification.
+    // iOS WebView-defensive: profile lookup uses a SHORT 3s timeout
+    // (was 8s). Operator 2026-06-06: "19 May was working, after
+    // that nothing in iOS, freezing while logging." On a 4G/edge
+    // cellular hop the 8s wait was enough to make the WKWebView
+    // appear locked up, since the user has nothing to look at
+    // between "verify" tap and the home-screen jump. Block check
+    // is best-effort now - if profile can't load in 3s we fall
+    // through and rely on the rules layer (a blocked user can't
+    // read anything anyway). Real worst case: a blocked user
+    // briefly sees an empty home screen, then re-blocks on the
+    // next read.
     let p = null;
     try {
-      p = await withTimeout(userService.getUser(user.uid), 8000,
+      p = await withTimeout(userService.getUser(user.uid), 3000,
         'Profile lookup');
     } catch (_) { p = null; }
     if (p && p.isBlocked === true) {

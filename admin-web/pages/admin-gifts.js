@@ -3,6 +3,22 @@ import { adminService } from '@astro/shared';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
 import { flash } from '../lib/flash';
+import GiftCardPreview from '../components/GiftCardPreview';
+
+// Status descriptors driving the chip + action menu. Operator
+// 2026-06-06: "add the option as revoke or suspend or mark as
+// already used or expired to avoid misuse."
+const STATUS_META = {
+  active:    { label: 'Active',    tone: 'bg-emerald-100 text-emerald-700' },
+  suspended: { label: 'Suspended', tone: 'bg-amber-100 text-amber-800' },
+  revoked:   { label: 'Revoked',   tone: 'bg-rose-100 text-rose-700' },
+  used:      { label: 'Used',      tone: 'bg-slate-100 text-slate-700' },
+  expired:   { label: 'Expired',   tone: 'bg-slate-100 text-slate-700' },
+};
+function statusOf(c) {
+  if (c.redeemed) return 'used';
+  return (c.status && STATUS_META[c.status]) ? c.status : 'active';
+}
 
 function fmt(ts) {
   try {
@@ -41,6 +57,9 @@ export default function AdminGifts() {
   const [q, setQ] = useState('');
   const [filter, setFilter] = useState('all'); // all | unused | used
   const [openCode, setOpenCode] = useState(null);
+  // { code, amount } | null - controls the visual gift-card popup
+  // that opens after Generate.
+  const [preview, setPreview] = useState(null);
 
   async function refresh() {
     try { setCards(await adminService.listGiftCards() || []); }
@@ -48,12 +67,36 @@ export default function AdminGifts() {
   }
   useEffect(() => { if (!loading) refresh(); }, [loading]);
 
+  async function changeStatus(code, status) {
+    const labels = { active: 'reactivate',
+      suspended: 'suspend', revoked: 'revoke',
+      used: 'mark as used', expired: 'mark as expired' };
+    const note = window.prompt(
+      `Reason for ${labels[status] || status} (optional, kept in audit log):`,
+      '');
+    if (note === null) return; // cancelled
+    if (!window.confirm(`${labels[status] || status} card ${code}? `
+      + 'This is logged in the audit trail and visible to all admins.')) {
+      return;
+    }
+    try {
+      await adminService.setGiftCardStatus(code, status, note);
+      flash(`Card ${code} -> ${status}`);
+      refresh();
+    } catch (e) {
+      flash(`Could not change status: ${e?.message || e}`, 'error');
+    }
+  }
+
   async function create() {
     setBusy(true); setMsg(''); setLast(null);
     try {
       const r = await adminService.createGiftCard(amount);
       setLast(r);
       setMsg(`Gift card for Rs ${r.amount} created.`);
+      // Open the visual card popup so the admin can download the
+      // JPG + share with the customer.
+      setPreview({ code: r.code, amount: r.amount });
       flash(`Gift card ${r.code} created`);
       refresh();
     } catch (e) {
@@ -64,8 +107,12 @@ export default function AdminGifts() {
   if (loading) return <Layout><div className="card">Loading...</div></Layout>;
 
   const filtered = (cards || []).filter((c) => {
-    if (filter === 'used' && !c.redeemed) return false;
-    if (filter === 'unused' && c.redeemed) return false;
+    const st = statusOf(c);
+    if (filter === 'used' && st !== 'used') return false;
+    if (filter === 'unused' && (st === 'used' || st === 'expired'
+      || st === 'revoked')) return false;
+    if (['active','suspended','revoked','used','expired']
+      .includes(filter) && st !== filter) return false;
     const s = q.trim().toLowerCase();
     if (!s) return true;
     return (c.code || '').toLowerCase().includes(s)
@@ -154,10 +201,10 @@ export default function AdminGifts() {
               </div>
               <div className="flex items-center gap-2">
                 <span className={`rounded-full px-2.5 py-1 text-[10px]
-                  font-bold ${c.redeemed
-                    ? 'bg-danger/15 text-danger'
-                    : 'bg-success/15 text-success'}`}>
-                  {c.redeemed ? 'Used' : 'Active'}
+                  font-bold uppercase tracking-wider ${
+                    STATUS_META[statusOf(c)]?.tone
+                    || 'bg-slate-100 text-slate-700'}`}>
+                  {STATUS_META[statusOf(c)]?.label || statusOf(c)}
                 </span>
                 <button onClick={() => setOpenCode(
                   openCode === c.code ? null : c.code)}
@@ -165,8 +212,46 @@ export default function AdminGifts() {
                     text-xs font-bold text-primary">
                   {openCode === c.code ? 'Hide' : 'View'}
                 </button>
+                {!c.redeemed && (
+                  <button onClick={() => setPreview({ code: c.code,
+                    amount: c.amount })}
+                    className="rounded-full bg-amber-100 px-3 py-1.5
+                      text-xs font-bold text-amber-800
+                      hover:bg-amber-200"
+                    title="Show the gift card image again">
+                    ⬇ Card
+                  </button>
+                )}
               </div>
             </div>
+
+            {/* Lifecycle action chips (revoke / suspend / mark used
+                / expire). Hidden once a card is redeemed - it's
+                immutable then. */}
+            {!c.redeemed && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {statusOf(c) !== 'active' && (
+                  <ActionChip label="Reactivate" tone="emerald"
+                    onClick={() => changeStatus(c.code, 'active')} />
+                )}
+                {statusOf(c) !== 'suspended' && (
+                  <ActionChip label="Suspend" tone="amber"
+                    onClick={() => changeStatus(c.code, 'suspended')} />
+                )}
+                {statusOf(c) !== 'revoked' && (
+                  <ActionChip label="Revoke" tone="rose"
+                    onClick={() => changeStatus(c.code, 'revoked')} />
+                )}
+                {statusOf(c) !== 'used' && (
+                  <ActionChip label="Mark as used" tone="slate"
+                    onClick={() => changeStatus(c.code, 'used')} />
+                )}
+                {statusOf(c) !== 'expired' && (
+                  <ActionChip label="Mark as expired" tone="slate"
+                    onClick={() => changeStatus(c.code, 'expired')} />
+                )}
+              </div>
+            )}
 
             {openCode === c.code && (
               <div className="mt-3 rounded-card border border-gray-200
@@ -211,7 +296,27 @@ export default function AdminGifts() {
         Customers and astrologers never see this compliance information.
         It is admin-only for fraud / abuse review.
       </p>
+      {preview && (
+        <GiftCardPreview code={preview.code} amount={preview.amount}
+          onClose={() => setPreview(null)} />
+      )}
     </Layout>
+  );
+}
+
+function ActionChip({ label, tone, onClick }) {
+  const tones = {
+    emerald: 'border-emerald-200 text-emerald-700 hover:bg-emerald-50',
+    amber:   'border-amber-200 text-amber-800 hover:bg-amber-50',
+    rose:    'border-rose-200 text-rose-700 hover:bg-rose-50',
+    slate:   'border-slate-200 text-slate-700 hover:bg-slate-50',
+  };
+  return (
+    <button onClick={onClick}
+      className={`rounded-full border px-3 py-1 text-[10px] font-bold
+        uppercase tracking-wider ${tones[tone] || tones.slate}`}>
+      {label}
+    </button>
   );
 }
 
