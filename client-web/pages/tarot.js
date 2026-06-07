@@ -176,8 +176,10 @@ function Guided({ features }) {
     { pathname: '/tarot', query: { tstep: next } },
     undefined, { shallow: true });
   const [aspect, setAspect] = useState('');
-  const [question, setQuestion] = useState('');
-  const [qErr, setQErr] = useState('');
+  // 2026-06-08: question step removed - operator wants Aspect ->
+  // Spread -> Pick -> Reading. Keeping the state vars commented so
+  // the saveTarotQuestion side-effect below cleanly no-ops without
+  // touching the service signature.
   const [count, setCount] = useState(1);
   const [drawn, setDrawn] = useState([]);
   const [revealed, setRevealed] = useState([]);
@@ -197,7 +199,6 @@ function Guided({ features }) {
   // Top-left Back: close the reading popup first, otherwise step back
   // one screen via real history (leaves /tarot only at the first step).
   const back = () => {
-    setQErr('');
     if (showPopup) { setShowPopup(false); return; }
     router.back();
   };
@@ -209,24 +210,22 @@ function Guided({ features }) {
 
   function chooseAspect(a) {
     setAspect(a);
-    go(a === 'General' ? 'spread' : 'question');
-  }
-  function submitQuestion() {
-    const words = question.trim().split(/\s+/).filter(Boolean);
-    if (words.length < 10 || words.length > 50) {
-      setQErr('Your question must be 10 to 50 words.'); return;
-    }
-    setQErr('');
+    // All aspects go straight to the spread picker - the question
+    // step was dropped per 2026-06-08 operator instruction.
     go('spread');
   }
   function chooseSpread(n) {
     setCount(n);
     setDrawn(drawCards(n));
     setRevealed([]);
-    if (aspect !== 'General' && question.trim()) {
+    // We still log the aspect for admin analytics (was previously
+    // gated on question.trim()) - useful for "what reading types
+    // are people drawing the most". The empty question field
+    // signals the new flow to anyone reading the log.
+    if (aspect !== 'General') {
       tarotService.saveTarotQuestion({
         userId: user?.uid, name: profile?.name,
-        aspect, question, spread: n === 3 ? 'three' : 'single',
+        aspect, question: '', spread: n === 3 ? 'three' : 'single',
       });
     }
     go('pick');
@@ -241,7 +240,7 @@ function Guided({ features }) {
     }
   }
   function startOver() {
-    setAspect(''); setQuestion(''); setQErr('');
+    setAspect('');
     setRevealed([]); setReading(null); setShowPopup(false);
     go('aspect');
   }
@@ -255,7 +254,7 @@ function Guided({ features }) {
       <h1 className="text-2xl font-bold md:text-3xl">Pick your card</h1>
       <p className="mb-4 text-sub-text">
         {features.tarot_intro
-          || 'Choose an area, ask your question, and let the cards '
+          || 'Choose an area, focus your mind, and let the cards '
             + 'guide you.'}
       </p>
 
@@ -276,28 +275,10 @@ function Guided({ features }) {
         </div>
       )}
 
-      {step === 'question' && (
-        <div className="surface p-5">
-          <div className="mb-2 font-semibold">
-            2. Ask your question ({aspect})
-          </div>
-          <textarea className="input" rows={3}
-            placeholder="Type your question (10 to 50 words)"
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)} />
-          <div className="mt-1 text-xs text-sub-text">
-            {question.trim().split(/\s+/).filter(Boolean).length} words
-          </div>
-          {qErr && <div className="text-sm text-danger">{qErr}</div>}
-          <button onClick={submitQuestion}
-            className="btn-primary mt-3 w-full">Continue</button>
-        </div>
-      )}
-
       {step === 'spread' && (
         <div className="surface space-y-3 p-5">
           <div className="font-semibold">
-            {aspect === 'General' ? '2.' : '3.'} Choose your reading
+            2. Choose your reading
           </div>
           <button onClick={() => chooseSpread(1)}
             className="w-full rounded-card border border-gray-200 p-4
