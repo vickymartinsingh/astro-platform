@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import {
   callService, liveService, walletService, astrologerService,
-  offerService,
+  offerService, reviewService,
 } from '@astro/shared';
 import { useOptionalClient } from '../../lib/useAuth';
 import { useSettings } from '../../lib/useSettings';
@@ -925,10 +925,15 @@ function Tile({ k, v }) {
   );
 }
 
-// In-live astrologer profile card. Operator screenshot 2: pulled-up
-// sheet that doesn't navigate away - viewers can read the profile,
-// hit Watch / Live Call / Follow / Chat from the same modal and
-// drop straight back to the stream.
+// In-live full astrologer profile (operator reference screenshot 2).
+// Matches the Astrotalk-style profile card: live-now banner with
+// Watch + Live Call CTAs, big avatar + verified + skills +
+// languages + exp + rating + ₹/min, stats row, bio, photo gallery,
+// reviews with view-all, Chat/Call action row at the bottom.
+//
+// Stays a bottom sheet (no router push) so the live keeps playing
+// behind the dim. Profile + reviews load in parallel when the
+// sheet opens.
 function ProfileSheet({ astroUid, info, profile, following, onFollow,
   onCall, onClose }) {
   const p = profile || {};
@@ -937,86 +942,256 @@ function ProfileSheet({ astroUid, info, profile, following, onFollow,
     : String(p.skills || '').split(',').map((s) => s.trim()).filter(Boolean);
   const langs = Array.isArray(p.languages) ? p.languages
     : String(p.languages || '').split(',').map((s) => s.trim()).filter(Boolean);
+  const baseCall = Number(p.priceCall || info?.priceCall || 30);
+  const callRate = offerService.computeRate(baseCall, p.offer, 'call');
+  const baseChat = Number(p.priceChat || 20);
+  const chatRate = offerService.computeRate(baseChat, p.offer, 'chat');
+  const gallery = Array.isArray(p.gallery) ? p.gallery
+    : (Array.isArray(p.photos) ? p.photos : []);
+  const orders = Number(p.orders || p.ordersCount || 0);
+  const minutes = Number(p.minutes || p.totalMinutes || 0);
+  const rating = Number(p.ratingAvg || p.rating || 4.8);
+  const [showFullBio, setShowFullBio] = useState(false);
+  const bio = String(p.bio || '');
+  const longBio = bio.length > 180;
+  const [reviews, setReviews] = useState(null);
+  useEffect(() => {
+    if (!astroUid) return;
+    reviewService.getReviews(astroUid)
+      .then((r) => setReviews(r || [])).catch(() => setReviews([]));
+  }, [astroUid]);
+  function compact(n) {
+    if (n >= 1000) return `${Math.floor(n / 1000)}k+`;
+    return `${n}`;
+  }
   return (
     <div className="fixed inset-0 z-40 flex items-end justify-center
-      bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      bg-black/45 backdrop-blur-sm" onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md rounded-t-3xl bg-white p-4
+        className="relative w-full max-w-md rounded-t-3xl bg-white
           text-dark-text shadow-2xl"
-        style={{ maxHeight: '75vh', overflowY: 'auto' }}>
-        <div className="mx-auto mb-3 h-1 w-12 rounded-full bg-gray-200" />
-        <button onClick={onClose}
-          className="absolute right-4 top-4 grid h-8 w-8 place-items-center
-            rounded-full bg-black/10 text-black" aria-label="Close">
-          <IconClose />
-        </button>
-        <div className="flex items-center gap-3">
-          {photo ? (
-            <img src={photo} alt={info?.name || ''}
-              className="h-16 w-16 shrink-0 rounded-full object-cover" />
-          ) : <Avatar name={info?.name} size={64} />}
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1 text-base font-bold">
-              {info?.name || p.name || 'Astrologer'}
-              <svg viewBox="0 0 24 24" width="14" height="14">
-                <path fill="#1FA855" d="M12 1.5l2.2 2.06 3-.36 1.2 2.78
-                  2.78 1.2-.36 3L23 12l-2.06 2.2.36 3-2.78 1.2-1.2
-                  2.78-3-.36L12 22.5l-2.2-2.06-3 .36-1.2-2.78-2.78-1.2.36
-                  -3L1 12l2.06-2.2-.36-3 2.78-1.2 1.2-2.78 3 .36L12 1.5z" />
-                <path fill="#fff" d="M10.6 14.4l-2.3-2.3-1.3 1.3 3.6 3.6
-                  6.4-6.4-1.3-1.3z" />
-              </svg>
+        style={{ maxHeight: '92vh', overflowY: 'auto' }}>
+        {/* Top: live-now banner + close (sticky so it stays put
+            even when scrolling the long body) */}
+        <div className="sticky top-0 z-10 flex items-center
+          justify-between gap-2 rounded-t-3xl bg-white/95 px-4 pt-3
+          pb-2 backdrop-blur">
+          <div className="flex items-center gap-1.5 text-[13px]
+            text-dark-text">
+            <span className="h-2 w-2 animate-pulse rounded-full
+              bg-red-600" />
+            <b>{info?.name || p.name || 'Astrologer'}</b>
+            <span className="text-sub-text">is live now!</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <button onClick={onClose}
+              className="rounded-full border border-gray-200 px-3 py-1
+                text-[11px] font-bold text-dark-text">
+              ▶ Watch
+            </button>
+            <button onClick={() => { onClose(); onCall(); }}
+              className="flex items-center gap-1 rounded-full px-3 py-1
+                text-[11px] font-bold text-white"
+              style={{ background:
+                'linear-gradient(135deg,#D4A12A,#7F2020)' }}>
+              <IconPhone /> Live call
+            </button>
+            <button onClick={onClose}
+              className="grid h-8 w-8 place-items-center rounded-full
+                bg-black/10 text-black ml-1" aria-label="Close">
+              <IconClose />
+            </button>
+          </div>
+        </div>
+
+        {/* Main profile card */}
+        <div className="px-4 pt-2">
+          <div className="rounded-2xl border border-gray-200 p-3">
+            <div className="flex items-start gap-3">
+              {photo ? (
+                <img src={photo} alt={info?.name || ''}
+                  className="h-16 w-16 shrink-0 rounded-full
+                    object-cover ring-2 ring-amber-400/60" />
+              ) : <Avatar name={info?.name} size={64} />}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1 text-base
+                  font-bold">
+                  {info?.name || p.name || 'Astrologer'}
+                  <svg viewBox="0 0 24 24" width="14" height="14">
+                    <path fill="#1FA855" d="M12 1.5l2.2 2.06 3-.36
+                      1.2 2.78 2.78 1.2-.36 3L23 12l-2.06 2.2.36
+                      3-2.78 1.2-1.2 2.78-3-.36L12 22.5l-2.2-2.06-3
+                      .36-1.2-2.78-2.78-1.2.36-3L1 12l2.06-2.2-.36-3
+                      2.78-1.2 1.2-2.78 3 .36L12 1.5z" />
+                    <path fill="#fff" d="M10.6 14.4l-2.3-2.3-1.3 1.3
+                      3.6 3.6 6.4-6.4-1.3-1.3z" />
+                  </svg>
+                  <button onClick={onFollow}
+                    className={`ml-auto rounded-full px-3 py-0.5
+                      text-[11px] font-bold ${following
+                        ? 'bg-bg-light text-dark-text'
+                        : 'text-white'}`}
+                    style={following ? undefined : { background:
+                      'linear-gradient(135deg,#D4A12A,#7F2020)' }}>
+                    {following ? 'Following' : 'Follow'}
+                  </button>
+                </div>
+                {!!skills.length && (
+                  <div className="text-[12px] text-sub-text
+                    line-clamp-1">
+                    {skills.join(', ')}
+                  </div>
+                )}
+                {!!langs.length && (
+                  <div className="text-[12px] text-sub-text">
+                    {langs.join(', ')}
+                  </div>
+                )}
+                {!!p.experience && (
+                  <div className="text-[12px] text-sub-text">
+                    Exp: {p.experience} Years
+                  </div>
+                )}
+                <div className="mt-1 flex items-center gap-2
+                  text-[13px]">
+                  <span className="text-amber-500">
+                    {'★'.repeat(Math.round(rating))}
+                  </span>
+                  <span className="flex items-baseline gap-1">
+                    {callRate.discounted && (
+                      <span className="text-[12px] text-sub-text
+                        line-through">₹{callRate.base}</span>
+                    )}
+                    <span className="font-bold">
+                      ₹{callRate.final}
+                    </span>
+                    <span className="text-[11px] text-sub-text">
+                      /min
+                    </span>
+                  </span>
+                </div>
+              </div>
             </div>
-            {!!skills.length && (
-              <div className="text-[12px] text-sub-text line-clamp-1">
-                {skills.join(', ')}
+
+            {/* Stats row */}
+            <div className="mt-3 grid grid-cols-2 divide-x
+              divide-gray-200 rounded-card border border-gray-200">
+              <div className="flex items-center justify-center gap-1
+                py-2 text-[12px]">
+                <span className="text-amber-700">🧾</span>
+                <b>{compact(orders)}</b>
+                <span className="text-sub-text">orders</span>
+              </div>
+              <div className="flex items-center justify-center gap-1
+                py-2 text-[12px]">
+                <span className="text-amber-700">💬</span>
+                <b>{compact(minutes)}</b>
+                <span className="text-sub-text">mins</span>
+              </div>
+            </div>
+
+            {/* Bio */}
+            {bio && (
+              <div className="mt-3 text-[13px] leading-relaxed">
+                {longBio && !showFullBio
+                  ? <>{bio.slice(0, 180)}…{' '}
+                    <button onClick={() => setShowFullBio(true)}
+                      className="font-bold text-primary
+                        hover:underline">show more</button></>
+                  : bio}
               </div>
             )}
-            {!!langs.length && (
-              <div className="text-[12px] text-sub-text">
-                {langs.join(', ')}
-              </div>
-            )}
-            {!!p.experience && (
-              <div className="text-[12px] text-sub-text">
-                Exp: {p.experience} Years
-              </div>
-            )}
-            <div className="mt-1 inline-flex items-baseline gap-1
-              text-[13px]">
-              <span className="text-amber-500">{'★'.repeat(5)}</span>
-              <span className="font-bold">
-                ₹{p.priceCall || info?.priceCall || 30}
-              </span>
-              <span className="text-[11px] text-sub-text">/min</span>
+          </div>
+        </div>
+
+        {/* Photo gallery */}
+        {gallery.length > 0 && (
+          <div className="mt-4 px-4">
+            <div className="flex gap-2 overflow-x-auto pb-1"
+              style={{ scrollbarWidth: 'none' }}>
+              {gallery.slice(0, 8).map((g, i) => (
+                <img key={i} src={g} alt={`gallery ${i + 1}`}
+                  className="h-32 w-28 shrink-0 rounded-2xl
+                    object-cover" />
+              ))}
             </div>
           </div>
-          <button onClick={onFollow}
-            className={`shrink-0 rounded-full px-3 py-1 text-[11px]
-              font-bold ${following ? 'bg-bg-light text-dark-text'
-                : 'text-white'}`}
-            style={following ? undefined
-              : { background: 'linear-gradient(135deg,#D4A12A,#7F2020)' }}>
-            {following ? 'Following' : 'Follow'}
-          </button>
-        </div>
-        {!!p.bio && (
-          <p className="mt-3 text-[13px] leading-relaxed text-dark-text">
-            {p.bio}
-          </p>
         )}
-        <div className="mt-4 grid grid-cols-2 gap-2">
+
+        {/* User reviews */}
+        <div className="mt-4 px-4">
+          <div className="flex items-center justify-between gap-2">
+            <h4 className="text-sm font-bold">User Reviews</h4>
+            {reviews && reviews.length > 0 && (
+              <button onClick={onClose}
+                className="text-[12px] font-bold text-primary
+                  hover:underline">
+                View All
+              </button>
+            )}
+          </div>
+          <div className="mt-2 space-y-2">
+            {reviews === null && (
+              <div className="text-[12px] text-sub-text">Loading…</div>
+            )}
+            {reviews && reviews.length === 0 && (
+              <div className="rounded-card bg-bg-light/40 p-3
+                text-[12px] text-sub-text">
+                No reviews yet.
+              </div>
+            )}
+            {reviews && reviews.slice(0, 2).map((r, i) => (
+              <div key={r.id || i}
+                className="rounded-2xl border border-gray-200 p-3">
+                <div className="flex items-center gap-2">
+                  <Avatar name={r.userName || r.name || 'User'}
+                    size={32} />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[13px] font-bold">
+                      {r.userName || r.name || 'Anonymous'}
+                    </div>
+                    <div className="text-amber-500 text-[12px]">
+                      {'★'.repeat(Math.round(r.rating || 5))}
+                    </div>
+                  </div>
+                </div>
+                <p className="mt-1 line-clamp-3 text-[12px]
+                  leading-relaxed">
+                  {r.comment || r.text || ''}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Sticky bottom action bar - Chat + Call (live-call
+            opens the estimator on the live page) */}
+        <div className="sticky bottom-0 z-10 mt-4 grid grid-cols-2
+          gap-2 border-t border-gray-100 bg-white/95 px-4 py-3
+          backdrop-blur">
+          <button onClick={onClose}
+            className="flex items-center justify-center gap-2
+              rounded-full border border-gray-300 py-2.5 text-sm
+              font-bold text-dark-text hover:bg-bg-light">
+            💬 Chat
+            <span className="text-[10px] text-sub-text">
+              {chatRate.discounted && (
+                <span className="line-through mr-0.5">
+                  ₹{chatRate.base}
+                </span>
+              )}
+              ₹{chatRate.final}/min
+            </span>
+          </button>
           <button onClick={() => { onClose(); onCall(); }}
-            className="flex items-center justify-center gap-2 rounded-full
-              py-2.5 text-sm font-bold text-white"
+            className="flex items-center justify-center gap-2
+              rounded-full py-2.5 text-sm font-bold text-white"
             style={{ background:
               'linear-gradient(135deg,#D4A12A,#7F2020)' }}>
-            <IconPhone /> Live call
-          </button>
-          <button onClick={onClose}
-            className="rounded-full border border-gray-300 py-2.5
-              text-sm font-bold text-dark-text">
-            Back to live
+            <IconPhone /> Call
+            <span className="text-[10px] opacity-90">
+              ₹{callRate.final}/min
+            </span>
           </button>
         </div>
       </div>
