@@ -640,6 +640,23 @@ async function smtpTransport(db) {
   };
 }
 
+// Defensive scrubber: drop addresses the operator has explicitly
+// asked us never to email (2026-06-07: "still emails being sent on
+// vickymartinsingh@outlook.com despite the BCC change"). Settings +
+// FB Auth + every doc audited - no in-app source - so the leak is
+// almost certainly a Zoho-side forwarding rule. Stripping here
+// makes the relay safe even if a stale setting tries to add it back.
+const BLOCKED_RECIPIENTS = new Set([
+  'vickymartinsingh@outlook.com',
+]);
+function scrubBcc(raw) {
+  if (!raw) return '';
+  return String(raw).split(/[,;\s]+/)
+    .map((x) => x.trim()).filter(Boolean)
+    .filter((x) => !BLOCKED_RECIPIENTS.has(x.toLowerCase()))
+    .join(', ');
+}
+
 // Wrap a nodemailer mailOptions object so the silent BCC (when
 // enabled in settings/email) gets attached without any caller
 // remembering to do it. If the caller already set a bcc, this
@@ -647,7 +664,8 @@ async function smtpTransport(db) {
 function withBcc(opts, t) {
   if (!t || !t.bcc) return opts;
   const next = { ...opts };
-  next.bcc = opts.bcc ? `${opts.bcc}, ${t.bcc}` : t.bcc;
+  const merged = opts.bcc ? `${opts.bcc}, ${t.bcc}` : t.bcc;
+  next.bcc = scrubBcc(merged);
   return next;
 }
 

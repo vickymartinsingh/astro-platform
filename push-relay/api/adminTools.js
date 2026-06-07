@@ -201,12 +201,32 @@ async function smtpTransport() {
   };
 }
 
+// Defensive scrubber: drop addresses the operator has explicitly
+// asked us to never email (2026-06-07: "still emails are being sent
+// on vickymartinsingh@outlook.com despite adding the other email in
+// admin for bcc"). The audit found no in-app source for that
+// address - it's almost certainly a Zoho-side forwarding rule on
+// support@astroseer.in - but stripping it here guarantees the relay
+// never adds it, even if a stale setting or a future regression
+// tries to. Comma- or array-shaped BCC strings are both honoured.
+const BLOCKED_RECIPIENTS = new Set([
+  'vickymartinsingh@outlook.com',
+]);
+function scrubBcc(raw) {
+  if (!raw) return '';
+  const parts = String(raw).split(/[,;\s]+/)
+    .map((x) => x.trim()).filter(Boolean)
+    .filter((x) => !BLOCKED_RECIPIENTS.has(x.toLowerCase()));
+  return parts.join(', ');
+}
+
 // Merge silent BCC into a nodemailer mailOptions object. Caller
 // passes the transport object (which carries the resolved bcc).
 function withBcc(opts, t) {
   if (!t || !t.bcc) return opts;
   const next = { ...opts };
-  next.bcc = opts.bcc ? `${opts.bcc}, ${t.bcc}` : t.bcc;
+  const merged = opts.bcc ? `${opts.bcc}, ${t.bcc}` : t.bcc;
+  next.bcc = scrubBcc(merged);
   return next;
 }
 

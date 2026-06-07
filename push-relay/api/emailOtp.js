@@ -101,13 +101,29 @@ async function smtpTransport(db) {
   return { transporter, from, bcc, cfg };
 }
 
+// Defensive scrubber - see adminTools.js / kundliReport.js for the
+// 2026-06-07 operator report. Belt-and-suspenders: even if a stale
+// setting or future regression sneaks the address back in, every
+// send path filters through here.
+const BLOCKED_RECIPIENTS = new Set([
+  'vickymartinsingh@outlook.com',
+]);
+function scrubBcc(raw) {
+  if (!raw) return '';
+  return String(raw).split(/[,;\s]+/)
+    .map((x) => x.trim()).filter(Boolean)
+    .filter((x) => !BLOCKED_RECIPIENTS.has(x.toLowerCase()))
+    .join(', ');
+}
+
 // Attach the silent admin BCC (if configured) to a nodemailer
 // mailOptions object. Centralised so every send path picks it up
 // without each caller remembering.
 function withBcc(opts, t) {
   if (!t || !t.bcc) return opts;
   const next = { ...opts };
-  next.bcc = opts.bcc ? `${opts.bcc}, ${t.bcc}` : t.bcc;
+  const merged = opts.bcc ? `${opts.bcc}, ${t.bcc}` : t.bcc;
+  next.bcc = scrubBcc(merged);
   return next;
 }
 
