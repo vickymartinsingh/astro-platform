@@ -176,6 +176,21 @@ service cloud.firestore {
       allow read: if isAdmin();
       allow write: if false;
     }
+    // Kundli PDF orders. Written by the relay (admin SDK, bypasses
+    // rules) under users/{uid}/orders/{orderId}. Two read paths:
+    //   1) Customer reads their own orders from /orders + /kundli.
+    //   2) Admin uses collectionGroup('orders') on /admin-orders.
+    // A single recursive wildcard match covers both - the
+    // collectionGroup query requires the rule to live at this
+    // path shape. Without it the admin page silently returned 0
+    // for all 207 paid orders. Writes stay admin-only because all
+    // real writes flow through the relay.
+    match /{document=**}/orders/{orderId} {
+      allow read: if isAdmin()
+        || (signedIn() && resource.data.uid == request.auth.uid);
+      allow write: if isAdmin();
+    }
+
     match /reports/{id} {
       allow read: if signedIn();
       allow write: if isAdmin();
