@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
-import Link from 'next/link';
-import { callService, liveService, walletService } from '@astro/shared';
+import {
+  callService, liveService, walletService, astrologerService,
+} from '@astro/shared';
 import { useOptionalClient } from '../../lib/useAuth';
 import { useSettings } from '../../lib/useSettings';
 
@@ -42,15 +43,6 @@ function IconHeart({ filled }) {
     </svg>
   );
 }
-function IconComment() {
-  return (
-    <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
-      <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h4l4 4 4-4h4c1.1
-        0 2-.9 2-2V6c0-1.1-.9-2-2-2z"
-        fill="none" stroke="white" strokeWidth="2" />
-    </svg>
-  );
-}
 function IconShare() {
   return (
     <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
@@ -60,10 +52,17 @@ function IconShare() {
     </svg>
   );
 }
-function IconJoin() {
+function IconPhone() {
+  // Live Call icon - replaces the abstract Join arrow per operator
+  // screenshot ref. Phone glyph reads as "tap to call" / "tap to
+  // request live call" instantly.
   return (
-    <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
-      <path d="M15 3h4a2 2 0 012 2v14a2 2 0 01-2 2h-4M10 17l5-5-5-5M15 12H3"
+    <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
+      <path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07
+        19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2
+        2 0 012 1.72c.13.96.37 1.9.72 2.81a2 2 0 01-.45 2.11L8.09
+        9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.91.35 1.85.59
+        2.81.72A2 2 0 0122 16.92z"
         fill="none" stroke="white" strokeWidth="2"
         strokeLinecap="round" strokeLinejoin="round" />
     </svg>
@@ -74,6 +73,26 @@ function IconBack() {
     <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
       <path d="M19 12H5M12 19l-7-7 7-7" fill="none" stroke="white"
         strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+function IconGrid() {
+  // 2x2 grid - taps open the "other live astrologers" sheet,
+  // matching the reference screenshot's top-right button.
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+      <rect x="3" y="3" width="7" height="7" rx="1.5" fill="white" />
+      <rect x="14" y="3" width="7" height="7" rx="1.5" fill="white" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" fill="white" />
+      <rect x="14" y="14" width="7" height="7" rx="1.5" fill="white" />
+    </svg>
+  );
+}
+function IconClose() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+      <path d="M18 6L6 18M6 6l12 12" stroke="white" strokeWidth="2"
+        strokeLinecap="round" />
     </svg>
   );
 }
@@ -120,6 +139,11 @@ export default function LiveView() {
   const [following, setFollowing] = useState(false);
   const [myRequest, setMyRequest] = useState(null);
   const [otherLives, setOtherLives] = useState([]);
+  // Bottom sheets that overlay the live without leaving it:
+  //   'profile' -> in-live astrologer profile card (ref screenshot 2)
+  //   'grid'    -> other lives grid (ref screenshot 3)
+  const [sheet, setSheet] = useState(null);
+  const [profileData, setProfileData] = useState(null);
   const remoteRef = useRef(null);
   const joinedRef = useRef(false);
   const cRef = useRef(null);
@@ -172,6 +196,15 @@ export default function LiveView() {
     if (!astroUid || !user?.uid) return undefined;
     return liveService.listenMyJoinRequest(astroUid, user.uid, setMyRequest);
   }, [astroUid, user?.uid]);
+
+  // Lazy-load the full astrologer profile only when the in-live
+  // profile sheet opens. Saves a round trip for viewers who never
+  // tap the astro chip.
+  useEffect(() => {
+    if (sheet !== 'profile' || !astroUid || profileData) return;
+    astrologerService.getAstrologer(astroUid)
+      .then(setProfileData).catch(() => setProfileData({}));
+  }, [sheet, astroUid, profileData]);
 
   useEffect(() => {
     const t = setInterval(() => setTick((n) => n + 1), 4000);
@@ -294,19 +327,21 @@ export default function LiveView() {
       <div className="pointer-events-none absolute inset-x-0 bottom-0
         h-[55vh] bg-gradient-to-t from-black/80 to-transparent" />
 
-      {/* Top bar: back + astro card + LIVE pill + viewers */}
-      <div className="absolute left-3 right-3 top-3 flex items-center
-        gap-2">
+      {/* Top bar: back + astro card (in-live profile) + Follow +
+          grid (in-live other lives) + LIVE pill + viewer count.
+          Royal palette only - maroon + amber accents, no purple. */}
+      <div className="absolute left-3 right-3 top-3 z-30 flex
+        items-center gap-2">
         <button onClick={() => router.back()}
           className="grid h-9 w-9 place-items-center rounded-full
             bg-black/40 backdrop-blur" aria-label="Back">
           <IconBack />
         </button>
-        <Link href={`/astrologers/${astroUid}`}
+        <button onClick={() => setSheet('profile')}
           className="flex items-center gap-2 rounded-full bg-black/40
             px-2 py-1 backdrop-blur">
           <Avatar name={info?.name} photo={info?.photo} size={28} />
-          <div className="leading-tight">
+          <div className="text-left leading-tight">
             <div className="text-[12px] font-bold">
               {info?.name || 'Astrologer'}
             </div>
@@ -314,24 +349,30 @@ export default function LiveView() {
               ₹{livePrice}/min
             </div>
           </div>
-        </Link>
+        </button>
         <button onClick={onFollow}
           className={`rounded-full px-3 py-1 text-[11px] font-bold
             ${following
               ? 'bg-white/15 text-white'
-              : 'bg-rose-600 text-white'}`}>
+              : 'text-white'}`}
+          style={following ? undefined
+            : { background: 'linear-gradient(135deg,#D4A12A,#7F2020)' }}>
           {following ? (
             <span className="inline-flex items-center gap-1">
               <IconCheckPill />Following
             </span>
           ) : 'Follow'}
         </button>
+        <button onClick={() => setSheet('grid')}
+          className="grid h-9 w-9 place-items-center rounded-full
+            bg-black/40 backdrop-blur" aria-label="More live astrologers">
+          <IconGrid />
+        </button>
         <div className="ml-auto flex items-center gap-1">
           <span className="rounded-full bg-red-600 px-2 py-0.5 text-[10px]
             font-bold">LIVE</span>
-          <span className="rounded-full bg-black/50 px-2 py-0.5 text-[10px]">
-            {vcount}
-          </span>
+          <span className="rounded-full bg-black/50 px-2 py-0.5
+            text-[10px]">{vcount}</span>
         </div>
       </div>
 
@@ -345,9 +386,12 @@ export default function LiveView() {
         </div>
       )}
 
-      {/* Right rail action stack (Instagram-style) */}
-      <div className="absolute bottom-32 right-2 flex flex-col items-center
-        gap-3">
+      {/* Right rail action stack. Operator 2026-06-07: drop the Chat
+          button (the comment input below is the chat) and swap the
+          abstract Join arrow for a phone glyph so viewers read it as
+          "request live call" instantly. */}
+      <div className="absolute bottom-32 right-2 z-20 flex flex-col
+        items-center gap-3">
         <button onClick={() => liveService.likeLive(astroUid)}
           className="flex flex-col items-center text-[10px] font-semibold"
           aria-label="Like">
@@ -357,24 +401,18 @@ export default function LiveView() {
           </span>
           <span className="mt-0.5">{info?.likes || 0}</span>
         </button>
-        <button onClick={() => inputRef.current?.focus()}
-          className="flex flex-col items-center text-[10px] font-semibold"
-          aria-label="Comment">
-          <span className="grid h-11 w-11 place-items-center rounded-full
-            bg-black/40 backdrop-blur">
-            <IconComment />
-          </span>
-          <span className="mt-0.5">Chat</span>
-        </button>
         <button onClick={onRequestJoin}
           disabled={!!myRequest}
           className="flex flex-col items-center text-[10px] font-semibold
-            disabled:opacity-60" aria-label="Request to join">
-          <span className="grid h-11 w-11 place-items-center rounded-full
-            bg-rose-600 shadow-lg">
-            <IconJoin />
+            disabled:opacity-60" aria-label="Request live call">
+          {/* Royal-palette gradient pill - amber to maroon, matches
+              the Follow chip in the top bar. */}
+          <span className="grid h-12 w-12 place-items-center rounded-full
+            shadow-lg" style={{
+              background: 'linear-gradient(135deg,#D4A12A,#7F2020)' }}>
+            <IconPhone />
           </span>
-          <span className="mt-0.5">Join</span>
+          <span className="mt-0.5">Live call</span>
         </button>
         <button onClick={() => {
           try { navigator.share?.({
@@ -472,6 +510,181 @@ export default function LiveView() {
         {otherLives[0] && (
           <div className="mt-2 text-center text-[11px] opacity-70">
             Swipe up for {otherLives[0].name || 'next live'}
+          </div>
+        )}
+      </div>
+
+      {/* IN-LIVE OVERLAYS - both close on backdrop tap or close btn */}
+      {sheet === 'profile' && (
+        <ProfileSheet astroUid={astroUid} info={info}
+          profile={profileData} following={following}
+          onFollow={onFollow}
+          onCall={onRequestJoin}
+          onClose={() => setSheet(null)} />
+      )}
+      {sheet === 'grid' && (
+        <GridSheet lives={otherLives}
+          onPick={(uid) => router.replace(`/live-view/${uid}`)}
+          onClose={() => setSheet(null)} />
+      )}
+    </div>
+  );
+}
+
+// In-live astrologer profile card. Operator screenshot 2: pulled-up
+// sheet that doesn't navigate away - viewers can read the profile,
+// hit Watch / Live Call / Follow / Chat from the same modal and
+// drop straight back to the stream.
+function ProfileSheet({ astroUid, info, profile, following, onFollow,
+  onCall, onClose }) {
+  const p = profile || {};
+  const photo = info?.photo || p.photo || p.photoUrl;
+  const skills = Array.isArray(p.skills) ? p.skills
+    : String(p.skills || '').split(',').map((s) => s.trim()).filter(Boolean);
+  const langs = Array.isArray(p.languages) ? p.languages
+    : String(p.languages || '').split(',').map((s) => s.trim()).filter(Boolean);
+  return (
+    <div className="fixed inset-0 z-40 flex items-end justify-center
+      bg-black/40 backdrop-blur-sm" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md rounded-t-3xl bg-white p-4
+          text-dark-text shadow-2xl"
+        style={{ maxHeight: '75vh', overflowY: 'auto' }}>
+        <div className="mx-auto mb-3 h-1 w-12 rounded-full bg-gray-200" />
+        <button onClick={onClose}
+          className="absolute right-4 top-4 grid h-8 w-8 place-items-center
+            rounded-full bg-black/10 text-black" aria-label="Close">
+          <IconClose />
+        </button>
+        <div className="flex items-center gap-3">
+          {photo ? (
+            <img src={photo} alt={info?.name || ''}
+              className="h-16 w-16 shrink-0 rounded-full object-cover" />
+          ) : <Avatar name={info?.name} size={64} />}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1 text-base font-bold">
+              {info?.name || p.name || 'Astrologer'}
+              <svg viewBox="0 0 24 24" width="14" height="14">
+                <path fill="#1FA855" d="M12 1.5l2.2 2.06 3-.36 1.2 2.78
+                  2.78 1.2-.36 3L23 12l-2.06 2.2.36 3-2.78 1.2-1.2
+                  2.78-3-.36L12 22.5l-2.2-2.06-3 .36-1.2-2.78-2.78-1.2.36
+                  -3L1 12l2.06-2.2-.36-3 2.78-1.2 1.2-2.78 3 .36L12 1.5z" />
+                <path fill="#fff" d="M10.6 14.4l-2.3-2.3-1.3 1.3 3.6 3.6
+                  6.4-6.4-1.3-1.3z" />
+              </svg>
+            </div>
+            {!!skills.length && (
+              <div className="text-[12px] text-sub-text line-clamp-1">
+                {skills.join(', ')}
+              </div>
+            )}
+            {!!langs.length && (
+              <div className="text-[12px] text-sub-text">
+                {langs.join(', ')}
+              </div>
+            )}
+            {!!p.experience && (
+              <div className="text-[12px] text-sub-text">
+                Exp: {p.experience} Years
+              </div>
+            )}
+            <div className="mt-1 inline-flex items-baseline gap-1
+              text-[13px]">
+              <span className="text-amber-500">{'★'.repeat(5)}</span>
+              <span className="font-bold">
+                ₹{p.priceCall || info?.priceCall || 30}
+              </span>
+              <span className="text-[11px] text-sub-text">/min</span>
+            </div>
+          </div>
+          <button onClick={onFollow}
+            className={`shrink-0 rounded-full px-3 py-1 text-[11px]
+              font-bold ${following ? 'bg-bg-light text-dark-text'
+                : 'text-white'}`}
+            style={following ? undefined
+              : { background: 'linear-gradient(135deg,#D4A12A,#7F2020)' }}>
+            {following ? 'Following' : 'Follow'}
+          </button>
+        </div>
+        {!!p.bio && (
+          <p className="mt-3 text-[13px] leading-relaxed text-dark-text">
+            {p.bio}
+          </p>
+        )}
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <button onClick={() => { onClose(); onCall(); }}
+            className="flex items-center justify-center gap-2 rounded-full
+              py-2.5 text-sm font-bold text-white"
+            style={{ background:
+              'linear-gradient(135deg,#D4A12A,#7F2020)' }}>
+            <IconPhone /> Live call
+          </button>
+          <button onClick={onClose}
+            className="rounded-full border border-gray-300 py-2.5
+              text-sm font-bold text-dark-text">
+            Back to live
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Grid of OTHER live astrologers. Operator screenshot 3: pulled-up
+// 2-col grid keyed by category (we keep it flat for now), tap
+// switches the live in place.
+function GridSheet({ lives, onPick, onClose }) {
+  return (
+    <div className="fixed inset-0 z-40 flex items-end justify-center
+      bg-black/50 backdrop-blur-sm" onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md rounded-t-3xl bg-[#0E0A2E] p-4
+          text-white shadow-2xl"
+        style={{ maxHeight: '75vh', overflowY: 'auto' }}>
+        <div className="mx-auto mb-3 h-1 w-12 rounded-full bg-white/30" />
+        <div className="mb-2 flex items-center justify-between">
+          <h3 className="text-base font-bold">Live astrologers</h3>
+          <button onClick={onClose}
+            className="grid h-8 w-8 place-items-center rounded-full
+              bg-white/15" aria-label="Close">
+            <IconClose />
+          </button>
+        </div>
+        {lives.length === 0 ? (
+          <div className="rounded-card bg-white/10 p-6 text-center
+            text-[12px] opacity-80">
+            You&apos;re watching the only live right now. Swipe down to
+            close.
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            {lives.map((l) => (
+              <button key={l.astroUid}
+                onClick={() => onPick(l.astroUid)}
+                className="relative overflow-hidden rounded-2xl
+                  bg-black text-left" style={{ aspectRatio: '3/4' }}>
+                {l.photo ? (
+                  <img src={l.photo} alt={l.name}
+                    className="absolute inset-0 h-full w-full
+                      object-cover opacity-80" />
+                ) : (
+                  <div className="absolute inset-0 grid
+                    place-items-center text-3xl font-bold opacity-70">
+                    {(l.name || '?').charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <span className="absolute left-2 top-2 rounded-full
+                  bg-red-600 px-1.5 py-0.5 text-[9px] font-bold">
+                  LIVE
+                </span>
+                <div className="absolute inset-x-0 bottom-0
+                  bg-gradient-to-t from-black/80 to-transparent p-2">
+                  <div className="truncate text-[12px] font-bold">
+                    {l.name}
+                  </div>
+                </div>
+              </button>
+            ))}
           </div>
         )}
       </div>
