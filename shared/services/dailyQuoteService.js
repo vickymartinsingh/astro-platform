@@ -33,7 +33,10 @@ import { db } from '../firebase.js';
 export const DEFAULTS = {
   enabled: false,
   title: 'Hey, Cosmic Explorer',
-  subtitle: 'Quote for the day',
+  // Subtitle is optional (operator: "no need to specify as Quote for
+  // the day"). Customer banner hides the kicker line entirely when
+  // empty; admin can still type one in if they want a label later.
+  subtitle: '',
   // 30 seed quotes - all positive, all cosmos / astrology themed,
   // zero hyphens or dashes. Used when settings/dailyQuotes has no
   // quotes array yet OR the operator clicks "Restore seed quotes".

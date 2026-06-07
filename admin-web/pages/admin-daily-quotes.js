@@ -181,11 +181,14 @@ export default function AdminDailyQuotes() {
               position: 'absolute', top: 8, right: 14,
               fontSize: 14, opacity: 0.65,
             }}>✦</span>
-            <div className="text-[11px] font-bold uppercase
-              tracking-widest text-[#D4A12A]">
-              {state.subtitle || 'Quote for the day'}
-            </div>
-            <h3 className="mt-1 text-lg font-bold sm:text-xl">
+            {state.subtitle && (
+              <div className="text-[11px] font-bold uppercase
+                tracking-widest text-[#D4A12A]">
+                {state.subtitle}
+              </div>
+            )}
+            <h3 className={`${state.subtitle ? 'mt-1' : ''}
+              text-lg font-bold sm:text-xl`}>
               {state.title || DEFAULTS.title}
             </h3>
             <p className="mt-2 max-w-xl text-sm leading-snug
@@ -231,8 +234,9 @@ export default function AdminDailyQuotes() {
               onChange={(e) =>
                 setState((s) => ({ ...s, title: e.target.value }))} />
           </Field>
-          <Field label="Subtitle (small kicker)">
+          <Field label="Subtitle (optional, leave empty to hide)">
             <input className="input" maxLength={40}
+              placeholder="Leave empty - no kicker line shown"
               value={state.subtitle}
               onChange={(e) =>
                 setState((s) => ({ ...s, subtitle: e.target.value }))} />

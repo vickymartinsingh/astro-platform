@@ -33,11 +33,14 @@ export default function DailyQuoteBanner() {
           position: 'absolute', top: 36, right: 18,
           fontSize: 7, opacity: 0.35,
         }}>✦</span>
-        <div className="text-[11px] font-bold uppercase tracking-widest
-          text-[#D4A12A]">
-          {state.subtitle || 'Quote for the day'}
-        </div>
-        <h3 className="mt-1 text-lg font-bold sm:text-xl">
+        {state.subtitle && (
+          <div className="text-[11px] font-bold uppercase
+            tracking-widest text-[#D4A12A]">
+            {state.subtitle}
+          </div>
+        )}
+        <h3 className={`${state.subtitle ? 'mt-1' : ''}
+          text-lg font-bold sm:text-xl`}>
           {state.title || 'Hey, Cosmic Explorer'}
         </h3>
         <p className="mt-2 max-w-xl text-sm leading-snug
