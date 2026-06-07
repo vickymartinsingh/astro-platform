@@ -188,6 +188,22 @@ service cloud.firestore {
     }
     match /scheduler/{id} { allow read, write: if isAdmin(); }
 
+    // Live join-request handshake (liveService.requestJoinLive +
+    // accept/decline lifecycle, 2026-06-07). The viewer creates the
+    // doc when they tap Live call; the astrologer + viewer both
+    // update its status. We keep create open to any signed-in user
+    // (rule: only their own userId), and updates open to either the
+    // astrologer (astroUid matches) or the user (userId matches).
+    match /liveRequests/{rid} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid;
+      allow update: if signedIn() &&
+        (resource.data.astroUid == request.auth.uid
+          || resource.data.userId == request.auth.uid);
+      allow delete: if isAdmin();
+    }
+
     // Live-stream audience bots. The astrologer client reads the
     // pool + question list while broadcasting (to pick a random bot
     // + question per tick) and writes the resulting bot join /

@@ -377,8 +377,13 @@ export function listenJoinRequests(astroUid, callback) {
       where('astroUid', '==', astroUid),
       where('status', 'in',
         ['pending', 'queued', 'astro_ok', 'connected']),
-      orderBy('createdAt', 'asc'), limit(20)),
-    (snap) => callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }))));
+      limit(20)),
+    (snap) => {
+      const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (a.createdAt?.toMillis?.() || 0)
+          - (b.createdAt?.toMillis?.() || 0));
+      callback(rows);
+    });
 }
 
 // User's own request (so we can show "waiting...", "accepted - tap to
@@ -388,15 +393,20 @@ export function listenMyJoinRequest(astroUid, userId, callback) {
     callback(null);
     return () => {};
   }
+  // Compound query without orderBy so it works without a custom
+  // composite index. We sort client-side and pick the newest.
   return onSnapshot(
     query(liveReqs(),
       where('astroUid', '==', astroUid),
       where('userId', '==', userId),
       where('status', 'in',
-        ['pending', 'queued', 'astro_ok', 'connected']),
-      orderBy('createdAt', 'desc'), limit(1)),
-    (snap) => callback(snap.docs[0]
-      ? { id: snap.docs[0].id, ...snap.docs[0].data() } : null));
+        ['pending', 'queued', 'astro_ok', 'connected'])),
+    (snap) => {
+      const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.createdAt?.toMillis?.() || 0)
+          - (a.createdAt?.toMillis?.() || 0));
+      callback(rows[0] || null);
+    });
 }
 
 // Astrologer taps Accept on the overlay - move to astro_ok so the
