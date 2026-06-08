@@ -38,7 +38,15 @@ export const DEFAULTS = {
   showMobile: false,
   showDesktop: false,
   enabled: false,
+  // Headline shown to GUESTS (no login) OR when the logged-in user
+  // has no name on file. The operator's brand line.
   title: 'Hey, Cosmic Explorer',
+  // Headline shown to LOGGED-IN users with a name. Supports a
+  // [Name] placeholder which is substituted with the user's first
+  // name at render time. Example: "Welcome back, [Name]" becomes
+  // "Welcome back, Vicky". Empty => fall back to `title` for
+  // everyone (legacy behaviour).
+  titleAuthed: 'Hello, [Name]',
   // Subtitle is optional (operator: "no need to specify as Quote for
   // the day"). Customer banner hides the kicker line entirely when
   // empty; admin can still type one in if they want a label later.
@@ -122,11 +130,30 @@ function hydrate(d) {
       ? (!!d.showMobile || !!d.showDesktop)
       : !!d.enabled,
     title: d.title || DEFAULTS.title,
+    // titleAuthed is OPTIONAL. Default-empty for older docs so the
+    // legacy behaviour ("Hey, Cosmic Explorer" for everyone) stays
+    // intact until the operator explicitly fills the new field.
+    titleAuthed: d.titleAuthed != null ? d.titleAuthed
+      : '',
     subtitle: d.subtitle || DEFAULTS.subtitle,
     quotes: Array.isArray(d.quotes) && d.quotes.length
       ? d.quotes.map(sanitiseQuote).filter(Boolean)
       : [...DEFAULTS.quotes],
   };
+}
+
+// Resolve the headline for a given viewer. Substitutes [Name] with
+// the user's first name when:
+//   1) titleAuthed is set
+//   2) the viewer is logged in AND has a usable name
+// Falls back to `title` (the guest greeting) otherwise.
+export function resolveTitle(state, profile) {
+  const t = state || {};
+  const authed = (t.titleAuthed || '').trim();
+  const name = (profile && profile.name) ? String(profile.name).trim() : '';
+  if (!authed || !name) return t.title || DEFAULTS.title;
+  const first = name.split(/\s+/)[0] || name;
+  return authed.replace(/\[Name\]/gi, first);
 }
 
 // Public read.
@@ -170,6 +197,10 @@ export async function saveDailyQuotes(state) {
     // see a single boolean. True iff either device is on.
     enabled: showMobile || showDesktop,
     title: sanitiseQuote(state.title) || DEFAULTS.title,
+    // titleAuthed runs through the same dash sanitiser as the
+    // quotes; preserve [Name] placeholder (the bracket-syntax has no
+    // dashes so the sanitiser leaves it intact).
+    titleAuthed: sanitiseQuote(state.titleAuthed || ''),
     subtitle: sanitiseQuote(state.subtitle) || '',
     quotes: cleaned,
     updatedAt: serverTimestamp(),

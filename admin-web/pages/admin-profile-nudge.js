@@ -106,12 +106,12 @@ export default function AdminProfileNudge() {
     }
     setPushing(true);
     try {
-      await profileNudgeService.adminPushNudge(picked.id, {
+      await profileNudgeService.adminPushNudge((picked.uid || picked.id), {
         fields: pickedFields,
         adminUid: admin?.uid || '',
         message: pushMsg.trim(),
       });
-      flash(`Pushed to ${picked.name || picked.email || picked.id}`);
+      flash(`Pushed to ${picked.name || picked.email || (picked.uid || picked.id)}`);
       setPicked(null);
       setPickedFields([]);
       setPushMsg('');
@@ -225,9 +225,9 @@ export default function AdminProfileNudge() {
           {filtered.map((u) => {
             const missing = ALL_FIELDS.filter(
               (f) => !hasValue(u, f[0])).map((f) => f[1]);
-            const isPicked = picked && picked.id === u.id;
+            const isPicked = picked && (picked.uid || picked.id) === (u.uid || u.id);
             return (
-              <button key={u.id}
+              <button key={(u.uid || u.id)}
                 onClick={() => pickUser(u)}
                 className={`flex w-full items-center justify-between
                   gap-2 border-b border-gray-100 px-3 py-2 text-left
@@ -262,7 +262,7 @@ export default function AdminProfileNudge() {
           <div className="mt-4 rounded-card bg-bg-light p-3">
             <div className="text-[11px] font-bold uppercase
               tracking-wider text-sub-text">
-              Push to: {picked.name || picked.email || picked.id}
+              Push to: {picked.name || picked.email || (picked.uid || picked.id)}
             </div>
 
             <div className="mt-2">

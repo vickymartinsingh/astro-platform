@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { dailyQuoteService } from '@astro/shared';
+import { useOptionalClient } from '../lib/useAuth';
 
 // Daily quote banner ("Hey, Cosmic Explorer" + a rotating quote).
 // Subscribes via onSnapshot so the moment the admin flips the toggle
@@ -11,8 +12,15 @@ import { dailyQuoteService } from '@astro/shared';
 // sees the card only on the devices the admin enabled.
 export default function DailyQuoteBanner() {
   const [state, setState] = useState(null);
+  const { user, profile } = useOptionalClient();
   useEffect(() => dailyQuoteService.listenDailyQuotes(setState), []);
   if (!state) return null;
+  // Logged-in viewer with a usable name -> personalised greeting
+  // ("Hello, Vicky"). Guest or nameless profile -> brand greeting
+  // ("Hey, Cosmic Explorer"). resolveTitle handles the [Name]
+  // substitution + the empty-titleAuthed fallback.
+  const headline = dailyQuoteService.resolveTitle(state,
+    user ? profile : null);
   const showMobile = state.showMobile !== false && !!state.showMobile;
   const showDesktop = state.showDesktop !== false && !!state.showDesktop;
   if (!showMobile && !showDesktop) return null;
@@ -50,7 +58,7 @@ export default function DailyQuoteBanner() {
         )}
         <h3 className={`${state.subtitle ? 'mt-1' : ''}
           text-lg font-bold sm:text-xl`}>
-          {state.title || 'Hey, Cosmic Explorer'}
+          {headline}
         </h3>
         <p className="mt-2 max-w-xl text-sm leading-snug
           text-white/90 sm:text-base">

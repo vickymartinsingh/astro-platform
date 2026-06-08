@@ -163,39 +163,28 @@ export default function AdminDailyQuotes() {
         </p>
       </header>
 
-      {/* Live preview - matches the customer banner exactly. */}
+      {/* Live preview - one card for the guest greeting and one for
+          the logged-in greeting so the operator can see BOTH states
+          before saving. Both share the same toggles + subtitle +
+          quote pool; only the headline differs. */}
       <section className="mb-5">
         <div className="mb-2 text-[11px] font-bold uppercase
           tracking-wider text-sub-text">
           Live preview (today's quote)
         </div>
-        <div
-          className={`overflow-hidden rounded-2xl text-white shadow-sm ${
-            state.enabled ? '' : 'opacity-50'}`}
-          style={{
-            background: 'linear-gradient(135deg, #2A1410 0%, '
-              + '#4a1212 45%, #7F2020 100%)',
-          }}>
-          <div className="relative px-5 py-4 sm:px-6 sm:py-5">
-            <span aria-hidden style={{
-              position: 'absolute', top: 8, right: 14,
-              fontSize: 14, opacity: 0.65,
-            }}>✦</span>
-            {state.subtitle && (
-              <div className="text-[11px] font-bold uppercase
-                tracking-widest text-[#D4A12A]">
-                {state.subtitle}
-              </div>
-            )}
-            <h3 className={`${state.subtitle ? 'mt-1' : ''}
-              text-lg font-bold sm:text-xl`}>
-              {state.title || DEFAULTS.title}
-            </h3>
-            <p className="mt-2 max-w-xl text-sm leading-snug
-              text-white/90 sm:text-base">
-              {todayQuote}
-            </p>
-          </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <PreviewCard label="Guest / no name"
+            headline={state.title || DEFAULTS.title}
+            subtitle={state.subtitle}
+            quote={todayQuote}
+            dim={!state.enabled} />
+          <PreviewCard
+            label="Logged in (sample name: Vicky)"
+            headline={dailyQuoteService.resolveTitle(
+              state, { name: 'Vicky Martin' })}
+            subtitle={state.subtitle}
+            quote={todayQuote}
+            dim={!state.enabled} />
         </div>
         {!state.enabled && (
           <div className="mt-1 text-[11px] text-sub-text">
@@ -227,13 +216,25 @@ export default function AdminDailyQuotes() {
         </p>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <Field label="Title">
+          <Field label="Title shown to guests"
+            hint="Used when no one is logged in, or the logged-in user has no name on file.">
             <input className="input" maxLength={40}
+              placeholder="Hey, Cosmic Explorer"
               value={state.title}
               onChange={(e) =>
                 setState((s) => ({ ...s, title: e.target.value }))} />
           </Field>
-          <Field label="Subtitle (optional, leave empty to hide)">
+          <Field label="Title shown to logged-in users"
+            hint="Use [Name] to drop in the user's first name. Leave empty to use the guest title for everyone.">
+            <input className="input" maxLength={40}
+              placeholder="Hello, [Name]"
+              value={state.titleAuthed || ''}
+              onChange={(e) =>
+                setState((s) =>
+                  ({ ...s, titleAuthed: e.target.value }))} />
+          </Field>
+          <Field label="Subtitle (optional, leave empty to hide)"
+            span="sm:col-span-2">
             <input className="input" maxLength={40}
               placeholder="Leave empty - no kicker line shown"
               value={state.subtitle}
@@ -399,12 +400,55 @@ The stars made room for you today.`
   );
 }
 
-function Field({ label, children }) {
+function Field({ label, hint, span, children }) {
   return (
-    <div>
+    <div className={span || ''}>
       <label className="text-[10px] font-bold uppercase tracking-wider
         text-sub-text">{label}</label>
       <div className="mt-1">{children}</div>
+      {hint && (
+        <div className="mt-1 text-[10px] text-sub-text">{hint}</div>
+      )}
+    </div>
+  );
+}
+
+// PreviewCard - shared chrome between the two side-by-side previews
+// (guest vs logged-in). The headline already has [Name] substituted
+// before it lands here; this component only handles the styling.
+function PreviewCard({ label, headline, subtitle, quote, dim }) {
+  return (
+    <div>
+      <div className="mb-1 text-[10px] font-bold uppercase
+        tracking-wider text-sub-text">{label}</div>
+      <div
+        className={`overflow-hidden rounded-2xl text-white shadow-sm ${
+          dim ? 'opacity-50' : ''}`}
+        style={{
+          background: 'linear-gradient(135deg, #2A1410 0%, '
+            + '#4a1212 45%, #7F2020 100%)',
+        }}>
+        <div className="relative px-5 py-4 sm:px-6 sm:py-5">
+          <span aria-hidden style={{
+            position: 'absolute', top: 8, right: 14,
+            fontSize: 14, opacity: 0.65,
+          }}>✦</span>
+          {subtitle && (
+            <div className="text-[11px] font-bold uppercase
+              tracking-widest text-[#D4A12A]">
+              {subtitle}
+            </div>
+          )}
+          <h3 className={`${subtitle ? 'mt-1' : ''}
+            text-lg font-bold sm:text-xl`}>
+            {headline}
+          </h3>
+          <p className="mt-2 max-w-xl text-sm leading-snug
+            text-white/90 sm:text-base">
+            {quote}
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
