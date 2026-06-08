@@ -1,205 +1,254 @@
-// Daily quote banner ("Hey, Cosmic Explorer" + a rotating quote of
-// the day). Lives at settings/dailyQuotes so it shares the same
+// Daily quote banner ("Hey, Cosmic Explorer" + a date-scheduled
+// quote). Lives at settings/dailyQuotes so it shares the same
 // admin-write / world-read rule as every other settings doc and pushes
 // live to the customer dashboard via onSnapshot.
 //
-// Document shape:
-//   enabled    boolean        - master toggle (default false). The
-//                              customer banner ONLY renders when this
-//                              is true; flipping the toggle is the
-//                              "show / hide" lever the operator asked
-//                              for.
-//   title      string         - greeting line (default
-//                              "Hey, Cosmic Explorer")
-//   subtitle   string         - small line above the quote (optional)
-//   quotes     string[]       - the pool. One is shown per calendar
-//                              day, picked deterministically by
-//                              dayOfYear % quotes.length so the same
-//                              quote shows the whole day across
-//                              devices but the choice rolls each
-//                              midnight.
-//   updatedAt  serverTimestamp
+// 2026-06-08: rewritten to be DATE-SCHEDULED. Each quote is pinned to
+// a specific IST calendar day (YYYY-MM-DD). The customer sees only
+// the quote whose date matches "today" in IST; if nothing is scheduled
+// for today the banner hides. CSV import / export uses the same
+// date,quote shape so the operator can plan a quarter of greetings
+// in a spreadsheet and upload it in one go.
 //
-// HARD RULE: NO HYPHENS OR DASHES inside a quote. The operator was
-// explicit about this; em-dashes are also a project-wide ban. We
-// sanitise on EVERY write so corrupt rows from CSV imports cannot
-// sneak past the UI.
+// Document shape:
+//   showMobile boolean
+//   showDesktop boolean
+//   enabled boolean        (legacy + convenience mirror)
+//   title string           - guest / no-name greeting
+//   titleAuthed string     - logged-in greeting; [Name] gets the
+//                           viewer's first name
+//   subtitle string        - optional kicker line
+//   quotes [{date, text}]  - the date-scheduled pool. Sorted asc
+//                           by date on every save.
+//   updatedAt serverTimestamp
+//
+// HARD RULES (carried from the earlier version):
+//   - NO HYPHENS / DASHES inside a quote (sanitised on every write)
+//   - Quotes are stored sanitised; em-dashes/hyphens get stripped
 
 import {
   doc, getDoc, setDoc, onSnapshot, serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '../firebase.js';
 
-export const DEFAULTS = {
-  // 2026-06-07: per-device toggles to match the home hero banner. Both
-  // default OFF so the card stays hidden until the operator opts in.
-  // The legacy `enabled` field is still honoured when reading older
-  // docs (true means both devices on; false means both off).
-  showMobile: false,
-  showDesktop: false,
-  enabled: false,
-  // Headline shown to GUESTS (no login) OR when the logged-in user
-  // has no name on file. The operator's brand line.
-  title: 'Hey, Cosmic Explorer',
-  // Headline shown to LOGGED-IN users with a name. Supports a
-  // [Name] placeholder which is substituted with the user's first
-  // name at render time. Example: "Welcome back, [Name]" becomes
-  // "Welcome back, Vicky". Empty => fall back to `title` for
-  // everyone (legacy behaviour).
-  titleAuthed: 'Hello, [Name]',
-  // Subtitle is optional (operator: "no need to specify as Quote for
-  // the day"). Customer banner hides the kicker line entirely when
-  // empty; admin can still type one in if they want a label later.
-  subtitle: '',
-  // 30 seed quotes - all positive, all cosmos / astrology themed,
-  // zero hyphens or dashes. Used when settings/dailyQuotes has no
-  // quotes array yet OR the operator clicks "Restore seed quotes".
-  quotes: [
-    'The universe noticed your return.',
-    'You have arrived when you needed to.',
-    'Another day, another sign to grow.',
-    'The stars made room for you today.',
-    'Today the cosmos quietly believes in you.',
-    'Something kind is on its way to you.',
-    'Your timing is wiser than you know.',
-    'The sky has plans for you today.',
-    'Small steps, blessed by big stars.',
-    'Even the moon waits patiently.',
-    'The light always finds its way home.',
-    'Today opens with you in mind.',
-    'The stars love a slow start too.',
-    'You are exactly where you are meant to be.',
-    'The cosmos is rooting for you quietly.',
-    'Trust the soft pull of this day.',
-    'The universe speaks first in stillness.',
-    'Your story is being written in stardust.',
-    'Something good is choosing you today.',
-    'A gentle day, by cosmic design.',
-    'The stars rearranged themselves for you.',
-    'Today carries a quiet kind of magic.',
-    'Your path is lit, even when you cannot see it.',
-    'The cosmos saved this moment for you.',
-    'Breathe. The universe has time.',
-    'New light arrives in old places today.',
-    'The stars say take it gently.',
-    'A small wonder waits in your day.',
-    'The universe is rearranging things in your favour.',
-    'You are right on time, by cosmic clock.',
-  ],
-};
+// ===== IST helpers =================================================
 
-// Strip every kind of dash + hyphen and collapse the whitespace. Used
-// on EVERY save (admin + CSV import) and also at render time as a
-// belt-and-braces guard.
+const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
+
+// Shift a Date by +5:30 then read the calendar day in UTC - that
+// gives us the IST calendar day regardless of the device timezone.
+export function istDateStr(d) {
+  const t = d instanceof Date ? d : new Date(d);
+  const shifted = new Date(t.getTime() + IST_OFFSET_MS);
+  const y = shifted.getUTCFullYear();
+  const m = String(shifted.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(shifted.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+export function istToday() { return istDateStr(new Date()); }
+
+// Add `n` days to a YYYY-MM-DD string (preserving the IST notion of
+// "calendar day").
+export function addDaysIst(dateStr, n) {
+  const m = String(dateStr || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return dateStr;
+  const t = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return istDateStr(new Date(t + Number(n || 0) * 86400000
+    - IST_OFFSET_MS));
+}
+
+// Strict YYYY-MM-DD validator.
+export function isValidDateStr(s) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s || '')) return false;
+  const [y, m, d] = s.split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return date.getUTCFullYear() === y
+    && date.getUTCMonth() + 1 === m
+    && date.getUTCDate() === d;
+}
+
+// ===== Quote sanitisation =========================================
+
+// Strip every kind of dash + hyphen and collapse the whitespace.
 export function sanitiseQuote(raw) {
   if (raw == null) return '';
   let s = String(raw).normalize('NFKC');
-  // En-dash, em-dash, minus, hyphen, soft-hyphen, non-breaking hyphen
-  // and other dash-family glyphs all become a single space. The class
-  // is enumerated by codepoint (no ranges) so a stray character order
-  // can't make the regex unparseable.
+  // Enumerate dash codepoints (no regex range so the class is always
+  // parseable): hyphen-minus, soft-hyphen, hyphen, non-breaking
+  // hyphen, figure dash, en dash, em dash, horizontal bar, hyphen
+  // bullet, minus, two-em dash, three-em dash.
   s = s.replace(/[-­‐‑‒–—―⁃−⸺⸻]/g, ' ');
-  // Collapse runs of whitespace + trim.
   s = s.replace(/\s+/g, ' ').trim();
-  // Strip wrapping quotation marks the operator might have pasted.
   s = s.replace(/^["'“”‘’]+/, '');
   s = s.replace(/["'“”‘’]+$/, '');
   return s;
 }
 
-// True when the raw input would survive the sanitiser AND be non-empty.
-// Used by the admin form to disable Add until the operator has typed
-// something real.
 export function isValidQuote(raw) {
   return sanitiseQuote(raw).length > 0;
 }
 
-// Normalise a Firestore doc into the shape the UI expects.
-//   - showMobile / showDesktop are the new per-device toggles
-//   - legacy docs that only carry `enabled` get migrated on the fly
-//     (true -> both on, false -> both off) so a flip in the admin
-//     never silently regresses what the customer used to see
+// ===== Defaults (seed) =============================================
+//
+// Seed pool used the very first time the doc is empty. Dates are
+// assigned at hydrate time starting from "today" so an operator who
+// has never touched the admin still sees a usable pre-populated list.
+const SEED_TEXTS = [
+  'The universe noticed your return.',
+  'You have arrived when you needed to.',
+  'Another day, another sign to grow.',
+  'The stars made room for you today.',
+  'Today the cosmos quietly believes in you.',
+  'Something kind is on its way to you.',
+  'Your timing is wiser than you know.',
+  'The sky has plans for you today.',
+  'Small steps, blessed by big stars.',
+  'Even the moon waits patiently.',
+  'The light always finds its way home.',
+  'Today opens with you in mind.',
+  'The stars love a slow start too.',
+  'You are exactly where you are meant to be.',
+  'The cosmos is rooting for you quietly.',
+  'Trust the soft pull of this day.',
+  'The universe speaks first in stillness.',
+  'Your story is being written in stardust.',
+  'Something good is choosing you today.',
+  'A gentle day, by cosmic design.',
+  'The stars rearranged themselves for you.',
+  'Today carries a quiet kind of magic.',
+  'Your path is lit, even when you cannot see it.',
+  'The cosmos saved this moment for you.',
+  'Breathe. The universe has time.',
+  'New light arrives in old places today.',
+  'The stars say take it gently.',
+  'A small wonder waits in your day.',
+  'The universe is rearranging things in your favour.',
+  'You are right on time, by cosmic clock.',
+];
+
+export const DEFAULTS = {
+  showMobile: false,
+  showDesktop: false,
+  enabled: false,
+  title: 'Hey, Cosmic Explorer',
+  titleAuthed: 'Hello, [Name]',
+  subtitle: '',
+  // Note: the seed entries are GENERATED in hydrate() with live dates,
+  // not baked here, so the first-time pool always starts at today.
+  quotes: [],
+};
+
+// Generate seed entries with sequential IST dates starting today.
+function seedEntries() {
+  const today = istToday();
+  return SEED_TEXTS.map((text, i) => ({
+    date: addDaysIst(today, i),
+    text,
+  }));
+}
+
+// ===== Hydrate (read) =============================================
+
 function hydrate(d) {
   const hasNew = (d.showMobile != null || d.showDesktop != null);
+  // Quote normalisation: accept the legacy string[] shape (older docs
+  // wrote a flat list) AND the new {date, text}[] shape. Legacy items
+  // get sequential IST dates assigned starting today so they remain
+  // usable until the operator re-organises them.
+  let entries = [];
+  if (Array.isArray(d.quotes) && d.quotes.length > 0) {
+    const first = d.quotes[0];
+    if (typeof first === 'string') {
+      const today = istToday();
+      entries = d.quotes.map((text, i) => ({
+        date: addDaysIst(today, i),
+        text: sanitiseQuote(text),
+      })).filter((e) => e.text);
+    } else if (first && typeof first === 'object') {
+      entries = d.quotes.map((e) => ({
+        date: String((e && e.date) || ''),
+        text: sanitiseQuote((e && e.text) || ''),
+      })).filter((e) => isValidDateStr(e.date) && e.text);
+    }
+  } else {
+    entries = seedEntries();
+  }
+  entries.sort((a, b) => a.date.localeCompare(b.date));
   return {
     showMobile: hasNew ? !!d.showMobile : !!d.enabled,
     showDesktop: hasNew ? !!d.showDesktop : !!d.enabled,
-    // Keep enabled as a convenience mirror so other call sites that
-    // only care about "is it on anywhere" can keep working.
     enabled: hasNew
       ? (!!d.showMobile || !!d.showDesktop)
       : !!d.enabled,
     title: d.title || DEFAULTS.title,
-    // titleAuthed is OPTIONAL. Default-empty for older docs so the
-    // legacy behaviour ("Hey, Cosmic Explorer" for everyone) stays
-    // intact until the operator explicitly fills the new field.
-    titleAuthed: d.titleAuthed != null ? d.titleAuthed
-      : '',
+    titleAuthed: d.titleAuthed != null ? d.titleAuthed : '',
     subtitle: d.subtitle || DEFAULTS.subtitle,
-    quotes: Array.isArray(d.quotes) && d.quotes.length
-      ? d.quotes.map(sanitiseQuote).filter(Boolean)
-      : [...DEFAULTS.quotes],
+    quotes: entries,
   };
 }
 
-// Resolve the headline for a given viewer. Substitutes [Name] with
-// the user's first name when:
-//   1) titleAuthed is set
-//   2) the viewer is logged in AND has a usable name
-// Falls back to `title` (the guest greeting) otherwise.
-export function resolveTitle(state, profile) {
-  const t = state || {};
-  const authed = (t.titleAuthed || '').trim();
-  const name = (profile && profile.name) ? String(profile.name).trim() : '';
-  if (!authed || !name) return t.title || DEFAULTS.title;
-  const first = name.split(/\s+/)[0] || name;
-  return authed.replace(/\[Name\]/gi, first);
-}
+// ===== Reads ======================================================
 
-// Public read.
 export async function getDailyQuotes() {
   try {
     const s = await getDoc(doc(db, 'settings', 'dailyQuotes'));
-    if (!s.exists()) return { ...DEFAULTS };
+    if (!s.exists()) return hydrate({});
     return hydrate(s.data() || {});
   } catch (_) {
-    return { ...DEFAULTS };
+    return hydrate({});
   }
 }
 
 export function listenDailyQuotes(cb) {
   return onSnapshot(doc(db, 'settings', 'dailyQuotes'), (s) => {
     cb(hydrate(s.exists() ? (s.data() || {}) : {}));
-  }, () => cb({ ...DEFAULTS }));
+  }, () => cb(hydrate({})));
 }
 
-// Admin write. Sanitises every quote, dedupes case-insensitively, and
-// keeps a stable order so removing one doesn't reshuffle the day's
-// pick for users who haven't refreshed yet.
+// Resolve the headline for a given viewer. Substitutes [Name] with
+// the viewer's first name when titleAuthed is set AND the viewer is
+// logged in with a usable name.
+export function resolveTitle(state, profile) {
+  const t = state || {};
+  const authed = (t.titleAuthed || '').trim();
+  const name = (profile && profile.name)
+    ? String(profile.name).trim() : '';
+  if (!authed || !name) return t.title || DEFAULTS.title;
+  const first = name.split(/\s+/)[0] || name;
+  return authed.replace(/\[Name\]/gi, first);
+}
+
+// Today's quote in IST. Returns '' when no entry matches - the
+// customer banner hides itself in that case.
+export function quoteForToday(entries, today) {
+  const t = today || istToday();
+  const match = (entries || []).find((e) => e && e.date === t);
+  return match ? match.text : '';
+}
+
+// ===== Writes ======================================================
+
 export async function saveDailyQuotes(state) {
-  const cleaned = [];
-  const seen = new Set();
-  (Array.isArray(state.quotes) ? state.quotes : []).forEach((q) => {
-    const s = sanitiseQuote(q);
-    if (!s) return;
-    const key = s.toLowerCase();
-    if (seen.has(key)) return;
-    seen.add(key);
-    cleaned.push(s);
+  // Sanitise + dedupe by date. Two entries with the same date keep
+  // the LAST one (so an operator can override an earlier one by
+  // re-adding the same date).
+  const byDate = new Map();
+  (Array.isArray(state.quotes) ? state.quotes : []).forEach((e) => {
+    if (!e || !isValidDateStr(e.date)) return;
+    const text = sanitiseQuote(e.text || '');
+    if (!text) return;
+    byDate.set(e.date, { date: e.date, text });
   });
+  const cleaned = Array.from(byDate.values())
+    .sort((a, b) => a.date.localeCompare(b.date));
   const showMobile = !!state.showMobile;
   const showDesktop = !!state.showDesktop;
   await setDoc(doc(db, 'settings', 'dailyQuotes'), {
     showMobile,
     showDesktop,
-    // enabled stays in the doc as a convenience mirror so older
-    // readers (or any cron / relay code that checks "is it on")
-    // see a single boolean. True iff either device is on.
     enabled: showMobile || showDesktop,
     title: sanitiseQuote(state.title) || DEFAULTS.title,
-    // titleAuthed runs through the same dash sanitiser as the
-    // quotes; preserve [Name] placeholder (the bracket-syntax has no
-    // dashes so the sanitiser leaves it intact).
     titleAuthed: sanitiseQuote(state.titleAuthed || ''),
     subtitle: sanitiseQuote(state.subtitle) || '',
     quotes: cleaned,
@@ -208,28 +257,49 @@ export async function saveDailyQuotes(state) {
   return cleaned.length;
 }
 
-// Day of the year (1..366) - stable for the user's local midnight.
-export function dayOfYear(date) {
-  const d = date instanceof Date ? date : new Date();
-  const start = new Date(d.getFullYear(), 0, 0);
-  const diff = d - start;
-  return Math.floor(diff / (1000 * 60 * 60 * 24));
+// ===== CSV import / export =========================================
+
+function csvEscape(v) {
+  const s = String(v == null ? '' : v);
+  if (s.includes(',') || s.includes('"') || s.includes('\n')
+    || s.includes('\r')) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
 }
 
-// The quote for today, picked deterministically from the pool. Falls
-// back to a constant when the pool is empty.
-export function quoteForToday(quotes, when) {
-  const pool = (quotes || []).filter(Boolean);
-  if (pool.length === 0) return DEFAULTS.quotes[0];
-  return pool[dayOfYear(when) % pool.length];
+// Serialise the current schedule as CSV. Header row first.
+export function serializeCsv(entries) {
+  const rows = [['date', 'quote']];
+  (entries || []).forEach((e) => {
+    if (e && isValidDateStr(e.date) && e.text) {
+      rows.push([e.date, e.text]);
+    }
+  });
+  return rows.map((r) => r.map(csvEscape).join(',')).join('\n') + '\n';
 }
 
-// CSV parser tuned for the simple cases we expect:
-//   - one quote per line (the common case)
-//   - one quote per row in a single-column CSV
-//   - first column of a multi-column CSV
-// Handles double-quote escaping per RFC 4180 (".." -> "). Lines that
-// reduce to an empty / invalid quote after sanitisation are dropped.
+// Sample CSV the operator can grab as a starting point. Three rows,
+// dated today + tomorrow + day-after, so they can edit and re-upload
+// without manually computing dates.
+export function templateCsv() {
+  const t = istToday();
+  return serializeCsv([
+    { date: t, text: 'The universe noticed your return.' },
+    { date: addDaysIst(t, 1),
+      text: 'Another day, another sign to grow.' },
+    { date: addDaysIst(t, 2),
+      text: 'Small steps, blessed by big stars.' },
+  ]);
+}
+
+// Parse CSV into [{date, text}]. Accepts:
+//   - header row "date,quote" OR "quote,date" (order auto-detected)
+//   - no header (in which case we try to detect: a YYYY-MM-DD in the
+//     first row's first column means date,quote; in the second column
+//     means quote,date; anything else falls back to date,quote and
+//     rows with invalid dates are dropped)
+//   - extra columns are ignored
 export function parseQuotesCsv(text) {
   if (!text) return [];
   const rows = [];
@@ -251,23 +321,45 @@ export function parseQuotesCsv(text) {
       if (cur.length > 0 || row.length > 0) {
         row.push(cur); rows.push(row); row = []; cur = '';
       }
-      // Eat a CRLF as a single line break.
       if (ch === '\r' && text[i + 1] === '\n') i += 1;
       continue;
     }
     cur += ch;
   }
-  if (cur.length > 0 || row.length > 0) {
-    row.push(cur); rows.push(row);
+  if (cur.length > 0 || row.length > 0) { row.push(cur); rows.push(row); }
+  if (rows.length === 0) return [];
+
+  // Detect column order from header or first row.
+  let dateIdx = 0;
+  let textIdx = 1;
+  let startAt = 0;
+  const head = rows[0].map((c) => String(c || '').trim().toLowerCase());
+  const hasHeader = head.some((c) => c === 'date' || c === 'quote'
+    || c === 'quotes' || c === 'text');
+  if (hasHeader) {
+    startAt = 1;
+    const dh = head.indexOf('date');
+    const qh = head.indexOf('quote') !== -1
+      ? head.indexOf('quote')
+      : (head.indexOf('quotes') !== -1
+        ? head.indexOf('quotes') : head.indexOf('text'));
+    if (dh !== -1 && qh !== -1) { dateIdx = dh; textIdx = qh; }
+  } else if (rows[0].length >= 2) {
+    // Auto-detect: which column looks like a date.
+    if (isValidDateStr(String(rows[0][1] || '').trim())) {
+      dateIdx = 1; textIdx = 0;
+    }
   }
+
   const out = [];
-  rows.forEach((r) => {
-    const first = (r[0] || '').trim();
-    if (!first) return;
-    // Skip a likely header row.
-    if (/^quote$/i.test(first) || /^quotes$/i.test(first)) return;
-    const s = sanitiseQuote(first);
-    if (s) out.push(s);
-  });
+  for (let r = startAt; r < rows.length; r += 1) {
+    const cells = rows[r];
+    const dateRaw = String(cells[dateIdx] || '').trim();
+    const textRaw = String(cells[textIdx] || '').trim();
+    if (!isValidDateStr(dateRaw)) continue;
+    const clean = sanitiseQuote(textRaw);
+    if (!clean) continue;
+    out.push({ date: dateRaw, text: clean });
+  }
   return out;
 }

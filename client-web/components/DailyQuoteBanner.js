@@ -24,10 +24,14 @@ export default function DailyQuoteBanner() {
   const showMobile = state.showMobile !== false && !!state.showMobile;
   const showDesktop = state.showDesktop !== false && !!state.showDesktop;
   if (!showMobile && !showDesktop) return null;
+  // 2026-06-08: quotes are now scheduled per IST date. If nothing is
+  // pinned to today, hide the banner outright - we never show a
+  // random fallback (the operator either scheduled today or they
+  // didn't).
+  const quote = dailyQuoteService.quoteForToday(state.quotes);
+  if (!quote) return null;
   const visibility = showMobile && showDesktop ? ''
     : showMobile ? 'md:hidden' : 'hidden md:block';
-  const quote = dailyQuoteService.quoteForToday(state.quotes,
-    new Date());
   return (
     <div
       className={`mt-4 overflow-hidden rounded-2xl text-white shadow-sm
