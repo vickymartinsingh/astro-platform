@@ -355,7 +355,12 @@ export default function AdminSessions() {
                       {showName && (
                         <div className="text-[10px] font-bold
                           text-primary">
-                          {names[mon.astroId] || 'Astrologer'}
+                          {/* names[id] is {name, code} - render via nm()
+                              which returns a string. Rendering the raw
+                              object crashes React with error #31
+                              (operator screenshot 2026-06-08). */}
+                          {mon.astroId
+                            ? nm(mon.astroId) : 'Astrologer'}
                         </div>
                       )}
                       <div className="whitespace-pre-line">
