@@ -2711,13 +2711,62 @@ async function _handleSweepPendingInner(req, res) {
   _lastSweepMs = _now;
 
   const db = admin.firestore();
+
+  // ----------------------------------------------------------------
+  // Global Firestore sweep lock.
+  // The in-memory gate above only helps within the same warm Vercel
+  // function instance. Different users on different devices each hit
+  // their own cold-start instance (fresh _lastSweepMs = 0), so all
+  // of them would run the expensive 25-doc collectionGroup query.
+  //
+  // This lock stores the last sweep timestamp in Firestore itself
+  // (_system/sweepState.lastSweepAt). Every incoming sweep call
+  // reads that 1 doc first (1 Firestore read). If the lock is fresh
+  // (<4 min) the call returns immediately - no 25-doc scan, no cost.
+  // Only the first call that sees an expired lock actually runs the
+  // scan and updates the timestamp.
+  //
+  // Quota impact with 10 active users sweeping every 15 min:
+  //   Lock reads:   10 users x 96 calls/day     =   960 reads/day
+  //   Actual scans: 1 per 4-min window x 25 docs = 9 000 reads/day
+  //   Total:                                     ~ 9 960 reads/day
+  // (Spark plan limit is 50 000/day - this stays well under even
+  //  with 40+ concurrent users.)
+  // ----------------------------------------------------------------
+  let stateSnap = null;
+  try {
+    stateSnap = await db.collection('_system').doc('sweepState').get();
+  } catch (_) { /* if the read fails just continue with the sweep */ }
+  if (stateSnap && stateSnap.exists) {
+    const raw = (stateSnap.data() || {}).lastSweepAt;
+    const ms = raw
+      ? (typeof raw.toMillis === 'function' ? raw.toMillis() : +raw)
+      : 0;
+    if (_now - ms < _SWEEP_GATE_MS) {
+      return res.status(200).json({
+        ok: true,
+        checked: 0,
+        ready: 0,
+        failed: 0,
+        stillGenerating: 0,
+        errors: [],
+        scanned: 0,
+        note: 'Sweep skipped - ran recently (global lock).',
+      });
+    }
+  }
+  // Stamp the lock BEFORE running the sweep (best-effort, no await).
+  db.collection('_system').doc('sweepState').set(
+    { lastSweepAt: admin.firestore.FieldValue.serverTimestamp() },
+    { merge: true },
+  ).catch(() => {});
+
   // collectionGroup query. Every creation path (free / paid /
   // prepaid / regenerate) explicitly sets paidAt = serverTimestamp(),
-  // so orderBy('paidAt') catches every pending order regardless
-  // of payment state. The 'paidAt' field is somewhat misnamed for
-  // free orders but it works as the universal "created at" timestamp.
+  // so the query catches every pending order regardless of payment
+  // state.
   //
-  // Status filter (in-memory after fetching) now catches ALL of:
+  // Status filter (in-memory after fetching) catches ALL of:
   //   paid_generating       customer paid, waiting for PDF
   //   free_generating       free auto-gen still running
   //   prepaid_generating    pre-paid pipeline still running
@@ -2725,25 +2774,18 @@ async function _handleSweepPendingInner(req, res) {
   //   failed_refunded       relay refunded too early - rescue
   //   ANY status w/ kickoffPending:true   initial POST aborted
   //
-  // The handleReportStatus delegate handles each state correctly:
-  //  - *_generating: polls AstroSeer status, fetches PDF on 'sent'
-  //  - failed*: same rescue path (delivers PDF as goodwill, keeps
-  //    refund in place if any)
-  //  - kickoffPending: re-POSTs /api/orders/log to wake the API
   // No orderBy: collection-group queries against `orders` need a
-  // COLLECTION_GROUP_ASC/DESC index in Firestore to use ANY field
-  // (including orderBy('__name__','desc')) - that index is NOT auto-
-  // created. The naked query uses the implicit __name__ ASC order
-  // which doesn't need an exemption, so it works out of the box.
-  // We pull a generous 500-doc batch and filter in memory.
-  // Cap dropped from 500 -> 100 on 2026-05-29 to protect Firestore
-  // read quota. With this batch size + the 5-minute client cadence
-  // the sweep burns ~28K reads/day (well under Spark's 50K). Once
-  // the API->relay webhook env vars are set, the sweep is purely a
-  // safety net for orders that miss the push notification anyway.
+  // COLLECTION_GROUP_ASC/DESC index to use ANY field - that index
+  // is NOT auto-created. The naked query uses implicit __name__ ASC
+  // which works out of the box.
+  //
+  // Batch size cut from 100 -> 25 on 2026-06-11. The AstroSeer
+  // webhook handles most completions; the sweep is a fallback for
+  // orders that miss the webhook. 25 docs is plenty for that safety
+  // net while further reducing per-sweep Firestore reads by 4x.
   let snap;
   try {
-    snap = await db.collectionGroup('orders').limit(100).get();
+    snap = await db.collectionGroup('orders').limit(25).get();
   } catch (e) {
     return res.status(500).json({
       error: 'collectionGroup query failed',
