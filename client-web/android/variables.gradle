@@ -1,6 +1,11 @@
 ext {
-    // 2026-06-08: kept minSdk at 24 (Cordova requires it). See
-    // client-web/android/variables.gradle for the full rationale.
+    // 2026-06-08: kept minSdk at 24 - Cordova framework 14.0.1
+    // bundled with Capacitor refuses minSdk < 24, so 23 fails to
+    // build. Android 7.0+ still covers ~95% of active devices on
+    // Play. The "not compatible" report we got is more likely a
+    // Play Store cache / device-specific issue; users on Android
+    // 6 (rare) would need a separate older-build pipeline if we
+    // ever want to support them.
     minSdkVersion = 24
     compileSdkVersion = 36
     targetSdkVersion = 36

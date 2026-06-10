@@ -152,21 +152,25 @@ function seedEntries() {
 
 function hydrate(d) {
   const hasNew = (d.showMobile != null || d.showDesktop != null);
-  // Quote normalisation: accept the legacy string[] shape (older docs
-  // wrote a flat list) AND the new {date, text}[] shape. Legacy items
-  // get sequential IST dates assigned starting today so they remain
-  // usable until the operator re-organises them.
+  // The authoritative dated list lives at `schedule` (new code). When
+  // present it ALWAYS wins. `quotes` is kept around for v1.0.102
+  // back-compat: a flat string[] of texts only.
   let entries = [];
-  if (Array.isArray(d.quotes) && d.quotes.length > 0) {
-    const first = d.quotes[0];
+  const raw = Array.isArray(d.schedule) && d.schedule.length
+    ? d.schedule
+    : (Array.isArray(d.quotes) ? d.quotes : []);
+  if (raw.length > 0) {
+    const first = raw[0];
     if (typeof first === 'string') {
+      // Legacy string[] - assign sequential IST dates starting today
+      // so the customer still sees a usable rotation in memory.
       const today = istToday();
-      entries = d.quotes.map((text, i) => ({
+      entries = raw.map((text, i) => ({
         date: addDaysIst(today, i),
         text: sanitiseQuote(text),
       })).filter((e) => e.text);
     } else if (first && typeof first === 'object') {
-      entries = d.quotes.map((e) => ({
+      entries = raw.map((e) => ({
         date: String((e && e.date) || ''),
         text: sanitiseQuote((e && e.text) || ''),
       })).filter((e) => isValidDateStr(e.date) && e.text);
@@ -212,8 +216,14 @@ export function listenDailyQuotes(cb) {
 export function resolveTitle(state, profile) {
   const t = state || {};
   const authed = (t.titleAuthed || '').trim();
-  const name = (profile && profile.name)
-    ? String(profile.name).trim() : '';
+  // Defensive: profile.name MUST be a string. Operator screenshot
+  // 2026-06-08 showed "(object Object)" after login on some devices,
+  // which happens when an upstream migration writes profile.name as
+  // an object (e.g. {first, last}). String(obj) = "[object Object]"
+  // which would have produced a broken greeting. Now we coerce only
+  // when typeof string and bail out to the guest title otherwise.
+  const rawName = profile && profile.name;
+  const name = typeof rawName === 'string' ? rawName.trim() : '';
   if (!authed || !name) return t.title || DEFAULTS.title;
   const first = name.split(/\s+/)[0] || name;
   return authed.replace(/\[Name\]/gi, first);
@@ -244,6 +254,22 @@ export async function saveDailyQuotes(state) {
     .sort((a, b) => a.date.localeCompare(b.date));
   const showMobile = !!state.showMobile;
   const showDesktop = !!state.showDesktop;
+  // 2026-06-08: legacy mirror for v1.0.102 customers.
+  // The old reader treats settings/dailyQuotes.quotes as a flat
+  // string[] and runs sanitiseQuote on every entry. Passing the new
+  // {date,text} objects to that reader stringifies each one to
+  // "[object Object]" (operator screenshot: "Hey Cosmic Explorer
+  // (object Object)"). To stop that regression on already-shipped
+  // apps WITHOUT a forced upgrade, we write `quotes` as a plain
+  // string array of upcoming texts (today first, then chronologically
+  // forward, then any past tail). Newer code reads `schedule`
+  // instead (set below) so the two views never diverge.
+  const today = istToday();
+  const upcoming = cleaned.filter((e) => e.date >= today)
+    .map((e) => e.text);
+  const past = cleaned.filter((e) => e.date < today)
+    .map((e) => e.text);
+  const legacyQuotes = upcoming.concat(past);
   await setDoc(doc(db, 'settings', 'dailyQuotes'), {
     showMobile,
     showDesktop,
@@ -251,7 +277,10 @@ export async function saveDailyQuotes(state) {
     title: sanitiseQuote(state.title) || DEFAULTS.title,
     titleAuthed: sanitiseQuote(state.titleAuthed || ''),
     subtitle: sanitiseQuote(state.subtitle) || '',
-    quotes: cleaned,
+    // Authoritative scheduled list (new code reads from `schedule`)
+    schedule: cleaned,
+    // Legacy back-compat for v1.0.102 readers
+    quotes: legacyQuotes,
     updatedAt: serverTimestamp(),
   }, { merge: true });
   return cleaned.length;
