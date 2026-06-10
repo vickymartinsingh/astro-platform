@@ -35,6 +35,24 @@ const {
   logAstroSeerEvent, birthSummaryFromProfile,
 } = require('./astroseerLog');
 
+// ----------------------------------------------------------------
+// Server-side sweep gate.
+// The sweepPending collectionGroup query reads up to 100 Firestore
+// docs per call. With multiple browser tabs open across multiple
+// users, every tab triggers a sweep independently every 5 minutes,
+// multiplying the reads far beyond Spark's 50K/day limit.
+//
+// This module-level timestamp ensures that even if the same warm
+// Vercel function instance receives several concurrent sweep calls,
+// only the FIRST one in each 4-minute window actually runs the
+// expensive Firestore query. Subsequent calls return instantly with
+// a "skipped" response. Cold-start instances reset to 0, but that
+// is fine - we accept at most one real sweep per warm instance per
+// 4 minutes, not a strict global cap.
+// ----------------------------------------------------------------
+let _lastSweepMs = 0;
+const _SWEEP_GATE_MS = 4 * 60 * 1000; // 4 minutes
+
 function init() {
   if (admin.apps.length) return;
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
@@ -926,13 +944,17 @@ async function handleReport(req, res) {
       res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
     } catch (_) { /* */ }
+    // Do not include the raw gRPC / Firestore error string in
+    // `detail` for quota errors - it produces the ugly
+    // "...Please try again in a few minutes.: 8 RESOURCE_EXHAUSTED:
+    // Quota exceeded." message the frontend concatenates directly.
+    const _isQuota = /quota/i.test(msg);
     return res.status(503).json({
       ok: false,
-      error: /quota/i.test(msg)
-        ? 'Report service is at quota right now. Please try again '
-          + 'in a few minutes.'
+      error: _isQuota
+        ? 'Report service is temporarily unavailable. Please try again in a few minutes.'
         : `Report service hiccup: ${msg.slice(0, 200)}`,
-      detail: msg.slice(0, 500),
+      detail: _isQuota ? '' : msg.slice(0, 500),
     });
   }
 }
@@ -2666,6 +2688,28 @@ async function _handleSweepPendingInner(req, res) {
     return res.status(503).json({
       error: String((e && e.message) || e) });
   }
+  // Server-side gate: skip the expensive collectionGroup query if
+  // this warm function instance ran a sweep recently. Multiple tabs
+  // across multiple users all call sweepPending - without this gate
+  // every call burns 100 Firestore reads, easily exceeding the
+  // Spark 50K/day quota within hours. The client also has a
+  // localStorage gate (below) but we defend here too since we
+  // cannot trust all client versions to be up-to-date.
+  const _now = Date.now();
+  if (_now - _lastSweepMs < _SWEEP_GATE_MS) {
+    return res.status(200).json({
+      ok: true,
+      checked: 0,
+      ready: 0,
+      failed: 0,
+      stillGenerating: 0,
+      errors: [],
+      scanned: 0,
+      note: 'Sweep skipped - ran recently on this instance.',
+    });
+  }
+  _lastSweepMs = _now;
+
   const db = admin.firestore();
   // collectionGroup query. Every creation path (free / paid /
   // prepaid / regenerate) explicitly sets paidAt = serverTimestamp(),
