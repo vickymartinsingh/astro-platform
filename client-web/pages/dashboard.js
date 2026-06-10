@@ -19,19 +19,21 @@ import { Icon } from '../components/Icons';
 // Same visual language as the "Browse by category" icons (stroke-only,
 // no emoji, colour = currentColor so the maroon theme applies naturally).
 const TILE_ICON_MAP = {
-  learn_astrology:   Icon.LearnAstrology,
-  vedic_astrology:   Icon.VedicAstrology,
-  quiz_game:         Icon.QuizGame,
-  manifestation:     Icon.Manifestation,
-  astro_comic:       Icon.AstroComic,
-  tarot_learning:    Icon.TarotLearning,
-  numerology_basics: Icon.NumerologyBasics,
-  crystal_guide:     Icon.CrystalGuide,
-  gemstone_guide:    Icon.Gemstone,
-  daily_rituals:     Icon.DailyRituals,
-  palm_reading:      Icon.PalmReading,
-  face_reading:      Icon.FaceReading,
-  understanding:     Icon.Understanding,
+  learn_astrology:      Icon.LearnAstrology,
+  vedic_astrology:      Icon.VedicAstrology,
+  quiz_game:            Icon.QuizGame,
+  manifestation:        Icon.Manifestation,
+  astro_comic:          Icon.AstroComic,
+  tarot_learning:       Icon.TarotLearning,
+  numerology_basics:    Icon.NumerologyBasics,
+  crystal_guide:        Icon.CrystalGuide,
+  gemstone_guide:       Icon.Gemstone,
+  daily_rituals:        Icon.DailyRituals,
+  palm_reading:         Icon.PalmReading,
+  face_reading:         Icon.FaceReading,
+  chakra_healing:       Icon.Star,
+  zodiac_compatibility: Icon.Star,
+  understanding:        Icon.Understanding,
   // type-level fallbacks
   learn:    Icon.LearnAstrology,
   quiz:     Icon.QuizGame,
@@ -39,6 +41,27 @@ const TILE_ICON_MAP = {
   comic:    Icon.AstroComic,
   tarot:    Icon.TarotLearning,
 };
+
+// Sum of all earnable points across all lessons / questions in a tile.
+function calcTileMaxPoints(tile) {
+  if (tile.type === 'learn' || !tile.type) {
+    const ls = tile.content?.lessons || [];
+    return ls.reduce((s, l) => s + (l.points || tile.pointsPerActivity || 10), 0);
+  }
+  if (tile.type === 'quiz') {
+    const qs = tile.content?.questions || [];
+    return qs.reduce((s, q) => s + (q.points || tile.pointsPerActivity || 15), 0);
+  }
+  if (tile.type === 'manifest') {
+    const as = tile.content?.affirmations || [];
+    return as.reduce((s, a) => s + (a.points || tile.pointsPerActivity || 5), 0);
+  }
+  if (tile.type === 'tarot') {
+    const cs = tile.content?.cards || [];
+    return cs.reduce((s, c) => s + (c.points || tile.pointsPerActivity || 10), 0);
+  }
+  return tile.pointsPerActivity || 0;
+}
 import { DateField } from '../components/BirthInputs';
 import { useOptionalClient } from '../lib/useAuth';
 import { useAstroActions } from '../lib/useAstroActions';
@@ -105,7 +128,11 @@ export default function Dashboard() {
   const [catLabels, setCatLabels] = useState({}); // key -> label
   const [txt, setTxt] = useState({}); // content.text overrides (Dev 2.0)
   const [engTiles, setEngTiles] = useState([]);
+  const [pointsCfg, setPointsCfg] = useState(null);
   const [userPoints, setUserPoints] = useState(null);
+  const [showPointsFaq, setShowPointsFaq] = useState(false);
+  const [dcDone, setDcDone] = useState(false);
+  const [dcAvail, setDcAvail] = useState(false);
   // Editable copy: admin override (settings/content.text[key]) or default.
   const T = (k, d) => (txt && txt[k] != null && txt[k] !== ''
     ? txt[k] : d);
@@ -179,16 +206,25 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    engagementService.getEngagementConfig().then(({ tiles }) =>
-      setEngTiles((tiles || []).filter(t => t.enabled).sort((a, b) => a.order - b.order))
-    ).catch(() => {});
+    engagementService.getEngagementConfig().then(({ tiles, pointsConfig }) => {
+      setEngTiles((tiles || []).filter((t) => t.enabled).sort((a, b) => a.order - b.order));
+      setPointsCfg(pointsConfig || null);
+    }).catch(() => {});
+    // Daily challenge availability (no user needed for existence check)
+    engagementService.getTodayChallenge().then((ch) => {
+      if (ch && (ch.questions || []).length > 0) setDcAvail(true);
+    }).catch(() => {});
   }, []);
   useEffect(() => {
     if (!user) return;
     engagementService.getUserPoints(user.uid)
       .then((d) => setUserPoints((d?.total || 0) - (d?.redeemed || 0)))
       .catch(() => setUserPoints(0));
-  }, [user]);
+    const today = new Date().toISOString().slice(0, 10);
+    engagementService.getDailyChallengeProgress(user.uid, today)
+      .then((p) => { if (p && p.completed) setDcDone(true); })
+      .catch(() => {});
+  }, [user?.uid]);
 
   const revRef = useRef(null);
   const revStep = (dir) => {
@@ -560,7 +596,54 @@ export default function Dashboard() {
       )}
 
       {sec.engagement !== false && engTiles.length > 0 && (
-      <><div className="mb-3 mt-8 flex items-center justify-between">
+      <>
+      {/* Points FAQ modal */}
+      {showPointsFaq && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center
+          bg-black/40 p-4 sm:items-center"
+          onClick={() => setShowPointsFaq(false)}>
+          <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-base font-bold" style={{ color: '#7F2020' }}>
+                Points and Wallet
+              </h3>
+              <button type="button" onClick={() => setShowPointsFaq(false)}
+                className="text-gray-400 text-xl leading-none">&times;</button>
+            </div>
+            <div className="space-y-3 text-sm text-gray-700">
+              <div className="rounded-lg bg-amber-50 p-3">
+                <div className="font-bold text-amber-800">How to earn points</div>
+                <p className="mt-1 text-xs">Complete lessons, answer quiz questions correctly, and finish daily challenges. Points are awarded only for correct answers.</p>
+              </div>
+              <div className="rounded-lg bg-green-50 p-3">
+                <div className="font-bold text-green-800">Converting to wallet</div>
+                <p className="mt-1 text-xs">
+                  {pointsCfg
+                    ? `${(pointsCfg.pointsToInr || 10000).toLocaleString()} points = &#8377;100 wallet credit. Minimum redemption: &#8377;${pointsCfg.minRedemptionInr || 100}.`
+                    : '10,000 points = &#8377;100 wallet credit. Minimum redemption: &#8377;100.'}
+                </p>
+              </div>
+              <div className="rounded-lg bg-blue-50 p-3">
+                <div className="font-bold text-blue-800">Daily Challenge</div>
+                <p className="mt-1 text-xs">Answer 5 astrology questions every day. Earn up to 50 bonus points daily. Challenges reset at midnight.</p>
+              </div>
+              <div className="rounded-lg bg-gray-50 p-3">
+                <div className="font-bold text-gray-700">Redeeming points</div>
+                <p className="mt-1 text-xs">Go to the Points page, enter the number of points you want to redeem, and the equivalent amount will be added to your wallet instantly.</p>
+              </div>
+            </div>
+            <Link href="/points"
+              className="mt-4 block w-full rounded-lg py-2.5 text-center
+                text-sm font-bold text-white"
+              style={{ backgroundColor: '#7F2020' }}
+              onClick={() => setShowPointsFaq(false)}>
+              View my points
+            </Link>
+          </div>
+        </div>
+      )}
+      <div className="mb-3 mt-8 flex items-center justify-between">
         <h2 className="text-lg font-bold">
           {T('home.engageTitle', 'Learn & Earn')}</h2>
         <div className="flex items-center gap-2">
@@ -571,27 +654,41 @@ export default function Dashboard() {
               {userPoints.toLocaleString()} pts
             </Link>
           )}
-          <span className="rounded-full px-2 py-0.5 text-xs font-semibold"
-            style={{ backgroundColor: '#FFF8E7', color: '#D4A12A' }}>
-            Earn up to {engTiles.reduce((s, t) => s + (t.pointsPerActivity || 0), 0)} pts
-          </span>
+          <button type="button" onClick={() => setShowPointsFaq(true)}
+            className="rounded-full px-2 py-0.5 text-xs font-semibold"
+            style={{ backgroundColor: '#FFF8E7', color: '#D4A12A',
+              border: '1px solid #D4A12A' }}>
+            {engTiles.reduce((s, t) => s + calcTileMaxPoints(t), 0).toLocaleString()} pts earnable
+          </button>
         </div>
       </div>
-      {/* Daily Challenge banner */}
-      <Link href="/daily-challenge"
-        className="mb-4 flex items-center justify-between rounded-2xl
-          px-4 py-3 text-white"
-        style={{ background: 'linear-gradient(135deg, #7F2020 0%, #4a1212 100%)' }}>
-        <div>
-          <div className="text-xs font-bold uppercase tracking-widest opacity-70">
-            Daily Challenge
+      <button type="button" onClick={() => setShowPointsFaq(true)}
+        className="mb-4 w-full rounded-2xl px-4 py-2.5 text-left text-xs
+          font-semibold transition hover:opacity-90"
+        style={{ backgroundColor: '#FFF8E7', color: '#D4A12A',
+          border: '1px solid #D4A12A' }}>
+        Earned points can be converted to wallet balance. Tap to learn how.
+      </button>
+      {/* Daily Challenge card in grid */}
+      {dcAvail && (
+        <Link href="/daily-challenge"
+          className="mb-4 flex items-center justify-between rounded-2xl
+            px-4 py-3 text-white"
+          style={{ background: 'linear-gradient(135deg, #7F2020 0%, #4a1212 100%)' }}>
+          <div>
+            <div className="text-xs font-bold uppercase tracking-widest opacity-70">
+              Daily Challenge
+            </div>
+            <div className="text-sm font-extrabold">
+              {dcDone
+                ? 'Challenge done today! Come back tomorrow'
+                : 'Answer today\'s questions and earn bonus points'}
+            </div>
+            <div className="mt-1 text-[10px] opacity-60">Up to 50 bonus points per day</div>
           </div>
-          <div className="text-sm font-extrabold">
-            Answer today&apos;s questions and earn bonus points &#8594;
-          </div>
-        </div>
-        <Icon.Star className="h-8 w-8 shrink-0 opacity-60" />
-      </Link>
+          <Icon.Star className="h-8 w-8 shrink-0 opacity-60" />
+        </Link>
+      )}
       <div className="grid grid-cols-3 gap-3 md:grid-cols-6">
         {engTiles.map((tile) => {
           const TileIcon = TILE_ICON_MAP[tile.id] || TILE_ICON_MAP[tile.type]
@@ -599,23 +696,25 @@ export default function Dashboard() {
           return (
             <Link key={tile.id} href={`/engage/${tile.id}`}
               className="surface relative flex flex-col items-center gap-2
-                         rounded-xl p-4 text-center transition hover:shadow-md"
+                         rounded-xl p-3 text-center transition hover:shadow-md"
               style={{ borderBottom: '3px solid #D4A12A' }}>
-              <span className="flex h-12 w-12 items-center justify-center
+              <span className="flex h-11 w-11 items-center justify-center
                 rounded-xl"
                 style={{ backgroundColor: '#FFF8E7' }}>
                 <TileIcon className="h-6 w-6" style={{ color: '#7F2020' }} />
               </span>
-              <span className="text-xs font-bold leading-tight"
+              <span className="w-full text-xs font-bold leading-tight"
                 style={{ color: '#7F2020' }}>
                 {tile.name}
               </span>
-              <span className="line-clamp-2 text-[10px] leading-tight text-gray-500">
+              <span className="w-full text-[10px] leading-snug text-gray-500"
+                style={{ display: '-webkit-box', WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                 {tile.description}
               </span>
               <span className="mt-auto rounded-full px-2 py-0.5 text-[10px] font-bold"
                 style={{ backgroundColor: '#7F2020', color: '#FFF8E7' }}>
-                +{tile.pointsPerActivity || 0} pts
+                +{calcTileMaxPoints(tile)} pts
               </span>
             </Link>
           );

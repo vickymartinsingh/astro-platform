@@ -402,7 +402,7 @@ export default function DailyChallenge() {
             className="w-full rounded-full py-3 text-base font-extrabold
               text-white shadow-md"
             style={{ backgroundColor: MAROON }}>
-            Start Challenge &#8594;
+            Start Challenge
           </button>
         </div>
       </Layout>
@@ -503,7 +503,7 @@ export default function DailyChallenge() {
                 className="w-full rounded-full py-2.5 text-sm font-bold
                   text-white"
                 style={{ backgroundColor: MAROON }}>
-                {qIdx + 1 >= totalQ ? 'Finish &#10003;' : 'Next question &#8594;'}
+                {qIdx + 1 >= totalQ ? 'Finish' : 'Next question'}
               </button>
             </div>
           )}

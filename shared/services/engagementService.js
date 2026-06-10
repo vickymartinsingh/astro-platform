@@ -738,6 +738,67 @@ export function getDefaultTiles() {
       },
     },
 
+    // 11. Chakra Healing - 9 lessons
+    {
+      id: 'chakra_healing',
+      name: 'Chakra Healing',
+      icon: '&#9679;',
+      description: 'Understand and balance your 7 energy centres',
+      enabled: true,
+      order: 10,
+      type: 'learn',
+      pointsPerActivity: 10,
+      content: {
+        lessons: [
+          { title: 'What Are Chakras?', body: 'Chakras are energy centres in your body. The word "chakra" comes from Sanskrit and means "wheel." There are 7 main chakras running along your spine from the base to the top of your head. Each chakra spins like a wheel and manages specific organs, emotions, and life themes. When a chakra is open and balanced, energy flows freely and you feel healthy and at peace. When a chakra is blocked, you may feel stuck, anxious, or unwell in that area of life.', points: 10, quizQ: { q: 'What does the word "chakra" mean in Sanskrit?', options: ['Lotus flower', 'Wheel', 'Light', 'Energy'], correct: 1 } },
+          { title: 'Root Chakra (Muladhara)', body: 'The Root Chakra is located at the base of your spine. Its colour is red. It governs your sense of safety, survival, and connection to the earth. When balanced, you feel grounded, secure, and at home in your body. Signs of a blocked root chakra include fear, anxiety, financial worry, and feeling "unrooted." To heal it: walk barefoot on grass, eat root vegetables, wear red, chant "LAM," and spend time in nature.', points: 10 },
+          { title: 'Sacral Chakra (Svadhisthana)', body: 'The Sacral Chakra sits just below your navel. Its colour is orange. It governs creativity, emotions, pleasure, and sexuality. When balanced, you feel creative, passionate, and emotionally free. A blocked sacral chakra shows up as creative blocks, emotional numbness, or unhealthy relationships. To heal it: dance freely, enjoy water activities, eat sweet fruits and nuts, wear orange, and chant "VAM."', points: 10, quizQ: { q: 'What colour is the Sacral Chakra?', options: ['Red', 'Orange', 'Yellow', 'Green'], correct: 1 } },
+          { title: 'Solar Plexus Chakra (Manipura)', body: 'The Solar Plexus Chakra is located in your upper abdomen, above the navel. Its colour is yellow. It governs personal power, confidence, willpower, and self-esteem. When balanced, you feel confident, decisive, and in control of your life. Signs of imbalance include low self-esteem, lack of willpower, and digestive issues. To heal it: practice core exercises, spend time in sunlight, eat yellow foods, chant "RAM," and set personal boundaries.', points: 10 },
+          { title: 'Heart Chakra (Anahata)', body: 'The Heart Chakra is at the centre of your chest. Its colour is green (and sometimes pink). It governs love, compassion, forgiveness, and connection. When open, you give and receive love freely and feel deep empathy. A blocked heart chakra can cause loneliness, jealousy, grief, or difficulty forgiving. To heal it: practice loving-kindness meditation, hug loved ones, work with rose quartz, eat green foods, and chant "YAM."', points: 10, quizQ: { q: 'What colour is the Heart Chakra?', options: ['Blue', 'Yellow', 'Green', 'Violet'], correct: 2 } },
+          { title: 'Throat Chakra (Vishuddha)', body: 'The Throat Chakra is at your throat. Its colour is blue. It governs communication, truth, and self-expression. When balanced, you speak clearly, listen well, and express your truth without fear. A blocked throat chakra may show up as difficulty speaking up, lying, sore throats, or poor listening. To heal it: sing, journal your thoughts, work with blue crystals like lapis lazuli, eat blueberries, and chant "HAM."', points: 10 },
+          { title: 'Third Eye Chakra (Ajna)', body: 'The Third Eye Chakra is between your eyebrows. Its colour is indigo. It governs intuition, wisdom, imagination, and inner vision. When open, you have clear insights, strong intuition, and vivid dreams. Imbalances cause confusion, poor judgment, and disconnection from your inner wisdom. To heal it: meditate daily, practice visualization, work with amethyst, reduce screen time before bed, and chant "OM."', points: 10, quizQ: { q: 'Where is the Third Eye Chakra located?', options: ['Top of the head', 'Between the eyebrows', 'At the throat', 'In the chest'], correct: 1 } },
+          { title: 'Crown Chakra (Sahasrara)', body: 'The Crown Chakra is at the very top of your head. Its colour is violet or white. It governs spiritual connection, consciousness, and your link to the universe. When open, you feel a deep sense of peace, purpose, and connection to something greater. Imbalances cause feelings of isolation, purposelessness, or spiritual disconnection. To heal it: meditate in silence, practice gratitude, work with clear quartz, spend time in prayer, and chant "OM" or simply sit in stillness.', points: 15 },
+          { title: 'Balancing All 7 Chakras Together', body: 'True wellbeing comes from all 7 chakras being open and balanced. A simple daily practice: sit in a quiet place, close your eyes, and visualize each chakra from root to crown glowing in its colour. Breathe deeply into each one and imagine it spinning freely. You can also use a full-body crystal layout: red jasper at the base, carnelian at the sacral, citrine at the solar plexus, green aventurine at the heart, blue lace agate at the throat, amethyst at the third eye, and clear quartz at the crown. Regular yoga, breathwork, and meditation keep all chakras healthy.', points: 15, quizQ: { q: 'Which crystal is used for the Root Chakra in a full-body crystal layout?', options: ['Amethyst', 'Citrine', 'Red Jasper', 'Rose Quartz'], correct: 2 } },
+        ],
+      },
+    },
+
+    // 12. Zodiac Compatibility - 20 quiz questions
+    {
+      id: 'zodiac_compatibility',
+      name: 'Zodiac Compat.',
+      icon: '&#10084;',
+      description: 'Quiz: how well do the signs match?',
+      enabled: true,
+      order: 11,
+      type: 'quiz',
+      pointsPerActivity: 10,
+      content: {
+        questions: [
+          { q: 'Which sign is the natural opposite of Aries?', options: ['Taurus', 'Libra', 'Scorpio', 'Cancer'], correct: 1, points: 10 },
+          { q: 'Fire signs are most naturally harmonious with which element?', options: ['Water', 'Earth', 'Air', 'Other fire'], correct: 2, points: 10 },
+          { q: 'Which two signs are often called "the power couple" of the zodiac?', options: ['Leo and Aquarius', 'Scorpio and Taurus', 'Virgo and Pisces', 'Aries and Libra'], correct: 0, points: 10 },
+          { q: 'In astrology, two planets 60 degrees apart have which aspect?', options: ['Square', 'Opposition', 'Sextile', 'Conjunction'], correct: 2, points: 15 },
+          { q: 'Which sign is considered the most loyal in a relationship?', options: ['Gemini', 'Taurus', 'Sagittarius', 'Aries'], correct: 1, points: 10 },
+          { q: 'Cancer is most compatible with which water signs?', options: ['Aries and Leo', 'Scorpio and Pisces', 'Virgo and Capricorn', 'Gemini and Aquarius'], correct: 1, points: 10 },
+          { q: 'A trine aspect (120 degrees) between signs indicates?', options: ['Tension and growth', 'Natural harmony and ease', 'Opposition and polarity', 'Attraction with challenges'], correct: 1, points: 15 },
+          { q: 'Which sign is ruled by Venus and deeply values harmony in relationships?', options: ['Leo', 'Scorpio', 'Libra', 'Aquarius'], correct: 2, points: 10 },
+          { q: 'Scorpio and Taurus are in opposition. This means they are?', options: ['Completely incompatible', 'Identical in nature', 'Opposite signs that attract and challenge each other', 'Ruled by the same planet'], correct: 2, points: 15 },
+          { q: 'Which sign values freedom so much that it can struggle in committed relationships?', options: ['Taurus', 'Cancer', 'Sagittarius', 'Capricorn'], correct: 2, points: 10 },
+          { q: 'Earth signs (Taurus, Virgo, Capricorn) are most harmonious with which element?', options: ['Fire', 'Air', 'Water', 'Other Earth'], correct: 2, points: 10 },
+          { q: 'What is the Venus sign used for in compatibility readings?', options: ['Career compatibility', 'Love style and what you find attractive', 'Family relationships', 'Friendship only'], correct: 1, points: 15 },
+          { q: 'Which pair is known as the "twin flame" axis in the zodiac?', options: ['Leo and Aquarius', 'Gemini and Sagittarius', 'Cancer and Capricorn', 'Virgo and Pisces'], correct: 1, points: 10 },
+          { q: 'Aquarius is ruled by Uranus and values what most in a partner?', options: ['Tradition and security', 'Intellect and independence', 'Passion and intensity', 'Luxury and comfort'], correct: 1, points: 10 },
+          { q: 'The 7th house in a birth chart is called the house of?', options: ['Career', 'Finance', 'Partnerships and marriage', 'Spirituality'], correct: 2, points: 10 },
+          { q: 'Which planet is called the "great benefic" and expands whatever it touches?', options: ['Saturn', 'Mars', 'Jupiter', 'Uranus'], correct: 2, points: 10 },
+          { q: 'In synastry (relationship astrology), which aspect creates the most tension?', options: ['Trine (120 deg)', 'Square (90 deg)', 'Sextile (60 deg)', 'Conjunction (0 deg)'], correct: 1, points: 15 },
+          { q: 'Pisces and Virgo are opposites. What quality do they share that draws them together?', options: ['Desire for adventure', 'Service and devotion', 'Love of luxury', 'Ambition'], correct: 1, points: 15 },
+          { q: 'The Mars sign in compatibility shows?', options: ['What you find beautiful', 'How you love', 'How you pursue and express desire', 'Your communication style'], correct: 2, points: 10 },
+          { q: 'Which is generally considered the most challenging compatibility pairing due to opposite temperaments?', options: ['Taurus and Virgo', 'Scorpio and Aquarius', 'Cancer and Pisces', 'Aries and Leo'], correct: 1, points: 15 },
+        ],
+      },
+    },
+
     // 10. Face Reading - 8 lessons
     {
       id: 'face_reading',

@@ -3132,17 +3132,17 @@ function PlanetsTab({ r }) {
   );
 }
 
-// ---------- Tab: Dashas (Vimshottari full + current 6 levels) ----
+// ---------- Tab: Dashas ----------------------------------------
 function DashaTab({ r }) {
   const [sub, setSub] = useState('current');
   return (
     <div className="mt-3 space-y-3">
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-1.5">
         {[
-          ['current', 'Current periods'],
-          ['drilldown', '4-level drilldown'],
-          ['table', 'Full Vimshottari (120 years)'],
-          ['tree', 'Interactive tree'],
+          ['current', 'Current Periods'],
+          ['drilldown', 'Vamshottari Dasha'],
+          ['planetary', 'Planetary Dasha'],
+          ['pastfuture', 'Past and Future'],
         ].map(([k, l]) => (
           <button key={k} type="button" onClick={() => setSub(k)}
             className={`rounded-full px-3 py-1 text-[11px] font-bold
@@ -3158,63 +3158,11 @@ function DashaTab({ r }) {
       {sub === 'drilldown' && (
         <DashaDrilldown dasha={r.dasha || []} />
       )}
-      {sub === 'table' && (
-        <Sec title="Vimshottari Maha Dasha (full lifetime, 120 years)">
-          <table className="w-full text-[11px]">
-            <thead className="text-left text-sub-text">
-              <tr>
-                <th className="py-1 pr-3">Mahadasha</th>
-                <th className="py-1 pr-3">Starts</th>
-                <th className="py-1 pr-3">Ends</th>
-                <th className="py-1">Years</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(r.dasha || []).map((d, i) => {
-                const yrs = d.start && d.end
-                  ? ((Date.parse(d.end) - Date.parse(d.start))
-                     / (365.25 * 86400 * 1000)).toFixed(1)
-                  : '·';
-                return (
-                  <tr key={i}
-                    className={`border-t border-white ${d.current
-                      ? 'bg-primary/10 font-bold' : ''}`}>
-                    <td className="py-1 pr-3">
-                      {d.planet}{d.current ? ' (current)' : ''}
-                    </td>
-                    <td className="py-1 pr-3">
-                      {String(d.start || '').slice(0, 10)}
-                    </td>
-                    <td className="py-1 pr-3">
-                      {String(d.end || '').slice(0, 10)}
-                    </td>
-                    <td className="py-1">{yrs}</td>
-                  </tr>
-                );
-              })}
-              {(r.dasha || []).length === 0 && (
-                <tr><td colSpan="4" className="py-3 text-center
-                  text-sub-text">
-                  Dasha data is loading or unavailable for this profile.
-                </td></tr>
-              )}
-            </tbody>
-          </table>
-        </Sec>
+      {sub === 'planetary' && (
+        <PlanetaryDashaView dasha={r.dasha || []} r={r} />
       )}
-      {sub === 'tree' && (
-        <Sec title="Interactive Vimshottari tree">
-          <div className="space-y-1">
-            {(r.dasha || []).length === 0 && (
-              <div className="text-sub-text">No dasha data.</div>
-            )}
-            {(r.dasha || []).map((d, i) => (
-              <DashaRow key={i} d={d}
-                planets={r.planets || []}
-                showInsight={r._showDashaInsight !== false} />
-            ))}
-          </div>
-        </Sec>
+      {sub === 'pastfuture' && (
+        <VamshottariTimeline dasha={r.dasha || []} />
       )}
     </div>
   );
@@ -3283,53 +3231,53 @@ function DashaDrilldown({ dasha }) {
   const curIdx = vimshottari.findCurrent(current, nowMs);
 
   return (
-    <div className="space-y-3">
-      {/* Stepper: 4 chips showing the 4 levels, with the
-          currently-viewed level highlighted + breadcrumb of
-          chosen lords underneath. */}
-      {/* Horizontal 4-step stepper matching the AstroTalk reference.
-          Numbered circles connected by a dashed line; active = yellow,
-          visited = success-green, todo = gray. Tap any visited step to
-          jump back to that level. */}
+    <div className="space-y-3 min-w-0 overflow-hidden">
+      {/* Horizontal 4-step stepper. Numbered circles connected by a
+          dashed line; active = primary, visited = success, todo = gray.
+          Tap any visited step to jump back to that level. */}
       <div className="rounded-card border border-gray-200 bg-white p-3">
         <div className="mb-3 text-center text-[11px] font-bold
           uppercase tracking-wider text-sub-text">
           Vimshottari Dasha
         </div>
-        <div className="relative flex items-start justify-between">
-          <div className="absolute left-6 right-6 top-3
-            border-t border-dashed border-gray-300" />
-          {LEVEL_LABELS.map((label, i) => {
-            const active = i === depth;
-            const visited = i < depth;
-            const sel = crumbs[i];
-            return (
-              <button key={label} type="button"
-                disabled={i > depth}
-                onClick={() => setPath(path.slice(0, i))}
-                className="relative z-10 flex flex-col items-center
-                  bg-bg-light px-1
-                  disabled:cursor-default">
-                <span className={`grid h-7 w-7 place-items-center
-                  rounded-full text-[12px] font-bold transition
-                  ${active ? 'bg-primary text-white shadow'
-                    : visited ? 'bg-success text-white'
-                      : 'bg-gray-100 text-sub-text'}`}>
-                  {i + 1}
-                </span>
-                <span className={`mt-1 text-center text-[10px]
-                  font-bold ${active ? 'text-dark-text'
-                    : visited ? 'text-success' : 'text-sub-text'}`}>
-                  {label}
-                </span>
-                {sel && (
-                  <span className="text-[9px] text-sub-text">
-                    {vimshottari.SHORT[sel.lord] || sel.lord}
+        <div className="overflow-x-auto">
+          <div className="relative flex min-w-max items-start
+            justify-between px-2">
+            <div className="absolute left-8 right-8 top-3.5
+              border-t border-dashed border-gray-300" />
+            {LEVEL_LABELS.map((label, i) => {
+              const active = i === depth;
+              const visited = i < depth;
+              const sel = crumbs[i];
+              return (
+                <button key={label} type="button"
+                  disabled={i > depth}
+                  onClick={() => setPath(path.slice(0, i))}
+                  className="relative z-10 flex flex-col items-center
+                    gap-0.5 bg-white px-3
+                    disabled:cursor-default">
+                  <span className={`grid h-7 w-7 place-items-center
+                    rounded-full text-[12px] font-bold transition
+                    ${active ? 'bg-primary text-white shadow'
+                      : visited ? 'bg-success text-white'
+                        : 'bg-gray-100 text-sub-text'}`}>
+                    {i + 1}
                   </span>
-                )}
-              </button>
-            );
-          })}
+                  <span className={`text-center text-[10px] font-bold
+                    whitespace-nowrap
+                    ${active ? 'text-dark-text'
+                      : visited ? 'text-success' : 'text-sub-text'}`}>
+                    {label}
+                  </span>
+                  {sel && (
+                    <span className="text-[9px] text-sub-text">
+                      {vimshottari.SHORT[sel.lord] || sel.lord}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
         </div>
         {crumbs.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center
@@ -3337,11 +3285,11 @@ function DashaDrilldown({ dasha }) {
             text-[10px] text-sub-text">
             <span className="font-semibold">Path:</span>
             {crumbs.map((c, i) => (
-              <span key={i} className="rounded-full bg-bg-light
-                px-2 py-0.5 font-bold text-dark-text">
+              <span key={i} className="flex items-center gap-1 rounded-full
+                bg-bg-light px-2 py-0.5 font-bold text-dark-text">
                 {vimshottari.SHORT[c.lord] || c.lord}
                 {i < crumbs.length - 1 && (
-                  <span className="ml-1 opacity-50">›</span>
+                  <span className="opacity-50">›</span>
                 )}
               </span>
             ))}
@@ -3367,12 +3315,37 @@ function DashaDrilldown({ dasha }) {
           row to drill one level deeper (unless we're at the
           deepest level - Sookshma - already). */}
       <div className="rounded-card bg-white p-2">
-        <div className="mb-1 px-2 text-[11px] font-bold
-          uppercase tracking-wide text-sub-text">
-          {LEVEL_LABELS[depth]}
-          {' · '}
-          {current.length} periods
-          {canDrill && ' · tap a row to drill deeper'}
+        <div className="flex flex-wrap items-center justify-between
+          gap-2 px-2 pb-2">
+          <div className="text-[11px] font-bold uppercase
+            tracking-wide text-sub-text">
+            {LEVEL_LABELS[depth]}
+            {' · '}
+            {current.length} periods
+          </div>
+          {/* Quick-jump number buttons */}
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="text-[10px] font-bold text-sub-text">
+              Jump:
+            </span>
+            {current.map((c, i) => {
+              const isC = i === curIdx;
+              return (
+                <button key={i} type="button"
+                  onClick={() => canDrill
+                    ? setPath([...path, i])
+                    : undefined}
+                  className={`h-6 w-6 rounded-full text-[10px]
+                    font-extrabold transition
+                    ${isC
+                      ? 'bg-primary text-white shadow'
+                      : 'bg-gray-100 text-dark-text hover:bg-primary/10'
+                    }`}>
+                  {i + 1}
+                </button>
+              );
+            })}
+          </div>
         </div>
         <div className="space-y-1">
           {current.map((c, i) => {
@@ -3382,9 +3355,10 @@ function DashaDrilldown({ dasha }) {
                 disabled={!canDrill}
                 onClick={() => canDrill
                   && setPath([...path, i])}
-                className={`flex w-full items-center
-                  justify-between gap-2 rounded-card px-3 py-2
-                  text-left text-[12px] transition
+                className={`flex w-full flex-col gap-0.5
+                  rounded-card px-3 py-2 text-left text-[12px]
+                  transition sm:flex-row sm:items-center
+                  sm:justify-between
                   ${isCur
                     ? 'bg-primary/10 font-bold text-primary'
                     : 'bg-gray-50 hover:bg-primary/5'}
@@ -3406,10 +3380,10 @@ function DashaDrilldown({ dasha }) {
                     </span>
                   )}
                 </span>
-                <span className="flex items-center gap-2
-                  text-[10.5px] text-sub-text">
+                <span className="flex items-center gap-1.5 pl-11
+                  text-[10.5px] text-sub-text sm:pl-0">
                   <span>{vimshottari.fmtDate(c.startMs)}</span>
-                  <span className="opacity-50">→</span>
+                  <span className="opacity-50">to</span>
                   <span>{vimshottari.fmtDate(c.endMs)}</span>
                   {canDrill && (
                     <span className={`ml-1 ${isCur
@@ -3613,6 +3587,312 @@ function CurrentDashaCard({ cd, r }) {
           <p className="mt-1.5">{prediction}</p>
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------- Planetary Dasha View --------------------------------
+// Shows all 9 Mahadasha periods with chart-backed predictions for
+// each, so the user can understand what every major period means
+// for their specific natal chart (not just the currently running one).
+function PlanetaryDashaView({ dasha, r }) {
+  const rPlanets = (r && r.planets) || [];
+  const nowMs = Date.now();
+
+  if (!dasha || !dasha.length) {
+    return (
+      <div className="rounded-card bg-white p-4 text-sm text-sub-text">
+        Dasha data unavailable for this profile.
+        Re-open the kundli to load it.
+      </div>
+    );
+  }
+
+  const periodAdvice = {
+    Sun: 'Leadership, recognition, and authority come to the front. Your relationship with your father and with figures of power becomes significant. Health and vitality also need care in this period.',
+    Moon: 'Emotions, intuition, and home life take centre stage. Your relationship with your mother deepens. Travel, changes of residence, and fluctuating moods are common. Trust your instincts.',
+    Mars: 'Energy, courage, and ambition are heightened. Property matters, siblings, and technical work come into focus. Act decisively, but channel the fire constructively to avoid conflicts.',
+    Mercury: 'Communication, business, intellect, and education flourish. A good period for writing, learning new skills, short travels, and trade. Analytical thinking is your biggest strength now.',
+    Jupiter: 'One of the most auspicious Mahadasha periods. Expansion, wisdom, children, and good fortune arrive. Spiritual growth and higher learning are strongly supported. Be generous and honest.',
+    Venus: 'Relationships, creativity, luxury, and material comfort are favoured. Marriage, artistic pursuits, and financial gains often come in this period. Enjoy beauty but maintain discipline.',
+    Saturn: 'Slow, disciplined, and persistent effort is the path. Hard work now leads to lasting achievements later. Property, longevity, and service are central themes. Patience is everything.',
+    Rahu: 'Unconventional paths, foreign connections, and sudden opportunities arise. Ambitions grow rapidly. This period is intense and transformative. Stay grounded and avoid shortcuts.',
+    Ketu: 'Detachment, spiritual growth, and introspection define this period. Past-life karma ripens. Research, occult, and healing flourish. Let go of attachments and focus on inner wisdom.',
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-card bg-white px-3 py-2.5">
+        <div className="text-[11px] text-sub-text">
+          All 9 Mahadasha periods with predictions based on your
+          natal chart positions. Currently active period is
+          highlighted.
+        </div>
+      </div>
+      {dasha.map((d, idx) => {
+        const planet = vimshottari.normalizeLord(d.planet)
+          || d.planet;
+        const startMs = vimshottari.toMs(d.start);
+        const endMs = vimshottari.toMs(d.end);
+        const isActive = d.current
+          || (startMs <= nowMs && nowMs < endMs);
+        const isPast = endMs < nowMs && !isActive;
+        const isFuture = startMs > nowMs && !isActive;
+        const house = houseOf(rPlanets, planet);
+        const theme = PLANET_THEME[planet] || 'shifting themes';
+        const houseSig = house ? HOUSE_MEANING[house] : '';
+        const yrs = vimshottari.YEARS[planet] || '?';
+
+        let prediction = '';
+        if (planet) {
+          if (house) {
+            prediction = `${planet} sits in your ${house}th house`
+              + ` (${houseSig}), so its energy of ${theme} flows`
+              + ` directly through that area of your life during`
+              + ` this ${yrs}-year period.`;
+          } else {
+            prediction = `This ${yrs}-year period is governed by`
+              + ` ${planet}, whose energy of ${theme} shapes all`
+              + ` major life themes.`;
+          }
+        }
+
+        const advice = periodAdvice[planet] || '';
+
+        return (
+          <div key={idx}
+            className={`overflow-hidden rounded-2xl
+              ${isActive
+                ? 'bg-gradient-to-br from-[#7F2020] to-[#B45309]'
+                  + ' text-white shadow-md'
+                : 'bg-white border border-gray-100'}`}>
+            <div className="p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className={`inline-flex h-7 w-10 shrink-0
+                    items-center justify-center rounded-full
+                    text-[10px] font-extrabold
+                    ${isActive
+                      ? 'bg-white/20 text-white'
+                      : isPast
+                        ? 'bg-gray-100 text-gray-400'
+                        : 'bg-primary/10 text-primary'}`}>
+                    {vimshottari.SHORT[planet]
+                      || String(planet || '').slice(0, 2).toUpperCase()}
+                  </span>
+                  <div className="min-w-0">
+                    <div className={`text-[14px] font-bold
+                      leading-tight
+                      ${isActive ? 'text-white'
+                        : isPast ? 'text-gray-400'
+                          : 'text-dark-text'}`}>
+                      {planet}
+                      <span className={`ml-1.5 text-[10px] font-normal
+                        ${isActive ? 'opacity-75'
+                          : isPast ? 'text-gray-300'
+                            : 'text-sub-text'}`}>
+                        {yrs} years
+                      </span>
+                    </div>
+                    <div className={`mt-0.5 text-[10.5px]
+                      ${isActive ? 'text-white/75'
+                        : isPast ? 'text-gray-400'
+                          : 'text-sub-text'}`}>
+                      {String(d.start || '').slice(0, 10)}{' '}
+                      <span className="opacity-60">to</span>{' '}
+                      {String(d.end || '').slice(0, 10)}
+                    </div>
+                  </div>
+                </div>
+                <span className={`shrink-0 rounded-full px-2 py-0.5
+                  text-[9px] font-bold uppercase tracking-wider
+                  ${isActive
+                    ? 'bg-white/20 text-white'
+                    : isPast
+                      ? 'bg-gray-100 text-gray-400'
+                      : 'bg-primary/10 text-primary'}`}>
+                  {isActive ? 'Active' : isPast ? 'Past' : 'Future'}
+                </span>
+              </div>
+              {prediction && (
+                <div className={`mt-2 text-[12px] leading-relaxed
+                  ${isActive ? 'text-white/90'
+                    : isPast ? 'text-gray-400'
+                      : 'text-dark-text'}`}>
+                  {prediction}
+                </div>
+              )}
+              {advice && (
+                <div className={`mt-1.5 text-[11.5px] leading-relaxed
+                  ${isActive ? 'text-white/75'
+                    : isPast ? 'text-gray-300'
+                      : 'text-sub-text'}`}>
+                  {advice}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------- Vamshottari Past and Future Timeline ----------------
+// Compact visual timeline of all 9 Mahadasha periods showing
+// past / active / future at a glance.
+function VamshottariTimeline({ dasha }) {
+  const nowMs = Date.now();
+
+  if (!dasha || !dasha.length) {
+    return (
+      <div className="rounded-card bg-white p-4 text-sm text-sub-text">
+        Dasha data unavailable for this profile.
+      </div>
+    );
+  }
+
+  const allStartMs = vimshottari.toMs((dasha[0] || {}).start);
+  const allEndMs = vimshottari.toMs(
+    (dasha[dasha.length - 1] || {}).end);
+  const totalMs = allEndMs - allStartMs;
+  const nowPct = Number.isFinite(allStartMs)
+    && Number.isFinite(allEndMs) && totalMs > 0
+    ? Math.max(0, Math.min(100,
+        ((nowMs - allStartMs) / totalMs) * 100))
+    : null;
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-card bg-white p-3">
+        <div className="mb-3 text-[11px] font-bold uppercase
+          tracking-wider text-sub-text">
+          Vimshottari Past and Future
+        </div>
+
+        {/* Visual bar */}
+        {nowPct !== null && (
+          <div className="relative mb-4 h-5 w-full overflow-hidden
+            rounded-full bg-gray-100">
+            {dasha.map((d, i) => {
+              const s = vimshottari.toMs(d.start);
+              const e = vimshottari.toMs(d.end);
+              if (!Number.isFinite(s) || !Number.isFinite(e)) return null;
+              const left = ((s - allStartMs) / totalMs) * 100;
+              const width = Math.max(0,
+                ((e - s) / totalMs) * 100);
+              const planet = vimshottari.normalizeLord(d.planet)
+                || d.planet;
+              const isActive = d.current
+                || (s <= nowMs && nowMs < e);
+              return (
+                <div key={i}
+                  style={{
+                    left: `${left}%`,
+                    width: `${width}%`,
+                  }}
+                  title={planet}
+                  className={`absolute flex h-full items-center
+                    justify-center overflow-hidden text-[8px]
+                    font-bold
+                    ${isActive
+                      ? 'bg-primary text-white z-10'
+                      : i % 2 === 0
+                        ? 'bg-amber-200 text-amber-900'
+                        : 'bg-rose-100 text-rose-700'}`}>
+                  {width > 7
+                    ? (vimshottari.SHORT[planet]
+                        || String(planet || '').slice(0, 2))
+                    : ''}
+                </div>
+              );
+            })}
+            {/* Now marker */}
+            <div className="absolute top-0 z-20 h-full w-0.5
+              bg-dark-text/60"
+              style={{ left: `${nowPct}%` }} />
+          </div>
+        )}
+
+        {/* Timeline rows */}
+        <div className="space-y-1.5">
+          {dasha.map((d, i) => {
+            const planet = vimshottari.normalizeLord(d.planet)
+              || d.planet;
+            const s = vimshottari.toMs(d.start);
+            const e = vimshottari.toMs(d.end);
+            const isActive = d.current || (s <= nowMs && nowMs < e);
+            const isPast = e < nowMs && !isActive;
+            const yrs = vimshottari.YEARS[planet] || '?';
+            return (
+              <div key={i}
+                className={`flex items-center gap-2 rounded-lg
+                  px-2 py-1.5
+                  ${isActive
+                    ? 'bg-primary/10 border border-primary/20'
+                    : 'bg-gray-50'}`}>
+                <span className={`inline-flex h-6 w-9 shrink-0
+                  items-center justify-center rounded-full
+                  text-[10px] font-extrabold
+                  ${isActive
+                    ? 'bg-primary text-white'
+                    : isPast
+                      ? 'bg-gray-200 text-gray-400'
+                      : 'bg-amber-100 text-amber-700'}`}>
+                  {vimshottari.SHORT[planet]
+                    || String(planet || '').slice(0, 2)}
+                </span>
+                <span className={`flex-1 min-w-0 text-[12px]
+                  font-semibold truncate
+                  ${isActive ? 'text-primary'
+                    : isPast ? 'text-gray-400'
+                      : 'text-dark-text'}`}>
+                  {planet}
+                  {isActive && (
+                    <span className="ml-1.5 rounded-full bg-primary
+                      px-1.5 py-0.5 text-[9px] text-white font-bold">
+                      now
+                    </span>
+                  )}
+                </span>
+                <span className={`shrink-0 text-[10px]
+                  ${isPast ? 'text-gray-400'
+                    : isActive ? 'text-primary'
+                      : 'text-sub-text'}`}>
+                  {String(d.start || '').slice(0, 7)}{' '}
+                  <span className="opacity-60">to</span>{' '}
+                  {String(d.end || '').slice(0, 7)}
+                </span>
+                <span className={`shrink-0 text-[10px] font-bold
+                  w-6 text-right
+                  ${isPast ? 'text-gray-300'
+                    : isActive ? 'text-primary'
+                      : 'text-sub-text'}`}>
+                  {yrs}y
+                </span>
+              </div>
+            );
+          })}
+        </div>
+        <div className="mt-3 flex items-center gap-3 border-t
+          border-gray-100 pt-2 text-[10px] text-sub-text">
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-2.5 w-4 rounded
+              bg-gray-200" /> Past
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-2.5 w-4 rounded
+              bg-primary" /> Active
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block h-2.5 w-4 rounded
+              bg-amber-200" /> Future
+          </span>
+          <span className="ml-auto">
+            Vertical line = today
+          </span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -4960,7 +5240,7 @@ function OrderConfirmationModal({ orderId, kind, pending, error,
                   <Link href="/wallet" onClick={onClose}
                     className="mt-2 inline-block font-bold
                       underline">
-                    Add money to wallet →
+                    Add money to wallet ›
                   </Link>
                 </div>
               )}

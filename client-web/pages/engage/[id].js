@@ -12,12 +12,12 @@ const MAROON = '#7F2020';
 const AMBER = '#D4A12A';
 const CREAM = '#FFF8E7';
 
-// Minimum reading time in seconds per lesson (based on body length).
-// ~200 chars per 15s, minimum 12s, maximum 60s.
-function calcReadSecs(body) {
-  const words = String(body || '').split(/\s+/).length;
-  return Math.min(60, Math.max(12, Math.round(words / 3)));
-}
+// Quiz only appears at specific lesson indices (0-based).
+// Pattern: lessons 3, 5, 8, 11, then every 5th after (16, 21, 26 ...).
+const QUIZ_LESSON_INDICES = new Set([
+  2, 4, 7, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75, 80, 85, 90, 95, 99,
+]);
+function isQuizLesson(idx) { return QUIZ_LESSON_INDICES.has(idx); }
 
 function PointsBadge({ pts }) {
   return (
@@ -39,9 +39,15 @@ function BackLink() {
 }
 
 // ---- 30-second countdown timer for quizzes ----------------------------
-function QuizTimer({ onExpire }) {
+function QuizTimer({ onExpire, timerKey }) {
   const [secs, setSecs] = useState(30);
   const expired = useRef(false);
+
+  useEffect(() => {
+    setSecs(30);
+    expired.current = false;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timerKey]);
 
   useEffect(() => {
     if (secs <= 0) {
@@ -109,7 +115,7 @@ function LessonQuiz({ quizQ, lessonIdx, tileId, onResult }) {
       <div className="mb-3 flex items-center justify-between">
         <span className="text-xs font-bold uppercase tracking-wide"
           style={{ color: AMBER }}>
-          Quick check &#8212; answer to earn points
+          Quick check: answer to earn points
         </span>
         {!submitted && <QuizTimer onExpire={handleExpire} />}
       </div>
@@ -160,47 +166,19 @@ function LessonQuiz({ quizQ, lessonIdx, tileId, onResult }) {
   );
 }
 
-// ---- Full anti-cheat learn view (mandatory timed read + quiz) ---------
+// ---- Learn view: read lesson, quiz only at specific indices ----------
 function LearnView({ tile, user, completedLessons, onLessonComplete }) {
   const lessons = tile.content?.lessons || [];
-  // Which lesson the user is currently on. Auto-advance to first
-  // incomplete, else start at 0.
   const firstIncomplete = lessons.findIndex(
     (_, i) => !completedLessons.includes(String(i)));
   const [activeIdx, setActiveIdx] = useState(
     firstIncomplete >= 0 ? firstIncomplete : 0);
-  // Per-lesson reading gate: has the minimum read time elapsed?
-  const [readReady, setReadReady] = useState(false);
-  const [readSecs, setReadSecs] = useState(0);
-  // Whether the lesson quiz is shown
   const [showQuiz, setShowQuiz] = useState(false);
-  // Whether user can move to next (after quiz or no quiz)
   const [canProceed, setCanProceed] = useState(false);
-  const timerRef = useRef(null);
 
-  // Reset gate whenever activeIdx changes
   useEffect(() => {
-    setReadReady(false);
     setShowQuiz(false);
     setCanProceed(false);
-    const l = lessons[activeIdx];
-    const secs = calcReadSecs(l?.body || '');
-    setReadSecs(secs);
-    clearInterval(timerRef.current);
-    let elapsed = 0;
-    timerRef.current = setInterval(() => {
-      elapsed += 1;
-      setReadSecs((s) => {
-        const next = Math.max(0, s - 1);
-        if (next <= 0) {
-          clearInterval(timerRef.current);
-          setReadReady(true);
-        }
-        return next;
-      });
-    }, 1000);
-    return () => clearInterval(timerRef.current);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeIdx]);
 
   const lesson = lessons[activeIdx];
@@ -208,12 +186,16 @@ function LearnView({ tile, user, completedLessons, onLessonComplete }) {
   const total = lessons.length;
 
   const handleContinue = () => {
-    if (!readReady) return;
-    if (lesson?.quizQ && !isDone) {
+    if (lesson?.quizQ && isQuizLesson(activeIdx) && !isDone) {
       setShowQuiz(true);
     } else {
-      // No quiz (or already done) - allow proceed without extra quiz.
-      if (!isDone) onLessonComplete(activeIdx, 0, '');
+      if (!isDone) {
+        onLessonComplete(
+          activeIdx,
+          lesson?.points || tile.pointsPerActivity || 10,
+          `Lesson: ${lesson?.title || ''}`,
+        );
+      }
       setCanProceed(true);
     }
   };
@@ -224,14 +206,10 @@ function LearnView({ tile, user, completedLessons, onLessonComplete }) {
     setCanProceed(true);
   };
 
-  const goNext = () => {
-    if (activeIdx + 1 < total) {
-      setActiveIdx((i) => i + 1);
-    }
-  };
+  const goPrev = () => { if (activeIdx > 0) setActiveIdx((i) => i - 1); };
+  const goNext = () => { if (activeIdx + 1 < total) setActiveIdx((i) => i + 1); };
 
-  const allDone = lessons.every((_, i) =>
-    completedLessons.includes(String(i)));
+  const allDone = lessons.every((_, i) => completedLessons.includes(String(i)));
 
   if (allDone) {
     return (
@@ -249,11 +227,11 @@ function LearnView({ tile, user, completedLessons, onLessonComplete }) {
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Progress bar */}
+      {/* Progress */}
       <div>
         <div className="mb-1 flex justify-between text-xs text-gray-500">
           <span>Lesson {activeIdx + 1} of {total}</span>
-          <span>{completedLessons.length} completed</span>
+          <span>{completedLessons.length} of {total} completed</span>
         </div>
         <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
           <div className="h-full rounded-full transition-all"
@@ -264,41 +242,20 @@ function LearnView({ tile, user, completedLessons, onLessonComplete }) {
         </div>
       </div>
 
-      {/* Lesson selector */}
-      {total > 1 && (
-        <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
-          {lessons.map((l, i) => {
-            const done = completedLessons.includes(String(i));
-            const active = i === activeIdx;
-            return (
-              <button key={i} type="button"
-                onClick={() => { setActiveIdx(i); }}
-                className="shrink-0 rounded-full px-3 py-1 text-xs font-semibold transition"
-                style={{
-                  backgroundColor: active ? MAROON : done ? '#E8F5E9' : '#F5F5F5',
-                  color: active ? CREAM : done ? '#2E7D32' : '#555',
-                  border: `1.5px solid ${active ? MAROON : done ? '#4CAF50' : '#DDD'}`,
-                }}>
-                {done ? '✓ ' : ''}{i + 1}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
       {/* Lesson card */}
       <div className="surface rounded-xl p-5">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-base font-bold" style={{ color: MAROON }}>
+        <div className="mb-3 flex items-start justify-between gap-2">
+          <h3 className="text-base font-bold leading-snug" style={{ color: MAROON }}>
             {lesson.title}
           </h3>
-          {!isDone && (
-            <PointsBadge pts={lesson.points || tile.pointsPerActivity || 10} />
-          )}
-          {isDone && (
-            <span className="rounded-full bg-green-100 px-2 py-0.5
+          {isDone ? (
+            <span className="shrink-0 rounded-full bg-green-100 px-2 py-0.5
               text-xs font-bold text-green-700">
               &#10003; Done
+            </span>
+          ) : (
+            <span className="shrink-0">
+              <PointsBadge pts={lesson.points || tile.pointsPerActivity || 10} />
             </span>
           )}
         </div>
@@ -307,32 +264,17 @@ function LearnView({ tile, user, completedLessons, onLessonComplete }) {
           {lesson.body}
         </p>
 
-        {/* Reading timer gate */}
+        {/* Action button */}
         {!isDone && !showQuiz && !canProceed && (
           <div className="mt-4">
-            {readReady ? (
-              <button type="button" onClick={handleContinue}
-                className="w-full rounded-lg py-3 text-sm font-bold
-                  text-white transition"
-                style={{ backgroundColor: MAROON }}>
-                {lesson.quizQ
-                  ? 'Continue to quick check →'
-                  : 'Mark complete →'}
-              </button>
-            ) : (
-              <div className="flex items-center gap-3 rounded-lg
-                bg-amber-50 px-4 py-3">
-                <span className="text-2xl">&#128214;</span>
-                <div>
-                  <p className="text-xs font-bold text-amber-800">
-                    Please read carefully
-                  </p>
-                  <p className="text-xs text-amber-700">
-                    Continue available in <b>{readSecs}s</b>
-                  </p>
-                </div>
-              </div>
-            )}
+            <button type="button" onClick={handleContinue}
+              className="w-full rounded-lg py-3 text-sm font-bold
+                text-white transition"
+              style={{ backgroundColor: MAROON }}>
+              {lesson.quizQ && isQuizLesson(activeIdx)
+                ? 'Answer the question'
+                : 'Mark as complete'}
+            </button>
           </div>
         )}
 
@@ -345,17 +287,64 @@ function LearnView({ tile, user, completedLessons, onLessonComplete }) {
             onResult={handleQuizResult}
           />
         )}
+      </div>
 
-        {/* Proceed after quiz / already done */}
-        {(canProceed || isDone) && activeIdx + 1 < total && (
+      {/* Prev / Next navigation */}
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={goPrev}
+          disabled={activeIdx === 0}
+          className="flex-1 rounded-lg py-2.5 text-sm font-semibold
+            transition disabled:opacity-30"
+          style={{ backgroundColor: CREAM, color: MAROON,
+            border: `1.5px solid ${MAROON}` }}>
+          Previous
+        </button>
+        {(canProceed || isDone) && activeIdx + 1 < total ? (
           <button type="button" onClick={goNext}
-            className="mt-4 w-full rounded-lg py-3 text-sm font-bold
+            className="flex-1 rounded-lg py-2.5 text-sm font-bold
               text-white transition"
             style={{ backgroundColor: AMBER }}>
-            Next lesson →
+            Next lesson
+          </button>
+        ) : (
+          <button type="button" onClick={goNext}
+            disabled={!(canProceed || isDone) || activeIdx + 1 >= total}
+            className="flex-1 rounded-lg py-2.5 text-sm font-semibold
+              transition disabled:opacity-30"
+            style={{ backgroundColor: CREAM, color: MAROON,
+              border: `1.5px solid ${MAROON}` }}>
+            {activeIdx + 1 >= total ? 'Last lesson' : 'Next lesson'}
           </button>
         )}
       </div>
+
+      {/* Compact lesson number pills for direct navigation (up to 30) */}
+      {total > 1 && total <= 30 && (
+        <div className="no-scrollbar flex flex-wrap gap-1.5 pb-1">
+          {lessons.map((l, i) => {
+            const done = completedLessons.includes(String(i));
+            const active = i === activeIdx;
+            return (
+              <button key={i} type="button"
+                onClick={() => setActiveIdx(i)}
+                className="flex h-7 w-7 items-center justify-center rounded-full
+                  text-[11px] font-bold transition"
+                style={{
+                  backgroundColor: active ? MAROON : done ? '#E8F5E9' : '#F5F5F5',
+                  color: active ? CREAM : done ? '#2E7D32' : '#888',
+                  border: `1.5px solid ${active ? MAROON : done ? '#4CAF50' : '#DDD'}`,
+                }}>
+                {i + 1}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {total > 30 && (
+        <p className="text-center text-xs text-gray-400">
+          Use Previous and Next to navigate all {total} lessons
+        </p>
+      )}
     </div>
   );
 }
@@ -492,7 +481,7 @@ function QuizView({ tile, user, onAward }) {
             className="mt-4 w-full rounded-lg py-2 text-sm font-semibold
               text-white"
             style={{ backgroundColor: AMBER }}>
-            {qIdx + 1 >= questions.length ? 'See results' : 'Next question →'}
+            {qIdx + 1 >= questions.length ? 'See results' : 'Next question'}
           </button>
         </>
       )}
