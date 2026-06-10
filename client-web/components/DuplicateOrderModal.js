@@ -1,12 +1,9 @@
 import Link from 'next/link';
-
-// Duplicate-order popup (2026-06-06 spec). Two modes:
-//   match.type === 'in_progress' -> Case 1: BLOCK with single OK btn.
-//   match.type === 'completed'   -> Case 2: WARN with Continue + Cancel.
-// match.order is the previously-placed order doc.
+import useScrollLock from '../lib/useScrollLock';
 
 export default function DuplicateOrderModal({ match, onCancel,
   onConfirm }) {
+  useScrollLock(!!match);
   if (!match) return null;
   const blocking = match.type === 'in_progress';
   const o = match.order || {};

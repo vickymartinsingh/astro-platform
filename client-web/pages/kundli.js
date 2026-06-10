@@ -8,6 +8,7 @@ import { useRequireClient } from '../lib/useAuth';
 import { DateField, TimeField, CityField } from '../components/BirthInputs';
 import DuplicateOrderModal from '../components/DuplicateOrderModal';
 import ZodiacGlyph from '../components/ZodiacGlyph';
+import useScrollLock from '../lib/useScrollLock';
 
 // Form shape. lat/lng/tz are captured at place-pick time so the
 // relay always has the right coordinates + timezone - fixes the
@@ -60,6 +61,7 @@ export default function Kundli() {
   // fires, so a slip on the trash icon does not nuke a profile.
   const [pickerSearch, setPickerSearch] = useState('');
   const [pendingDelete, setPendingDelete] = useState(null);
+  useScrollLock(!!pendingDelete);
   // Wizard step for the add / edit form. 0..4 maps to:
   //   0 = name, 1 = gender, 2 = DOB, 3 = TOB, 4 = place. Resets to 0
   //   whenever the user enters add mode fresh; if they enter via Edit

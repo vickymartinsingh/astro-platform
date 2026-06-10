@@ -60,7 +60,7 @@ export function KundliGateProvider({ children }) {
     // Recommended top-up = this astrologer's per-minute price x 5 mins
     // (rounded up to the nearest 10), minimum ₹10.
     const recommend = Math.max(10, Math.ceil((perMin * 5) / 10) * 10);
-    if (!firstFree && perMin > 0 && wallet < perMin) {
+    if (!firstFree && perMin > 0 && wallet < perMin * 5) {
       setLowBal({ astro, perMin, recommend });
       return;
     }

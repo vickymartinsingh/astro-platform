@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import {
   authService, notificationService, brandingService, menuService,
+  engagementService,
 } from '@astro/shared';
 import { useAuth } from '../lib/useAuth';
 import { useAuthModal } from '../lib/authModal';
@@ -105,6 +106,16 @@ export default function TopNav() {
     setProfileMenu(m.profile);
   }), []);
   const { user, profile } = useAuth();
+  // Points badge: must be declared AFTER useAuth() so `user` is in scope
+  // when the dependency array [user?.uid] is evaluated during render.
+  const [userPoints, setUserPoints] = useState(null);
+  useEffect(() => {
+    if (!user) { setUserPoints(null); return; }
+    engagementService.getUserPoints(user.uid)
+      .then((d) => setUserPoints(
+        Math.max(0, (d?.total || 0) - (d?.redeemed || 0))))
+      .catch(() => setUserPoints(0));
+  }, [user?.uid]);
   const { openLogin } = useAuthModal();
   const { t } = useI18n();
   const { features } = useSettings();
@@ -328,6 +339,17 @@ export default function TopNav() {
                        text-dark-text">
             <Wallet />
           </Link>
+          {user && userPoints != null && (
+            <Link href="/points" aria-label="My points"
+              className="rounded-xl border border-gray-200 px-2.5 py-1.5
+                         text-xs font-bold leading-none"
+              style={{ color: '#7F2020', borderColor: '#D4A12A' }}
+              title="My points">
+              {userPoints >= 1000
+                ? `${(userPoints / 1000).toFixed(1)}k`
+                : userPoints} pts
+            </Link>
+          )}
           <Link href="/notifications" aria-label="Notifications"
             data-tour="top-bell"
             className="relative rounded-xl border border-gray-200 px-3

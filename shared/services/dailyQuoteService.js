@@ -180,11 +180,11 @@ function hydrate(d) {
   }
   entries.sort((a, b) => a.date.localeCompare(b.date));
   return {
-    showMobile: hasNew ? !!d.showMobile : !!d.enabled,
-    showDesktop: hasNew ? !!d.showDesktop : !!d.enabled,
+    showMobile: hasNew ? !!d.showMobile : (d.enabled !== false),
+    showDesktop: hasNew ? !!d.showDesktop : (d.enabled !== false),
     enabled: hasNew
       ? (!!d.showMobile || !!d.showDesktop)
-      : !!d.enabled,
+      : (d.enabled !== false),
     title: d.title || DEFAULTS.title,
     titleAuthed: d.titleAuthed != null ? d.titleAuthed : '',
     subtitle: d.subtitle || DEFAULTS.subtitle,

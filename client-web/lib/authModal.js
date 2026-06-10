@@ -8,6 +8,7 @@ import dynamic from 'next/dynamic';
 import { auth as firebaseAuth, authService } from '@astro/shared';
 import { useAuth } from './useAuth';
 import { useSettings } from './useSettings';
+import useScrollLock from './useScrollLock';
 
 // LoginCard is the single biggest chrome dep on the boot path (~140 KB
 // minified - it pulls Firebase Auth flows, OTP plumbing, Google sign-in
@@ -76,6 +77,7 @@ export function AuthModalProvider({ children }) {
   const router = useRouter();
   const { user } = useAuth();
   const { features: settingsFeatures } = useSettings();
+  useScrollLock(open);
   // Latest values for the STABLE callbacks below (so openLogin's identity
   // never changes -> gated pages do not re-fire it in a loop -> the
   // login popup no longer flickers open/closed during sign-in).

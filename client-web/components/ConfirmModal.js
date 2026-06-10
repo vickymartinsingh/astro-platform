@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import useScrollLock from '../lib/useScrollLock';
 
 // Themed Yes/No confirmation modal. Replaces the native window.confirm
 // (which on Capacitor looks like a system browser alert) with a brand-
@@ -50,6 +51,7 @@ export default function ConfirmModalHost() {
         { detail: { id, ok } }));
     }
   }
+  useScrollLock(!!open);
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[2147483646] flex items-center

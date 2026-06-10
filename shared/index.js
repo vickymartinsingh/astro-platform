@@ -74,6 +74,8 @@ export * as recordService from './services/recordService.js';
 export * as emailService from './services/emailService.js';
 export * as referralService from './services/referralService.js';
 export * as welcomeBonusService from './services/welcomeBonusService.js';
+export * as engagementService from './services/engagementService.js';
+export * as membershipService from './services/membershipService.js';
 
 // Catalogue of paid + free PDF report types. Both client (buy
 // buttons, confirm popup, /orders labels) and the relay (price

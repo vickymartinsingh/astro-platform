@@ -4,7 +4,7 @@ import { useRouter } from 'next/router';
 import {
   astrologerService, reviewService, zodiacLabel,
   iconsService, horoscopeService, kundliService,
-  signFromDOB, userService, db,
+  signFromDOB, userService, db, engagementService,
 } from '@astro/shared';
 import { doc, onSnapshot } from 'firebase/firestore';
 import Layout from '../components/Layout';
@@ -14,6 +14,31 @@ import DailyQuoteBanner from '../components/DailyQuoteBanner';
 import ZodiacPicker from '../components/ZodiacPicker';
 import ZodiacGlyph from '../components/ZodiacGlyph';
 import { Icon } from '../components/Icons';
+
+// Maps engagement tile IDs and tile types to their single-color SVG icons.
+// Same visual language as the "Browse by category" icons (stroke-only,
+// no emoji, colour = currentColor so the maroon theme applies naturally).
+const TILE_ICON_MAP = {
+  learn_astrology:   Icon.LearnAstrology,
+  vedic_astrology:   Icon.VedicAstrology,
+  quiz_game:         Icon.QuizGame,
+  manifestation:     Icon.Manifestation,
+  astro_comic:       Icon.AstroComic,
+  tarot_learning:    Icon.TarotLearning,
+  numerology_basics: Icon.NumerologyBasics,
+  crystal_guide:     Icon.CrystalGuide,
+  gemstone_guide:    Icon.Gemstone,
+  daily_rituals:     Icon.DailyRituals,
+  palm_reading:      Icon.PalmReading,
+  face_reading:      Icon.FaceReading,
+  understanding:     Icon.Understanding,
+  // type-level fallbacks
+  learn:    Icon.LearnAstrology,
+  quiz:     Icon.QuizGame,
+  manifest: Icon.Manifestation,
+  comic:    Icon.AstroComic,
+  tarot:    Icon.TarotLearning,
+};
 import { DateField } from '../components/BirthInputs';
 import { useOptionalClient } from '../lib/useAuth';
 import { useAstroActions } from '../lib/useAstroActions';
@@ -79,6 +104,8 @@ export default function Dashboard() {
   const [statsCfg, setStatsCfg] = useState(null); // [{n,l}] from admin
   const [catLabels, setCatLabels] = useState({}); // key -> label
   const [txt, setTxt] = useState({}); // content.text overrides (Dev 2.0)
+  const [engTiles, setEngTiles] = useState([]);
+  const [userPoints, setUserPoints] = useState(null);
   // Editable copy: admin override (settings/content.text[key]) or default.
   const T = (k, d) => (txt && txt[k] != null && txt[k] !== ''
     ? txt[k] : d);
@@ -118,6 +145,7 @@ export default function Dashboard() {
         heroDesktop: d.home_hero_show_desktop !== false,
         statsMobile: d.home_stats_show_mobile !== false,
         statsDesktop: d.home_stats_show_desktop !== false,
+        engagement: d.sec_engagement !== false,
       });
     };
     if (CONTENT_CACHE) apply(CONTENT_CACHE);
@@ -134,7 +162,8 @@ export default function Dashboard() {
       }, () => {});
     } catch (_) {
       setSec({ quickActions: true, starsToday: true,
-        categories: true, topRated: true, reviews: true });
+        categories: true, topRated: true, reviews: true,
+        engagement: true });
       return undefined;
     }
   }, []);
@@ -148,6 +177,18 @@ export default function Dashboard() {
     reviewService.getPublicPlatformReviews()
       .then(setPubReviews).catch(() => setPubReviews([]));
   }, []);
+
+  useEffect(() => {
+    engagementService.getEngagementConfig().then(({ tiles }) =>
+      setEngTiles((tiles || []).filter(t => t.enabled).sort((a, b) => a.order - b.order))
+    ).catch(() => {});
+  }, []);
+  useEffect(() => {
+    if (!user) return;
+    engagementService.getUserPoints(user.uid)
+      .then((d) => setUserPoints((d?.total || 0) - (d?.redeemed || 0)))
+      .catch(() => setUserPoints(0));
+  }, [user]);
 
   const revRef = useRef(null);
   const revStep = (dir) => {
@@ -172,6 +213,11 @@ export default function Dashboard() {
       const arr = (Array.isArray(l) ? l : []).slice()
         .sort((a, b) => (b.isDefault ? 1 : 0) - (a.isDefault ? 1 : 0));
       setKundlis(arr); setKIdx(0);
+      if (!dob && arr.length > 0 && arr[0].dob) {
+        setDob(arr[0].dob);
+        userService.updateUser(user.uid, { dob: arr[0].dob })
+          .catch(() => {});
+      }
     }).catch(() => setKundlis([]));
   }, [user]);
 
@@ -510,6 +556,70 @@ export default function Dashboard() {
             </span>
           </Link>
         ))}
+      </div></>
+      )}
+
+      {sec.engagement !== false && engTiles.length > 0 && (
+      <><div className="mb-3 mt-8 flex items-center justify-between">
+        <h2 className="text-lg font-bold">
+          {T('home.engageTitle', 'Learn & Earn')}</h2>
+        <div className="flex items-center gap-2">
+          {user && userPoints != null && (
+            <Link href="/points"
+              className="rounded-full px-2 py-0.5 text-xs font-bold"
+              style={{ backgroundColor: '#7F2020', color: '#FFF8E7' }}>
+              {userPoints.toLocaleString()} pts
+            </Link>
+          )}
+          <span className="rounded-full px-2 py-0.5 text-xs font-semibold"
+            style={{ backgroundColor: '#FFF8E7', color: '#D4A12A' }}>
+            Earn up to {engTiles.reduce((s, t) => s + (t.pointsPerActivity || 0), 0)} pts
+          </span>
+        </div>
+      </div>
+      {/* Daily Challenge banner */}
+      <Link href="/daily-challenge"
+        className="mb-4 flex items-center justify-between rounded-2xl
+          px-4 py-3 text-white"
+        style={{ background: 'linear-gradient(135deg, #7F2020 0%, #4a1212 100%)' }}>
+        <div>
+          <div className="text-xs font-bold uppercase tracking-widest opacity-70">
+            Daily Challenge
+          </div>
+          <div className="text-sm font-extrabold">
+            Answer today&apos;s questions and earn bonus points &#8594;
+          </div>
+        </div>
+        <Icon.Star className="h-8 w-8 shrink-0 opacity-60" />
+      </Link>
+      <div className="grid grid-cols-3 gap-3 md:grid-cols-6">
+        {engTiles.map((tile) => {
+          const TileIcon = TILE_ICON_MAP[tile.id] || TILE_ICON_MAP[tile.type]
+            || Icon.Star;
+          return (
+            <Link key={tile.id} href={`/engage/${tile.id}`}
+              className="surface relative flex flex-col items-center gap-2
+                         rounded-xl p-4 text-center transition hover:shadow-md"
+              style={{ borderBottom: '3px solid #D4A12A' }}>
+              <span className="flex h-12 w-12 items-center justify-center
+                rounded-xl"
+                style={{ backgroundColor: '#FFF8E7' }}>
+                <TileIcon className="h-6 w-6" style={{ color: '#7F2020' }} />
+              </span>
+              <span className="text-xs font-bold leading-tight"
+                style={{ color: '#7F2020' }}>
+                {tile.name}
+              </span>
+              <span className="line-clamp-2 text-[10px] leading-tight text-gray-500">
+                {tile.description}
+              </span>
+              <span className="mt-auto rounded-full px-2 py-0.5 text-[10px] font-bold"
+                style={{ backgroundColor: '#7F2020', color: '#FFF8E7' }}>
+                +{tile.pointsPerActivity || 0} pts
+              </span>
+            </Link>
+          );
+        })}
       </div></>
       )}
 

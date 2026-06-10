@@ -394,6 +394,38 @@ export default function Profile() {
           </div>
         </Row>
 
+        {/* Points - navigates to the dedicated /points page */}
+        <Link href="/points"
+          className="flex w-full items-center gap-3 px-4 py-3 text-left
+            hover:bg-bg-light">
+          <span className="text-lg leading-none">⭐</span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold text-dark-text">
+              My Points
+            </span>
+            <span className="block truncate text-[11px] text-sub-text">
+              View balance, history, and redeem to wallet
+            </span>
+          </span>
+          <span className="text-sub-text">›</span>
+        </Link>
+
+        {/* Membership - navigates to the dedicated /membership page */}
+        <Link href="/membership"
+          className="flex w-full items-center gap-3 px-4 py-3 text-left
+            hover:bg-bg-light">
+          <span className="text-lg leading-none">👑</span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold text-dark-text">
+              Membership
+            </span>
+            <span className="block truncate text-[11px] text-sub-text">
+              View plans, benefits, and your current tier
+            </span>
+          </span>
+          <span className="text-sub-text">›</span>
+        </Link>
+
         <Row open={view === VIEWS.INFO}
           onClick={() => setView(view === VIEWS.INFO
             ? VIEWS.HOME : VIEWS.INFO)}

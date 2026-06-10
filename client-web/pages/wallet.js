@@ -66,7 +66,9 @@ export default function Wallet() {
 
   useEffect(() => {
     if (user && tab === 'history') {
-      walletService.getTransactions(user.uid).then(setTxns);
+      walletService.getTransactions(user.uid)
+        .then(setTxns)
+        .catch(() => setTxns([]));
     }
   }, [user, tab, wallet]);
 

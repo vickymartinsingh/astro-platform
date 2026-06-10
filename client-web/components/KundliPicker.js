@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { kundliService } from '@astro/shared';
+import useScrollLock from '../lib/useScrollLock';
 
 // Profile-selection prompt (2026-06-06 spec):
 // "If the user is not already on a specific Kundli profile page, then
@@ -17,6 +18,7 @@ import { kundliService } from '@astro/shared';
 // profile.
 
 export default function KundliPicker({ uid, open, onClose, onPick }) {
+  useScrollLock(!!open);
   const [profiles, setProfiles] = useState(null);
 
   useEffect(() => {

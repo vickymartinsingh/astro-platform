@@ -454,8 +454,10 @@ module.exports = async (req, res) => {
     if (tool === 'notifyupdate') return runNotifyUpdate(body, res);
     if (tool === 'playtesters') return runPlayTesters(body, res);
     if (tool === 'updateuser') return runUpdateUser(req, body, res);
+    if (tool === 'reconcilewallet') return runReconcileWallet(req, body, res);
     return res.status(400).json({
-      error: 'tool must be notifyUpdate | playTesters | updateUser' });
+      error: 'tool must be notifyUpdate | playTesters | updateUser'
+        + ' | reconcileWallet' });
   } catch (e) {
     return res.status(500).json({
       ok: false,
@@ -504,4 +506,105 @@ async function runUpdateUser(req, body, res) {
       .set({ email: patch.email }, { merge: true });
   }
   return res.status(200).json({ success: true, uid, email: patch.email });
+}
+
+// =================================================================
+// TOOL: reconcileWallet - recompute wallet from transaction ledger.
+//   { tool: 'reconcileWallet', uid?: string, apply?: boolean }
+//   uid omitted => scan ALL users (capped at 5000).
+// =================================================================
+async function computeCorrectWallet(db, uid) {
+  const snap = await db.collection('transactions')
+    .where('userId', '==', uid).get();
+  let total = 0;
+  const recRows = [];
+  snap.docs.forEach((d) => {
+    const t = d.data() || {};
+    const isRec = (t.reason
+      && /reconciliation|wallet[ _]recovery/i.test(t.reason))
+      || t.referenceId === 'wallet_recovery';
+    if (isRec) { recRows.push(d.id); return; }
+    const amt = Number(t.amount || 0);
+    if (t.type === 'debit' || amt < 0) {
+      total += amt < 0 ? amt : -Math.abs(amt);
+    } else {
+      total += Math.abs(amt);
+    }
+  });
+  return { total: Math.max(0, total), txCount: snap.size, recRows };
+}
+
+async function runReconcileWallet(req, body, res) {
+  initAdmin();
+  if (!admin.apps.length) {
+    return res.status(503).json({ error: 'FIREBASE_SERVICE_ACCOUNT not set' });
+  }
+  const authz = req.headers.authorization || '';
+  const idToken = authz.startsWith('Bearer ') ? authz.slice(7) : '';
+  if (!idToken) return res.status(401).json({ error: 'no token' });
+  const decoded = await admin.auth().verifyIdToken(idToken);
+  const callerDoc = await admin.firestore()
+    .collection('users').doc(decoded.uid).get();
+  const ok = (callerDoc.exists && callerDoc.data().role === 'admin')
+    || isAdminEmail(decoded.email);
+  if (!ok) return res.status(403).json({ error: 'not an admin' });
+
+  const db = admin.firestore();
+  const apply = body.apply === true;
+  const targetUid = String(body.uid || '').trim();
+
+  const users = [];
+  if (targetUid) {
+    const u = await db.collection('users').doc(targetUid).get();
+    if (!u.exists) return res.status(404).json({ error: 'user not found' });
+    users.push({ id: u.id, ...u.data() });
+  } else {
+    const snap = await db.collection('users').limit(5000).get();
+    snap.docs.forEach((d) => users.push({ id: d.id, ...d.data() }));
+  }
+
+  const mismatches = [];
+  for (const u of users) {
+    const { total, txCount, recRows } = await computeCorrectWallet(db, u.id);
+    const current = Number(u.wallet || 0);
+    const diff = total - current;
+    if (diff === 0 && !recRows.length) continue;
+    const entry = {
+      uid: u.id, name: u.name || '', email: u.email || '',
+      userCode: u.userCode || '', current, correct: total,
+      diff, txCount, phantomRows: recRows.length,
+    };
+    if (apply) {
+      await db.runTransaction(async (tx) => {
+        const ref = db.collection('users').doc(u.id);
+        const cur = await tx.get(ref);
+        tx.update(ref, {
+          wallet: total,
+          walletRecoveredAt: admin.firestore.FieldValue.serverTimestamp(),
+          walletRecoveredFrom: cur.data().wallet || 0,
+        });
+        for (const rid of recRows) {
+          tx.delete(db.collection('transactions').doc(rid));
+        }
+        tx.set(db.collection('users').doc(u.id)
+          .collection('walletAudit').doc(), {
+          before: current, delta: diff, after: total,
+          phantomReconciliationRowsDeleted: recRows.length,
+          reason: 'Admin wallet reconciliation',
+          source: 'adminTools/reconcileWallet',
+          at: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      });
+      entry.applied = true;
+    }
+    mismatches.push(entry);
+  }
+
+  return res.status(200).json({
+    ok: true,
+    scanned: users.length,
+    mismatches: mismatches.length,
+    applied: apply,
+    results: mismatches.slice(0, 200),
+  });
 }

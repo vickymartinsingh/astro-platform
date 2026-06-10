@@ -21,8 +21,8 @@ export default function DailyQuoteBanner() {
   // substitution + the empty-titleAuthed fallback.
   const headline = dailyQuoteService.resolveTitle(state,
     user ? profile : null);
-  const showMobile = state.showMobile !== false && !!state.showMobile;
-  const showDesktop = state.showDesktop !== false && !!state.showDesktop;
+  const showMobile = state.showMobile !== false;
+  const showDesktop = state.showDesktop !== false;
   if (!showMobile && !showDesktop) return null;
   // 2026-06-08: quotes are now scheduled per IST date. If nothing is
   // pinned to today, hide the banner outright - we never show a

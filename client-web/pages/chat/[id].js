@@ -156,6 +156,8 @@ export default function ChatScreen() {
     assistantService.triggerAiAssist({
       chatId, sessionId: session.id,
       astroUid: astroId, clientUid: user.uid,
+      kundliId: typeof router.query.kundli === 'string'
+        ? router.query.kundli : undefined,
     });
   }, [session?.id, session?.status, chatId, astroId, user?.uid, isView]);
 
@@ -186,7 +188,8 @@ export default function ChatScreen() {
     }
     // Last message is from the astrologer (real or AI). Pick the delay
     // based on whether this message is itself a nudge.
-    let delayMs = 45000;
+    // Admin can tune nudge_delay_seconds in settings/config (default 30).
+    let delayMs = Number(cfg.nudge_delay_seconds || 30) * 1000;
     const nudgeIdx = Number(last.aiNudgeIndex || 0);
     if (nudgeIdx === 1) delayMs = 45000;        // 1st nudge -> wait 45s
     else if (nudgeIdx === 2) delayMs = 30000;   // 2nd nudge -> goodbye in 30s
@@ -243,6 +246,8 @@ export default function ChatScreen() {
       assistantService.triggerAiAssist({
         chatId, sessionId: session.id,
         astroUid: astroId, clientUid: user.uid, force: true,
+        kundliId: typeof router.query.kundli === 'string'
+          ? router.query.kundli : undefined,
       });
     }, 15000);
     return () => clearTimeout(t);
@@ -403,6 +408,8 @@ export default function ChatScreen() {
       assistantService.triggerAiAssist({
         chatId, sessionId: session?.id,
         astroUid: astroId, clientUid: user.uid,
+        kundliId: typeof router.query.kundli === 'string'
+          ? router.query.kundli : undefined,
       });
     } else {
       // eslint-disable-next-line no-console

@@ -70,6 +70,11 @@ service cloud.firestore {
         allow update, delete: if false;
       }
 
+      match /engagement/{docId} {
+        allow read: if isAdmin() || isSelf(uid);
+        allow write: if isAdmin() || isSelf(uid);
+      }
+
       // Kundli PDF orders (per-customer view).
       //
       // OPERATOR REPORT 2026-06-07: "Customers are unable to see

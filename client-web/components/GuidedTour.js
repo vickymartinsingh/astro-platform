@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import useScrollLock from '../lib/useScrollLock';
 
 // App tour. Shows once per install (localStorage), re-openable via the
 // 'open-tour' event. Each step SPOTLIGHTS the real button/menu it is
@@ -114,6 +115,7 @@ export default function GuidedTour() {
     setShow(false);
   }
 
+  useScrollLock(show);
   if (!show) return null;
   const s = STEPS[i];
   const last = i === STEPS.length - 1;

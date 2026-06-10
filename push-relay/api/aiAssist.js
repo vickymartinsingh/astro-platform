@@ -48,37 +48,44 @@ async function logAttempt(db, payload) {
   } catch (_) { /* ignore */ }
 }
 
-// Build a Vedic-context block from the SIGNED-IN CLIENT's default
+// Build a Vedic-context block from the client's chosen (or default)
 // kundli profile.
 //
-// SECURITY (Hard Rule, per user requirement):
-//   - The query is `kundliProfiles WHERE userId == clientUid` with
-//     clientUid resolved from the chats/{chatId}.participants array
-//     (the customer half of the conversation, see "resolve
-//     participants" block in the main handler). Each AI reply
-//     re-runs this - there is no in-memory cache - so user A's
-//     chart can never bleed into user B's chat.
-//   - Returns `{ text, profileId, signature }`. The caller passes
-//     `profileId` and `signature` into the audit log so any future
-//     mis-routing is visible in aiLog/. The signature is a short
-//     digest of (clientUid, profileId, dob+tob+place) so an admin
-//     can confirm at a glance that the chart used matches the right
-//     person.
-async function kundliContext(db, clientUid) {
+// SECURITY:
+//   - When kundliId is supplied by the client we fetch that specific
+//     doc and verify its userId === clientUid before using it. A
+//     malicious caller cannot read another user's chart by guessing
+//     a profile id.
+//   - Without kundliId we fall back to a query WHERE userId==clientUid,
+//     preferring the isDefault flag, then the first doc.
+//   - Returns { text, profileId, signature } for audit logging.
+async function kundliContext(db, clientUid, kundliId) {
   const empty = { text: '', profileId: null, signature: '' };
   try {
-    const q = await db.collection('kundliProfiles')
-      .where('userId', '==', clientUid).get();
-    if (q.empty) return empty;
-    const profiles = q.docs.map((d) => ({ id: d.id, ...d.data() }));
-    const k = profiles.find((p) => p.isDefault) || profiles[0];
+    let k = null;
+
+    if (kundliId) {
+      // Fetch the SPECIFIC profile the user selected at session start.
+      const snap = await db.doc(`kundliProfiles/${kundliId}`).get();
+      if (snap.exists) {
+        const d = { id: snap.id, ...snap.data() };
+        // Hard security gate: profile MUST belong to this client.
+        if (String(d.userId || '') === String(clientUid)) k = d;
+      }
+    }
+
+    if (!k) {
+      // Fall back to default / first profile for this user.
+      const q = await db.collection('kundliProfiles')
+        .where('userId', '==', clientUid).get();
+      if (q.empty) return empty;
+      const profiles = q.docs.map((d) => ({ id: d.id, ...d.data() }));
+      k = profiles.find((p) => p.isDefault) || profiles[0];
+    }
+
     if (!k || !k.dob) return empty;
 
-    // BELT-AND-BRACES: drop the kundli if its userId doesn't match the
-    // chat's clientUid. The query above already filters by userId so
-    // this should never trigger - but if a stray doc ever lands with
-    // a mismatched userId (admin manual write etc), we want to NEVER
-    // forward someone else's chart into the LLM context.
+    // Belt-and-braces: userId must match regardless of how k was found.
     if (String(k.userId || '') !== String(clientUid)) return empty;
 
     const r = (k.report && typeof k.report === 'object') ? k.report : null;
@@ -176,7 +183,7 @@ module.exports = async (req, res) => {
 
   const body = readBody(req);
   const { chatId, sessionId, astroUid: astroFromBody,
-    clientUid: clientFromBody, force } = body;
+    clientUid: clientFromBody, force, kundliId } = body;
   if (!chatId) return res.status(400).json({ error: 'chatId required' });
 
   // -------- 1. Resolve participants ------------------------------------
@@ -391,7 +398,7 @@ module.exports = async (req, res) => {
   // plus the kundli profile id + signature so we can audit-log which
   // chart was used for THIS reply (any future cross-user leak would
   // show up as a profileId on the wrong user's chat).
-  const kctx = await kundliContext(db, clientUid);
+  const kctx = await kundliContext(db, clientUid, kundliId || null);
   const context = kctx.text || '';
   const systemText = buildSystemPrompt({ astrologer: astroName,
     client: clientName, context });

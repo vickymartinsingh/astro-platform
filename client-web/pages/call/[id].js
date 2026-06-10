@@ -9,6 +9,7 @@ import { useRequireClient } from '../../lib/useAuth';
 import { useSession } from '../../lib/useSession';
 import { useSettings } from '../../lib/useSettings';
 import { usePendingSession } from '../../lib/pendingSession';
+import useScrollLock from '../../lib/useScrollLock';
 
 export default function CallScreen() {
   const router = useRouter();
@@ -21,6 +22,7 @@ export default function CallScreen() {
   const { cfg } = useSettings();
 
   const { track } = usePendingSession();
+  useScrollLock(true);
   const [muted, setMuted] = useState(false);
   const [speaker, setSpeakerOn] = useState(true);
   const [camOn, setCamOn] = useState(callType === 'video');

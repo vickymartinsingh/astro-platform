@@ -1,9 +1,18 @@
 import { useEffect, useState } from 'react';
-import { db, adminService, REPORT_TYPES } from '@astro/shared';
+import { db, adminService, REPORT_TYPES, auth } from '@astro/shared';
 import { doc, getDoc } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
 import { flash } from '../lib/flash';
+
+function relayUrl() {
+  if (typeof process !== 'undefined'
+    && process.env.NEXT_PUBLIC_PUSH_RELAY) {
+    return process.env.NEXT_PUBLIC_PUSH_RELAY
+      .replace(/\/+$/, '');
+  }
+  return 'https://astro-platform-push-relay.vercel.app';
+}
 
 // settings/config is admin-writable (client-side fallback when Cloud
 // Functions are not deployed). Includes branding (logo / favicon).
@@ -21,6 +30,7 @@ export default function AdminSettings() {
         platformName: 'AstroSeer', commission_percent: 30,
         min_recharge: 100, signup_bonus: 0,
         free_chat_seconds: 0, free_call_seconds: 0, kundliToolUrl: '',
+        nudge_delay_seconds: 30,
       }));
   }, []);
 
@@ -44,6 +54,7 @@ export default function AdminSettings() {
       signup_bonus: Number(cfg.signup_bonus),
       free_chat_seconds: Number(cfg.free_chat_seconds),
       free_call_seconds: Number(cfg.free_call_seconds),
+      nudge_delay_seconds: Number(cfg.nudge_delay_seconds || 30),
       kundliToolUrl: cfg.kundliToolUrl || '',
       gst_percent: Number(cfg.gst_percent || 0),
       gstin: cfg.gstin || '',
@@ -124,6 +135,9 @@ export default function AdminSettings() {
     ['free_chat_seconds', 'Free Chat Seconds (e.g. 300 = first 5 min)',
       'number'],
     ['free_call_seconds', 'Free Call Seconds (e.g. 300 = first 5 min)',
+      'number'],
+    ['nudge_delay_seconds',
+      'AI Idle Nudge Delay (seconds, default 30 — time before nudge fires if client is silent)',
       'number'],
     ['kundliToolUrl', 'Kundli Tool URL', 'text'],
     ['gst_percent', 'GST %', 'number'],
@@ -278,6 +292,117 @@ export default function AdminSettings() {
           Save Settings
         </button>
       </div>
+
+      <WalletReconcile />
     </Layout>
+  );
+}
+
+function WalletReconcile() {
+  const [result, setResult] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState('scan');
+
+  async function run(apply) {
+    setBusy(true);
+    setResult(null);
+    try {
+      const token = await auth.currentUser.getIdToken();
+      const r = await fetch(`${relayUrl()}/api/adminTools`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ tool: 'reconcileWallet', apply }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || 'request failed');
+      setResult(j);
+      flash(apply
+        ? `Reconciled ${j.mismatches} wallet(s)`
+        : `Found ${j.mismatches} mismatch(es) across ${j.scanned} users`);
+    } catch (e) {
+      flash(String(e.message || e), 'error');
+    } finally { setBusy(false); }
+  }
+
+  return (
+    <>
+      <h2 className="mt-8 mb-2 text-lg font-bold">Wallet Health</h2>
+      <p className="mb-2 text-xs text-sub-text">
+        Scan all user wallets against transaction ledger to find
+        mismatches. Apply to fix drifted balances.
+      </p>
+      <div className="surface space-y-3 p-4">
+        <div className="flex gap-2">
+          <button disabled={busy}
+            onClick={() => { setMode('scan'); run(false); }}
+            className="btn-outline flex-1 justify-center">
+            {busy && mode === 'scan' ? 'Scanning…' : 'Scan (dry run)'}
+          </button>
+          <button disabled={busy}
+            onClick={() => { setMode('fix'); run(true); }}
+            className="btn-grad flex-1 justify-center">
+            {busy && mode === 'fix'
+              ? 'Reconciling…' : 'Scan & Fix'}
+          </button>
+        </div>
+        {result && (
+          <div className="rounded-lg bg-bg-light p-3 text-sm">
+            <p className="font-semibold">
+              Scanned {result.scanned} users
+              {result.applied ? ' – APPLIED' : ' – dry run'}
+            </p>
+            {result.mismatches === 0 && (
+              <p className="mt-1 text-green-700">
+                All wallets match their transaction ledger.
+              </p>
+            )}
+            {result.mismatches > 0 && (
+              <>
+                <p className="mt-1 text-amber-700">
+                  {result.mismatches} mismatch(es) found
+                </p>
+                <div className="mt-2 max-h-60 overflow-auto text-xs">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="border-b text-sub-text">
+                        <th className="pb-1">User</th>
+                        <th className="pb-1">Current</th>
+                        <th className="pb-1">Correct</th>
+                        <th className="pb-1">Diff</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(result.results || []).map((r) => (
+                        <tr key={r.uid} className="border-b border-bg-light">
+                          <td className="py-1">
+                            {r.name || r.email || r.userCode || r.uid}
+                          </td>
+                          <td className="py-1">
+                            {'₹'}{r.current}
+                          </td>
+                          <td className="py-1">
+                            {'₹'}{r.correct}
+                          </td>
+                          <td className={`py-1 font-semibold ${
+                            r.diff > 0 ? 'text-green-700'
+                              : r.diff < 0 ? 'text-rose-700'
+                                : ''}`}>
+                            {r.diff > 0 ? '+' : ''}{'₹'}{r.diff}
+                            {r.applied ? ' ✓' : ''}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </>
   );
 }

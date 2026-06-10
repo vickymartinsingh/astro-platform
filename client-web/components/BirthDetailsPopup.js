@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import { kundliService } from '@astro/shared';
 import { useAuth } from '../lib/useAuth';
+import useScrollLock from '../lib/useScrollLock';
 import { DateField, TimeField, CityField } from './BirthInputs';
 
 // One-shot onboarding popup that asks the new user for the birth
@@ -110,6 +111,7 @@ export default function BirthDetailsPopup() {
     } finally { setBusy(false); }
   }
 
+  useScrollLock(open);
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[2147483645] flex items-end

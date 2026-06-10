@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { emailService } from '@astro/shared';
+import useScrollLock from '../lib/useScrollLock';
 
 // "Send to email" popup used on /orders. Customer types (or accepts
 // the prefilled) recipient address, hits Send, and the PDF is
@@ -29,6 +30,7 @@ async function blobToBase64(blob) {
 
 export default function SendPdfByEmailModal({ order, defaultEmail,
   onClose }) {
+  useScrollLock(true);
   const [to, setTo] = useState(defaultEmail || '');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');

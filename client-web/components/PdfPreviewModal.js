@@ -1,4 +1,5 @@
 import { kundliService } from '@astro/shared';
+import useScrollLock from '../lib/useScrollLock';
 
 // In-app PDF preview. Renders the PDF in an iframe (web + WebView)
 // with a sticky toolbar carrying the file name on the left, a
@@ -11,6 +12,7 @@ import { kundliService } from '@astro/shared';
 // "tap to preview" experience instead of dumping them into a
 // Chrome PDF viewer on a separate tab.
 export default function PdfPreviewModal({ url, name, onClose }) {
+  useScrollLock(!!url);
   function isNative() {
     return typeof window !== 'undefined'
       && !!window.Capacitor

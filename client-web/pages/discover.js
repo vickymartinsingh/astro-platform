@@ -10,6 +10,7 @@ import {
 } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { useOptionalClient } from '../lib/useAuth';
+import useScrollLock from '../lib/useScrollLock';
 import { useAuthModal } from '../lib/authModal';
 import KundliPicker from '../components/KundliPicker';
 import DuplicateOrderModal from '../components/DuplicateOrderModal';
@@ -417,6 +418,9 @@ export default function Discover() {
 }
 
 function FeatureDetail({ f, price, status, wallet, busy, onClose, onBuy }) {
+  // Lock background scroll while the sheet is open (operator screenshot
+  // 2026-06-08: tile popups left the body scrolling on Android).
+  useScrollLock(true);
   const w = Number(wallet || 0);
   const enough = price === 0 || w >= price;
   const comingSoon = status === 'coming_soon';
@@ -535,6 +539,7 @@ function FeatureDetail({ f, price, status, wallet, busy, onClose, onBuy }) {
 function InsufficientBalanceModal({
   feature, need, price, walletAt, onLater, onAdd,
 }) {
+  useScrollLock(true);
   return (
     <div className="fixed inset-0 z-[70] flex items-center
       justify-center bg-black/50 px-4" role="dialog" aria-modal="true"
@@ -595,6 +600,7 @@ function InsufficientBalanceModal({
 //              confirmation. Never charged.
 //   - error: red header + reason + "wallet not charged".
 function SuccessModal({ result, feature, status, onClose }) {
+  useScrollLock(true);
   const cached = !!(result && result.pdfUrl);
   const pending = !!(result && result.pending);
   const isError = !!(result && result.error);

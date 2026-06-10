@@ -44,6 +44,8 @@ const ICON = {
   theme: '◑', ai: '◬', ailog: '◗', email: '✉',
   reset: '⟲', archive: '⛁', resetTxns: '⟳', content: '✎',
   audit: '⌖', health: '◉', reach: '⌕', users2: '◔',
+  engagement: '★',
+  membership: '👑',
 };
 
 const ADMIN_GROUPS = [
@@ -93,6 +95,10 @@ const ADMIN_GROUPS = [
       '"Stars have answers" card on customer home', 'cms'],
     ['/admin-daily-quotes', 'Daily quote banner',
       '"Hey, Cosmic Explorer" + rotating quote of the day', 'cms'],
+    ['/admin-engagement', 'Engagement',
+      'Tiles, quizzes, points economy', 'engagement'],
+    ['/admin-membership', 'Membership',
+      'Tiers, benefits, FAQ', 'membership'],
     ['/admin-content-text', 'Text & copy editor',
       'Edit every visible string', 'content'],
     ['/admin-cms', 'CMS builder', 'Pages + banners', 'cms'],
@@ -148,6 +154,7 @@ const DEV_GROUPS = [
   ]],
   ['Content', [
     ['/admin-content-text', 'Text & copy editor', 'Every string', 'content'],
+    ['/admin-engagement', 'Engagement', 'Tiles + points', 'engagement'],
     ['/admin-cms', 'CMS / pages', '', 'cms'],
     ['/admin-icons', 'Icons', '', 'icons'],
     ['/admin-horoscope', 'Horoscope CSV', '', 'horoscope'],

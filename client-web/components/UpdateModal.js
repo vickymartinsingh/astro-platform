@@ -2,6 +2,7 @@ import { useState } from 'react';
 import {
   useAppUpdate, startUpdate, shouldShowPopup, dismissPopup,
 } from '../lib/appUpdate';
+import useScrollLock from '../lib/useScrollLock';
 
 // Play-Store-look-alike update sheet (operator reference: Astrotalk's
 // in-app modal). Slides up from the bottom on a dimmed backdrop. Body
@@ -47,6 +48,12 @@ function CloseIcon() {
 export default function UpdateModal() {
   const u = useAppUpdate();
   const [open, setOpen] = useState(true);
+  // Compute visibility BEFORE early returns so the hook call is
+  // unconditional (React rules of hooks).
+  const visible = u.updateAvailable && u.popupEnabled
+    && (u.requiredUpdate || shouldShowPopup(u.latestBuild))
+    && (open || u.requiredUpdate);
+  useScrollLock(!!visible);
   // Don't render at all when there's nothing to update or the admin
   // killed the popup setting OR the user already dismissed this build.
   if (!u.updateAvailable || !u.popupEnabled) return null;

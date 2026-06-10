@@ -169,13 +169,16 @@ export async function mergeAccounts(primaryUid, secondaryUid, picks = {},
       const p = pSnap.data();
       const s = sSnap.data();
 
-      // 1) Wallet move.
+      // 1) Wallet move (transactional to prevent race with concurrent credits).
       const sWallet = Number(s.wallet || 0);
-      const pWallet = Number(p.wallet || 0);
-      const newWallet = pWallet + Math.max(0, sWallet);
       let walletMoved = 0;
       if (sWallet > 0) {
-        await updateDoc(pRef, { wallet: newWallet });
+        await runTransaction(db, async (txn) => {
+          const freshP = await txn.get(pRef);
+          const livePWallet = Number(
+            (freshP.exists() ? freshP.data().wallet : 0) || 0);
+          txn.update(pRef, { wallet: livePWallet + sWallet });
+        });
         try {
           await addDoc(collection(db, 'transactions'), {
             userId: primaryUid,

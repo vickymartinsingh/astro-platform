@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { abuseService } from '@astro/shared';
+import useScrollLock from '../lib/useScrollLock';
 import { DateField } from './BirthInputs';
 
 // Report an astrologer. Name + mobile + email are mandatory, a reason
@@ -8,6 +9,7 @@ import { DateField } from './BirthInputs';
 const MIN_DESC = 100;
 
 export default function ReportAstrologerModal({ astro, by, onClose }) {
+  useScrollLock(true);
   const [f, setF] = useState({
     name: by?.name || '',
     email: by?.email || '',

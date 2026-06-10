@@ -7,6 +7,7 @@ import {
 import Layout from '../components/Layout';
 import { useOptionalClient } from '../lib/useAuth';
 import { useSettings } from '../lib/useSettings';
+import useScrollLock from '../lib/useScrollLock';
 
 function BackBar({ onBack }) {
   return (
@@ -185,6 +186,7 @@ function Guided({ features }) {
   const [revealed, setRevealed] = useState([]);
   const [reading, setReading] = useState(null);
   const [showPopup, setShowPopup] = useState(false);
+  useScrollLock(showPopup);
 
   // Refresh / deep-link straight to a later step with no aspect chosen:
   // send them back to the start so the flow is never half-built.
