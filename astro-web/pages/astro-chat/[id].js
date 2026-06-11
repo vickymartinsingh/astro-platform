@@ -47,6 +47,7 @@ export default function AstroChat() {
   const typingOffRef = useRef(null);
   const recRef = useRef(null);
   const chunksRef = useRef([]);
+  const aiCfgRef = useRef({});
   const chatId = session
     ? [session.userId, session.astroId].sort().join('_') : null;
 
