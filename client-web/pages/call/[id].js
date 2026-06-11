@@ -298,8 +298,21 @@ export default function CallScreen() {
       )}
 
       <div className="absolute left-0 right-0 top-0 flex justify-center
-                      bg-black/40 px-4 py-3 text-sm">
-        {astro.name} · {mmss} · ₹{wallet.toFixed(0)} remaining
+                      bg-black/40 px-4 py-3 text-sm font-mono">
+        {astro.name}
+        {' · '}{mmss}
+        {ratePerSec > 0 ? (
+          <span className={totalSecsLeft <= 60
+            ? 'ml-1 text-warning font-bold'
+            : 'ml-1 opacity-80'}>
+            {' · '}
+            {`${String(Math.floor(totalSecsLeft / 60)).padStart(2,'0')}:${String(totalSecsLeft % 60).padStart(2,'0')} left`}
+          </span>
+        ) : (
+          <span className="ml-1 opacity-70">
+            {' · '}₹{wallet.toFixed(0)}
+          </span>
+        )}
       </div>
 
       {lowBalance && (

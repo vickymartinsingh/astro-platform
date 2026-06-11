@@ -380,6 +380,10 @@ export default function ChatScreen() {
   const showSecs = ratePerMin > 0 ? liveSecs : 0;
   const clock = `${String(Math.floor(showSecs / 60)).padStart(2, '0')}:` +
     `${String(showSecs % 60).padStart(2, '0')}`;
+  // Elapsed timer: counts UP from startTime so the user always sees
+  // how long they have been connected, regardless of per-minute rate.
+  const elapsedClock = `${String(Math.floor(elapsedSecs / 60))
+    .padStart(2, '0')}:${String(elapsedSecs % 60).padStart(2, '0')}`;
   // Low-balance threshold: 60 seconds of TOTAL remaining time (free +
   // wallet). The existing inline yellow banner above the input fires
   // automatically on this flag - the user sees "Low balance, about
@@ -538,8 +542,16 @@ export default function ChatScreen() {
                 </span>
               ) : isView ? 'Viewing past messages'
                 : waiting ? 'Connecting...'
-                : active && ratePerMin > 0 ? `${clock} left`
-                : active ? 'online'
+                : active ? (
+                  <span className="font-mono font-semibold text-primary">
+                    {elapsedClock}
+                    {ratePerMin > 0
+                      ? <span className="font-normal text-sub-text">
+                          {` · ${clock} left`}
+                        </span>
+                      : null}
+                  </span>
+                )
                 : 'Consultation ended'}
             </div>
           </div>

@@ -285,13 +285,17 @@ async function resolveName(uid) {
 
 export async function updateSessionStatus(id, status, extra = {}) {
   const update = { status, ...extra };
-  // Always stamp startTime when a session goes active. Billing in
-  // endAndSettleClient() requires this field to compute the charged
-  // duration. Guard: if the caller already passed startTime (manual
-  // accept in IncomingRequest) we keep their value; otherwise we set
-  // it here so the auto-accept path (which swallows errors) cannot
-  // silently leave startTime missing and produce a zero-cost session.
-  if (status === 'active' && !update.startTime) {
+  // ALWAYS stamp startTime with serverTimestamp() when a session goes
+  // active, overriding any client-supplied Date. Reasons:
+  //   1. serverTimestamp() is resolved on the Firestore server so it
+  //      cannot be off by device clock skew.
+  //   2. The manual-accept path passes { startTime: new Date() }
+  //      which is fine, but serverTimestamp() is more reliable.
+  //   3. The auto-accept path uses .catch(()=>{}) so if the write
+  //      silently fails, startTime stays null and endAndSettleClient
+  //      computes duration=0 and charges nothing.
+  // Billing depends entirely on startTime, so we force it here.
+  if (status === 'active') {
     update.startTime = serverTimestamp();
   }
   await updateDoc(doc(db, 'sessions', id), update);
