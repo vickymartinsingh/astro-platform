@@ -217,13 +217,19 @@ export default function Dashboard() {
   }, []);
   useEffect(() => {
     if (!user) return;
-    engagementService.getUserPoints(user.uid)
-      .then((d) => setUserPoints((d?.total || 0) - (d?.redeemed || 0)))
-      .catch(() => setUserPoints(0));
+    // Real-time points listener so the badge updates the moment points
+    // are awarded anywhere (another tab, the engage page, daily challenge).
+    const ptsRef = doc(db, 'users', user.uid, 'engagement', 'points');
+    const unsub = onSnapshot(ptsRef, (snap) => {
+      const d = (snap.exists() && snap.data()) || {};
+      setUserPoints(Math.max(0,
+        Number(d.total || 0) - Number(d.redeemed || 0)));
+    }, () => setUserPoints(0));
     const today = new Date().toISOString().slice(0, 10);
     engagementService.getDailyChallengeProgress(user.uid, today)
       .then((p) => { if (p && p.completed) setDcDone(true); })
       .catch(() => {});
+    return () => unsub();
   }, [user?.uid]);
 
   const revRef = useRef(null);

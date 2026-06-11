@@ -35,6 +35,15 @@ export function fmtDateLong(s) {
   const idx = Math.max(0, Math.min(11, Number(mo) - 1));
   return `${d}-${MONTH_ABBR[idx]}-${y}`;
 }
+// Format milliseconds (from vimshottari.toMs) as dd-Mmm-YYYY.
+function fmtDashaDate(ms) {
+  if (!Number.isFinite(+ms)) return '';
+  const dt = new Date(+ms);
+  if (Number.isNaN(+dt)) return '';
+  const d = String(dt.getDate()).padStart(2, '0');
+  const mo = MONTH_ABBR[dt.getMonth()] || '';
+  return `${d}-${mo}-${dt.getFullYear()}`;
+}
 
 export default function Kundli() {
   const { user, profile, loading } = useRequireClient();
@@ -2630,8 +2639,8 @@ function VimshottariNarrativeSection({ r, raw }) {
               </div>
               <p className="text-dark-text">
                 {text || (`The ${txt(d.planet)} Mahadasha runs from `
-                  + `${String(d.start || '').slice(0, 10)} to `
-                  + `${String(d.end || '').slice(0, 10)}. `
+                  + `${fmtDateLong(String(d.start || '').slice(0, 10))} to `
+                  + `${fmtDateLong(String(d.end || '').slice(0, 10))}. `
                   + `${PLANET_KARAKA[txt(d.planet)]
                     ? 'Themes activated: ' + PLANET_KARAKA[txt(d.planet)]
                       + '. ' : ''}`
@@ -2683,6 +2692,82 @@ function YogaNarrativeSection({ r, raw }) {
   );
 }
 
+// Chart-backed remedy data keyed by planet name.
+const PLANET_REMEDIES = {
+  Sun: {
+    gemstone: 'Ruby (Manik) set in gold, worn on the right ring finger on a Sunday morning.',
+    rudraksha: '1 Mukhi Rudraksha: strengthens confidence and leadership.',
+    mantra: 'Om Hraam Hreem Hraum Sah Suryaya Namah (108 times at sunrise).',
+    fasting: 'Fast on Sundays with a diet of sweet, wheat-based foods.',
+    charity: 'Donate wheat, jaggery, copper items or clothes to the needy on Sundays.',
+    reason: 'Sun is significant in your chart. Strengthening the Sun improves confidence, health, career and your relationship with authority figures.',
+  },
+  Moon: {
+    gemstone: 'Natural Pearl (Moti) set in silver, worn on the right little finger on a Monday.',
+    rudraksha: '2 Mukhi Rudraksha: balances emotions and mental peace.',
+    mantra: 'Om Shraam Shreem Shraum Sah Chandraya Namah (108 times on Monday evenings).',
+    fasting: 'Fast on Mondays, taking only milk and white foods.',
+    charity: 'Donate rice, white cloth, milk or silver items on Mondays.',
+    reason: 'Moon governs mind, emotions and mother. These remedies calm mental fluctuations, improve relationships and bring inner peace.',
+  },
+  Mars: {
+    gemstone: 'Red Coral (Moonga) set in gold or copper, worn on the right ring finger on a Tuesday.',
+    rudraksha: '3 Mukhi Rudraksha: reduces anger and boosts courage.',
+    mantra: 'Om Kraam Kreem Kraum Sah Bhoumaya Namah (108 times on Tuesdays).',
+    fasting: 'Fast on Tuesdays, eating only once a day without salt.',
+    charity: 'Donate red lentils, copper utensils or red clothes on Tuesdays.',
+    reason: 'Mars influences energy, courage, property and siblings. These remedies reduce impulsiveness, protect from accidents and strengthen willpower.',
+  },
+  Mercury: {
+    gemstone: 'Emerald (Panna) set in gold, worn on the right little finger on a Wednesday.',
+    rudraksha: '4 Mukhi Rudraksha: sharpens intellect and communication.',
+    mantra: 'Om Braam Breem Braum Sah Budhaya Namah (108 times on Wednesdays).',
+    fasting: 'Fast on Wednesdays, avoiding sour foods.',
+    charity: 'Donate green vegetables, moong dal or green cloth on Wednesdays.',
+    reason: 'Mercury rules communication, intelligence, trade and education. These remedies remove mental blocks and improve business and learning.',
+  },
+  Jupiter: {
+    gemstone: 'Yellow Sapphire (Pukhraj) set in gold, worn on the right index finger on a Thursday.',
+    rudraksha: '5 Mukhi Rudraksha: brings wisdom, prosperity and good fortune.',
+    mantra: 'Om Graam Greem Graum Sah Gurave Namah (108 times on Thursdays).',
+    fasting: 'Fast on Thursdays, eating only yellow foods like turmeric rice or besan sweets.',
+    charity: 'Donate yellow cloth, turmeric, chickpeas or gold on Thursdays.',
+    reason: 'Jupiter governs fortune, wisdom, children and spiritual growth. Strengthening Jupiter brings blessings, expansion and good luck.',
+  },
+  Venus: {
+    gemstone: 'Diamond or White Sapphire set in platinum or silver, worn on the right middle finger on a Friday.',
+    rudraksha: '6 Mukhi Rudraksha: enhances relationships, beauty and harmony.',
+    mantra: 'Om Draam Dreem Draum Sah Shukraya Namah (108 times on Fridays).',
+    fasting: 'Fast on Fridays, avoiding salty or spicy foods.',
+    charity: 'Donate white cloth, rice, sugar or silver items on Fridays.',
+    reason: 'Venus rules love, marriage, creativity and material comfort. These remedies improve relationships, creative expression and overall harmony.',
+  },
+  Saturn: {
+    gemstone: 'Blue Sapphire (Neelam) set in silver. CONSULT an expert astrologer before wearing.',
+    rudraksha: '7 Mukhi Rudraksha: reduces the hardships of Saturn and brings discipline.',
+    mantra: 'Om Praam Preem Praum Sah Shanaischaraya Namah (108 times on Saturdays).',
+    fasting: 'Fast on Saturdays, eating only once and avoiding oil and salt.',
+    charity: 'Donate sesame seeds, black cloth, iron items or mustard oil on Saturdays.',
+    reason: 'Saturn governs karma, discipline, longevity and service. Propitiating Saturn reduces delays, chronic issues and karmic obstacles.',
+  },
+  Rahu: {
+    gemstone: 'Hessonite Garnet (Gomedh) set in silver. Consult an astrologer before wearing.',
+    rudraksha: '8 Mukhi Rudraksha: protects from the sudden negative effects of Rahu.',
+    mantra: 'Om Bhram Bhreem Bhraum Sah Rahave Namah (108 times on Saturdays).',
+    fasting: 'Fast on Saturdays, donating to orphanages or charitable causes.',
+    charity: 'Donate blankets, coal, black sesame or multi-coloured cloth on Saturdays.',
+    reason: 'Rahu causes illusions, sudden events, foreign connections and ambition. These remedies protect from the negative effects of Rahu and channel its energy positively.',
+  },
+  Ketu: {
+    gemstone: "Cat's Eye (Lahsuniya) set in silver. Consult an astrologer before wearing.",
+    rudraksha: '9 Mukhi Rudraksha: reduces the spiritual restlessness caused by Ketu.',
+    mantra: 'Om Straam Streem Straum Sah Ketave Namah (108 times on Tuesdays).',
+    fasting: 'Fast on Tuesdays or follow a simple diet with minimal food.',
+    charity: "Donate blankets, cats' eye items, or oil lamps to temples.",
+    reason: 'Ketu governs spirituality, detachment and past-life karma. These remedies reduce confusion, bring spiritual clarity and help release old patterns.',
+  },
+};
+
 // ---- Free Report: Remedies (gemstone, rudraksha, mantras…) ------
 function RemediesSection({ r, raw }) {
   const rem = raw.remedies || r.remedies || {};
@@ -2691,42 +2776,126 @@ function RemediesSection({ r, raw }) {
   const mantra = rem.mantra || rem.mantras;
   const fast = rem.fasting || rem.fasts;
   const charity = rem.charity || rem.donations;
+  const hasApiData = gem || rudraksha || mantra || fast || charity;
+
+  // Chart-backed computed remedies when API has no data.
+  // Use the current Mahadasha lord and any debilitated/combust planets.
+  const chartRemedies = [];
+  if (!hasApiData) {
+    const cd = r.currentDasha;
+    const mahaLord = cd && vimshottari.normalizeLord(cd.planet);
+    if (mahaLord && PLANET_REMEDIES[mahaLord]) {
+      chartRemedies.push({
+        planet: mahaLord,
+        rem: PLANET_REMEDIES[mahaLord],
+        isMaha: true,
+      });
+    }
+    // Add remedies for debilitated or combust planets in the chart.
+    (r.planets || []).forEach((p) => {
+      const pName = vimshottari.normalizeLord(txt(p.name));
+      if (!pName || pName === mahaLord) return;
+      if ((txt(p.dignity) === 'Debilitated' || p.combust)
+          && PLANET_REMEDIES[pName]) {
+        chartRemedies.push({
+          planet: pName,
+          rem: PLANET_REMEDIES[pName],
+          isMaha: false,
+          reason: p.combust
+            ? `${pName} is combust (too close to the Sun) in your chart.`
+            : `${pName} is debilitated in your chart.`,
+        });
+      }
+    });
+  }
+
   return (
     <>
       <Banner title="Remedies" />
-      {!gem && !rudraksha && !mantra && !fast && !charity && (
-        <PlaceholderNote text="No remedy block returned by the
-          provider for this chart yet." />
-      )}
-      {gem && (
-        <RemedyCard title="Gemstone"
-          body={typeof gem === 'string' ? gem
-            : (gem.text || gem.description
-              || `${gem.name || ''} ${gem.metal
-                ? `set in ${gem.metal}` : ''}`)} />
-      )}
-      {rudraksha && (
-        <RemedyCard title="Rudraksha"
-          body={typeof rudraksha === 'string' ? rudraksha
-            : (rudraksha.text || rudraksha.description
-              || `${rudraksha.mukhi || ''} Mukhi rudraksha`)} />
-      )}
-      {mantra && (
-        <RemedyCard title="Mantras"
-          body={typeof mantra === 'string' ? mantra
-            : Array.isArray(mantra)
-              ? mantra.map(txt).filter(Boolean).join('\n')
-              : (mantra.text || mantra.description)} />
-      )}
-      {fast && (
-        <RemedyCard title="Fasting"
-          body={typeof fast === 'string' ? fast
-            : (fast.text || fast.description)} />
-      )}
-      {charity && (
-        <RemedyCard title="Charity / Donations"
-          body={typeof charity === 'string' ? charity
-            : (charity.text || charity.description)} />
+      {hasApiData ? (
+        <>
+          {gem && (
+            <RemedyCard title="Gemstone"
+              body={typeof gem === 'string' ? gem
+                : (gem.text || gem.description
+                  || `${gem.name || ''} ${gem.metal
+                    ? `set in ${gem.metal}` : ''}`)} />
+          )}
+          {rudraksha && (
+            <RemedyCard title="Rudraksha"
+              body={typeof rudraksha === 'string' ? rudraksha
+                : (rudraksha.text || rudraksha.description
+                  || `${rudraksha.mukhi || ''} Mukhi rudraksha`)} />
+          )}
+          {mantra && (
+            <RemedyCard title="Mantras"
+              body={typeof mantra === 'string' ? mantra
+                : Array.isArray(mantra)
+                  ? mantra.map(txt).filter(Boolean).join('\n')
+                  : (mantra.text || mantra.description)} />
+          )}
+          {fast && (
+            <RemedyCard title="Fasting"
+              body={typeof fast === 'string' ? fast
+                : (fast.text || fast.description)} />
+          )}
+          {charity && (
+            <RemedyCard title="Charity / Donations"
+              body={typeof charity === 'string' ? charity
+                : (charity.text || charity.description)} />
+          )}
+        </>
+      ) : chartRemedies.length > 0 ? (
+        <div className="space-y-3 mt-3">
+          <div className="rounded-card bg-amber-50 px-3 py-2
+            text-[11px] text-amber-800">
+            Remedies are based on your current Mahadasha lord and
+            debilitated planets in your natal chart. Always consult
+            a qualified Vedic astrologer before wearing gemstones.
+          </div>
+          {chartRemedies.map(({ planet, rem: pr, isMaha, reason }) => (
+            <div key={planet}
+              className="overflow-hidden rounded-2xl border
+                border-amber-100 bg-white">
+              <div className="border-b border-amber-50 bg-amber-50
+                px-3 py-2">
+                <div className="text-[12px] font-bold text-primary">
+                  {planet} Remedies
+                  {isMaha && (
+                    <span className="ml-2 rounded-full bg-primary
+                      px-1.5 py-0.5 text-[9px] text-white">
+                      Current Mahadasha
+                    </span>
+                  )}
+                </div>
+                <div className="mt-0.5 text-[11px] text-amber-700">
+                  {isMaha
+                    ? `${planet} is your current major-period lord. Propitiating ${planet} strengthens this entire Mahadasha.`
+                    : (reason || `${planet} needs attention in your chart.`)}
+                </div>
+              </div>
+              <div className="divide-y divide-gray-50">
+                {[
+                  ['Gemstone', pr.gemstone],
+                  ['Rudraksha', pr.rudraksha],
+                  ['Mantra', pr.mantra],
+                  ['Fasting', pr.fasting],
+                  ['Charity', pr.charity],
+                ].map(([label, body]) => (
+                  <div key={label} className="px-3 py-2">
+                    <div className="text-[10px] font-bold uppercase
+                      tracking-wide text-sub-text">{label}</div>
+                    <div className="mt-0.5 text-[12px] leading-relaxed
+                      text-dark-text">{body}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <PlaceholderNote text="No remedy data available for this
+          chart. Load the kundli first, then check back." />
       )}
     </>
   );
@@ -3162,27 +3331,25 @@ function DashaTab({ r }) {
         <PlanetaryDashaView dasha={r.dasha || []} r={r} />
       )}
       {sub === 'pastfuture' && (
-        <VamshottariTimeline dasha={r.dasha || []} />
+        <VamshottariTimeline dasha={r.dasha || []} r={r} />
       )}
     </div>
   );
 }
 
-// ---------- 4-level interactive drilldown ----------------------
-// AstroTalk-style: click a Mahadasha to see its 9 Antardashas,
-// click an Antardasha to see its 9 Pratyantars, click a Pratyantar
-// to see its 9 Sookshmas. "LEVEL UP" button climbs back. The Maha
-// level comes straight from r.dasha; the deeper levels are computed
-// with proportional Vimshottari math (no extra API calls).
+// ---------- 3-level interactive drilldown ----------------------
+// Click a Mahadasha to see its 9 Antardashas, click an Antardasha
+// to see its 9 Pratyantardashas. The Maha level comes from r.dasha;
+// deeper levels are computed with proportional Vimshottari math.
 const LEVEL_LABELS = [
-  'Mahadasha', 'Antardasha', 'Pratyantardasha', 'Sookshmadasha',
+  'Mahadasha', 'Antardasha', 'Pratyantardasha',
 ];
 
 function DashaDrilldown({ dasha }) {
-  // path = chain of selections, one per level above the one we're
-  // currently viewing. path[0] = chosen Maha, path[1] = chosen
-  // Antar, path[2] = chosen Pratyantar. Length 0 = looking at the
-  // list of 9 Mahas. Length 3 = looking at 9 Sookshmas (deepest).
+  // path = chain of selections, one per level above the current view.
+  // path[0] = chosen Maha, path[1] = chosen Antar.
+  // Length 0 = Mahadasha list (level 1).
+  // Length 2 = Pratyantardasha list (deepest, level 3).
   const [path, setPath] = useState([]);
   const nowMs = Date.now();
 
@@ -3215,8 +3382,8 @@ function DashaDrilldown({ dasha }) {
     if (!node) { current = []; break; }
     current = vimshottari.subPeriods(node);
   }
-  const depth = path.length; // 0 = Maha, 3 = Sookshma
-  const canDrill = depth < 3;
+  const depth = path.length; // 0 = Maha, 1 = Antar, 2 = Pratyantar
+  const canDrill = depth < 2;
 
   // Build the breadcrumb of selected lords (with short labels).
   const crumbs = [];
@@ -3382,9 +3549,9 @@ function DashaDrilldown({ dasha }) {
                 </span>
                 <span className="flex items-center gap-1.5 pl-11
                   text-[10.5px] text-sub-text sm:pl-0">
-                  <span>{vimshottari.fmtDate(c.startMs)}</span>
+                  <span>{fmtDashaDate(c.startMs)}</span>
                   <span className="opacity-50">to</span>
-                  <span>{vimshottari.fmtDate(c.endMs)}</span>
+                  <span>{fmtDashaDate(c.endMs)}</span>
                   {canDrill && (
                     <span className={`ml-1 ${isCur
                       ? 'text-primary' : 'text-sub-text'}`}>›</span>
@@ -3396,8 +3563,8 @@ function DashaDrilldown({ dasha }) {
         </div>
         {!canDrill && (
           <p className="mt-2 px-2 text-[10px] text-sub-text">
-            You're at the deepest level (Sookshma).
-            Use LEVEL UP to climb back.
+            You are at the Pratyantardasha level (level 3).
+            Use LEVEL UP to go back.
           </p>
         )}
       </div>
@@ -3698,9 +3865,9 @@ function PlanetaryDashaView({ dasha, r }) {
                       ${isActive ? 'text-white/75'
                         : isPast ? 'text-gray-400'
                           : 'text-sub-text'}`}>
-                      {String(d.start || '').slice(0, 10)}{' '}
+                      {fmtDateLong(String(d.start || '').slice(0, 10))}{' '}
                       <span className="opacity-60">to</span>{' '}
-                      {String(d.end || '').slice(0, 10)}
+                      {fmtDateLong(String(d.end || '').slice(0, 10))}
                     </div>
                   </div>
                 </div>
@@ -3738,11 +3905,15 @@ function PlanetaryDashaView({ dasha, r }) {
   );
 }
 
-// ---------- Vamshottari Past and Future Timeline ----------------
-// Compact visual timeline of all 9 Mahadasha periods showing
-// past / active / future at a glance.
-function VamshottariTimeline({ dasha }) {
+// ---------- Vamshottari Past and Future (detailed, clickable) -------
+// Full interactive timeline: click any Mahadasha to expand its 9
+// Antardashas, click any Antardasha to see a full chart-backed report
+// for that Maha + Antar combination covering all life areas.
+function VamshottariTimeline({ dasha, r }) {
   const nowMs = Date.now();
+  const [openMaha, setOpenMaha] = useState(null);  // index of open Maha
+  const [openAntar, setOpenAntar] = useState(null); // {mahaIdx, antarIdx}
+  const rPlanets = (r && r.planets) || [];
 
   if (!dasha || !dasha.length) {
     return (
@@ -3752,147 +3923,274 @@ function VamshottariTimeline({ dasha }) {
     );
   }
 
-  const allStartMs = vimshottari.toMs((dasha[0] || {}).start);
-  const allEndMs = vimshottari.toMs(
-    (dasha[dasha.length - 1] || {}).end);
-  const totalMs = allEndMs - allStartMs;
-  const nowPct = Number.isFinite(allStartMs)
-    && Number.isFinite(allEndMs) && totalMs > 0
-    ? Math.max(0, Math.min(100,
-        ((nowMs - allStartMs) / totalMs) * 100))
-    : null;
+  // Build full prediction text for a Maha + Antar combination.
+  function buildDashaReport(mahaLord, antarLord) {
+    const mHouse = houseOf(rPlanets, mahaLord);
+    const aHouse = houseOf(rPlanets, antarLord);
+    const mTheme = PLANET_THEME[mahaLord] || 'general themes';
+    const aTheme = PLANET_THEME[antarLord] || 'subtle shifts';
+    const mSig = mHouse ? HOUSE_MEANING[mHouse] : '';
+    const aSig = aHouse ? HOUSE_MEANING[aHouse] : '';
+
+    // Career prediction
+    const careerPlanets = { Sun: 'leadership and authority roles',
+      Saturn: 'structured careers, government, law',
+      Mercury: 'business, communication, IT, trading',
+      Jupiter: 'education, law, finance, expansion',
+      Mars: 'engineering, defence, surgery, sports',
+      Venus: 'arts, hospitality, luxury, relationships',
+      Moon: 'public-facing roles, nursing, hospitality',
+      Rahu: 'foreign connections, unconventional careers',
+      Ketu: 'research, spirituality, niche fields' };
+
+    // Health focus
+    const healthFocus = { Sun: 'heart, eyes, vitality',
+      Moon: 'emotions, digestive system, mental health',
+      Mars: 'accidents, blood pressure, muscles',
+      Mercury: 'nervous system, skin, respiratory',
+      Jupiter: 'liver, weight management, metabolism',
+      Venus: 'kidneys, reproductive system, hormones',
+      Saturn: 'bones, joints, teeth, chronic issues',
+      Rahu: 'hidden ailments, anxiety, unusual symptoms',
+      Ketu: 'mysterious conditions, spiritual detox' };
+
+    // Relationship focus
+    const relFocus = { Sun: 'ego in relationships, father figure bonds',
+      Moon: 'emotional bonding, mother figure, deep sensitivity',
+      Mars: 'passion, drive, possible conflicts',
+      Mercury: 'communication, intellectual attraction',
+      Jupiter: 'growth, blessings, expansion in love',
+      Venus: 'romance, beauty, harmony, deep affection',
+      Saturn: 'commitment, karmic bonds, delays then stability',
+      Rahu: 'unconventional relationships, intense attraction',
+      Ketu: 'spiritual bonds, detachment, karmic past connections' };
+
+    const lines = [];
+    if (mahaLord === antarLord) {
+      lines.push(
+        `Both your major period and sub-period are ruled by ${mahaLord}.`
+        + ` This is a concentrated window of ${mTheme}.`
+        + (mHouse ? ` As ${mahaLord} sits in your ${mHouse}th house`
+            + ` (${mSig}), all its energy flows through that area`
+            + ' of your life with unusual force.' : ''),
+      );
+    } else {
+      lines.push(
+        `The ${mahaLord} Mahadasha (major period) sets the overall`
+        + ` tone: ${mTheme}.`
+        + (mHouse ? ` ${mahaLord} sits in your ${mHouse}th house`
+            + ` of ${mSig}, so these themes are felt deeply in that`
+            + ' area.' : ''),
+      );
+      lines.push(
+        `Within it, the ${antarLord} Antardasha adds: ${aTheme}.`
+        + (aHouse ? ` ${antarLord} occupies your ${aHouse}th house`
+            + ` (${aSig}), colouring this sub-period with those`
+            + ' specific life themes.' : ''),
+      );
+    }
+    lines.push(
+      `Career: This is a strong period for `
+      + `${careerPlanets[mahaLord] || 'professional growth'}`
+      + (mahaLord !== antarLord
+        ? `. The ${antarLord} sub-period may bring additional focus`
+            + ` on ${careerPlanets[antarLord] || 'new work themes'}.`
+        : '.'),
+    );
+    lines.push(
+      `Health: Watch out for issues related to `
+      + `${healthFocus[mahaLord] || 'general wellbeing'}`
+      + (mahaLord !== antarLord
+        ? ` and also ${healthFocus[antarLord] || 'related areas'}.`
+        : '. Take good care of these areas now.'),
+    );
+    lines.push(
+      `Relationships: ${relFocus[mahaLord] || 'Important bonds deepen'}.`
+      + (mahaLord !== antarLord
+        ? ` ${relFocus[antarLord] || 'Connections evolve'}.`
+        : ''),
+    );
+    const advice = {
+      Sun: 'Be bold but avoid arrogance. Your leadership shines.',
+      Moon: 'Trust your emotions. Stay close to family.',
+      Mars: 'Channel energy constructively. Avoid reckless decisions.',
+      Mercury: 'Communicate clearly. This is a great time for learning.',
+      Jupiter: 'Expand with confidence. Be generous and honest.',
+      Venus: 'Enjoy beauty and relationships. Balance indulgence.',
+      Saturn: 'Work patiently. Discipline brings lasting rewards.',
+      Rahu: 'Embrace change. Foreign or unconventional paths open.',
+      Ketu: 'Let go of what no longer serves. Spiritual growth awaits.',
+    };
+    lines.push(`Key advice: ${advice[mahaLord] || 'Stay mindful.'}`);
+    return lines.join(' ');
+  }
 
   return (
-    <div className="space-y-3">
-      <div className="rounded-card bg-white p-3">
-        <div className="mb-3 text-[11px] font-bold uppercase
-          tracking-wider text-sub-text">
-          Vimshottari Past and Future
-        </div>
+    <div className="space-y-2">
+      <div className="rounded-card bg-white px-3 py-2 text-[11px]
+        text-sub-text">
+        All 9 Mahadasha periods with Antardasha sub-periods.
+        Tap any period to expand. Tap a sub-period for a full report.
+      </div>
 
-        {/* Visual bar */}
-        {nowPct !== null && (
-          <div className="relative mb-4 h-5 w-full overflow-hidden
-            rounded-full bg-gray-100">
-            {dasha.map((d, i) => {
-              const s = vimshottari.toMs(d.start);
-              const e = vimshottari.toMs(d.end);
-              if (!Number.isFinite(s) || !Number.isFinite(e)) return null;
-              const left = ((s - allStartMs) / totalMs) * 100;
-              const width = Math.max(0,
-                ((e - s) / totalMs) * 100);
-              const planet = vimshottari.normalizeLord(d.planet)
-                || d.planet;
-              const isActive = d.current
-                || (s <= nowMs && nowMs < e);
-              return (
-                <div key={i}
-                  style={{
-                    left: `${left}%`,
-                    width: `${width}%`,
-                  }}
-                  title={planet}
-                  className={`absolute flex h-full items-center
-                    justify-center overflow-hidden text-[8px]
-                    font-bold
-                    ${isActive
-                      ? 'bg-primary text-white z-10'
-                      : i % 2 === 0
-                        ? 'bg-amber-200 text-amber-900'
-                        : 'bg-rose-100 text-rose-700'}`}>
-                  {width > 7
-                    ? (vimshottari.SHORT[planet]
-                        || String(planet || '').slice(0, 2))
-                    : ''}
-                </div>
-              );
-            })}
-            {/* Now marker */}
-            <div className="absolute top-0 z-20 h-full w-0.5
-              bg-dark-text/60"
-              style={{ left: `${nowPct}%` }} />
-          </div>
-        )}
+      {dasha.map((d, mahaIdx) => {
+        const mahaMs = { lord: vimshottari.normalizeLord(d.planet)
+            || d.planet,
+          startMs: vimshottari.toMs(d.start),
+          endMs: vimshottari.toMs(d.end) };
+        const planet = mahaMs.lord;
+        const isActive = d.current
+          || (mahaMs.startMs <= nowMs && nowMs < mahaMs.endMs);
+        const isPast = mahaMs.endMs < nowMs && !isActive;
+        const yrs = vimshottari.YEARS[planet] || '?';
+        const isOpen = openMaha === mahaIdx;
 
-        {/* Timeline rows */}
-        <div className="space-y-1.5">
-          {dasha.map((d, i) => {
-            const planet = vimshottari.normalizeLord(d.planet)
-              || d.planet;
-            const s = vimshottari.toMs(d.start);
-            const e = vimshottari.toMs(d.end);
-            const isActive = d.current || (s <= nowMs && nowMs < e);
-            const isPast = e < nowMs && !isActive;
-            const yrs = vimshottari.YEARS[planet] || '?';
-            return (
-              <div key={i}
-                className={`flex items-center gap-2 rounded-lg
-                  px-2 py-1.5
-                  ${isActive
-                    ? 'bg-primary/10 border border-primary/20'
-                    : 'bg-gray-50'}`}>
-                <span className={`inline-flex h-6 w-9 shrink-0
-                  items-center justify-center rounded-full
-                  text-[10px] font-extrabold
-                  ${isActive
-                    ? 'bg-primary text-white'
-                    : isPast
-                      ? 'bg-gray-200 text-gray-400'
-                      : 'bg-amber-100 text-amber-700'}`}>
-                  {vimshottari.SHORT[planet]
-                    || String(planet || '').slice(0, 2)}
-                </span>
-                <span className={`flex-1 min-w-0 text-[12px]
-                  font-semibold truncate
-                  ${isActive ? 'text-primary'
-                    : isPast ? 'text-gray-400'
-                      : 'text-dark-text'}`}>
+        // Compute antardasha sub-periods for this Maha.
+        const antars = vimshottari.subPeriods(mahaMs);
+        const curAntarIdx = vimshottari.findCurrent(antars, nowMs);
+
+        return (
+          <div key={mahaIdx}
+            className={`overflow-hidden rounded-2xl border
+              ${isActive
+                ? 'border-primary/30'
+                : 'border-gray-100'}`}>
+            {/* Mahadasha header row: tap to expand */}
+            <button type="button"
+              onClick={() => {
+                setOpenMaha(isOpen ? null : mahaIdx);
+                setOpenAntar(null);
+              }}
+              className={`flex w-full items-center gap-2 px-3 py-2.5
+                text-left
+                ${isActive
+                  ? 'bg-gradient-to-r from-[#7F2020] to-[#B45309]'
+                      + ' text-white'
+                  : isPast ? 'bg-gray-50' : 'bg-white'}`}>
+              <span className={`inline-flex h-7 w-10 shrink-0
+                items-center justify-center rounded-full text-[10px]
+                font-extrabold
+                ${isActive ? 'bg-white/20 text-white'
+                  : isPast ? 'bg-gray-200 text-gray-400'
+                    : 'bg-primary/10 text-primary'}`}>
+                {vimshottari.SHORT[planet]
+                  || String(planet || '').slice(0, 2)}
+              </span>
+              <div className="flex-1 min-w-0">
+                <div className={`text-[13px] font-bold leading-tight
+                  ${isActive ? 'text-white'
+                    : isPast ? 'text-gray-400' : 'text-dark-text'}`}>
                   {planet}
+                  {' '}
+                  <span className={`text-[10px] font-normal
+                    ${isActive ? 'opacity-70' : 'text-sub-text'}`}>
+                    {yrs} yrs
+                  </span>
                   {isActive && (
-                    <span className="ml-1.5 rounded-full bg-primary
-                      px-1.5 py-0.5 text-[9px] text-white font-bold">
-                      now
+                    <span className="ml-2 rounded-full bg-white/20
+                      px-1.5 py-0.5 text-[9px] font-bold">
+                      Active now
                     </span>
                   )}
-                </span>
-                <span className={`shrink-0 text-[10px]
-                  ${isPast ? 'text-gray-400'
-                    : isActive ? 'text-primary'
-                      : 'text-sub-text'}`}>
-                  {String(d.start || '').slice(0, 7)}{' '}
-                  <span className="opacity-60">to</span>{' '}
-                  {String(d.end || '').slice(0, 7)}
-                </span>
-                <span className={`shrink-0 text-[10px] font-bold
-                  w-6 text-right
-                  ${isPast ? 'text-gray-300'
-                    : isActive ? 'text-primary'
-                      : 'text-sub-text'}`}>
-                  {yrs}y
-                </span>
+                </div>
+                <div className={`text-[10px]
+                  ${isActive ? 'text-white/70'
+                    : isPast ? 'text-gray-400' : 'text-sub-text'}`}>
+                  {fmtDateLong(String(d.start || '').slice(0, 10))}{' '}
+                  to{' '}
+                  {fmtDateLong(String(d.end || '').slice(0, 10))}
+                </div>
               </div>
-            );
-          })}
-        </div>
-        <div className="mt-3 flex items-center gap-3 border-t
-          border-gray-100 pt-2 text-[10px] text-sub-text">
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-2.5 w-4 rounded
-              bg-gray-200" /> Past
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-2.5 w-4 rounded
-              bg-primary" /> Active
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="inline-block h-2.5 w-4 rounded
-              bg-amber-200" /> Future
-          </span>
-          <span className="ml-auto">
-            Vertical line = today
-          </span>
-        </div>
-      </div>
+              <span className={`shrink-0 text-[13px]
+                ${isActive ? 'text-white' : 'text-sub-text'}`}>
+                {isOpen ? '▲' : '▼'}
+              </span>
+            </button>
+
+            {/* Antardasha list (expanded) */}
+            {isOpen && (
+              <div className="border-t border-gray-100 bg-white">
+                <div className="px-3 py-1.5 text-[10px] font-bold
+                  uppercase tracking-wide text-sub-text">
+                  {planet} Antardasha sub-periods
+                </div>
+                {antars.map((a, antarIdx) => {
+                  const isCurAntar = antarIdx === curAntarIdx;
+                  const aKey = `${mahaIdx}-${antarIdx}`;
+                  const isAntarOpen = openAntar?.mahaIdx === mahaIdx
+                    && openAntar?.antarIdx === antarIdx;
+                  return (
+                    <div key={antarIdx}>
+                      <button type="button"
+                        onClick={() => setOpenAntar(
+                          isAntarOpen ? null
+                            : { mahaIdx, antarIdx })}
+                        className={`flex w-full items-center gap-2
+                          border-t border-gray-50 px-3 py-2 text-left
+                          ${isCurAntar
+                            ? 'bg-primary/5'
+                            : 'hover:bg-gray-50'}`}>
+                        <span className={`inline-flex h-5 w-8 shrink-0
+                          items-center justify-center rounded-full
+                          text-[9px] font-extrabold
+                          ${isCurAntar
+                            ? 'bg-primary text-white'
+                            : 'bg-gray-100 text-sub-text'}`}>
+                          {vimshottari.SHORT[a.lord]
+                            || String(a.lord || '').slice(0, 2)}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className={`text-[12px] font-semibold
+                            ${isCurAntar ? 'text-primary'
+                              : 'text-dark-text'}`}>
+                            {a.lord}
+                            {isCurAntar && (
+                              <span className="ml-1.5 rounded-full
+                                bg-primary px-1.5 py-0.5 text-[9px]
+                                font-bold text-white">
+                                now
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-sub-text">
+                            {fmtDashaDate(a.startMs)}{' '}
+                            to {fmtDashaDate(a.endMs)}
+                          </div>
+                        </div>
+                        <span className="shrink-0 text-[11px]
+                          text-sub-text">
+                          {isAntarOpen ? '▲' : '▼'}
+                        </span>
+                      </button>
+
+                      {/* Detailed report for this Maha + Antar */}
+                      {isAntarOpen && (
+                        <div className={`border-t border-gray-100
+                          mx-2 my-1 rounded-xl p-3
+                          ${isCurAntar ? 'bg-primary/5' : 'bg-bg-light'}`}>
+                          <div className="mb-1.5 text-[11px] font-bold
+                            uppercase tracking-wider text-primary">
+                            {planet} / {a.lord} period
+                          </div>
+                          <div className="text-[12px] leading-relaxed
+                            text-dark-text space-y-2">
+                            {buildDashaReport(planet, a.lord)
+                              .split('. ')
+                              .filter(Boolean)
+                              .map((sentence, si) => (
+                                <p key={si}>{sentence}.</p>
+                              ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

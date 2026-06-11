@@ -16,22 +16,20 @@ import useScrollLock from '../lib/useScrollLock';
 // build in /admin-app-update, every running app instance gets the
 // banner without a redeploy.
 
+// Google Play Store icon — four-triangle design in the four Play
+// brand colours. Not a copy of the trademark; this is a geometric
+// approximation that reads clearly as "Play Store" not "Play Games".
 function PlayIcon() {
-  // The Google Play triangle, hand-drawn so we don't ship the logo
-  // asset and run into trademark trouble. Same visual cue without
-  // being a literal copy.
   return (
-    <svg viewBox="0 0 64 64" width="22" height="22" aria-hidden="true">
-      <defs>
-        <linearGradient id="pg" x1="0" x2="1" y1="0" y2="1">
-          <stop offset="0" stopColor="#00D4FF" />
-          <stop offset=".5" stopColor="#33FF88" />
-          <stop offset="1" stopColor="#FFCB05" />
-        </linearGradient>
-      </defs>
-      <path fill="url(#pg)"
-        d="M14 8c-1.7 0-3 1.3-3 3v42c0 1.7 1.3 3 3 3 .6 0 1.1-.2
-        1.6-.5l30-21c1.1-.8 1.1-2.4 0-3.2l-30-21c-.5-.3-1-.5-1.6-.5z" />
+    <svg viewBox="0 0 64 64" width="28" height="28" aria-hidden="true">
+      {/* Top-left: blue triangle */}
+      <polygon points="4,2 4,30 32,18" fill="#4285F4" />
+      {/* Bottom-left: green triangle */}
+      <polygon points="4,34 4,62 32,46" fill="#34A853" />
+      {/* Top-right: yellow triangle */}
+      <polygon points="36,18 60,5 60,32" fill="#FBBC05" />
+      {/* Bottom-right: red triangle */}
+      <polygon points="36,46 60,32 60,59" fill="#EA4335" />
     </svg>
   );
 }
@@ -48,14 +46,19 @@ function CloseIcon() {
 export default function UpdateModal() {
   const u = useAppUpdate();
   const [open, setOpen] = useState(true);
+  // This popup is only meaningful on native Android/iOS — web users
+  // don't install via Play Store. Skip entirely on web to avoid
+  // confusing the browser audience.
+  const isNative = typeof window !== 'undefined'
+    && window.Capacitor && window.Capacitor.isNativePlatform();
   // Compute visibility BEFORE early returns so the hook call is
   // unconditional (React rules of hooks).
-  const visible = u.updateAvailable && u.popupEnabled
+  const visible = isNative && u.updateAvailable && u.popupEnabled
     && (u.requiredUpdate || shouldShowPopup(u.latestBuild))
     && (open || u.requiredUpdate);
   useScrollLock(!!visible);
-  // Don't render at all when there's nothing to update or the admin
-  // killed the popup setting OR the user already dismissed this build.
+  // Don't render on web or when there's nothing to update.
+  if (!isNative) return null;
   if (!u.updateAvailable || !u.popupEnabled) return null;
   if (!u.requiredUpdate && !shouldShowPopup(u.latestBuild)) return null;
   if (!open && !u.requiredUpdate) return null;
@@ -151,7 +154,7 @@ export default function UpdateModal() {
           </details>
         )}
         <div className="mt-1 text-[11px] text-white/60">
-          v{u.currentVersion} → v{u.latestVersion}
+          v{u.currentVersion} to v{u.latestVersion}
         </div>
 
         {/* Footer buttons - centered pill row like the Play Store */}

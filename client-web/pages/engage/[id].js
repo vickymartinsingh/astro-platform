@@ -28,6 +28,37 @@ function PointsBadge({ pts }) {
   );
 }
 
+// Floating coin animation shown when points are awarded.
+function CoinPop({ pts, onDone }) {
+  useEffect(() => {
+    const t = setTimeout(onDone, 1600);
+    return () => clearTimeout(t);
+  }, [onDone]);
+  return (
+    <div className="pointer-events-none fixed inset-0 z-[9999] flex
+      items-center justify-center">
+      <div className="animate-[coinPop_1.6s_ease-out_forwards] flex
+        flex-col items-center gap-1 rounded-2xl px-6 py-4
+        text-white shadow-2xl"
+        style={{ background: 'linear-gradient(135deg,#D4A12A,#7F2020)',
+          animation: 'coinPop 1.6s ease-out forwards' }}>
+        <span className="text-3xl">&#127881;</span>
+        <span className="text-xl font-extrabold">+{pts} pts</span>
+        <span className="text-xs opacity-80">Points earned!</span>
+      </div>
+      <style>{`
+        @keyframes coinPop {
+          0%   { opacity: 0; transform: scale(0.5) translateY(40px); }
+          20%  { opacity: 1; transform: scale(1.1) translateY(-10px); }
+          50%  { opacity: 1; transform: scale(1.0) translateY(0); }
+          80%  { opacity: 1; transform: scale(1.0) translateY(0); }
+          100% { opacity: 0; transform: scale(0.9) translateY(-20px); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
 function BackLink() {
   return (
     <Link href="/dashboard"
@@ -175,6 +206,7 @@ function LearnView({ tile, user, completedLessons, onLessonComplete }) {
     firstIncomplete >= 0 ? firstIncomplete : 0);
   const [showQuiz, setShowQuiz] = useState(false);
   const [canProceed, setCanProceed] = useState(false);
+  const [coinPts, setCoinPts] = useState(null); // pts to show in coin pop
 
   useEffect(() => {
     setShowQuiz(false);
@@ -185,16 +217,19 @@ function LearnView({ tile, user, completedLessons, onLessonComplete }) {
   const isDone = completedLessons.includes(String(activeIdx));
   const total = lessons.length;
 
+  // Award points for the current lesson and show coin animation.
+  const awardCurrent = (pts) => {
+    onLessonComplete(
+      activeIdx, pts, `Lesson: ${lesson?.title || ''}`);
+    setCoinPts(pts);
+  };
+
   const handleContinue = () => {
     if (lesson?.quizQ && isQuizLesson(activeIdx) && !isDone) {
       setShowQuiz(true);
     } else {
       if (!isDone) {
-        onLessonComplete(
-          activeIdx,
-          lesson?.points || tile.pointsPerActivity || 10,
-          `Lesson: ${lesson?.title || ''}`,
-        );
+        awardCurrent(lesson?.points || tile.pointsPerActivity || 10);
       }
       setCanProceed(true);
     }
@@ -202,12 +237,22 @@ function LearnView({ tile, user, completedLessons, onLessonComplete }) {
 
   const handleQuizResult = (correct) => {
     const pts = correct ? (lesson.points || tile.pointsPerActivity || 10) : 0;
+    if (pts > 0) setCoinPts(pts);
     onLessonComplete(activeIdx, pts, `Lesson: ${lesson.title}`);
     setCanProceed(true);
   };
 
   const goPrev = () => { if (activeIdx > 0) setActiveIdx((i) => i - 1); };
-  const goNext = () => { if (activeIdx + 1 < total) setActiveIdx((i) => i + 1); };
+  // Auto-complete current lesson when navigating Next (without quiz for
+  // already-seen lessons). Points are always saved so the user never
+  // loses progress by navigating back and forth.
+  const goNext = () => {
+    if (activeIdx + 1 >= total) return;
+    if (!isDone && !isQuizLesson(activeIdx)) {
+      awardCurrent(lesson?.points || tile.pointsPerActivity || 10);
+    }
+    setActiveIdx((i) => i + 1);
+  };
 
   const allDone = lessons.every((_, i) => completedLessons.includes(String(i)));
 
@@ -227,6 +272,9 @@ function LearnView({ tile, user, completedLessons, onLessonComplete }) {
 
   return (
     <div className="flex flex-col gap-4">
+      {coinPts && (
+        <CoinPop pts={coinPts} onDone={() => setCoinPts(null)} />
+      )}
       {/* Progress */}
       <div>
         <div className="mb-1 flex justify-between text-xs text-gray-500">

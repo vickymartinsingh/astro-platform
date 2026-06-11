@@ -9,6 +9,38 @@ const MAROON = '#7F2020';
 const AMBER = '#D4A12A';
 const QUIZ_SECS = 30;
 
+// Floating coin-burst animation when points are awarded.
+function CoinPop({ pts, onDone }) {
+  useEffect(() => {
+    const t = setTimeout(onDone, 1800);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <div className="pointer-events-none fixed inset-0 z-[9999]
+      flex items-center justify-center">
+      <div style={{
+        background: 'linear-gradient(135deg,#D4A12A,#7F2020)',
+        animation: 'coinPop 1.8s ease-out forwards',
+      }} className="flex flex-col items-center gap-1 rounded-2xl
+        px-8 py-5 text-white shadow-2xl">
+        <span className="text-4xl">&#127775;</span>
+        <span className="text-2xl font-extrabold">+{pts} pts</span>
+        <span className="text-sm opacity-85">Points added!</span>
+      </div>
+      <style>{`
+        @keyframes coinPop {
+          0%  {opacity:0;transform:scale(.5) translateY(50px)}
+          25% {opacity:1;transform:scale(1.1) translateY(-12px)}
+          55% {opacity:1;transform:scale(1) translateY(0)}
+          80% {opacity:1;transform:scale(1) translateY(0)}
+          100%{opacity:0;transform:scale(.9) translateY(-25px)}
+        }
+      `}</style>
+    </div>
+  );
+}
+
 // -----------------------------------------------------------------
 // Circular countdown timer. Re-mounts (resets) when `timerKey` changes.
 // -----------------------------------------------------------------
@@ -80,6 +112,7 @@ export default function DailyChallenge() {
   const [done, setDone] = useState(false);
   const [result, setResult] = useState(null);
   const [submitBusy, setSubmitBusy] = useState(false);
+  const [showCoin, setShowCoin] = useState(false);
 
   const today = todayStr();
 
@@ -143,7 +176,7 @@ export default function DailyChallenge() {
       selected,
       correct: currentQ?.correct ?? 0,
       isCorrect,
-      bonus: isCorrect ? (currentQ?.bonus || 5) : 0,
+      bonus: isCorrect ? (currentQ?.bonus || currentQ?.bonusPoints || 10) : 0,
     };
     const nextAnswered = [...answered, entry];
     setAnswered(nextAnswered);
@@ -176,9 +209,10 @@ export default function DailyChallenge() {
         qIdx: i,
         selected: a.selected,   // option index chosen (null = timed out)
       }));
-      await engagementService.completeDailyChallenge(
+      const res = await engagementService.completeDailyChallenge(
         user.uid, today, questionAnswers, questions,
       );
+      if (res && res.awarded > 0) setShowCoin(true);
     } catch (e) {
       // Points may not have been awarded; user can contact support.
       console.error('Daily challenge submit error:', e);
@@ -271,6 +305,10 @@ export default function DailyChallenge() {
     const pct = totalQ > 0 ? Math.round((result.correct / result.total) * 100) : 0;
     return (
       <Layout>
+        {showCoin && (
+          <CoinPop pts={result.totalBonus}
+            onDone={() => setShowCoin(false)} />
+        )}
         <div className="mx-auto max-w-lg px-4 py-10 text-center">
           <div className="mb-4 text-5xl">
             {pct >= 80 ? '&#127881;' : pct >= 50 ? '&#128077;' : '&#128170;'}
