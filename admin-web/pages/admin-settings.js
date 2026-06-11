@@ -31,6 +31,12 @@ export default function AdminSettings() {
         min_recharge: 100, signup_bonus: 0,
         free_chat_seconds: 0, free_call_seconds: 0, kundliToolUrl: '',
         nudge_delay_seconds: 30,
+        // Platform Behavior defaults
+        live_quiz_points: 10,
+        live_desktop_mode: 'redirect',
+        live_app_download_url: 'https://play.google.com/store/apps/details?id=com.astroseer.mobile',
+        astro_chat_desktop_layout: 'sidebar',
+        chat_inactivity_minutes: 3,
       }));
   }, []);
 
@@ -62,6 +68,12 @@ export default function AdminSettings() {
       referral_referee_bonus: Number(cfg.referral_referee_bonus || 0),
       logo: cfg.logo || '',
       favicon: cfg.favicon || '',
+      // Platform Behavior
+      live_quiz_points: Number(cfg.live_quiz_points ?? 10),
+      live_desktop_mode: cfg.live_desktop_mode || 'redirect',
+      live_app_download_url: cfg.live_app_download_url || '',
+      astro_chat_desktop_layout: cfg.astro_chat_desktop_layout || 'sidebar',
+      chat_inactivity_minutes: Number(cfg.chat_inactivity_minutes ?? 3),
       ...reportPrices,
     });
     setMsg('Settings saved.');
@@ -124,7 +136,7 @@ export default function AdminSettings() {
   }
 
   if (loading || !cfg) {
-    return <Layout><div className="surface p-4">Loading…</div></Layout>;
+    return <Layout><div className="surface p-4">Loading...</div></Layout>;
   }
 
   const fields = [
@@ -137,7 +149,7 @@ export default function AdminSettings() {
     ['free_call_seconds', 'Free Call Seconds (e.g. 300 = first 5 min)',
       'number'],
     ['nudge_delay_seconds',
-      'AI Idle Nudge Delay (seconds, default 30 — time before nudge fires if client is silent)',
+      'AI Idle Nudge Delay (seconds, default 30 - time before nudge fires if client is silent)',
       'number'],
     ['kundliToolUrl', 'Kundli Tool URL', 'text'],
     ['gst_percent', 'GST %', 'number'],
@@ -293,6 +305,146 @@ export default function AdminSettings() {
         </button>
       </div>
 
+      {/* ── PLATFORM BEHAVIOR ──────────────────────────────────────── */}
+      <h2 className="mt-6 mb-2 text-lg font-bold"
+        style={{ color: '#7F2020' }}>
+        Platform Behavior
+      </h2>
+      <p className="mb-2 text-xs text-sub-text">
+        Controls live quiz scoring, desktop stream handling, astrologer
+        portal layout, and chat session timeouts.
+      </p>
+
+      <div className="surface space-y-5 p-4"
+        style={{ borderTop: '3px solid #D4A12A',
+                 background: '#FFF8E7' }}>
+
+        {/* LIVE QUIZ */}
+        <div>
+          <div className="mb-2 text-xs font-bold uppercase tracking-wide"
+            style={{ color: '#7F2020' }}>
+            Live Quiz
+          </div>
+          <div>
+            <label className="text-sm text-sub-text">
+              Quiz points per correct answer
+            </label>
+            <input
+              className="input"
+              type="number"
+              min={1}
+              value={cfg.live_quiz_points ?? 10}
+              onChange={(e) =>
+                setCfg({ ...cfg, live_quiz_points: e.target.value })}
+            />
+            <p className="mt-1 text-[11px] text-sub-text">
+              Astrologers cannot change this value. Points awarded per
+              correct answer.
+            </p>
+          </div>
+        </div>
+
+        <hr style={{ borderColor: '#D4A12A', opacity: 0.4 }} />
+
+        {/* DESKTOP LIVE */}
+        <div>
+          <div className="mb-2 text-xs font-bold uppercase tracking-wide"
+            style={{ color: '#7F2020' }}>
+            Desktop Live
+          </div>
+          <div className="space-y-3">
+            <div>
+              <label className="text-sm text-sub-text">
+                When a PC user opens a live stream
+              </label>
+              <select
+                className="input"
+                value={cfg.live_desktop_mode || 'redirect'}
+                onChange={(e) =>
+                  setCfg({ ...cfg, live_desktop_mode: e.target.value })}>
+                <option value="show">Show live as-is</option>
+                <option value="redirect">Redirect to app download</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-sm text-sub-text">
+                App download URL
+              </label>
+              <input
+                className="input"
+                type="text"
+                placeholder="https://play.google.com/store/apps/details?id=..."
+                value={cfg.live_app_download_url ?? 'https://play.google.com/store/apps/details?id=com.astroseer.mobile'}
+                onChange={(e) =>
+                  setCfg({ ...cfg,
+                    live_app_download_url: e.target.value })}
+              />
+            </div>
+          </div>
+        </div>
+
+        <hr style={{ borderColor: '#D4A12A', opacity: 0.4 }} />
+
+        {/* ASTROLOGER PORTAL */}
+        <div>
+          <div className="mb-2 text-xs font-bold uppercase tracking-wide"
+            style={{ color: '#7F2020' }}>
+            Astrologer Portal
+          </div>
+          <div>
+            <label className="text-sm text-sub-text">
+              How chat appears on desktop for astrologers
+            </label>
+            <select
+              className="input"
+              value={cfg.astro_chat_desktop_layout || 'sidebar'}
+              onChange={(e) =>
+                setCfg({ ...cfg,
+                  astro_chat_desktop_layout: e.target.value })}>
+              <option value="full">Full screen (current)</option>
+              <option value="sidebar">Side panel (like support widget)</option>
+            </select>
+            <p className="mt-1 text-[11px] text-sub-text">
+              Mobile and tablet always use full screen.
+            </p>
+          </div>
+        </div>
+
+        <hr style={{ borderColor: '#D4A12A', opacity: 0.4 }} />
+
+        {/* CHAT INACTIVITY */}
+        <div>
+          <div className="mb-2 text-xs font-bold uppercase tracking-wide"
+            style={{ color: '#7F2020' }}>
+            Chat Inactivity
+          </div>
+          <div>
+            <label className="text-sm text-sub-text">
+              Auto-end chat after inactivity (minutes)
+            </label>
+            <input
+              className="input"
+              type="number"
+              min={1}
+              value={cfg.chat_inactivity_minutes ?? 3}
+              onChange={(e) =>
+                setCfg({ ...cfg,
+                  chat_inactivity_minutes: e.target.value })}
+            />
+            <p className="mt-1 text-[11px] text-sub-text">
+              Chat sessions auto-end if no customer message is received
+              for this many minutes.
+            </p>
+          </div>
+        </div>
+
+        <button onClick={save}
+          className="btn-grad w-full justify-center"
+          style={{ background: '#7F2020', borderColor: '#7F2020' }}>
+          Save Platform Behavior
+        </button>
+      </div>
+
       <WalletReconcile />
     </Layout>
   );
@@ -339,20 +491,20 @@ function WalletReconcile() {
           <button disabled={busy}
             onClick={() => { setMode('scan'); run(false); }}
             className="btn-outline flex-1 justify-center">
-            {busy && mode === 'scan' ? 'Scanning…' : 'Scan (dry run)'}
+            {busy && mode === 'scan' ? 'Scanning...' : 'Scan (dry run)'}
           </button>
           <button disabled={busy}
             onClick={() => { setMode('fix'); run(true); }}
             className="btn-grad flex-1 justify-center">
             {busy && mode === 'fix'
-              ? 'Reconciling…' : 'Scan & Fix'}
+              ? 'Reconciling...' : 'Scan & Fix'}
           </button>
         </div>
         {result && (
           <div className="rounded-lg bg-bg-light p-3 text-sm">
             <p className="font-semibold">
               Scanned {result.scanned} users
-              {result.applied ? ' – APPLIED' : ' – dry run'}
+              {result.applied ? ' - APPLIED' : ' - dry run'}
             </p>
             {result.mismatches === 0 && (
               <p className="mt-1 text-green-700">

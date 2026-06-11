@@ -8,19 +8,32 @@ import { flash } from '../lib/flash';
 //
 // Full management console for the membership tier system. Admins can
 // enable/disable the membership feature, manage tiers (name, price,
-// colour, icon, benefits), reorder or remove tiers, and maintain the
-// customer-facing FAQ. Everything persists to settings/membership and
-// takes effect immediately on client refresh.
+// colour, icon, benefits, badge settings), reorder or remove tiers,
+// and maintain the customer-facing FAQ. Everything persists to
+// settings/membership and takes effect immediately on client refresh.
 //
 // Sections:
+//   0. Badge info banner
 //   1. Global toggle (enable / disable membership)
-//   2. Tiers editor (card per tier with benefits)
+//   2. Tiers editor (card per tier with benefits + badge controls)
 //   3. FAQ editor (Q&A pairs)
 //   4. Sticky save bar when dirty
 
 function uid() {
   return 'tier_' + Date.now().toString(36) + '_'
     + Math.random().toString(36).slice(2, 8);
+}
+
+// Olive-green badge chip shown next to tier name when badgeEnabled is true
+function BadgeChip() {
+  return (
+    <span
+      className="inline-flex items-center rounded px-1.5 py-0.5 text-[10px]
+        font-bold uppercase tracking-wide"
+      style={{ backgroundColor: '#6B8E23', color: '#fff' }}>
+      MEMBER
+    </span>
+  );
 }
 
 export default function AdminMembership() {
@@ -88,6 +101,8 @@ export default function AdminMembership() {
       price: 0,
       color: '#7F2020',
       icon: '⭐',
+      badgeEnabled: false,
+      badgeKycRequired: false,
       benefits: {
         freeReports: [],
         callMinutes: 0,
@@ -203,6 +218,28 @@ export default function AdminMembership() {
         </button>
       </div>
 
+      {/* 0. Badge info banner */}
+      <div className="mb-3 rounded-card border p-4"
+        style={{
+          borderColor: '#6B8E23',
+          backgroundColor: '#f6faf0',
+        }}>
+        <div className="flex items-start gap-3">
+          <BadgeChip />
+          <div>
+            <p className="text-sm font-semibold" style={{ color: '#3d5214' }}>
+              About membership badges
+            </p>
+            <p className="mt-0.5 text-[12px]" style={{ color: '#4a6219' }}>
+              Membership badges appear next to users&#39; names during
+              consultations (olive green badge). Badges auto-expire when
+              membership expires or is cancelled. Admin can enable/disable
+              per tier below.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* 1. Global Toggle */}
       <Section title="Membership system">
         <div className="flex items-center gap-3">
@@ -274,11 +311,14 @@ export default function AdminMembership() {
                   onChange={(e) => setTier(idx, { icon: e.target.value })}
                   title="Icon (emoji)" />
 
-                {/* Name */}
-                <input className="input min-w-0 flex-1 text-sm font-semibold"
-                  value={tier.name || ''}
-                  onChange={(e) => setTier(idx, { name: e.target.value })}
-                  placeholder="Tier name" />
+                {/* Name + optional badge preview */}
+                <div className="flex min-w-0 flex-1 items-center gap-2">
+                  <input className="input min-w-0 flex-1 text-sm font-semibold"
+                    value={tier.name || ''}
+                    onChange={(e) => setTier(idx, { name: e.target.value })}
+                    placeholder="Tier name" />
+                  {tier.badgeEnabled && <BadgeChip />}
+                </div>
 
                 {/* Price */}
                 <label className="flex items-center gap-1 text-[11px]
@@ -338,6 +378,94 @@ export default function AdminMembership() {
                         readOnly
                         title="Auto-generated, read only" />
                     </label>
+                  </div>
+
+                  {/* Badge controls */}
+                  <div className="rounded border p-3 space-y-3"
+                    style={{ borderColor: '#6B8E23', backgroundColor: '#f9fdf4' }}>
+                    <h3 className="text-xs font-bold uppercase tracking-wider"
+                      style={{ color: '#4a6219' }}>
+                      Badge settings
+                    </h3>
+
+                    {/* Verified badge toggle */}
+                    <div>
+                      <div className="flex items-center gap-3">
+                        <Toggle
+                          on={!!tier.badgeEnabled}
+                          onChange={(v) => setTier(idx, { badgeEnabled: v })}
+                          activeColor="#6B8E23"
+                        />
+                        <div>
+                          <p className="text-xs font-semibold"
+                            style={{ color: tier.badgeEnabled ? '#3d5214' : '#6b7280' }}>
+                            Verified Badge
+                          </p>
+                          <p className="text-[11px] text-sub-text">
+                            Grant verified badge to subscribers on this tier
+                          </p>
+                        </div>
+                      </div>
+                      {tier.badgeEnabled && (
+                        <p className="mt-1.5 text-[11px]"
+                          style={{ color: '#4a6219' }}>
+                          Members on this tier will show an olive-green verified
+                          badge
+                        </p>
+                      )}
+                    </div>
+
+                    {/* KYC required toggle */}
+                    <div className={tier.badgeEnabled ? '' : 'opacity-40 pointer-events-none'}>
+                      <div className="flex items-center gap-3">
+                        <Toggle
+                          on={!!tier.badgeKycRequired}
+                          onChange={(v) => {
+                            if (!tier.badgeEnabled) return;
+                            setTier(idx, { badgeKycRequired: v });
+                          }}
+                          activeColor="#6B8E23"
+                        />
+                        <div>
+                          <p className="text-xs font-semibold"
+                            style={{
+                              color: (tier.badgeEnabled && tier.badgeKycRequired)
+                                ? '#3d5214'
+                                : '#6b7280',
+                            }}>
+                            Require KYC for badge
+                          </p>
+                          <p className="text-[11px] text-sub-text">
+                            KYC verification required to display badge
+                          </p>
+                        </div>
+                      </div>
+                      {!tier.badgeEnabled && (
+                        <p className="mt-1 text-[10px] text-sub-text">
+                          Enable the verified badge above to configure KYC
+                          requirement.
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Badge preview */}
+                    {tier.badgeEnabled && (
+                      <div className="flex items-center gap-2 rounded border
+                        border-dashed border-gray-300 bg-white px-3 py-2">
+                        <span className="text-[11px] text-sub-text">
+                          Preview:
+                        </span>
+                        <span className="text-xs font-semibold text-gray-700">
+                          {tier.name || 'Tier name'}
+                        </span>
+                        <BadgeChip />
+                        {tier.badgeKycRequired && (
+                          <span className="text-[10px] text-sub-text">
+                            (KYC required)
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   {/* Benefits */}
@@ -508,12 +636,12 @@ export default function AdminMembership() {
             className="rounded-full px-3 py-1 text-[11px] font-bold
               text-white"
             style={{ backgroundColor: '#7F2020' }}>
-            + Add Q&A
+            + Add Q&amp;A
           </button>
         }>
         {faq.length === 0 && (
           <p className="py-4 text-center text-sm text-sub-text">
-            No FAQ items yet. Click "Add Q&A" to begin.
+            No FAQ items yet. Click "Add Q&amp;A" to begin.
           </p>
         )}
         <div className="space-y-2">
@@ -583,13 +711,14 @@ function Section({ title, children, right }) {
 }
 
 // ============================================================
-// Toggle
+// Toggle -- supports optional activeColor override
 // ============================================================
-function Toggle({ on, onChange }) {
+function Toggle({ on, onChange, activeColor }) {
+  const bg = on ? (activeColor || '#10b981') : '#d1d5db';
   return (
     <button onClick={() => onChange(!on)}
-      className={`relative h-6 w-11 shrink-0 rounded-full transition
-        ${on ? 'bg-emerald-500' : 'bg-gray-300'}`}>
+      className="relative h-6 w-11 shrink-0 rounded-full transition"
+      style={{ backgroundColor: bg }}>
       <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white
         shadow transition ${on ? 'translate-x-5' : 'translate-x-0.5'}`} />
     </button>

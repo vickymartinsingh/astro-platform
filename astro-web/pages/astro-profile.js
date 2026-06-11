@@ -87,26 +87,163 @@ function SaveToast({ msg, kind, onDone }) {
   );
 }
 
+// Confirm modal used before destructive or important saves
+function ConfirmModal({ title, message, confirmLabel, danger, onConfirm, onCancel }) {
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 10000,
+      background: 'rgba(0,0,0,0.45)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: '0 16px',
+    }}>
+      <div style={{
+        background: '#FFF8E7',
+        borderRadius: 16,
+        border: '1.5px solid #D4A12A',
+        padding: '24px 20px',
+        maxWidth: 380,
+        width: '100%',
+        boxShadow: '0 8px 32px rgba(0,0,0,.18)',
+      }}>
+        <div style={{ fontWeight: 700, fontSize: 16, color: '#7F2020', marginBottom: 10 }}>
+          {title}
+        </div>
+        <div style={{ fontSize: 13, color: '#3d1a00', lineHeight: 1.6, marginBottom: 20 }}>
+          {message}
+        </div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button
+            onClick={onCancel}
+            style={{
+              flex: 1, padding: '10px 0', borderRadius: 8,
+              border: '1.5px solid #D4A12A', background: 'transparent',
+              color: '#7F2020', fontWeight: 600, fontSize: 13, cursor: 'pointer',
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            style={{
+              flex: 1, padding: '10px 0', borderRadius: 8,
+              border: 'none',
+              background: danger ? '#7F2020' : '#D4A12A',
+              color: '#fff', fontWeight: 700, fontSize: 13, cursor: 'pointer',
+            }}
+          >
+            {confirmLabel || 'Confirm'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Initials avatar used in multiple places
+function InitialsAvatar({ name, photoUrl, size = 48 }) {
+  const initials = (name || '')
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0].toUpperCase())
+    .join('') || '?';
+
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: '50%',
+      overflow: 'hidden', flexShrink: 0,
+      border: '2px solid #D4A12A',
+      background: '#7F2020',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>
+      {photoUrl ? (
+        <img
+          src={photoUrl}
+          alt="profile"
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+      ) : (
+        <span style={{
+          color: '#FFF8E7', fontWeight: 700,
+          fontSize: size > 64 ? Math.round(size * 0.35) : Math.round(size * 0.38),
+          lineHeight: 1,
+          textTransform: 'uppercase',
+        }}>
+          {initials}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// Profile completion progress bar
+function ProfileCompletion({ f, hasPhoto }) {
+  const fields = [
+    { label: 'Name', done: !!(f.name && f.name.trim()) },
+    { label: 'Bio', done: !!(f.bio && f.bio.trim()) },
+    { label: 'Skills', done: !!(f.skills && f.skills.trim()) },
+    { label: 'Languages', done: !!(f.languages && f.languages.trim()) },
+    { label: 'Experience', done: Number(f.experience) > 0 },
+    { label: 'Photo', done: !!hasPhoto },
+  ];
+  const done = fields.filter((x) => x.done).length;
+  const pct = Math.round((done / fields.length) * 100);
+  const color = pct === 100 ? '#16a34a' : pct >= 60 ? '#D4A12A' : '#7F2020';
+
+  return (
+    <div style={{ marginBottom: 4 }}>
+      <div style={{
+        display: 'flex', justifyContent: 'space-between',
+        fontSize: 11, color: '#7F2020', fontWeight: 600, marginBottom: 4,
+      }}>
+        <span>Profile completion</span>
+        <span>{pct}%</span>
+      </div>
+      <div style={{
+        height: 6, background: '#e5d9c0', borderRadius: 99, overflow: 'hidden',
+      }}>
+        <div style={{
+          height: '100%', width: `${pct}%`, background: color,
+          borderRadius: 99, transition: 'width 0.4s',
+        }} />
+      </div>
+      {pct < 100 && (
+        <div style={{ fontSize: 10, color: '#b45309', marginTop: 3 }}>
+          Missing: {fields.filter((x) => !x.done).map((x) => x.label).join(', ')}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AstroProfile() {
   const { user, profile, loading } = useRequireAstrologer();
   const router = useRouter();
+  const photoInputRef = useRef(null);
+
   async function logout() {
     try { await authService.logoutUser(); } catch (_) {}
     router.replace('/astro-login');
   }
+
   const [f, setF] = useState(BLANK);
+  const [astroDoc, setAstroDoc] = useState(null);
   const [exists, setExists] = useState(false);
-  const [toast, setToast] = useState(null); // { msg, kind }
+  const [toast, setToast] = useState(null);
   const [payout, setPayout] = useState({ amount: '', bankDetails: '' });
   const [payouts, setPayouts] = useState([]);
   const [currentUsername, setCurrentUsername] = useState(null);
+  const [profilePhotoUrl, setProfilePhotoUrl] = useState(null);
+  const [photoUploading, setPhotoUploading] = useState(false);
 
   useEffect(() => {
     if (!user) return;
     astrologerService.getAstrologer(user.uid).then((a) => {
       if (a) {
         setExists(true);
+        setAstroDoc(a);
         setCurrentUsername(a.username || null);
+        setProfilePhotoUrl(a.profileImage || a.pendingProfileImage || null);
         setF({
           name: a.name || profile?.name || '',
           gender: a.gender || 'male',
@@ -126,6 +263,11 @@ export default function AstroProfile() {
     payoutService.getPayouts(user.uid).then(setPayouts)
       .catch(() => setPayouts([]));
   }, [user, profile]);
+
+  // Derived lock states
+  const kycStatus = astroDoc?.kyc?.status || astroDoc?.kycStatus || 'incomplete';
+  const profileKycLocked = kycStatus === 'approved' || kycStatus === 'verified';
+  const nameGenderLocked = astroDoc?.status === 'approved' || profileKycLocked;
 
   async function save() {
     setToast(null);
@@ -161,9 +303,9 @@ export default function AstroProfile() {
     }
   }
 
-  async function uploadPhoto(e) {
-    const file = e.target.files?.[0];
+  async function uploadPhoto(file) {
     if (!file) return;
+    setPhotoUploading(true);
     try {
       const r = ref(storage, `profileImages/${user.uid}/pending`);
       await uploadBytes(r, file);
@@ -171,9 +313,24 @@ export default function AstroProfile() {
       await astrologerService.updateAstrologer(user.uid, {
         pendingProfileImage: url, imageStatus: 'pending',
       });
+      setProfilePhotoUrl(url);
       setToast({ msg: 'Photo uploaded, under review (24h)', kind: 'ok' });
     } catch (e) {
       setToast({ msg: String((e && e.message) || 'Upload failed'), kind: 'err' });
+    } finally {
+      setPhotoUploading(false);
+    }
+  }
+
+  async function removePhoto() {
+    try {
+      await astrologerService.updateAstrologer(user.uid, {
+        pendingProfileImage: null, profileImage: null, imageStatus: null,
+      });
+      setProfilePhotoUrl(null);
+      setToast({ msg: 'Photo removed', kind: 'ok' });
+    } catch (e) {
+      setToast({ msg: String((e && e.message) || 'Remove failed'), kind: 'err' });
     }
   }
 
@@ -188,66 +345,230 @@ export default function AstroProfile() {
 
   return (
     <Layout>
-      <h1 className="mb-3 text-xl font-bold">Profile</h1>
+      {/* Page header with small avatar identifier */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16,
+      }}>
+        <InitialsAvatar name={f.name} photoUrl={profilePhotoUrl} size={48} />
+        <div>
+          <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#7F2020' }}>
+            {f.name || 'My Profile'}
+          </h1>
+          {profileKycLocked && (
+            <span style={{
+              fontSize: 10, fontWeight: 700, background: '#FFF8E7',
+              color: '#7F2020', border: '1px solid #D4A12A',
+              borderRadius: 99, padding: '1px 8px', textTransform: 'uppercase',
+            }}>
+              KYC Approved
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Profile photo card */}
+      <div className="card" style={{ marginBottom: 12 }}>
+        <ProfileCompletion f={f} hasPhoto={!!profilePhotoUrl} />
+        <div style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'center',
+          gap: 10, paddingTop: 12,
+        }}>
+          <div style={{ fontWeight: 700, fontSize: 15, color: '#7F2020' }}>
+            {f.name || 'Your Name'}
+          </div>
+          <InitialsAvatar name={f.name} photoUrl={profilePhotoUrl} size={100} />
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) uploadPhoto(file);
+            }}
+          />
+          <button
+            onClick={() => photoInputRef.current?.click()}
+            disabled={photoUploading}
+            style={{
+              background: '#D4A12A', color: '#fff', fontWeight: 700,
+              fontSize: 13, border: 'none', borderRadius: 8,
+              padding: '8px 20px', cursor: 'pointer',
+              opacity: photoUploading ? 0.6 : 1,
+            }}
+          >
+            {photoUploading ? 'Uploading...' : 'Change Photo'}
+          </button>
+          {profilePhotoUrl && (
+            <button
+              onClick={removePhoto}
+              style={{
+                background: 'none', border: 'none', color: '#7F2020',
+                fontSize: 12, cursor: 'pointer', textDecoration: 'underline',
+                padding: 0,
+              }}
+            >
+              Remove Photo
+            </button>
+          )}
+          <div style={{ fontSize: 10, color: '#b45309', textAlign: 'center' }}>
+            Photo uploaded as pending - reviewed within 24h.
+          </div>
+        </div>
+      </div>
+
       <div className="card space-y-3">
+        {profileKycLocked && (
+          <div style={{
+            background: '#FFF8E7', border: '1px solid #D4A12A',
+            borderRadius: 8, padding: '8px 12px',
+            fontSize: 12, color: '#7F2020', fontWeight: 600,
+          }}>
+            Your profile is locked after KYC approval. Raise a support ticket to request changes.
+          </div>
+        )}
+
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr,160px]">
           <Field label="Name">
-            <input className="input" value={f.name}
-              onChange={(e) => setF({ ...f, name: e.target.value })} />
+            {nameGenderLocked ? (
+              <>
+                <input
+                  className="input"
+                  value={f.name}
+                  readOnly
+                  disabled
+                  autoCapitalize="words"
+                  style={{ textTransform: 'capitalize', cursor: 'not-allowed', opacity: 0.7 }}
+                />
+                <div style={{ fontSize: 10, color: '#b45309', marginTop: 2 }}>
+                  Name and gender can only be changed via a support ticket.
+                </div>
+              </>
+            ) : (
+              <input
+                className="input"
+                value={f.name}
+                autoCapitalize="words"
+                style={{ textTransform: 'capitalize' }}
+                onChange={(e) => setF({ ...f, name: e.target.value })}
+              />
+            )}
           </Field>
           <Field label="Gender">
-            <select className="input" value={f.gender || 'male'}
-              onChange={(e) => setF({ ...f, gender: e.target.value })}>
+            <select
+              className="input"
+              value={f.gender || 'male'}
+              disabled={nameGenderLocked}
+              style={nameGenderLocked ? { cursor: 'not-allowed', opacity: 0.7 } : {}}
+              onChange={(e) => setF({ ...f, gender: e.target.value })}
+            >
               <option value="male">Male</option>
               <option value="female">Female</option>
               <option value="other">Other</option>
             </select>
           </Field>
         </div>
+
         <Field label="Bio">
-          <textarea className="input" rows={3} value={f.bio}
-            onChange={(e) => setF({ ...f, bio: e.target.value })} />
+          <textarea
+            className="input"
+            rows={3}
+            value={f.bio}
+            disabled={profileKycLocked}
+            autoCapitalize="sentences"
+            style={profileKycLocked
+              ? { textTransform: 'capitalize', cursor: 'not-allowed', opacity: 0.7 }
+              : { textTransform: 'capitalize' }
+            }
+            onChange={(e) => setF({ ...f, bio: e.target.value })}
+          />
         </Field>
+
         <Field label="Skills (comma separated)">
-          <input className="input" value={f.skills}
-            onChange={(e) => setF({ ...f, skills: e.target.value })} />
+          <input
+            className="input"
+            value={f.skills}
+            disabled={profileKycLocked}
+            autoCapitalize="words"
+            style={profileKycLocked
+              ? { textTransform: 'capitalize', cursor: 'not-allowed', opacity: 0.7 }
+              : { textTransform: 'capitalize' }
+            }
+            onChange={(e) => setF({ ...f, skills: e.target.value })}
+          />
         </Field>
+
         <Field label="Languages (comma separated)">
-          <input className="input" value={f.languages}
-            onChange={(e) => setF({ ...f, languages: e.target.value })} />
+          <input
+            className="input"
+            value={f.languages}
+            disabled={profileKycLocked}
+            autoCapitalize="words"
+            style={profileKycLocked
+              ? { textTransform: 'capitalize', cursor: 'not-allowed', opacity: 0.7 }
+              : { textTransform: 'capitalize' }
+            }
+            onChange={(e) => setF({ ...f, languages: e.target.value })}
+          />
         </Field>
+
         <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
           <Field label="Experience (yrs)">
-            <input className="input" type="number" value={f.experience}
-              onChange={(e) => setF({ ...f, experience: e.target.value })} />
+            <input
+              className="input"
+              type="number"
+              value={f.experience}
+              disabled={profileKycLocked}
+              style={profileKycLocked ? { cursor: 'not-allowed', opacity: 0.7 } : {}}
+              onChange={(e) => setF({ ...f, experience: e.target.value })}
+            />
           </Field>
           <Field label="Chat Rs/min">
-            <input className="input" type="number" value={f.priceChat}
-              onChange={(e) => setF({ ...f, priceChat: e.target.value })} />
+            <input
+              className="input"
+              type="number"
+              value={f.priceChat}
+              disabled={profileKycLocked}
+              style={profileKycLocked ? { cursor: 'not-allowed', opacity: 0.7 } : {}}
+              onChange={(e) => setF({ ...f, priceChat: e.target.value })}
+            />
           </Field>
           <Field label="Call Rs/min">
-            <input className="input" type="number" value={f.priceCall}
-              onChange={(e) => setF({ ...f, priceCall: e.target.value })} />
+            <input
+              className="input"
+              type="number"
+              value={f.priceCall}
+              disabled={profileKycLocked}
+              style={profileKycLocked ? { cursor: 'not-allowed', opacity: 0.7 } : {}}
+              onChange={(e) => setF({ ...f, priceCall: e.target.value })}
+            />
           </Field>
           <Field label="Video Rs/min">
-            <input className="input" type="number" value={f.priceVideo}
-              onChange={(e) => setF({ ...f, priceVideo: e.target.value })} />
+            <input
+              className="input"
+              type="number"
+              value={f.priceVideo}
+              disabled={profileKycLocked}
+              style={profileKycLocked ? { cursor: 'not-allowed', opacity: 0.7 } : {}}
+              onChange={(e) => setF({ ...f, priceVideo: e.target.value })}
+            />
           </Field>
         </div>
+
+        {/* Discount is always editable, even when KYC locked */}
         <Field label="Discount %">
-          <select className="input" value={f.discountPercent}
-            onChange={(e) =>
-              setF({ ...f, discountPercent: e.target.value })}>
+          <select
+            className="input"
+            value={f.discountPercent}
+            onChange={(e) => setF({ ...f, discountPercent: e.target.value })}
+          >
             <option value={0}>No Discount</option>
             <option value={25}>25%</option>
             <option value={50}>50%</option>
             <option value={70}>70%</option>
           </select>
         </Field>
-        <label className="btn-ghost inline-block cursor-pointer">
-          Upload profile photo
-          <input type="file" accept="image/*" hidden onChange={uploadPhoto} />
-        </label>
+
         <button onClick={save} className="btn-primary w-full">
           Save Profile
         </button>
@@ -291,7 +612,7 @@ function UsernamePanel({ user, currentUsername, onSaved }) {
   const [input, setInput] = useState('');
   const [status, setStatus] = useState('idle'); // idle | checking | available | taken | invalid
   const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState(null); // { msg, kind }
+  const [toast, setToast] = useState(null);
   const debounceRef = useRef(null);
 
   function handleChange(e) {
@@ -319,7 +640,6 @@ function UsernamePanel({ user, currentUsername, onSaved }) {
     setSaving(true);
     setToast(null);
     try {
-      // Double-check uniqueness before writing
       const taken = await isUsernameTaken(input, user.uid);
       if (taken) { setStatus('taken'); setSaving(false); return; }
       await setDoc(
@@ -468,13 +788,7 @@ function Field({ label, children }) {
   );
 }
 
-// KYC + Bank panel - lives on astro-profile.js so the astrologer
-// can self-serve the data the admin needs to release payouts.
-// Bank fields are editable until KYC is approved; afterwards a
-// support ticket is required to change them (admin gates the edit).
-// KYC document detail fields (docName, docType, docNumber) remain
-// editable even after approval so admin can correct them if needed.
-// Only document photo uploads are locked after approval.
+// KYC + Bank panel
 function KycAndBank({ user }) {
   const [astro, setAstro] = useState(null);
   const [bank, setBank] = useState({
@@ -483,18 +797,18 @@ function KycAndBank({ user }) {
   const [bankNameOther, setBankNameOther] = useState('');
   const [kyc, setKyc] = useState({});
   const [errMsg, setErrMsg] = useState('');
-  const [bankToast, setBankToast] = useState(null);   // { msg, kind }
-  const [kycToast, setKycToast] = useState(null);     // { msg, kind }
+  const [bankToast, setBankToast] = useState(null);
+  const [kycToast, setKycToast] = useState(null);
   const [busy, setBusy] = useState(false);
   const [kycDetailsBusy, setKycDetailsBusy] = useState(false);
   const [ifscLoading, setIfscLoading] = useState(false);
+  const [bankConfirm, setBankConfirm] = useState(false);
 
   useEffect(() => {
     if (!user) return;
     astrologerService.getAstrologer(user.uid).then((a) => {
       setAstro(a);
       const savedBank = a?.bank || {};
-      // Strip upi if it was previously stored - we no longer use it
       const { upi: _upi, ...bankWithoutUpi } = savedBank;
       const loaded = {
         accountHolder: '',
@@ -505,7 +819,6 @@ function KycAndBank({ user }) {
         ...bankWithoutUpi,
       };
       setBank(loaded);
-      // If stored bankName is not in the dropdown list (and not empty), treat as Other
       if (
         loaded.bankName &&
         !INDIAN_BANKS.slice(0, -1).includes(loaded.bankName)
@@ -518,11 +831,12 @@ function KycAndBank({ user }) {
   }, [user]);
 
   const kycStatus = kyc.status || 'incomplete';
-  const locked = kycStatus === 'approved';
-  // Document photos are locked after approval; detail text fields remain editable
+  // Also check top-level kycStatus on astro doc
+  const effectiveKycStatus = astro?.kycStatus || kycStatus;
+  const locked = effectiveKycStatus === 'approved' || effectiveKycStatus === 'verified'
+    || kycStatus === 'approved' || kycStatus === 'verified';
   const photosLocked = locked;
 
-  // Resolve the final bankName to save: if user picked "Other", use the typed value
   function resolvedBankName() {
     if (bank.bankName === 'Other') return bankNameOther.trim();
     return bank.bankName;
@@ -539,7 +853,6 @@ function KycAndBank({ user }) {
         const data = await res.json();
         const fetchedBank = data.BANK || '';
         const fetchedBranch = data.BRANCH || '';
-        // Try to match against known banks
         const matched = INDIAN_BANKS.slice(0, -1).find(
           (b) => b.toLowerCase() === fetchedBank.toLowerCase()
         );
@@ -576,7 +889,13 @@ function KycAndBank({ user }) {
     }
   }
 
-  async function saveBank() {
+  // Show confirm modal before actually saving bank
+  function handleSaveBankClick() {
+    setBankConfirm(true);
+  }
+
+  async function doSaveBank() {
+    setBankConfirm(false);
     setBusy(true); setErrMsg('');
     try {
       const toSave = { ...bank, bankName: resolvedBankName() };
@@ -623,13 +942,17 @@ function KycAndBank({ user }) {
 
   const docNumberPlaceholder = docNumberHint(kyc.docType || '');
 
+  // Build confirm modal message
+  const acctLast4 = (bank.accountNumber || '').replace(/\s/g, '').slice(-4);
+  const confirmBankMsg = `Please verify: Account Holder: ${bank.accountHolder || '-'}, Bank: ${resolvedBankName() || '-'}, Account: ...${acctLast4 || '????'}. Incorrect details will cause payout failures.`;
+
   return (
     <>
       <h2 className="mb-2 mt-6 font-bold">KYC verification</h2>
       <div className="card space-y-3">
         <div className="flex items-center gap-2">
           <span className={`rounded-full px-3 py-1 text-xs font-bold
-            uppercase ${kycStatus === 'approved'
+            uppercase ${kycStatus === 'approved' || kycStatus === 'verified'
               ? 'bg-emerald-100 text-emerald-700'
               : kycStatus === 'pending'
                 ? 'bg-amber-100 text-amber-800'
@@ -639,7 +962,7 @@ function KycAndBank({ user }) {
             {kycStatus}
           </span>
           <span className="text-[11px] text-sub-text">
-            {kycStatus === 'approved'
+            {kycStatus === 'approved' || kycStatus === 'verified'
               ? 'You can request payouts.'
               : 'Upload documents below; admin reviews within 24h.'}
           </span>
@@ -651,7 +974,6 @@ function KycAndBank({ user }) {
           </div>
         )}
 
-        {/* Informational note about document requirements */}
         <div
           className="rounded-card border p-2 text-[11px]"
           style={{
@@ -664,12 +986,13 @@ function KycAndBank({ user }) {
           document number. All details must match your bank account records.
         </div>
 
-        {/* Document detail fields - always editable (admin may correct after approval) */}
         <Field label="Name as per document">
           <input
             className="input"
             placeholder="Full name exactly as on your document"
             value={kyc.docName || ''}
+            autoCapitalize="words"
+            style={{ textTransform: 'capitalize' }}
             onChange={(e) => setKyc({ ...kyc, docName: e.target.value })}
           />
         </Field>
@@ -692,6 +1015,7 @@ function KycAndBank({ user }) {
             className="input"
             placeholder={docNumberPlaceholder || 'Enter document number'}
             value={kyc.docNumber || ''}
+            style={{ textTransform: 'uppercase' }}
             onChange={(e) => setKyc({ ...kyc, docNumber: e.target.value })}
           />
           {docNumberPlaceholder && (
@@ -701,7 +1025,6 @@ function KycAndBank({ user }) {
           )}
         </Field>
 
-        {/* Save KYC details button */}
         <button
           onClick={saveKycDetails}
           disabled={kycDetailsBusy}
@@ -710,7 +1033,6 @@ function KycAndBank({ user }) {
           {kycDetailsBusy ? 'Saving...' : 'Save document details'}
         </button>
 
-        {/* Document photo uploads - locked after approval */}
         <div className="border-t pt-3" style={{ borderColor: '#D4A12A33' }}>
           <p className="mb-2 text-[11px] text-sub-text">
             Document photos
@@ -760,7 +1082,6 @@ function KycAndBank({ user }) {
           </p>
         )}
 
-        {/* Informational note */}
         <div
           className="rounded-card border p-2 text-[11px]"
           style={{
@@ -773,14 +1094,43 @@ function KycAndBank({ user }) {
           IFSC code can be found on your cheque leaf.
         </div>
 
+        {/* Field order: Account Holder, IFSC (triggers autofill), Bank Name, Account Number */}
         <Field label="Account holder name">
           <input
             className="input"
             disabled={locked}
             value={bank.accountHolder || ''}
+            autoCapitalize="words"
+            style={locked
+              ? { textTransform: 'capitalize', cursor: 'not-allowed', opacity: 0.7 }
+              : { textTransform: 'capitalize' }
+            }
             onChange={(e) =>
               setBank({ ...bank, accountHolder: e.target.value })}
           />
+        </Field>
+
+        <Field label="IFSC code">
+          <div className="relative">
+            <input
+              className="input pr-8"
+              disabled={locked}
+              value={bank.ifsc || ''}
+              onChange={handleIfscChange}
+              maxLength={11}
+              placeholder="e.g. SBIN0001234"
+              style={locked
+                ? { textTransform: 'uppercase', cursor: 'not-allowed', opacity: 0.7 }
+                : { textTransform: 'uppercase' }
+              }
+            />
+            {ifscLoading && (
+              <span className="absolute right-2 top-1/2 -translate-y-1/2
+                text-[10px] text-sub-text">
+                ...
+              </span>
+            )}
+          </div>
         </Field>
 
         <Field label="Bank name">
@@ -788,6 +1138,7 @@ function KycAndBank({ user }) {
             className="input"
             disabled={locked}
             value={bank.bankName || ''}
+            style={locked ? { cursor: 'not-allowed', opacity: 0.7 } : {}}
             onChange={(e) => {
               setBank({ ...bank, bankName: e.target.value });
               if (e.target.value !== 'Other') setBankNameOther('');
@@ -803,6 +1154,8 @@ function KycAndBank({ user }) {
               className="input mt-1"
               placeholder="Enter bank name"
               value={bankNameOther}
+              autoCapitalize="words"
+              style={{ textTransform: 'capitalize' }}
               onChange={(e) => setBankNameOther(e.target.value)}
             />
           )}
@@ -811,6 +1164,7 @@ function KycAndBank({ user }) {
               className="input mt-1"
               disabled
               value={bankNameOther}
+              style={{ textTransform: 'capitalize', opacity: 0.7 }}
             />
           )}
         </Field>
@@ -820,42 +1174,18 @@ function KycAndBank({ user }) {
             className="input"
             disabled={locked}
             value={bank.accountNumber || ''}
+            style={locked
+              ? { textTransform: 'uppercase', cursor: 'not-allowed', opacity: 0.7 }
+              : { textTransform: 'uppercase' }
+            }
             onChange={(e) =>
               setBank({ ...bank, accountNumber: e.target.value })}
           />
         </Field>
 
-        <Field label="IFSC code">
-          <div className="relative">
-            <input
-              className="input pr-8"
-              disabled={locked}
-              value={bank.ifsc || ''}
-              onChange={handleIfscChange}
-              maxLength={11}
-              placeholder="e.g. SBIN0001234"
-            />
-            {ifscLoading && (
-              <span className="absolute right-2 top-1/2 -translate-y-1/2
-                text-[10px] text-sub-text">
-                ...
-              </span>
-            )}
-          </div>
-        </Field>
-
-        <Field label="Branch">
-          <input
-            className="input"
-            disabled={locked}
-            value={bank.branch || ''}
-            onChange={(e) => setBank({ ...bank, branch: e.target.value })}
-          />
-        </Field>
-
         {!locked && (
           <button
-            onClick={saveBank}
+            onClick={handleSaveBankClick}
             disabled={busy}
             className="btn-primary w-full"
           >
@@ -863,8 +1193,20 @@ function KycAndBank({ user }) {
           </button>
         )}
       </div>
+
       {errMsg && (
         <p className="mt-2 text-center text-[11px] text-sub-text">{errMsg}</p>
+      )}
+
+      {bankConfirm && (
+        <ConfirmModal
+          title="Confirm Bank Account Details"
+          message={confirmBankMsg}
+          confirmLabel="Yes, Save"
+          danger={false}
+          onConfirm={doSaveBank}
+          onCancel={() => setBankConfirm(false)}
+        />
       )}
 
       {kycToast && (
@@ -922,19 +1264,15 @@ function SelfieCaptureDoc({ label, field, k, locked, onUpload }) {
   const [selfieFails, setSelfieFails] = useState(0);
   const inputRef = useRef(null);
 
-  // Use camera capture for first 2 attempts, then fall back to plain picker.
   const useCameraCapture = selfieFails < 2;
 
   function handleChange(e) {
     const file = e.target.files && e.target.files[0];
     if (!file) {
-      // The picker opened but user cancelled or no file came through -
-      // count as a fail to eventually switch to plain file picker.
       setSelfieFails((n) => n + 1);
       return;
     }
     onUpload(file);
-    // Reset input so selecting the same file again triggers onChange next time.
     if (inputRef.current) inputRef.current.value = '';
   }
 

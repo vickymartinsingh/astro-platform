@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { db } from '@astro/shared';
 import {
   callService, liveService, walletService, astrologerService,
   offerService, reviewService,
@@ -7,6 +9,7 @@ import {
 import {
   requestJoinLiveV2, moveToWaitlist, addToWishlist, removeFromWishlist,
   listenConnectedUsers,
+  listenLiveQuiz, answerLiveQuiz, listenLiveQuizAnswers,
 } from '@astro/shared/services/liveService';
 import { useOptionalClient } from '../../lib/useAuth';
 import { useSettings } from '../../lib/useSettings';
@@ -203,6 +206,304 @@ function Avatar({ name, photo, size = 36 }) {
 }
 
 // -----------------------------------------------------------------------
+// Desktop redirect screen
+// -----------------------------------------------------------------------
+
+function DesktopRedirectScreen({ downloadUrl, onBack }) {
+  const url = downloadUrl || 'https://play.google.com/store/apps/details?id=com.astroseer.mobile';
+  return (
+    <div
+      className="fixed inset-0 z-[9999] flex flex-col items-center justify-center px-6"
+      style={{ background: '#0D0508' }}
+    >
+      {/* Decorative ring */}
+      <div
+        className="mb-8 flex h-28 w-28 items-center justify-center rounded-full"
+        style={{ border: '3px solid #D4A12A', background: 'rgba(212,161,42,0.08)' }}
+      >
+        <svg viewBox="0 0 24 24" width="52" height="52" aria-hidden="true">
+          <rect x="5" y="1" width="14" height="22" rx="3"
+            fill="none" stroke="#D4A12A" strokeWidth="2" />
+          <circle cx="12" cy="18.5" r="1" fill="#D4A12A" />
+          <rect x="9" y="3.5" width="6" height="1.5" rx="0.75" fill="#D4A12A" />
+        </svg>
+      </div>
+
+      <h1
+        className="mb-3 text-center text-2xl font-bold"
+        style={{ color: '#FFF8E7' }}
+      >
+        Download AstroSeer App
+      </h1>
+      <p
+        className="mb-8 max-w-xs text-center text-base leading-relaxed"
+        style={{ color: 'rgba(255,248,231,0.65)' }}
+      >
+        For the best live experience, please download our mobile app.
+      </p>
+
+      {/* Google Play button */}
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mb-4 flex items-center gap-3 rounded-2xl px-7 py-4 text-base font-bold"
+        style={{ background: 'linear-gradient(135deg,#D4A12A,#7F2020)', color: '#FFF8E7', minWidth: 220 }}
+      >
+        {/* Google Play icon (simplified) */}
+        <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">
+          <path d="M3 20.5v-17a.5.5 0 01.77-.42l16 8.5a.5.5 0 010 .84l-16 8.5A.5.5 0 013 20.5z"
+            fill="#FFF8E7" />
+        </svg>
+        Get it on Google Play
+      </a>
+
+      <button
+        onClick={onBack}
+        className="rounded-full px-6 py-2.5 text-sm font-semibold"
+        style={{ background: 'rgba(255,255,255,0.1)', color: 'rgba(255,248,231,0.7)' }}
+      >
+        Go Back
+      </button>
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------
+// KBC Quiz overlay
+// -----------------------------------------------------------------------
+
+function QuizOverlay({ quiz, userId, userName, astroId, onDismiss }) {
+  const [myAnswer, setMyAnswer] = useState(null);
+  const [submitted, setSubmitted] = useState(false);
+  const [quizResult, setQuizResult] = useState(null); // 'correct' | 'wrong'
+  const [pointsAnim, setPointsAnim] = useState(false);
+  const [quizAnswers, setQuizAnswers] = useState([]);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
+  const prevStatusRef = useRef(quiz?.status);
+
+  // Listen to answers
+  useEffect(() => {
+    if (!astroId) return undefined;
+    const unsub = listenLiveQuizAnswers(astroId, (answers) => {
+      const correct = (answers || [])
+        .filter((a) => a.isCorrect)
+        .sort((a, b) => (a.answeredAt?.toMillis?.() || 0) - (b.answeredAt?.toMillis?.() || 0))
+        .slice(0, 5);
+      setQuizAnswers(correct);
+    });
+    return () => unsub && unsub();
+  }, [astroId]);
+
+  // When quiz transitions to ended, show leaderboard then dismiss
+  useEffect(() => {
+    if (prevStatusRef.current === 'active' && quiz?.status === 'ended') {
+      setShowLeaderboard(true);
+      const t = setTimeout(() => {
+        setShowLeaderboard(false);
+        onDismiss();
+      }, 5000);
+      return () => clearTimeout(t);
+    }
+    prevStatusRef.current = quiz?.status;
+    return undefined;
+  }, [quiz?.status, onDismiss]);
+
+  async function handleSubmit() {
+    if (myAnswer === null || submitted) return;
+    setSubmitted(true);
+    try {
+      await answerLiveQuiz(astroId, userId, userName, myAnswer);
+      const isCorrect = myAnswer === quiz.correctAnswer;
+      setQuizResult(isCorrect ? 'correct' : 'wrong');
+      if (isCorrect) {
+        setPointsAnim(true);
+        setTimeout(() => setPointsAnim(false), 1400);
+      }
+    } catch (_) {
+      setSubmitted(false);
+    }
+  }
+
+  if (!quiz || quiz.status === 'ended') {
+    if (!showLeaderboard) return null;
+  }
+
+  const options = Array.isArray(quiz?.options) ? quiz.options : [];
+  const pts = quiz?.points || 10;
+
+  // Leaderboard view
+  if (showLeaderboard) {
+    return (
+      <div
+        className="fixed inset-0 z-[9000] flex flex-col items-center justify-center px-5"
+        style={{ background: 'rgba(0,0,0,0.88)' }}
+      >
+        <div
+          className="w-full max-w-sm rounded-3xl px-5 py-6"
+          style={{ background: '#1A0A0A', border: '1.5px solid #D4A12A55' }}
+        >
+          <h2
+            className="mb-1 text-center text-xl font-bold"
+            style={{ color: '#D4A12A' }}
+          >
+            Quiz Results
+          </h2>
+          <p className="mb-4 text-center text-[12px]" style={{ color: 'rgba(255,248,231,0.5)' }}>
+            Top correct answers
+          </p>
+          {quizAnswers.length === 0 ? (
+            <p className="text-center text-[13px]" style={{ color: 'rgba(255,248,231,0.5)' }}>
+              No correct answers this round.
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {quizAnswers.map((a, i) => (
+                <div
+                  key={a.id || i}
+                  className="flex items-center gap-3 rounded-xl px-3 py-2"
+                  style={{ background: i === 0 ? 'rgba(212,161,42,0.18)' : 'rgba(255,255,255,0.05)' }}
+                >
+                  <span
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[13px] font-bold"
+                    style={{ background: '#7F2020', color: '#FFF8E7' }}
+                  >
+                    {i + 1}
+                  </span>
+                  <span className="flex-1 truncate text-[14px] font-semibold" style={{ color: '#FFF8E7' }}>
+                    {a.userName || 'Guest'}
+                  </span>
+                  <span
+                    className="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold"
+                    style={{ background: 'rgba(34,197,94,0.2)', color: '#4ade80' }}
+                  >
+                    Correct
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-[9000] flex flex-col px-4 pt-10 pb-6"
+      style={{ background: 'rgba(0,0,0,0.85)' }}
+    >
+      {/* Question */}
+      <div className="flex-1 flex flex-col items-center justify-center gap-6">
+        <div
+          className="w-full max-w-sm rounded-2xl px-5 py-4 text-center"
+          style={{ background: 'rgba(127,32,32,0.25)', border: '1.5px solid #7F202055' }}
+        >
+          <p className="text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: '#D4A12A' }}>
+            Quiz Time
+          </p>
+          <p className="text-[18px] font-bold leading-snug" style={{ color: '#FFF8E7' }}>
+            {quiz?.question || ''}
+          </p>
+          <p className="mt-2 text-[12px]" style={{ color: 'rgba(255,248,231,0.5)' }}>
+            +{pts} points for correct answer
+          </p>
+        </div>
+
+        {/* Options */}
+        <div className="w-full max-w-sm space-y-3">
+          {options.map((opt, i) => {
+            const isSelected = myAnswer === i;
+            const isCorrectOpt = submitted && i === quiz.correctAnswer;
+            const isWrongOpt = submitted && isSelected && quizResult === 'wrong';
+            let bg = 'rgba(255,255,255,0.08)';
+            let borderColor = 'rgba(255,255,255,0.12)';
+            let textColor = '#FFF8E7';
+            if (isCorrectOpt && submitted) {
+              bg = 'rgba(34,197,94,0.2)';
+              borderColor = '#22c55e';
+              textColor = '#4ade80';
+            } else if (isWrongOpt) {
+              bg = 'rgba(239,68,68,0.2)';
+              borderColor = '#ef4444';
+              textColor = '#f87171';
+            } else if (isSelected) {
+              bg = 'rgba(212,161,42,0.22)';
+              borderColor = '#D4A12A';
+              textColor = '#D4A12A';
+            }
+            return (
+              <button
+                key={i}
+                onClick={() => !submitted && setMyAnswer(i)}
+                disabled={submitted}
+                className="w-full rounded-full px-5 py-3.5 text-left text-[15px] font-semibold transition-all"
+                style={{ background: bg, border: `2px solid ${borderColor}`, color: textColor }}
+              >
+                <span className="mr-3 text-[13px] opacity-60">
+                  {String.fromCharCode(65 + i)}.
+                </span>
+                {opt}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Result feedback */}
+        {submitted && quizResult && (
+          <div
+            className="flex flex-col items-center gap-1"
+          >
+            {quizResult === 'correct' ? (
+              <>
+                <span
+                  className="text-[22px] font-bold"
+                  style={{ color: '#4ade80' }}
+                >
+                  Correct!
+                </span>
+                <span
+                  className="text-[15px] font-bold transition-all"
+                  style={{
+                    color: '#D4A12A',
+                    transform: pointsAnim ? 'scale(1.35)' : 'scale(1)',
+                    transition: 'transform 0.3s ease',
+                  }}
+                >
+                  +{pts} points
+                </span>
+              </>
+            ) : (
+              <span className="text-[22px] font-bold" style={{ color: '#f87171' }}>
+                Incorrect
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Submit button */}
+        {!submitted && (
+          <button
+            onClick={handleSubmit}
+            disabled={myAnswer === null}
+            className="w-full max-w-sm rounded-full py-3.5 text-[15px] font-bold transition-opacity"
+            style={{
+              background: myAnswer !== null
+                ? 'linear-gradient(135deg,#D4A12A,#7F2020)'
+                : 'rgba(255,255,255,0.12)',
+              color: '#FFF8E7',
+              opacity: myAnswer !== null ? 1 : 0.5,
+            }}
+          >
+            Submit Answer
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// -----------------------------------------------------------------------
 // CallType Modal - shown before sending join request
 // -----------------------------------------------------------------------
 
@@ -336,6 +637,18 @@ function CallTypeModal({ info, onClose, onConfirm }) {
 }
 
 // -----------------------------------------------------------------------
+// Desktop detection helper
+// -----------------------------------------------------------------------
+
+function isDesktopDevice() {
+  if (typeof window === 'undefined') return false;
+  const mobileKeywords = /android|iphone|ipad|ipod|mobile|blackberry|opera mini|iemobile|wpdesktop/i;
+  const isMobileUA = mobileKeywords.test(navigator.userAgent);
+  const isWideScreen = window.screen.width >= 1024;
+  return isWideScreen && !isMobileUA;
+}
+
+// -----------------------------------------------------------------------
 // Main component
 // -----------------------------------------------------------------------
 
@@ -343,7 +656,7 @@ export default function LiveView() {
   const router = useRouter();
   const { id: astroUid } = router.query;
   const { user, profile } = useOptionalClient();
-  const { features } = useSettings();
+  const { cfg, features } = useSettings();
 
   const [info, setInfo] = useState(null);
   const [comments, setComments] = useState([]);
@@ -372,6 +685,14 @@ export default function LiveView() {
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
 
+  // Desktop redirect
+  const [showDesktopRedirect, setShowDesktopRedirect] = useState(false);
+
+  // KBC Quiz
+  const [activeQuiz, setActiveQuiz] = useState(null);
+  const [showQuiz, setShowQuiz] = useState(false);
+  const [userQuizPoints, setUserQuizPoints] = useState(0);
+
   const videoRef = useRef(null);
   const joinedRef = useRef(false);
   const cRef = useRef(null);
@@ -380,6 +701,19 @@ export default function LiveView() {
   const stickRef = useRef(true);
   // Track when the current pending request was created for auto-waitlist
   const requestCreatedAtRef = useRef(null);
+
+  // -----------------------------------------------------------------------
+  // Desktop redirect detection (runs once after settings load)
+  // -----------------------------------------------------------------------
+
+  useEffect(() => {
+    // Wait until cfg is available (non-empty object from settings)
+    if (!cfg || typeof cfg !== 'object') return;
+    const mode = cfg.live_desktop_mode || 'redirect';
+    if (mode === 'redirect' && isDesktopDevice()) {
+      setShowDesktopRedirect(true);
+    }
+  }, [cfg]);
 
   // -----------------------------------------------------------------------
   // Auto-scroll to newest comments
@@ -481,6 +815,35 @@ export default function LiveView() {
     }, ms);
     return () => clearInterval(t);
   }, [features, info, comments.length]);
+
+  // -----------------------------------------------------------------------
+  // KBC Quiz listener - active once live is joined
+  // -----------------------------------------------------------------------
+
+  useEffect(() => {
+    if (!astroUid) return undefined;
+    const unsub = listenLiveQuiz(astroUid, (quiz) => {
+      setActiveQuiz(quiz);
+      if (quiz && quiz.status === 'active') {
+        setShowQuiz(true);
+      }
+    });
+    return () => unsub && unsub();
+  }, [astroUid]);
+
+  // -----------------------------------------------------------------------
+  // User quiz points listener
+  // -----------------------------------------------------------------------
+
+  useEffect(() => {
+    if (!user?.uid) return undefined;
+    const unsub = onSnapshot(doc(db, 'users', user.uid), (snap) => {
+      if (snap.exists()) {
+        setUserQuizPoints(Number(snap.data().quizPoints || 0));
+      }
+    });
+    return () => unsub && unsub();
+  }, [user?.uid]);
 
   // -----------------------------------------------------------------------
   // Agora join - audience mode (CRITICAL FIX)
@@ -702,6 +1065,19 @@ export default function LiveView() {
   }
 
   // -----------------------------------------------------------------------
+  // Desktop redirect gate
+  // -----------------------------------------------------------------------
+
+  if (showDesktopRedirect) {
+    return (
+      <DesktopRedirectScreen
+        downloadUrl={cfg.live_app_download_url}
+        onBack={() => router.back()}
+      />
+    );
+  }
+
+  // -----------------------------------------------------------------------
   // Render
   // -----------------------------------------------------------------------
 
@@ -718,7 +1094,7 @@ export default function LiveView() {
       <div className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/70 to-transparent" />
 
       {/* ----------------------------------------------------------------
-          TOP BAR: back button, name, viewer count, LIVE badge
+          TOP BAR: back button, name, viewer count, LIVE badge, quiz points
       ---------------------------------------------------------------- */}
       <div className="absolute left-3 right-3 top-3 z-30 flex items-center gap-2">
         <button
@@ -778,7 +1154,16 @@ export default function LiveView() {
           <IconGrid />
         </button>
 
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex items-center gap-1.5">
+          {/* Quiz points badge - only shown when user is logged in */}
+          {user?.uid && userQuizPoints > 0 && (
+            <span
+              className="rounded-full px-2 py-0.5 text-[10px] font-bold"
+              style={{ background: 'rgba(212,161,42,0.25)', color: '#D4A12A', border: '1px solid #D4A12A55' }}
+            >
+              {userQuizPoints} pts
+            </span>
+          )}
           <span className="rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-bold">
             LIVE
           </span>
@@ -1200,6 +1585,20 @@ export default function LiveView() {
           onClose={() => setSheet(null)}
           onConfirm={submitJoinRequest}
           onRecharge={(amt) => router.push(`/wallet?recharge=${amt}`)}
+        />
+      )}
+
+      {/* KBC Quiz overlay */}
+      {showQuiz && activeQuiz && (
+        <QuizOverlay
+          quiz={activeQuiz}
+          userId={user?.uid || ''}
+          userName={profile?.name || 'Guest'}
+          astroId={astroUid}
+          onDismiss={() => {
+            setShowQuiz(false);
+            setActiveQuiz(null);
+          }}
         />
       )}
     </div>

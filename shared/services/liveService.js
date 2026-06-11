@@ -670,3 +670,79 @@ export function listenWishlist(astroUid, callback) {
     (snap) => callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
   );
 }
+
+// ---- KBC-style live quiz -----------------------------------------------
+
+export async function createLiveQuiz(astroUid, {
+  question, options, correctAnswer, points,
+}) {
+  await setDoc(
+    doc(db, 'chats', `live_${astroUid}`, 'quiz', 'current'),
+    {
+      question,
+      options,
+      correctAnswer,
+      points,
+      status: 'active',
+      startedAt: serverTimestamp(),
+    },
+  );
+}
+
+export async function endLiveQuiz(astroUid) {
+  await updateDoc(
+    doc(db, 'chats', `live_${astroUid}`, 'quiz', 'current'),
+    { status: 'ended', endedAt: serverTimestamp() },
+  );
+}
+
+export function listenLiveQuiz(astroUid, callback) {
+  return onSnapshot(
+    doc(db, 'chats', `live_${astroUid}`, 'quiz', 'current'),
+    (s) => callback(s.exists() ? s.data() : null),
+  );
+}
+
+export async function answerLiveQuiz(astroUid, userId, userName, answerIndex) {
+  const quizRef = doc(db, 'chats', `live_${astroUid}`, 'quiz', 'current');
+  const quizSnap = await getDoc(quizRef);
+  if (!quizSnap.exists()) return;
+  const quiz = quizSnap.data();
+  if (quiz.status !== 'active') return;
+  const { correctAnswer, points } = quiz;
+  const isCorrect = answerIndex === correctAnswer;
+  const pointsEarned = isCorrect ? points : 0;
+  await setDoc(
+    doc(db, 'chats', `live_${astroUid}`, 'quiz', 'current', 'answers', userId),
+    {
+      userId,
+      userName,
+      answer: answerIndex,
+      isCorrect,
+      answeredAt: serverTimestamp(),
+      pointsEarned,
+    },
+  );
+  if (isCorrect) {
+    await awardQuizPoints(userId, points);
+  }
+}
+
+export function listenLiveQuizAnswers(astroUid, callback) {
+  return onSnapshot(
+    collection(db, 'chats', `live_${astroUid}`, 'quiz', 'current', 'answers'),
+    (snap) => {
+      const answers = snap.docs
+        .map((d) => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (a.answeredAt?.toMillis?.() || 0)
+          - (b.answeredAt?.toMillis?.() || 0));
+      callback(answers);
+    },
+  );
+}
+
+export async function awardQuizPoints(userId, points) {
+  try {
+    await updateDoc(doc(db, 'users', userId), { quizPoints: increment(points) });
+  } catch (_) {}
+}

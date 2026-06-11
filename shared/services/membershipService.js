@@ -14,7 +14,7 @@
 // Firestore, no Cloud Functions.
 import {
   doc, getDoc, setDoc, updateDoc, runTransaction, serverTimestamp,
-  Timestamp,
+  Timestamp, onSnapshot,
 } from 'firebase/firestore';
 import { db } from '../firebase.js';
 
@@ -27,6 +27,8 @@ const DEFAULT_TIERS = [
     price: 0,
     color: '#7F2020',
     icon: '⭐',
+    badgeEnabled: false,
+    badgeKycRequired: false,
     benefits: {
       freeReports: [],
       callMinutes: 0,
@@ -43,6 +45,8 @@ const DEFAULT_TIERS = [
     price: 299,
     color: '#A0A0A0',
     icon: '🥈',
+    badgeEnabled: false,
+    badgeKycRequired: false,
     benefits: {
       freeReports: ['kundli_basic', 'moon_nakshatra'],
       callMinutes: 30,
@@ -61,6 +65,8 @@ const DEFAULT_TIERS = [
     price: 599,
     color: '#D4A12A',
     icon: '🥇',
+    badgeEnabled: false,
+    badgeKycRequired: false,
     benefits: {
       freeReports: ['kundli_basic', 'moon_nakshatra', 'yogas_doshas', 'panchang_birth'],
       callMinutes: 100,
@@ -80,6 +86,8 @@ const DEFAULT_TIERS = [
     price: 999,
     color: '#7F2020',
     icon: '💎',
+    badgeEnabled: false,
+    badgeKycRequired: false,
     benefits: {
       freeReports: [
         'kundli_basic', 'kundli_lagna', 'moon_nakshatra', 'yogas_doshas',
@@ -374,5 +382,74 @@ export async function useCallMinutes(uid, minutes) {
     tx.set(userRef, {
       membership: { ...m, callMinutesUsed: current + mins },
     }, { merge: true });
+  });
+}
+
+// ---- Badge status -------------------------------------------------------
+
+// Returns the badge status for a user based on their active membership tier
+// and the tier's badge configuration in settings/membership.
+// Returns { hasBadge: boolean, tierId, tierName, color: '#6B8E23' }
+export async function getUserMembershipBadgeStatus(uid) {
+  const noBadge = { hasBadge: false, tierId: 'basic', tierName: 'Basic', color: '#6B8E23' };
+  if (!uid) return noBadge;
+
+  try {
+    const [userSnap, cfg] = await Promise.all([
+      getDoc(doc(db, 'users', uid)),
+      getMembershipConfig(),
+    ]);
+
+    if (!userSnap.exists()) return noBadge;
+
+    const userData = userSnap.data() || {};
+    const m = userData.membership || {};
+    const tierId = m.tierId || 'basic';
+
+    // Check membership is active and not expired.
+    if (m.expiresAt) {
+      const exp = m.expiresAt.toMillis
+        ? m.expiresAt.toMillis()
+        : Number(m.expiresAt);
+      if (exp && exp <= Date.now()) return { ...noBadge, tierId, tierName: tierId };
+    } else if (tierId !== 'basic') {
+      // Paid tier with no expiresAt is treated as expired.
+      return { ...noBadge, tierId, tierName: tierId };
+    }
+
+    const tiers = Array.isArray(cfg.tiers) ? cfg.tiers : [];
+    const tier = tiers.find((t) => t.id === tierId) || null;
+    if (!tier) return noBadge;
+
+    const tierName = tier.name || tierId;
+
+    if (!tier.badgeEnabled) {
+      return { hasBadge: false, tierId, tierName, color: '#6B8E23' };
+    }
+
+    if (tier.badgeKycRequired && !userData.kycVerified) {
+      return { hasBadge: false, tierId, tierName, color: '#6B8E23' };
+    }
+
+    return { hasBadge: true, tierId, tierName, color: '#6B8E23' };
+  } catch (e) {
+    console.error('[membershipService] getUserMembershipBadgeStatus', e);
+    return noBadge;
+  }
+}
+
+// Listens for changes to users/{uid} and calls callback with the latest
+// badge status whenever the document updates.
+// Returns an unsubscribe function.
+export function listenUserMembershipBadge(uid, callback) {
+  if (!uid) return () => {};
+  const userRef = doc(db, 'users', uid);
+  return onSnapshot(userRef, async () => {
+    try {
+      const status = await getUserMembershipBadgeStatus(uid);
+      callback(status);
+    } catch (e) {
+      console.error('[membershipService] listenUserMembershipBadge', e);
+    }
   });
 }

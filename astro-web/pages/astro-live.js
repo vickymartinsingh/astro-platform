@@ -151,7 +151,7 @@ const Stat = ({ label, value }) => (
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function AstroLive() {
   const { user, loading } = useRequireAstrologer();
-  const { features } = useSettings();
+  const { features, cfg } = useSettings();
   const router = useRouter();
 
   const [astro, setAstro]     = useState(null);
@@ -182,6 +182,16 @@ export default function AstroLive() {
   const [wishlistUsers, setWishlistUsers]   = useState([]);
   const [compStatus, setCompStatus]         = useState(null);
 
+  // Quiz states
+  const [quizActive, setQuizActive]         = useState(false);
+  const [activeQuiz, setActiveQuiz]         = useState(null);
+  const [quizAnswers, setQuizAnswers]       = useState([]);
+  const [showQuizCreate, setShowQuizCreate] = useState(false);
+  const [quizQuestion, setQuizQuestion]     = useState('');
+  const [quizOptions, setQuizOptions]       = useState(['', '', '', '']);
+  const [quizCorrectIdx, setQuizCorrectIdx] = useState(0);
+  const [quizPoints, setQuizPoints]         = useState(10);
+
   const localRef  = useRef(null);
   const joinedRef = useRef(false);
   const cRef      = useRef(null);
@@ -208,6 +218,14 @@ export default function AstroLive() {
       u5 && u5(); u6 && u6(); u7 && u7(); u8 && u8();
     };
   }, [user]);
+
+  // Read quiz points from settings/config
+  useEffect(() => {
+    if (cfg && cfg.live_quiz_points) {
+      const pts = Number(cfg.live_quiz_points);
+      if (pts > 0) setQuizPoints(pts);
+    }
+  }, [cfg]);
 
   useEffect(() => {
     if (!user) return;
@@ -250,6 +268,24 @@ export default function AstroLive() {
     return () => clearInterval(t);
   }, [live]);
 
+  // Quiz listeners - active only while live
+  useEffect(() => {
+    if (!live || !user) return undefined;
+    const u1 = liveService.listenLiveQuiz(user.uid, (quiz) => {
+      setActiveQuiz(quiz);
+      setQuizActive(!!(quiz && quiz.status === 'active'));
+    });
+    const u2 = liveService.listenLiveQuizAnswers(user.uid, (answers) => {
+      // top 5 fastest correct answers (sorted by answeredAt ascending)
+      const correct = (answers || [])
+        .filter((a) => a.correct)
+        .sort((a, b) => (a.answeredAt || 0) - (b.answeredAt || 0))
+        .slice(0, 5);
+      setQuizAnswers(correct);
+    });
+    return () => { u1 && u1(); u2 && u2(); };
+  }, [live, user]);
+
   // Admin-driven audience bots
   useEffect(() => {
     if (!live || !user) return undefined;
@@ -258,13 +294,13 @@ export default function AstroLive() {
     let commentTimer = null;
     const usedQs = new Set();
     (async () => {
-      const cfg = await liveBotService.getBotConfig();
+      const cfg2 = await liveBotService.getBotConfig();
       // eslint-disable-next-line no-console
-      console.log('[liveBots] cfg=', cfg, 'uid=', user.uid,
-        'active=', liveBotService.botsActiveForAstro(cfg, user.uid));
-      if (!liveBotService.botsActiveForAstro(cfg, user.uid)) return;
-      const joinMs    = Math.max(3, Number(cfg.live_bots_join_rate_sec) || 12) * 1000;
-      const commentMs = Math.max(5, Number(cfg.live_bots_comment_rate_sec) || 35) * 1000;
+      console.log('[liveBots] cfg=', cfg2, 'uid=', user.uid,
+        'active=', liveBotService.botsActiveForAstro(cfg2, user.uid));
+      if (!liveBotService.botsActiveForAstro(cfg2, user.uid)) return;
+      const joinMs    = Math.max(3, Number(cfg2.live_bots_join_rate_sec) || 12) * 1000;
+      const commentMs = Math.max(5, Number(cfg2.live_bots_comment_rate_sec) || 35) * 1000;
       async function joinTick() {
         if (cancelled) return;
         try {
@@ -407,6 +443,10 @@ export default function AstroLive() {
       message: 'Your viewers will be disconnected immediately.',
       yes: 'End now', no: 'Keep going', danger: true });
     if (!ok) return;
+    // End any active quiz before ending the live
+    if (quizActive) {
+      try { await liveService.endLiveQuiz(user.uid); } catch (_) {}
+    }
     try { await recordService.stopRecording(); } catch (_) {}
     try { await callService.leaveAgoraChannel(); } catch (_) {}
     try { await liveService.endLive(user.uid); } catch (_) {}
@@ -474,6 +514,36 @@ export default function AstroLive() {
         }).catch(() => {})
       : null;
     setChatInput('');
+  }
+
+  // Quiz actions
+  async function handleLaunchQuiz() {
+    const q = quizQuestion.trim();
+    const opts = quizOptions.map((o) => o.trim());
+    if (!q) return;
+    if (opts.some((o) => !o)) return;
+    try {
+      await liveService.createLiveQuiz(user.uid, {
+        question: q,
+        options: opts,
+        correctAnswer: quizCorrectIdx,
+        points: quizPoints,
+      });
+      setShowQuizCreate(false);
+      setQuizQuestion('');
+      setQuizOptions(['', '', '', '']);
+      setQuizCorrectIdx(0);
+    } catch (_) {
+      await confirmModal({
+        title: 'Could not launch quiz',
+        message: 'Please try again.',
+        yes: 'OK', no: 'Close',
+      });
+    }
+  }
+
+  async function handleEndQuiz() {
+    try { await liveService.endLiveQuiz(user.uid); } catch (_) {}
   }
 
   // ── Derived ───────────────────────────────────────────────────────────────
@@ -600,11 +670,40 @@ export default function AstroLive() {
         </div>
       </div>
 
-      {/* ── Bottom 45%: chat overlay ───────────────────────────────────── */}
+      {/* ── Bottom 45%: chat + quiz controls ──────────────────────────── */}
       <div style={{
         flex: 1, display: 'flex', flexDirection: 'column',
         background: 'rgba(0,0,0,0.6)', position: 'relative', overflow: 'hidden',
       }}>
+
+        {/* Quiz control bar (shown when live) */}
+        <div style={{
+          padding: '8px 12px 0',
+          display: 'flex', gap: 8, alignItems: 'flex-start',
+          flexWrap: 'wrap',
+        }}>
+          {/* Start Quiz button - only visible when no quiz is active */}
+          {!quizActive && (
+            <button
+              onClick={() => setShowQuizCreate(true)}
+              style={{
+                background: C.amber, border: 'none', borderRadius: 20,
+                padding: '6px 14px', fontWeight: 700, fontSize: 12,
+                color: C.maroon, cursor: 'pointer', flexShrink: 0,
+              }}>
+              Start Quiz
+            </button>
+          )}
+
+          {/* Active quiz display */}
+          {quizActive && activeQuiz && (
+            <ActiveQuizPanel
+              quiz={activeQuiz}
+              answers={quizAnswers}
+              onEnd={handleEndQuiz}
+            />
+          )}
+        </div>
 
         {/* Scrollable comments */}
         <div ref={cRef} style={{
@@ -694,6 +793,21 @@ export default function AstroLive() {
         onMakeComp={handleMakeComplimentary}
       />
 
+      {/* ── Quiz Creation Modal ─────────────────────────────────────────── */}
+      {showQuizCreate && (
+        <QuizCreateModal
+          quizQuestion={quizQuestion}
+          setQuizQuestion={setQuizQuestion}
+          quizOptions={quizOptions}
+          setQuizOptions={setQuizOptions}
+          quizCorrectIdx={quizCorrectIdx}
+          setQuizCorrectIdx={setQuizCorrectIdx}
+          quizPoints={quizPoints}
+          onLaunch={handleLaunchQuiz}
+          onCancel={() => setShowQuizCreate(false)}
+        />
+      )}
+
       {/* Pulsing dot keyframe injected once */}
       <style>{`
         @keyframes livePulse {
@@ -718,6 +832,286 @@ function RailButton({ children, onClick, title, style: extraStyle }) {
       }}>
       {children}
     </button>
+  );
+}
+
+// ─── Active Quiz Panel ────────────────────────────────────────────────────────
+function ActiveQuizPanel({ quiz, answers, onEnd }) {
+  const LABELS = ['A', 'B', 'C', 'D'];
+  return (
+    <div style={{
+      background: 'rgba(127,32,32,0.18)',
+      border: `1px solid ${C.maroon}`,
+      borderRadius: 12, padding: '10px 12px',
+      width: '100%',
+    }}>
+      {/* Question row */}
+      <div style={{
+        display: 'flex', alignItems: 'flex-start',
+        justifyContent: 'space-between', gap: 10, marginBottom: 8,
+      }}>
+        <div style={{ flex: 1 }}>
+          <div style={{
+            fontSize: 10, fontWeight: 700, letterSpacing: '0.1em',
+            textTransform: 'uppercase', color: C.amber, marginBottom: 3,
+          }}>
+            Quiz Active
+          </div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: C.cream, lineHeight: 1.4 }}>
+            {quiz.question}
+          </div>
+          {/* Options summary */}
+          <div style={{
+            display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 5,
+          }}>
+            {(quiz.options || []).map((opt, i) => (
+              <span key={i} style={{
+                fontSize: 10, padding: '2px 7px', borderRadius: 8,
+                background: i === quiz.correctAnswer
+                  ? 'rgba(31,168,85,0.25)' : 'rgba(255,255,255,0.07)',
+                color: i === quiz.correctAnswer ? '#1FA855' : '#aaa',
+                border: i === quiz.correctAnswer
+                  ? '1px solid #1FA855' : '1px solid transparent',
+                fontWeight: i === quiz.correctAnswer ? 700 : 400,
+              }}>
+                {LABELS[i]}: {opt}
+              </span>
+            ))}
+          </div>
+        </div>
+        <button
+          onClick={onEnd}
+          style={{
+            background: C.maroon, border: 'none', borderRadius: 12,
+            padding: '6px 12px', fontSize: 11, fontWeight: 700,
+            color: '#fff', cursor: 'pointer', flexShrink: 0,
+          }}>
+          End Quiz
+        </button>
+      </div>
+
+      {/* Leaderboard */}
+      {answers.length > 0 && (
+        <div>
+          <div style={{
+            fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
+            letterSpacing: '0.1em', color: '#888', marginBottom: 4,
+          }}>
+            Top Answerers
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {answers.map((a, idx) => {
+              const ms = a.timeTakenMs || a.answeredAt
+                ? (a.timeTakenMs
+                    ? a.timeTakenMs
+                    : (quiz.startedAt ? a.answeredAt - quiz.startedAt : null))
+                : null;
+              return (
+                <div key={a.uid || a.id || idx} style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                }}>
+                  <span style={{
+                    width: 18, height: 18, borderRadius: '50%',
+                    background: idx === 0 ? C.amber : 'rgba(255,255,255,0.1)',
+                    color: idx === 0 ? C.maroon : '#aaa',
+                    fontSize: 10, fontWeight: 800,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    flexShrink: 0,
+                  }}>
+                    {idx + 1}
+                  </span>
+                  <span style={{ fontSize: 12, color: C.cream, flex: 1, minWidth: 0 }}>
+                    {a.userName || a.name || 'User'}
+                  </span>
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, color: '#1FA855',
+                    background: 'rgba(31,168,85,0.15)',
+                    borderRadius: 6, padding: '1px 6px',
+                  }}>
+                    Correct
+                  </span>
+                  {ms != null && (
+                    <span style={{ fontSize: 10, color: '#888', flexShrink: 0 }}>
+                      {ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Quiz Creation Modal ──────────────────────────────────────────────────────
+function QuizCreateModal({
+  quizQuestion, setQuizQuestion,
+  quizOptions, setQuizOptions,
+  quizCorrectIdx, setQuizCorrectIdx,
+  quizPoints,
+  onLaunch, onCancel,
+}) {
+  const LABELS = ['A', 'B', 'C', 'D'];
+  const canLaunch = quizQuestion.trim() && quizOptions.every((o) => o.trim());
+
+  function setOption(i, val) {
+    const next = [...quizOptions];
+    next[i] = val;
+    setQuizOptions(next);
+  }
+
+  return (
+    <div style={{
+      position: 'absolute', inset: 0, zIndex: 80,
+      background: 'rgba(0,0,0,0.78)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: '20px 16px',
+    }}>
+      <div style={{
+        background: '#181010',
+        border: `1px solid ${C.maroon}`,
+        borderRadius: 18, padding: '22px 20px',
+        width: '100%', maxWidth: 420,
+        maxHeight: '90vh', overflowY: 'auto',
+      }}>
+        {/* Title */}
+        <div style={{
+          fontSize: 15, fontWeight: 800, color: C.amber,
+          marginBottom: 16, textAlign: 'center',
+          letterSpacing: '0.01em',
+        }}>
+          Create a Quiz Question
+        </div>
+
+        {/* Question input */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={{
+            display: 'block', fontSize: 10, fontWeight: 700,
+            textTransform: 'uppercase', letterSpacing: '0.08em',
+            color: '#888', marginBottom: 5,
+          }}>
+            Question
+          </label>
+          <textarea
+            value={quizQuestion}
+            onChange={(e) => setQuizQuestion(e.target.value)}
+            placeholder="Type your question here..."
+            rows={3}
+            style={{
+              width: '100%', background: 'rgba(255,255,255,0.06)',
+              border: `1px solid ${C.maroon}`,
+              borderRadius: 10, padding: '10px 12px',
+              color: C.cream, fontSize: 14, lineHeight: 1.45,
+              outline: 'none', resize: 'none',
+              boxSizing: 'border-box',
+            }}
+          />
+        </div>
+
+        {/* Options */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={{
+            display: 'block', fontSize: 10, fontWeight: 700,
+            textTransform: 'uppercase', letterSpacing: '0.08em',
+            color: '#888', marginBottom: 7,
+          }}>
+            Options &amp; Correct Answer
+          </label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {quizOptions.map((opt, i) => (
+              <div key={i} style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+              }}>
+                {/* Radio button */}
+                <label style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  cursor: 'pointer', flexShrink: 0,
+                }}>
+                  <input
+                    type="radio"
+                    name="quizCorrect"
+                    checked={quizCorrectIdx === i}
+                    onChange={() => setQuizCorrectIdx(i)}
+                    style={{ accentColor: C.amber, width: 15, height: 15 }}
+                  />
+                </label>
+                {/* Option label badge */}
+                <span style={{
+                  width: 22, height: 22, borderRadius: '50%',
+                  background: quizCorrectIdx === i ? C.amber : 'rgba(255,255,255,0.1)',
+                  color: quizCorrectIdx === i ? C.maroon : '#aaa',
+                  fontSize: 11, fontWeight: 800,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flexShrink: 0,
+                }}>
+                  {LABELS[i]}
+                </span>
+                {/* Option text input */}
+                <input
+                  value={opt}
+                  onChange={(e) => setOption(i, e.target.value)}
+                  placeholder={`Option ${LABELS[i]}`}
+                  style={{
+                    flex: 1,
+                    background: quizCorrectIdx === i
+                      ? 'rgba(212,161,42,0.08)' : 'rgba(255,255,255,0.05)',
+                    border: quizCorrectIdx === i
+                      ? `1px solid ${C.amber}` : '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: 8, padding: '7px 10px',
+                    color: C.cream, fontSize: 13, outline: 'none',
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Points display */}
+        <div style={{
+          background: 'rgba(212,161,42,0.08)',
+          border: `1px solid rgba(212,161,42,0.2)`,
+          borderRadius: 8, padding: '8px 12px',
+          marginBottom: 18,
+          display: 'flex', alignItems: 'center', gap: 6,
+        }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill={C.amber}>
+            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+          </svg>
+          <span style={{ fontSize: 12, color: C.cream }}>
+            <b style={{ color: C.amber }}>{quizPoints} points</b> per correct answer
+          </span>
+        </div>
+
+        {/* Action buttons */}
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button
+            onClick={onCancel}
+            style={{
+              flex: 1, background: 'rgba(255,255,255,0.07)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              borderRadius: 12, padding: '11px 0',
+              fontSize: 13, fontWeight: 700,
+              color: '#aaa', cursor: 'pointer',
+            }}>
+            Cancel
+          </button>
+          <button
+            onClick={onLaunch}
+            disabled={!canLaunch}
+            style={{
+              flex: 2, background: canLaunch ? C.amber : 'rgba(212,161,42,0.3)',
+              border: 'none', borderRadius: 12, padding: '11px 0',
+              fontSize: 13, fontWeight: 800,
+              color: canLaunch ? C.maroon : '#888',
+              cursor: canLaunch ? 'pointer' : 'not-allowed',
+            }}>
+            Launch Quiz
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
