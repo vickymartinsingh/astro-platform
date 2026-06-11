@@ -54,6 +54,20 @@ export default function UserActionBar({ uid, user, onChange }) {
     } finally { setBusy(false); }
   }
 
+  async function doManualDebit() {
+    const amt = Math.round(Number(amount) || 0);
+    if (!amt || amt <= 0) {
+      setErr('Enter a positive amount.'); return;
+    }
+    if (!note.trim()) {
+      setErr('Reason is required for a manual debit.'); return;
+    }
+    await run(
+      () => adminService.adjustWallet(uid, -amt,
+        `manual_debit: ${note.trim()}`),
+      `Deducted ₹${amt} from wallet.`,
+    );
+  }
   async function doAddBalance() {
     const amt = Math.round(Number(amount) || 0);
     if (!amt || amt <= 0) {
@@ -134,6 +148,9 @@ export default function UserActionBar({ uid, user, onChange }) {
         <BarBtn onClick={() => open('bonus')} tone="primary">
           + Bonus
         </BarBtn>
+        <BarBtn onClick={() => open('debit')} tone="warn">
+          Manual Debit
+        </BarBtn>
         <BarBtn onClick={() => open('refund')} tone="amber">
           Refund
         </BarBtn>
@@ -179,6 +196,21 @@ export default function UserActionBar({ uid, user, onChange }) {
           <AmtField value={amount} onChange={setAmount} />
           <NoteField value={note} onChange={setNote}
             placeholder="Bonus reason (welcome, retention, etc)" />
+        </ActionModal>
+      )}
+      {modal === 'debit' && (
+        <ActionModal title="Manual wallet debit"
+          subtitle={`Deduct money from ${user?.name || 'this customer'}'s `
+            + 'wallet. Use this to collect missed charges (kundli '
+            + 'reports, chat session under-billed, etc). The debit '
+            + 'appears in their transaction statement immediately. '
+            + 'Reason is required and is shown to the customer.'}
+          onClose={close} onSubmit={doManualDebit} busy={busy}
+          err={err} success={success}
+          cta="Deduct from wallet" ctaTone="warn">
+          <AmtField value={amount} onChange={setAmount} />
+          <NoteField value={note} onChange={setNote}
+            placeholder="e.g. kundli report (12-month forecast) or chat 16 min" />
         </ActionModal>
       )}
       {modal === 'refund' && (
