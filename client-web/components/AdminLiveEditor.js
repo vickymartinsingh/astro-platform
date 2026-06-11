@@ -25,6 +25,7 @@ export default function AdminLiveEditor() {
   const [config, setConfig] = useState(null);
   const [msg, setMsg] = useState('');
   const [editMode, setEditMode] = useState(false);
+  const [logoUploading, setLogoUploading] = useState(false);
   const drag = useRef(null);
 
   const isAdmin = isAdminUser(profile, user && user.email);
@@ -86,12 +87,59 @@ export default function AdminLiveEditor() {
   // BOTH gates required: admin account AND came via the admin switch.
   if (!isAdmin || !editMode) return null;
 
-  const toast = (t) => { setMsg(t); setTimeout(() => setMsg(''), 2500); };
+  const toast = (t) => { setMsg(t); setTimeout(() => setMsg(''), 3500); };
   const save = async (n, patch, label) => {
     try {
       await adminService.updateSettings(n, patch);
       toast(`${label} published - live`);
     } catch (_) { toast('Could not publish (admin only)'); }
+  };
+
+  // Logo file upload handler.
+  // Uploads the selected image to Firebase Storage at branding/logo.<ext>,
+  // gets the public download URL, saves it to Firestore settings/config.logo,
+  // and updates the local config state so the preview refreshes immediately.
+  const handleLogoUpload = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const maxBytes = 2 * 1024 * 1024; // 2 MB
+    if (file.size > maxBytes) {
+      toast('Logo file must be under 2 MB.');
+      return;
+    }
+    const allowed = ['image/png', 'image/jpeg', 'image/jpg',
+      'image/svg+xml', 'image/webp'];
+    if (!allowed.includes(file.type)) {
+      toast('Only PNG, JPG, SVG or WebP logos are accepted.');
+      return;
+    }
+    setLogoUploading(true);
+    try {
+      const { getStorageLazy } = await import('@astro/shared');
+      const {
+        ref: storageRef, uploadBytes, getDownloadURL,
+      } = await import('firebase/storage');
+      const storage = await getStorageLazy();
+      if (!storage) throw new Error('Storage unavailable');
+      const ext = file.name.split('.').pop().toLowerCase() || 'png';
+      const path = `branding/logo.${ext}`;
+      const r = storageRef(storage, path);
+      await uploadBytes(r, file, { contentType: file.type });
+      const url = await getDownloadURL(r);
+      // Persist to Firestore and update local state
+      await adminService.updateSettings('config', {
+        platformName: (config && config.platformName) || '',
+        logo: url,
+      });
+      setConfig((prev) => ({ ...(prev || {}), logo: url }));
+      toast('Logo uploaded and published - live');
+    } catch (err) {
+      toast(`Upload failed: ${(err && err.message) || 'unknown error'}`);
+    } finally {
+      setLogoUploading(false);
+      // Reset the file input so the same file can be re-selected if needed
+      if (e.target) e.target.value = '';
+    }
   };
 
   const menu = features
@@ -253,14 +301,75 @@ export default function AdminLiveEditor() {
                     <input value={config.platformName || ''} style={inp}
                       onChange={(e) => setConfig({ ...config,
                         platformName: e.target.value })} />
-                    <div style={{ ...cap, marginTop: 8 }}>Logo URL</div>
+
+                    <div style={{ ...cap, marginTop: 12 }}>
+                      Logo (nav header + PDF reports)
+                    </div>
+
+                    {/* Current logo preview */}
+                    {config.logo ? (
+                      <div style={{
+                        margin: '6px 0 8px', padding: 8,
+                        background: '#f7f7f7', borderRadius: 6,
+                        border: '1px solid #e0e0e0',
+                        display: 'flex', alignItems: 'center', gap: 8,
+                      }}>
+                        <img src={config.logo} alt="Current logo"
+                          style={{
+                            maxHeight: 48, maxWidth: 160,
+                            objectFit: 'contain',
+                          }} />
+                        <span style={{ fontSize: 11, color: '#666' }}>
+                          Current logo
+                        </span>
+                      </div>
+                    ) : (
+                      <div style={{
+                        margin: '6px 0 8px', padding: '8px 10px',
+                        background: '#fff8e1', borderRadius: 6,
+                        border: '1px solid #ffe082', fontSize: 11,
+                        color: '#795548',
+                      }}>
+                        No logo set - PDFs show a placeholder.
+                      </div>
+                    )}
+
+                    {/* File upload button */}
+                    <label style={{
+                      display: 'inline-block', padding: '8px 14px',
+                      background: logoUploading ? '#ccc' : '#1f1147',
+                      color: '#fff', borderRadius: 6, fontSize: 12,
+                      fontWeight: 700, cursor: logoUploading
+                        ? 'not-allowed' : 'pointer',
+                      marginBottom: 8,
+                    }}>
+                      {logoUploading ? 'Uploading...' : 'Upload logo file'}
+                      <input type="file"
+                        accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
+                        style={{ display: 'none' }}
+                        onChange={handleLogoUpload}
+                        disabled={logoUploading} />
+                    </label>
+                    <div style={{ fontSize: 11, color: '#888', marginBottom: 8 }}>
+                      PNG, JPG, SVG or WebP. Max 2 MB.
+                      Uploads instantly to PDF reports.
+                    </div>
+
+                    {/* Manual URL fallback */}
+                    <div style={{ ...cap, marginTop: 4, opacity: 0.7 }}>
+                      Or paste a direct image URL
+                    </div>
                     <input value={config.logo || ''} style={inp}
                       onChange={(e) => setConfig({ ...config,
-                        logo: e.target.value })} />
+                        logo: e.target.value })}
+                      placeholder="https://..." />
+
                     <button onClick={() => save('config',
                       { platformName: config.platformName || '',
                         logo: config.logo || '' }, 'Branding')}
-                      style={pub}>Publish branding - go live</button>
+                      style={{ ...pub, marginTop: 8 }}>
+                      Publish branding - go live
+                    </button>
                   </>
                 )}
               </>

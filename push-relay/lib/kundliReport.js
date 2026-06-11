@@ -126,6 +126,34 @@ function readBody(req) {
   return b || {};
 }
 
+// ----------------------------------------------------------------
+// Logo URL cache.
+// The admin uploads a logo in the admin panel → Firebase Storage
+// → Firestore settings/config.logo. We read it once per 30 minutes
+// and pass it to the AstroSeer /api/orders/log payload so the backend
+// can embed it in the PDF cover page.
+// 30-min TTL: the logo rarely changes; this keeps Firestore reads
+// near-zero while still picking up a new logo within half an hour.
+// ----------------------------------------------------------------
+let _logoUrlCache = { url: '', ts: 0 };
+const _LOGO_URL_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+async function _readLogoUrl(db) {
+  const now = Date.now();
+  if (_logoUrlCache.url !== undefined && now - _logoUrlCache.ts < _LOGO_URL_TTL_MS) {
+    return _logoUrlCache.url;
+  }
+  try {
+    const snap = await db.collection('settings').doc('config').get();
+    const url = (snap.exists && (snap.data() || {}).logo) || '';
+    _logoUrlCache = { url, ts: now };
+    return url;
+  } catch (_) {
+    // Firestore unavailable - return cached value (possibly empty)
+    return _logoUrlCache.url || '';
+  }
+}
+
 // Reuse the same AstroSeer URL/key resolution the kundli adapter
 // uses so admin can rotate creds from one place.
 function resolveAstroSeer(creds) {
@@ -1826,6 +1854,10 @@ async function _handleReportInner(req, res) {
     lifetime: 'full_life',
   };
 
+  // Read admin-configured logo URL from Firestore (cached 30 min).
+  // Passed to AstroSeer so the PDF cover uses the correct branding logo.
+  const logoUrl = await _readLogoUrl(db);
+
   const startBody = {
     order_id: orderRef.id,
     status: 'generating',
@@ -1847,6 +1879,9 @@ async function _handleReportInner(req, res) {
     tz_offset: tzOffset,
     latitude: lat,
     longitude: lng,
+    // Admin-configured logo URL. AstroSeer downloads this at render
+    // time and embeds it on the PDF cover page.
+    logo_url: logoUrl || '',
   };
   // Two-pass POST to /api/orders/log so a cold Render dyno (30-40s
   // wake-up) does not abort our request and refund the customer for
