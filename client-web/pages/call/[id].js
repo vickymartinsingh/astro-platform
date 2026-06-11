@@ -10,6 +10,7 @@ import { useSession } from '../../lib/useSession';
 import { useSettings } from '../../lib/useSettings';
 import { usePendingSession } from '../../lib/pendingSession';
 import useScrollLock from '../../lib/useScrollLock';
+import { confirmModal } from '../../components/ConfirmModal';
 
 export default function CallScreen() {
   const router = useRouter();
@@ -28,6 +29,7 @@ export default function CallScreen() {
   const [camOn, setCamOn] = useState(callType === 'video');
   const [elapsed, setElapsed] = useState(0);
   const [showRate, setShowRate] = useState(false);
+  const [sessionEnded, setSessionEnded] = useState(false);
   const joinedRef = useRef(false);
   const remoteRef = useRef(null);
   const localRef = useRef(null);
@@ -126,7 +128,7 @@ export default function CallScreen() {
     // active-status flip kills the call (and the recording) at t=0
     // before the real wallet snapshot arrives.
     if (!walletLoaded) return;
-    if (totalSecsLeft <= 0) hangUp();
+    if (totalSecsLeft <= 0) doHangUp();
     // eslint-disable-next-line
   }, [totalSecsLeft, active, ratePerSec, walletLoaded]);
 
@@ -137,12 +139,15 @@ export default function CallScreen() {
 
   useEffect(() => {
     if (session?.status === 'ended') {
-      // Same order as hangUp: finalise recording BEFORE we tear
-      // down Agora. Fire-and-forget upload.
+      // Finalise recording BEFORE tearing down Agora. Fire-and-forget.
       recordService.stopRecording().catch(() => {});
       callService.leaveAgoraChannel();
-      setShowRate(true);
+      setSessionEnded(true);
+      // Brief pause so the ended banner is visible before rate modal.
+      const t = setTimeout(() => setShowRate(true), 1200);
+      return () => clearTimeout(t);
     }
+    return undefined;
   }, [session?.status]);
 
   // Keep a global "active session" handle so the rejoin bar shows from
@@ -155,7 +160,10 @@ export default function CallScreen() {
     }
   }, [session?.id, session?.status, astroId, astro?.name, callType, track]);
 
-  async function hangUp() {
+  // doHangUp: actually ends the call. Used by the auto-hangup (wallet
+  // exhausted) path which should NOT prompt for confirmation, and also
+  // called by hangUp() after the user confirms.
+  async function doHangUp() {
     // Finalise + upload the recording BEFORE leaving Agora so the
     // remote tracks are still in the mixer for any tail audio.
     // Fire-and-forget - the upload happens in parallel with
@@ -164,6 +172,19 @@ export default function CallScreen() {
     recordService.stopRecording().catch(() => {});
     await callService.leaveAgoraChannel();
     await end();
+  }
+
+  async function hangUp() {
+    const label = callType === 'video' ? 'video call' : 'call';
+    const ok = await confirmModal({
+      title: 'Are you sure you want to end the consultation?',
+      message: `Charges for time spent on this ${label} still apply.`,
+      yes: 'Yes, End Now',
+      no: 'Keep Chatting',
+      danger: true,
+    });
+    if (!ok) return;
+    await doHangUp();
   }
 
   // Cancelling a not-yet-accepted call must stop the astrologer ever
@@ -384,6 +405,25 @@ export default function CallScreen() {
         </button>
       </div>
 
+      {sessionEnded && !showRate && (
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-50
+          flex justify-center px-4 pt-[env(safe-area-inset-top)]">
+          <div className="pointer-events-auto mt-14 w-full max-w-md
+            rounded-2xl border border-[#7F2020]/40 bg-[#FFF8E7] px-4
+            py-3 text-sm shadow-2xl">
+            <div className="font-bold text-[#7F2020]">
+              Consultation ended
+            </div>
+            <div className="mt-0.5 text-dark-text">
+              {session?.duration
+                ? `Duration: ${Math.ceil(
+                    Number(session.duration) / 60)} min. ` : ''}
+              {session?.cost && Number(session.cost) > 0
+                ? `Cost: ₹${Number(session.cost)}.` : ''}
+            </div>
+          </div>
+        </div>
+      )}
       {showRate && (
         <RateModal uid={user.uid} astroId={astroId} sessionId={session?.id}
           reason={totalSecsLeft <= 0 && ratePerSec > 0 ? 'balance'

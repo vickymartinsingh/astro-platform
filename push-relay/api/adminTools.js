@@ -455,9 +455,10 @@ module.exports = async (req, res) => {
     if (tool === 'playtesters') return runPlayTesters(body, res);
     if (tool === 'updateuser') return runUpdateUser(req, body, res);
     if (tool === 'reconcilewallet') return runReconcileWallet(req, body, res);
+    if (tool === 'impersonate') return runImpersonate(req, body, res);
     return res.status(400).json({
       error: 'tool must be notifyUpdate | playTesters | updateUser'
-        + ' | reconcileWallet' });
+        + ' | reconcileWallet | impersonate' });
   } catch (e) {
     return res.status(500).json({
       ok: false,
@@ -465,6 +466,40 @@ module.exports = async (req, res) => {
     });
   }
 };
+
+// =================================================================
+// TOOL: impersonate  - generate a Firebase custom token so an admin
+// can sign in as any user or astrologer in the target app.
+//   { tool: 'impersonate', targetUid: string }
+// Returns { customToken } on success.
+// Caller must supply a valid admin Bearer ID token (same check as
+// updateUser / reconcileWallet - role === 'admin' in Firestore OR
+// the known admin email list).
+// =================================================================
+async function runImpersonate(req, body, res) {
+  initAdmin();
+  if (!admin.apps.length) {
+    return res.status(503).json({ error: 'FIREBASE_SERVICE_ACCOUNT not set' });
+  }
+  const authz = req.headers.authorization || '';
+  const idToken = authz.startsWith('Bearer ') ? authz.slice(7) : '';
+  if (!idToken) return res.status(401).json({ error: 'no token' });
+  const decoded = await admin.auth().verifyIdToken(idToken);
+  const callerDoc = await admin.firestore()
+    .collection('users').doc(decoded.uid).get();
+  const ok = (callerDoc.exists && callerDoc.data().role === 'admin')
+    || isAdminEmail(decoded.email)
+    || (callerDoc.exists && isAdminEmail(callerDoc.data().email));
+  if (!ok) return res.status(403).json({ error: 'not an admin' });
+  const targetUid = String(body.targetUid || '').trim();
+  if (!targetUid) {
+    return res.status(400).json({ error: 'targetUid required' });
+  }
+  const customToken = await admin.auth().createCustomToken(targetUid, {
+    impersonatedBy: decoded.uid,
+  });
+  return res.status(200).json({ customToken });
+}
 
 // =================================================================
 // TOOL: updateUser  - change a user's login email / password.

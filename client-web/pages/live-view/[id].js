@@ -191,6 +191,9 @@ export default function LiveView() {
   // Countdown ticker during a connected call. ms remaining derived
   // from wallet/rate; updated every second.
   const [callRemain, setCallRemain] = useState(0);
+  // Elapsed timer: counts UP from connectedAt so the user always sees
+  // how long they have been connected in the live call.
+  const [callElapsed, setCallElapsed] = useState(0);
   // In-call control toggles. Operator 2026-06-07: "once connect both
   // should have the option like Mute, Unmute, Video on/off, Call
   // end." We track local toggle state here and surface it via the
@@ -392,15 +395,18 @@ export default function LiveView() {
   // refuse to tick on a pending/queued/astro_ok request and we wait
   // for the real connectedAt timestamp (no fallback to Date.now)
   // so the math is honest.
+  // Also drives the elapsed (count-up) timer so both timers share
+  // the same tick source and stay in sync.
   useEffect(() => {
     const startMs = myRequest && myRequest.status === 'connected'
       && myRequest.connectedAt?.toMillis
       ? myRequest.connectedAt.toMillis() : 0;
-    if (!startMs) { setCallRemain(0); return undefined; }
+    if (!startMs) { setCallRemain(0); setCallElapsed(0); return undefined; }
     const totalSec = Math.floor((Number(walletBal || 0) / livePrice) * 60);
     function tick() {
-      const elapsed = Math.floor((Date.now() - startMs) / 1000);
-      const rem = Math.max(0, totalSec - elapsed);
+      const el = Math.floor((Date.now() - startMs) / 1000);
+      setCallElapsed(el);
+      const rem = Math.max(0, totalSec - el);
       setCallRemain(rem);
       if (rem === 0 && myRequest.id) {
         liveService.endJoinRequest(myRequest.id, 'user').catch(() => {});
@@ -634,6 +640,43 @@ export default function LiveView() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* In-call elapsed + balance row. Shows ONLY while connected.
+          Left: elapsed (counts up). Right: balance countdown (counts
+          down). Turns amber text when <= 60 s remaining. */}
+      {myRequest?.status === 'connected' && (
+        <div className="absolute inset-x-0
+          bottom-[calc(28vh+72px+52px)] z-30 flex items-center
+          justify-center gap-3 px-4">
+          <span className="rounded-full bg-black/50 px-3 py-1
+            font-mono text-[12px] text-white backdrop-blur">
+            {fmtClock(callElapsed)}
+          </span>
+          <span className={`rounded-full px-3 py-1 font-mono
+            text-[12px] backdrop-blur ${callRemain <= 60 && callRemain > 0
+              ? 'bg-[#D4A12A]/80 font-bold text-white'
+              : 'bg-black/50 text-white'}`}>
+            {fmtClock(callRemain)} left
+          </span>
+        </div>
+      )}
+
+      {/* Low-balance banner for connected live call */}
+      {myRequest?.status === 'connected' && callRemain > 0
+        && callRemain <= 60 && (
+        <div className="absolute inset-x-0
+          bottom-[calc(28vh+72px+52px+40px)] z-30 flex items-center
+          justify-between gap-2 bg-[#D4A12A]/90 px-4 py-1.5
+          text-[12px] font-bold text-white backdrop-blur">
+          <span>Low balance, about {Math.ceil(callRemain / 60)} min left.</span>
+          <button onClick={() => router.push(
+            `/wallet?recharge=${Math.max(50, livePrice * 10)}`)}
+            className="rounded-full bg-white px-3 py-0.5 text-[11px]
+              font-bold text-[#D4A12A]">
+            Recharge
+          </button>
         </div>
       )}
 

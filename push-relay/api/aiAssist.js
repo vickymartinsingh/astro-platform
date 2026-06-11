@@ -279,6 +279,13 @@ module.exports = async (req, res) => {
       const ss = await sref.get();
       if (ss.exists) {
         const s = ss.data();
+        // Astrologer took manual control: skip AI response entirely.
+        if (s.astroTookOver === true) {
+          await logAttempt(db, { chatId, sessionId, astroUid,
+            skipped: 'astro-took-over' });
+          return res.status(200).json({ ok: true,
+            skipped: 'astrologer took over' });
+        }
         if (s.status === 'requesting' && s.type === 'chat') {
           await sref.update({
             status: 'active',

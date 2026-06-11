@@ -125,8 +125,15 @@ export default function ChatScreen() {
     if (atBottom) jumpToBottom();
   }, [messages, user, atBottom, isView]);
 
+  const [sessionEnded, setSessionEnded] = useState(false);
   useEffect(() => {
-    if (session?.status === 'ended') setShowRate(true);
+    if (session?.status === 'ended') {
+      setSessionEnded(true);
+      // Delay rate modal slightly so the ended banner is seen first.
+      const t = setTimeout(() => setShowRate(true), 1200);
+      return () => clearTimeout(t);
+    }
+    return undefined;
   }, [session?.status]);
 
   // (Auto-end-on-broke effect lives further down, AFTER `broke` is
@@ -459,11 +466,10 @@ export default function ChatScreen() {
 
   async function confirmEnd() {
     const ok = await confirmModal({
-      title: 'End this consultation?',
-      message: 'You will be disconnected from the astrologer. Charges '
-        + 'for time spent so far still apply.',
-      yes: 'End now',
-      no: 'Keep going',
+      title: 'Are you sure you want to end the consultation?',
+      message: 'Charges for time spent so far still apply.',
+      yes: 'Yes, End Now',
+      no: 'Keep Chatting',
       danger: true,
     });
     if (ok) end();
@@ -714,6 +720,12 @@ export default function ChatScreen() {
             Start new chat
           </button>
         </div>
+      ) : sessionEnded ? (
+        <div className="border-t border-gray-200 bg-gray-50 p-3 text-center
+                        text-sm text-sub-text">
+          Consultation ended. The astrologer may still send follow-up
+          messages.
+        </div>
       ) : broke ? (
         <div className="bg-gray-100 p-3 text-center text-sm text-sub-text">
           Your balance ended, so you cannot send new messages, but the
@@ -795,6 +807,9 @@ export default function ChatScreen() {
         </div>
       )}
 
+      {sessionEnded && !showRate && (
+        <ConsultationEndedBanner session={session} />
+      )}
       {showRate && (
         <EndReasonBanner session={session} />
       )}
@@ -867,6 +882,29 @@ function EndReasonBanner({ session }) {
             </div>
           </>
         )}
+      </div>
+    </div>
+  );
+}
+
+// Shown immediately when the session ends (before the rate modal appears).
+// Displays duration and cost so the client has a clear summary.
+function ConsultationEndedBanner({ session }) {
+  if (!session) return null;
+  const dur = Number(session.duration) || 0;
+  const cost = Number(session.cost) || 0;
+  const durMin = dur > 0 ? Math.ceil(dur / 60) : null;
+  return (
+    <div className="pointer-events-none fixed inset-x-0 top-0 z-[60]
+      flex justify-center px-3 pt-[env(safe-area-inset-top)]">
+      <div className="pointer-events-auto mt-3 w-full max-w-md rounded-2xl
+        border border-[#7F2020]/30 bg-[#FFF8E7] px-4 py-3 text-sm
+        shadow-2xl">
+        <div className="font-bold text-[#7F2020]">Consultation ended</div>
+        <div className="mt-0.5 text-dark-text">
+          {durMin ? `Duration: ${durMin} min. ` : ''}
+          {cost > 0 ? `Cost: ₹${cost}.` : ''}
+        </div>
       </div>
     </div>
   );

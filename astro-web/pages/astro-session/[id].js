@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import {
   sessionService, chatService, userService, kundliService, callService,
-  recordService,
+  recordService, db,
 } from '@astro/shared';
+import { doc, updateDoc } from 'firebase/firestore';
 import { useRequireAstrologer } from '../../lib/useAuth';
 import { playPing } from '../../lib/ping';
-import { confirmModal } from '../../components/ConfirmModal';
 
 export default function ActiveSession() {
   const router = useRouter();
@@ -21,6 +21,8 @@ export default function ActiveSession() {
   const [muted, setMuted] = useState(false);
   const [camOn, setCamOn] = useState(true);
   const [speaker, setSpeakerOn] = useState(true);
+  const [endModalOpen, setEndModalOpen] = useState(false);
+  const [sessionEnded, setSessionEnded] = useState(false);
   const scrollRef = useRef(null);
   const remoteRef = useRef(null);
   const localRef = useRef(null);
@@ -126,9 +128,9 @@ export default function ActiveSession() {
     if (session && ['ended', 'rejected', 'missed'].includes(session.status)) {
       recordService.stopRecording().catch(() => {});
       callService.leaveAgoraChannel();
-      router.replace('/astro-dashboard');
+      setSessionEnded(true);
     }
-  }, [session?.status, router]);
+  }, [session?.status]);
 
   async function send() {
     if (!text.trim()) return;
@@ -137,19 +139,20 @@ export default function ActiveSession() {
     await chatService.sendMessage(chatId, user.uid, v);
   }
 
-  async function endSession() {
-    const t = session && session.type;
-    const label = t === 'chat' ? 'chat'
-      : t === 'video' ? 'video call' : 'call';
-    const ok = await confirmModal({
-      title: `End this ${label}?`,
-      message: 'The client will be disconnected and billed for the time '
-        + 'spent. This cannot be undone.',
-      yes: 'End now',
-      no: 'Keep going',
-      danger: true,
-    });
-    if (!ok) return;
+  function endSession() {
+    setEndModalOpen(true);
+  }
+
+  async function doEndSession(reason) {
+    setEndModalOpen(false);
+    // Save the reason the astrologer gave for ending.
+    if (reason && id) {
+      try {
+        await updateDoc(doc(db, 'sessions', id), {
+          endedByAstroReason: reason,
+        });
+      } catch (_) {}
+    }
     try { await recordService.stopRecording(); } catch (_) {}
     await callService.leaveAgoraChannel();
     // Charge the client, then collect this astrologer's post-commission
@@ -165,19 +168,16 @@ export default function ActiveSession() {
     // duplicate end-session can't double-pay.
     try {
       const { referralService } = await import('@astro/shared');
-      const cost = Number(
-        (session && session.cost) || 0);
-      const dur = Number(
-        (session && session.duration) || 0);
-      // Only count genuine paid sessions (cost > 0); short / grace
-      // / free sessions don't qualify.
+      const cost = Number((session && session.cost) || 0);
+      const dur = Number((session && session.duration) || 0);
+      // Only count genuine paid sessions (cost > 0).
       if (cost > 0 && dur > 0) {
         await referralService.maybeCreditAstroReferral(
           user.uid, dur / 60);
       }
     } catch (_) { /* never block the end-call UX on this */ }
     sessionService.endSession(id).catch(() => {});
-    router.replace('/astro-dashboard');
+    // Stay on page - sessionEnded effect will set sessionEnded:true.
   }
 
   if (loading || !session) {
@@ -186,9 +186,31 @@ export default function ActiveSession() {
 
   const mmss = `${String(Math.floor(elapsed / 60)).padStart(2, '0')}:` +
     `${String(elapsed % 60).padStart(2, '0')}`;
+  // Customer remaining balance: derived from session.ratePerSecond and
+  // session.clientWallet (server-synced snapshot). Shown in the top bar
+  // and sidebar so the astrologer knows when to prompt a recharge.
+  const ratePerSec = session.ratePerSecond || 0;
+  const ratePerMin = Math.round(ratePerSec * 60);
+  const walletSecsLeft = ratePerSec > 0
+    ? Math.max(0, Math.floor((session.clientWallet || 0) / ratePerSec))
+    : null;
+  const custRemainClock = walletSecsLeft !== null
+    ? String(Math.floor(walletSecsLeft / 60)).padStart(2, '0') + ':'
+      + String(walletSecsLeft % 60).padStart(2, '0')
+    : null;
+  const lowBalance = walletSecsLeft !== null && walletSecsLeft <= 60
+    && walletSecsLeft > 0;
 
   return (
     <div className="flex h-screen flex-col">
+      {endModalOpen && (
+        <EndConsultationModal
+          onConfirm={doEndSession}
+          onCancel={() => setEndModalOpen(false)} />
+      )}
+      {sessionEnded && (
+        <AstroSessionEndedBanner session={session} />
+      )}
       {/* Always-visible top bar with a prominent End button */}
       <div className="flex items-center justify-between gap-2 bg-primary
                       px-4 py-2 text-white">
@@ -198,13 +220,22 @@ export default function ActiveSession() {
           </div>
           <div className="text-[11px] capitalize opacity-90">
             {session.type} · {mmss}
+            {custRemainClock && (
+              <span className={'ml-1 ' + (lowBalance
+                ? 'font-bold text-[#D4A12A]'
+                : 'opacity-75')}>
+                · Customer {custRemainClock} left
+              </span>
+            )}
           </div>
         </div>
-        <button onClick={endSession}
-          className="shrink-0 rounded-full bg-danger px-5 py-2 text-sm
-                     font-bold shadow">
-          End
-        </button>
+        {!sessionEnded && (
+          <button onClick={endSession}
+            className="shrink-0 rounded-full bg-danger px-5 py-2 text-sm
+                       font-bold shadow">
+            End
+          </button>
+        )}
       </div>
       <div className="flex flex-1 flex-col overflow-hidden md:flex-row">
       {/* Client info panel (collapsible on mobile) */}
@@ -222,8 +253,30 @@ export default function ActiveSession() {
           </div>
         )}
         <div className="mt-3 text-sm">Elapsed: <b>{mmss}</b></div>
-        <button onClick={endSession}
-          className="btn-danger mt-4 w-full">End Session</button>
+        {custRemainClock && (
+          <div className={'mt-1 rounded-card border p-2 text-sm ' + (lowBalance
+            ? 'border-[#D4A12A]/40 bg-[#FFF8E7]'
+            : 'border-gray-200 bg-white')}>
+            <div className="text-[11px] text-sub-text">Customer has</div>
+            <div className={'font-mono font-bold ' + (lowBalance
+              ? 'text-[#D4A12A]' : 'text-dark-text')}>
+              {custRemainClock} remaining
+            </div>
+            {lowBalance && (
+              <div className="mt-0.5 text-[10px] font-semibold text-[#D4A12A]">
+                Low balance
+              </div>
+            )}
+          </div>
+        )}
+        {!sessionEnded && (
+          <button onClick={endSession}
+            className="btn-danger mt-4 w-full">End Session</button>
+        )}
+        {sessionEnded && (
+          <button onClick={() => router.replace('/astro-dashboard')}
+            className="btn-primary mt-4 w-full">Back to Dashboard</button>
+        )}
       </aside>
 
       <main className="flex flex-1 flex-col bg-bg-gray">
@@ -282,6 +335,7 @@ export default function ActiveSession() {
                   </>
                 )}
               </div>
+              {!sessionEnded && (
               <button onClick={endSession} aria-label="End call"
                 className="flex h-16 w-16 items-center justify-center
                   rounded-full bg-danger shadow-lg">
@@ -298,6 +352,7 @@ export default function ActiveSession() {
                   </g>
                 </svg>
               </button>
+              )}
             </div>
           </div>
         )}
@@ -322,17 +377,115 @@ export default function ActiveSession() {
                 );
               })}
             </div>
-            <div className="flex gap-2 bg-white p-3">
-              <input className="input flex-1 !rounded-full" value={text}
-                placeholder="Type a reply…"
-                onChange={(e) => setText(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && send()} />
-              <button onClick={send}
-                className="btn-primary !rounded-full px-5">Send</button>
+            <div className="flex flex-col gap-0 bg-white">
+              {sessionEnded && (
+                <div className="px-3 pt-2 text-center text-xs
+                  text-sub-text">
+                  Consultation ended - you can still send follow-up
+                  messages
+                </div>
+              )}
+              <div className="flex gap-2 p-3">
+                <input className="input flex-1 !rounded-full" value={text}
+                  placeholder={sessionEnded
+                    ? 'Send a follow-up message...'
+                    : 'Type a reply...'}
+                  onChange={(e) => setText(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && send()} />
+                <button onClick={send}
+                  className="btn-primary !rounded-full px-5">Send</button>
+              </div>
             </div>
           </>
         )}
       </main>
+      </div>
+    </div>
+  );
+}
+
+// Modal for ending a consultation - requires the astrologer to select
+// a reason before the "End Consultation" button becomes enabled.
+// Reason is saved to session.endedByAstroReason via updateDoc.
+const END_REASONS = [
+  'Consultation completed naturally',
+  'Customer became unresponsive',
+  'Technical issue on my end',
+  'Customer was abusive/inappropriate',
+  'Other',
+];
+
+function EndConsultationModal({ onConfirm, onCancel }) {
+  const [reason, setReason] = useState('');
+  return (
+    <div className="fixed inset-0 z-[2147483646] flex items-center
+      justify-center bg-black/60 px-4"
+      onClick={onCancel}>
+      <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}>
+        <div className="text-lg font-bold text-dark-text">
+          End Consultation
+        </div>
+        <p className="mt-1.5 text-sm text-sub-text">
+          Please select a reason. This helps us improve the platform.
+        </p>
+        <div className="mt-4">
+          <label className="mb-1 block text-sm font-semibold
+            text-dark-text">
+            Reason for ending
+          </label>
+          <select
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            className="w-full rounded-xl border border-gray-300 bg-white
+              px-3 py-2.5 text-sm text-dark-text outline-none
+              focus:border-[#7F2020]">
+            <option value="">Select a reason...</option>
+            {END_REASONS.map((r) => (
+              <option key={r} value={r}>{r}</option>
+            ))}
+          </select>
+        </div>
+        <div className="mt-5 flex gap-2">
+          <button onClick={onCancel}
+            className="flex-1 rounded-full border border-gray-300
+              bg-white py-2.5 text-sm font-bold text-dark-text">
+            Continue
+          </button>
+          <button
+            onClick={() => reason && onConfirm(reason)}
+            disabled={!reason}
+            className="flex-1 rounded-full py-2.5 text-sm font-bold
+              text-white disabled:opacity-40"
+            style={{ background: '#7F2020' }}>
+            End Consultation
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Banner shown to the astrologer after the session ends. Displays
+// duration, client cost, and the astrologer's earned amount.
+function AstroSessionEndedBanner({ session }) {
+  if (!session) return null;
+  const dur = Number(session.duration) || 0;
+  const cost = Number(session.cost) || 0;
+  const earned = Number(session.astroEarning || session.earned) || 0;
+  const durMin = dur > 0 ? Math.ceil(dur / 60) : null;
+  return (
+    <div className="pointer-events-none fixed inset-x-0 top-0 z-[60]
+      flex justify-center px-3 pt-[env(safe-area-inset-top)]">
+      <div className="pointer-events-auto mt-3 w-full max-w-md rounded-2xl
+        border border-[#7F2020]/30 bg-[#FFF8E7] px-4 py-3 text-sm
+        shadow-2xl">
+        <div className="font-bold text-[#7F2020]">Consultation ended</div>
+        <div className="mt-0.5 text-dark-text">
+          {durMin ? `Duration: ${durMin} min. ` : ''}
+          {cost > 0 ? `Cost: ₹${cost}. ` : ''}
+          {earned > 0 ? `Earned: ₹${earned}.` : ''}
+        </div>
       </div>
     </div>
   );

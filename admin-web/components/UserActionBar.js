@@ -1,7 +1,42 @@
 import { useState, useEffect } from 'react';
-import { adminService, authService } from '@astro/shared';
+import { adminService, authService, db, auth as firebaseAuth } from '@astro/shared';
+import {
+  collection, query, where, getDocs, doc, getDoc,
+  runTransaction, serverTimestamp,
+} from 'firebase/firestore';
 import RefundModal from './RefundModal';
 import GiftCardPreview from './GiftCardPreview';
+
+// ---------------------------------------------------------------------------
+// Relay helpers for admin impersonation.
+// ---------------------------------------------------------------------------
+function relayUrl() {
+  if (typeof process !== 'undefined' && process.env
+    && process.env.NEXT_PUBLIC_PUSH_RELAY) {
+    return process.env.NEXT_PUBLIC_PUSH_RELAY.replace(/\/+$/, '');
+  }
+  return 'https://astro-platform-push-relay.vercel.app';
+}
+
+async function fetchImpersonateToken(targetUid) {
+  const idToken = firebaseAuth && firebaseAuth.currentUser
+    ? await firebaseAuth.currentUser.getIdToken()
+    : '';
+  if (!idToken) throw new Error('Not signed in as admin.');
+  const r = await fetch(`${relayUrl()}/api/adminTools`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-admin-key': (typeof process !== 'undefined' && process.env
+        && process.env.NEXT_PUBLIC_ADMIN_RELAY_KEY) || '',
+      Authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify({ tool: 'impersonate', targetUid }),
+  });
+  const j = await r.json().catch(() => null);
+  if (!r.ok) throw new Error((j && j.error) || `HTTP ${r.status}`);
+  return j.customToken;
+}
 
 // Action bar that lives on the admin user profile (and could mount on
 // the astrologer profile too). Every action has a confirmation modal
@@ -32,8 +67,31 @@ export default function UserActionBar({ uid, user, onChange }) {
   // download-as-JPG + redeem instructions when set.
   const [giftCardPreview, setGiftCardPreview] = useState(null);
 
+  const [impersonating, setImpersonating] = useState(false);
+  const [impersonateErr, setImpersonateErr] = useState('');
+
   const blocked = user?.status === 'blocked' || user?.isBlocked === true;
   const deleted = !!user?.deleted;
+
+  // Determine which "View as" button(s) to show based on role.
+  const isClient = !user?.role || user?.role === 'client';
+  const isAstrologer = user?.role === 'astrologer';
+
+  async function doViewAs(appType) {
+    setImpersonating(true); setImpersonateErr('');
+    try {
+      const customToken = await fetchImpersonateToken(uid);
+      const base = appType === 'astrologer'
+        ? 'http://localhost:3001'
+        : 'http://localhost:3000';
+      window.open(`${base}/impersonate?token=${encodeURIComponent(customToken)}`,
+        '_blank', 'noopener');
+    } catch (e) {
+      setImpersonateErr(String((e && e.message) || e));
+    } finally {
+      setImpersonating(false);
+    }
+  }
 
   function open(key) {
     setModal(key); setErr(''); setSuccess('');
@@ -190,7 +248,32 @@ export default function UserActionBar({ uid, user, onChange }) {
         <BarBtn onClick={() => open('delete')} tone="danger">
           Delete
         </BarBtn>
+        <BarBtn onClick={() => open('diagnostics')} tone="neutral">
+          Run Diagnostics
+        </BarBtn>
+        {isClient && (
+          <BarBtn
+            onClick={() => doViewAs('client')}
+            tone="viewas"
+            disabled={impersonating}>
+            {impersonating ? 'Opening...' : 'View as User'}
+          </BarBtn>
+        )}
+        {isAstrologer && (
+          <BarBtn
+            onClick={() => doViewAs('astrologer')}
+            tone="viewas"
+            disabled={impersonating}>
+            {impersonating ? 'Opening...' : 'View as Astrologer'}
+          </BarBtn>
+        )}
       </div>
+      {impersonateErr && (
+        <div className="mt-2 rounded-card px-3 py-2 text-xs font-semibold"
+          style={{ background: '#fce8e8', color: '#7F2020' }}>
+          View as failed: {impersonateErr}
+        </div>
+      )}
 
       {modal === 'balance' && (
         <ActionModal title="Add wallet balance"
@@ -321,11 +404,20 @@ export default function UserActionBar({ uid, user, onChange }) {
           err={err} success={success}
           cta="Delete account" ctaTone="danger" />
       )}
+      {modal === 'diagnostics' && (
+        <DiagnosticsModal uid={uid} user={user}
+          onClose={close}
+          onFixed={(out) => {
+            if (typeof onChange === 'function') {
+              onChange({ wallet: out?.after });
+            }
+          }} />
+      )}
     </>
   );
 }
 
-function BarBtn({ children, onClick, tone }) {
+function BarBtn({ children, onClick, tone, disabled }) {
   const cls = tone === 'danger'
     ? 'bg-danger text-white hover:bg-danger/90'
     : tone === 'warn'
@@ -334,10 +426,17 @@ function BarBtn({ children, onClick, tone }) {
         ? 'bg-amber-100 text-amber-800 hover:bg-amber-200'
         : tone === 'primary'
           ? 'bg-primary text-white hover:bg-primary/90'
-          : 'bg-bg-light text-dark-text hover:bg-gray-200';
+          : tone === 'viewas'
+            ? 'text-white hover:opacity-90'
+            : 'bg-bg-light text-dark-text hover:bg-gray-200';
+  const inlineStyle = tone === 'viewas'
+    ? { background: '#D4A12A' }
+    : undefined;
   return (
-    <button onClick={onClick}
-      className={`rounded-full px-3 py-1.5 text-xs font-bold ${cls}`}>
+    <button onClick={onClick} disabled={disabled}
+      style={inlineStyle}
+      className={`rounded-full px-3 py-1.5 text-xs font-bold
+        disabled:opacity-60 disabled:cursor-not-allowed ${cls}`}>
       {children}
     </button>
   );
@@ -421,6 +520,358 @@ function NoteField({ value, onChange, placeholder }) {
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder || ''} />
     </label>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// DiagnosticsModal
+// Reads transactions, wallet doc, sessions (ended+cost>0) and orders
+// (ready/paid_generating + amount>0) for the given uid, then produces a
+// wallet audit report. If the actual wallet differs from the transaction
+// sum a "Fix Now" button runs a reconciliation write via runTransaction.
+// Color palette: maroon #7F2020, amber #D4A12A, cream #FFF8E7.
+// No purple. No em-dashes.
+// ---------------------------------------------------------------------------
+function DiagnosticsModal({ uid, user, onClose, onFixed }) {
+  const [report, setReport]     = useState(null);  // null | DiagReport
+  const [running, setRunning]   = useState(false);
+  const [fixing, setFixing]     = useState(false);
+  const [runErr, setRunErr]     = useState('');
+  const [fixMsg, setFixMsg]     = useState('');
+
+  // Run the diagnostics on mount.
+  useEffect(() => {
+    runDiagnostics();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uid]);
+
+  async function runDiagnostics() {
+    setRunning(true); setRunErr(''); setReport(null); setFixMsg('');
+    try {
+      // 1) Actual wallet from user doc.
+      const userSnap = await getDoc(doc(db, 'users', uid));
+      const actualWallet = Number((userSnap.data() || {}).wallet || 0);
+
+      // 2) All transactions for this user - compute expected balance.
+      const txSnap = await getDocs(query(
+        collection(db, 'transactions'),
+        where('userId', '==', uid),
+      ));
+      const txDocs = txSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      // Credits add, debits subtract.
+      let expectedWallet = 0;
+      const txIds = new Set();
+      for (const t of txDocs) {
+        const amt = Number(t.amount || 0);
+        // type='credit' -> positive; type='debit' -> negative;
+        // amount field may already be signed (negative for debits in some
+        // paths) so we normalise: if type=debit AND amount>0, negate it.
+        if (t.type === 'debit') {
+          expectedWallet -= Math.abs(amt);
+        } else {
+          expectedWallet += Math.abs(amt);
+        }
+        txIds.add(t.id);
+        // referenceId on debit transactions lets us cross-check sessions/orders.
+        if (t.referenceId) txIds.add(String(t.referenceId));
+      }
+
+      // 3) Sessions that ended with cost > 0 - check each has a debit txn.
+      let sessionSnap;
+      try {
+        sessionSnap = await getDocs(query(
+          collection(db, 'sessions'),
+          where('userId', '==', uid),
+          where('status', '==', 'ended'),
+        ));
+      } catch (_) { sessionSnap = { docs: [] }; }
+      const unbilledSessions = [];
+      for (const s of sessionSnap.docs) {
+        const sd = s.data() || {};
+        const cost = Number(sd.cost || sd.totalCost || sd.amount || 0);
+        if (cost <= 0) continue;
+        // Check: is there a debit transaction whose referenceId = this session?
+        const hasDebit = txDocs.some(
+          (t) => t.type === 'debit'
+            && (t.referenceId === s.id || t.sessionId === s.id),
+        );
+        if (!hasDebit) {
+          unbilledSessions.push({
+            id: s.id,
+            cost,
+            type: sd.type || 'session',
+            startTime: sd.startTime || sd.createdAt || null,
+          });
+        }
+      }
+
+      // 4) Orders subcollection (status=ready|paid_generating, amount>0).
+      let ordersSnap;
+      try {
+        ordersSnap = await getDocs(
+          collection(db, 'users', uid, 'orders'),
+        );
+      } catch (_) { ordersSnap = { docs: [] }; }
+      const unbilledOrders = [];
+      for (const o of ordersSnap.docs) {
+        const od = o.data() || {};
+        const st = String(od.status || '');
+        if (st !== 'ready' && st !== 'paid_generating') continue;
+        const amount = Number(od.amount || od.price || od.cost || 0);
+        if (amount <= 0) continue;
+        const hasDebit = txDocs.some(
+          (t) => t.type === 'debit'
+            && (t.referenceId === o.id || t.orderId === o.id),
+        );
+        if (!hasDebit) {
+          unbilledOrders.push({
+            id: o.id,
+            amount,
+            status: st,
+            type: od.type || od.feature || 'order',
+          });
+        }
+      }
+
+      const match = Math.round(actualWallet) === Math.round(expectedWallet);
+      setReport({
+        actualWallet,
+        expectedWallet,
+        match,
+        txCount: txDocs.length,
+        unbilledSessions,
+        unbilledOrders,
+      });
+    } catch (e) {
+      setRunErr(String((e && e.message) || e));
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  async function fixNow() {
+    if (!report || report.match) return;
+    setFixing(true); setRunErr(''); setFixMsg('');
+    try {
+      const target = Math.round(report.expectedWallet);
+      let afterW = 0;
+      await runTransaction(db, async (txn) => {
+        const uRef = doc(db, 'users', uid);
+        const snap = await txn.get(uRef);
+        const currentWallet = Number((snap.data() || {}).wallet || 0);
+        afterW = target < 0 ? 0 : target;
+        txn.update(uRef, { wallet: afterW });
+        txn.set(doc(collection(db, 'transactions')), {
+          userId: uid,
+          amount: afterW - currentWallet,
+          type: afterW >= currentWallet ? 'credit' : 'debit',
+          reason: 'admin_reconciliation',
+          referenceId: 'admin_reconciliation',
+          notes: `Wallet corrected from ${currentWallet} to ${afterW} `
+            + `by admin diagnostics. Transaction sum was ${target}.`,
+          createdAt: serverTimestamp(),
+        });
+        txn.set(doc(collection(db, 'users', uid, 'walletAudit')), {
+          before: currentWallet,
+          delta: afterW - currentWallet,
+          after: afterW,
+          reason: 'admin_reconciliation',
+          source: 'DiagnosticsModal',
+          at: serverTimestamp(),
+        });
+      });
+      setFixMsg(`Wallet corrected to Rs.${afterW}.`);
+      // Refresh report to show MATCH state.
+      await runDiagnostics();
+      if (typeof onFixed === 'function') onFixed({ after: afterW });
+    } catch (e) {
+      setRunErr(String((e && e.message) || e));
+    } finally {
+      setFixing(false);
+    }
+  }
+
+  const CREAM = '#FFF8E7';
+  const MAROON = '#7F2020';
+  const AMBER = '#D4A12A';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center
+      bg-black/40 p-4" onClick={onClose}>
+      <div
+        className="w-full max-w-lg rounded-card shadow-xl overflow-y-auto
+          max-h-[90vh]"
+        style={{ background: CREAM }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4
+          border-b border-amber-200">
+          <h3 className="text-lg font-bold" style={{ color: MAROON }}>
+            Wallet Diagnostics
+          </h3>
+          <button onClick={onClose}
+            className="text-xs font-semibold px-3 py-1 rounded-full
+              bg-amber-100 hover:bg-amber-200"
+            style={{ color: MAROON }}>
+            Close
+          </button>
+        </div>
+
+        <div className="px-5 py-4 space-y-4">
+          {/* Loading state */}
+          {running && (
+            <div className="text-sm font-semibold text-center py-6"
+              style={{ color: AMBER }}>
+              Running diagnostics...
+            </div>
+          )}
+
+          {/* Error */}
+          {runErr && (
+            <div className="rounded-card p-3 text-xs font-semibold"
+              style={{ background: '#fce8e8', color: MAROON }}>
+              {runErr}
+            </div>
+          )}
+
+          {/* Fix success message */}
+          {fixMsg && (
+            <div className="rounded-card p-3 text-xs font-semibold
+              bg-emerald-50 text-emerald-700">
+              {fixMsg}
+            </div>
+          )}
+
+          {/* Report */}
+          {report && !running && (
+            <>
+              {/* Balance line */}
+              <div
+                className="rounded-card p-4 border-2"
+                style={{
+                  borderColor: report.match ? '#16a34a' : AMBER,
+                  background: report.match ? '#f0fdf4' : '#fffbeb',
+                }}
+              >
+                <div className="text-sm font-bold mb-1"
+                  style={{ color: report.match ? '#15803d' : MAROON }}>
+                  {report.match ? 'Wallet balance - MATCH' : 'Wallet balance - MISMATCH'}
+                </div>
+                <div className="text-xs space-y-0.5"
+                  style={{ color: report.match ? '#166534' : '#92400e' }}>
+                  <div>
+                    Actual (wallet field): Rs.{report.actualWallet.toFixed(2)}
+                  </div>
+                  <div>
+                    From transactions ({report.txCount} records):
+                    Rs.{report.expectedWallet.toFixed(2)}
+                  </div>
+                  {!report.match && (
+                    <div className="mt-1 font-semibold"
+                      style={{ color: MAROON }}>
+                      Difference: Rs.
+                      {Math.abs(report.actualWallet - report.expectedWallet)
+                        .toFixed(2)}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Unbilled sessions */}
+              {report.unbilledSessions.length > 0 && (
+                <div className="rounded-card border border-amber-300 p-3">
+                  <div className="text-xs font-bold mb-2"
+                    style={{ color: MAROON }}>
+                    Unbilled sessions ({report.unbilledSessions.length})
+                    - no matching debit transaction found
+                  </div>
+                  <div className="space-y-1">
+                    {report.unbilledSessions.map((s) => (
+                      <div key={s.id}
+                        className="flex justify-between text-xs
+                          rounded px-2 py-1 bg-amber-50">
+                        <span className="font-mono text-gray-600 truncate
+                          max-w-[55%]">
+                          {s.type} - {s.id.slice(0, 12)}...
+                        </span>
+                        <span className="font-semibold"
+                          style={{ color: MAROON }}>
+                          Rs.{Number(s.cost).toFixed(2)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Unbilled orders */}
+              {report.unbilledOrders.length > 0 && (
+                <div className="rounded-card border border-amber-300 p-3">
+                  <div className="text-xs font-bold mb-2"
+                    style={{ color: MAROON }}>
+                    Unbilled orders ({report.unbilledOrders.length})
+                    - no matching debit transaction found
+                  </div>
+                  <div className="space-y-1">
+                    {report.unbilledOrders.map((o) => (
+                      <div key={o.id}
+                        className="flex justify-between text-xs
+                          rounded px-2 py-1 bg-amber-50">
+                        <span className="font-mono text-gray-600 truncate
+                          max-w-[55%]">
+                          {o.type} ({o.status}) - {o.id.slice(0, 12)}...
+                        </span>
+                        <span className="font-semibold"
+                          style={{ color: MAROON }}>
+                          Rs.{Number(o.amount).toFixed(2)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* All clear */}
+              {report.unbilledSessions.length === 0
+                && report.unbilledOrders.length === 0
+                && (
+                <div className="text-xs text-emerald-700 font-semibold
+                  rounded-card bg-emerald-50 p-3">
+                  No unbilled sessions or orders found.
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex justify-between items-center
+          px-5 py-3 border-t border-amber-200 gap-2">
+          <button onClick={runDiagnostics} disabled={running || fixing}
+            className="rounded-full px-4 py-2 text-xs font-bold
+              bg-amber-100 hover:bg-amber-200 disabled:opacity-50"
+            style={{ color: MAROON }}>
+            {running ? 'Running...' : 'Re-run'}
+          </button>
+          <div className="flex gap-2">
+            {report && !report.match && !fixMsg && (
+              <button onClick={fixNow} disabled={fixing || running}
+                className="rounded-full px-4 py-2 text-xs font-bold
+                  text-white disabled:opacity-50"
+                style={{ background: MAROON }}>
+                {fixing ? 'Fixing...' : 'Fix Now'}
+              </button>
+            )}
+            <button onClick={onClose} disabled={fixing}
+              className="rounded-full px-4 py-2 text-xs font-semibold
+                bg-bg-light hover:bg-gray-200 disabled:opacity-50">
+              Done
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import {
-  astrologerService, sessionService, reviewService, userService,
+  astrologerService, sessionService, reviewService, userService, db,
 } from '@astro/shared';
+import { doc, setDoc } from 'firebase/firestore';
 import Layout from '../../components/Layout';
 import ResetAccountPanel from '../../components/ResetAccountPanel';
 import ComplianceActivity from '../../components/ComplianceActivity';
@@ -46,12 +47,17 @@ export default function AdminAstroProfile() {
   const [sessions, setSessions] = useState([]);
   const [reviews, setReviews] = useState([]);
   const [clientNames, setClientNames] = useState({});
+  const [aiChatEnabled, setAiChatEnabled] = useState(false);
+  const [aiChatSaving, setAiChatSaving] = useState(false);
 
   useEffect(() => {
     if (loading || !id) return;
     (async () => {
-      try { setAstro(await astrologerService.getAstrologer(id)); }
-      catch (_) { setAstro(null); }
+      try {
+        const a = await astrologerService.getAstrologer(id);
+        setAstro(a);
+        setAiChatEnabled(!!a?.aiChatEnabled);
+      } catch (_) { setAstro(null); }
       try {
         const list = await sessionService.getAstrologerSessions(id);
         setSessions(list || []);
@@ -69,6 +75,17 @@ export default function AdminAstroProfile() {
       catch (_) { /* ignore */ }
     })();
   }, [loading, id]);
+
+  async function toggleAiChat() {
+    const next = !aiChatEnabled;
+    setAiChatEnabled(next);
+    setAiChatSaving(true);
+    try {
+      await setDoc(doc(db, 'users', id),
+        { aiChatEnabled: next }, { merge: true });
+    } catch (_) { setAiChatEnabled(!next); }
+    setAiChatSaving(false);
+  }
 
   if (loading || !astro) {
     return <Layout><div className="surface p-4">Loading…</div></Layout>;
@@ -137,6 +154,39 @@ export default function AdminAstroProfile() {
 
       {/* CALL RECORDINGS for this astrologer (audio + video). */}
       <UserRecordingsPanel uid={id} kind="astrologer" />
+
+      {/* AI CHAT ASSISTANT TOGGLE */}
+      <div className="surface mt-4 p-4">
+        <h2 className="mb-3 text-sm font-bold uppercase tracking-wide"
+          style={{ color: '#7F2020' }}>
+          AI Chat Assistant
+        </h2>
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <div className="text-sm font-semibold" style={{ color: '#7F2020' }}>
+              AI Chat Enabled
+            </div>
+            <div className="mt-0.5 text-xs text-sub-text">
+              When enabled, AI handles chats when astrologer is offline
+            </div>
+          </div>
+          <button onClick={toggleAiChat} disabled={aiChatSaving}
+            aria-label="Toggle AI Chat"
+            className={`relative h-6 w-11 shrink-0 rounded-full transition
+              ${aiChatSaving ? 'opacity-50' : ''}
+              ${aiChatEnabled ? '' : 'bg-gray-300'}`}
+            style={aiChatEnabled ? { background: '#D4A12A' } : {}}>
+            <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white
+              shadow transition-all
+              ${aiChatEnabled ? 'left-5' : 'left-0.5'}`} />
+          </button>
+        </div>
+        <div className="mt-2 text-xs"
+          style={{ color: aiChatEnabled ? '#D4A12A' : '#888' }}>
+          {aiChatEnabled ? 'AI assistant is active for this astrologer'
+            : 'AI assistant is disabled for this astrologer'}
+        </div>
+      </div>
 
       {/* PROFESSIONAL */}
       <div className="surface mt-4 p-4">

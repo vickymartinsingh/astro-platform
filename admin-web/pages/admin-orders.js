@@ -380,8 +380,8 @@ export default function AdminOrders() {
                         refund (free order) and when the customer was
                         never debited (still in the pre-debit state
                         so use "Cancel" instead). */}
-                    {o.amount > 0 && o.uid && (o.debited || o.redebited) && (
-                      <InlineRefundButton uid={o.uid}
+                    {o.amount > 0 && o.userId && (o.debited || o.redebited) && (
+                      <InlineRefundButton uid={o.userId}
                         user={{ name: o.userName }}
                         prefill={{
                           amount: Number(o.amount || 0),

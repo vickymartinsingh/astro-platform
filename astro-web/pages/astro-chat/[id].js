@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/router';
 import {
   sessionService, chatService, userService, kundliService,
-  remedyService, astrologerService, assistantService,
+  remedyService, astrologerService, assistantService, db,
 } from '@astro/shared';
+import { doc, updateDoc } from 'firebase/firestore';
 import { useRequireAstrologer } from '../../lib/useAuth';
 import { playPing } from '../../lib/ping';
 
@@ -26,6 +27,11 @@ export default function AstroChat() {
   const [aiAvailable, setAiAvailable] = useState(false); // admin-enabled
   const [aiOn, setAiOn] = useState(false);                // this astro's
   const [aiBusy, setAiBusy] = useState(false);
+  const [endModalOpen, setEndModalOpen] = useState(false);
+  const [takeoverBusy, setTakeoverBusy] = useState(false);
+  // Elapsed timer: counts UP from session.startTime so the astrologer
+  // always sees how long the session has been running.
+  const [elapsedSecs, setElapsedSecs] = useState(0);
   // Themed toast (auto-clears after 5s). Replaces the native
   // window.alert calls inside the voice-recording flow that don't fit
   // a confirm modal (informational only).
@@ -100,6 +106,26 @@ export default function AstroChat() {
     } catch (_) {}
   }
 
+  async function takeOver() {
+    if (!id || takeoverBusy) return;
+    setTakeoverBusy(true);
+    try {
+      await updateDoc(doc(db, 'sessions', id),
+        { aiActive: false, astroTookOver: true });
+    } catch (_) {}
+    setTakeoverBusy(false);
+  }
+
+  async function handBackToAi() {
+    if (!id || takeoverBusy) return;
+    setTakeoverBusy(true);
+    try {
+      await updateDoc(doc(db, 'sessions', id),
+        { aiActive: true, astroTookOver: false });
+    } catch (_) {}
+    setTakeoverBusy(false);
+  }
+
   // typing indicator (other participant is the client = session.userId)
   useEffect(() => {
     if (!chatId || !session?.userId) return undefined;
@@ -113,6 +139,24 @@ export default function AstroChat() {
     }, 800);
     return () => { unsub && unsub(); clearInterval(iv); };
   }, [chatId, session?.userId]);
+
+  // Elapsed timer: starts once the session is active (startTime set),
+  // ticks every second. Also used to compute customer remaining balance.
+  useEffect(() => {
+    const active = session?.status === 'active' && !!session?.startTime;
+    if (!active) { setElapsedSecs(0); return undefined; }
+    const startMs = session.startTime?.toMillis
+      ? session.startTime.toMillis()
+      : session.startTime instanceof Date
+        ? session.startTime.getTime() : 0;
+    if (!startMs) return undefined;
+    function tick() {
+      setElapsedSecs(Math.max(0, Math.floor((Date.now() - startMs) / 1000)));
+    }
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, [session?.status, session?.startTime]);
 
   function onType(v) {
     setText(v);
@@ -133,6 +177,26 @@ export default function AstroChat() {
     if (!text.trim() || !session || !chatId) return;
     const v = text; setText('');
     await chatService.sendMessage(chatId, user.uid, v);
+  }
+
+  function endSession() {
+    setEndModalOpen(true);
+  }
+
+  async function doEndSession(reason) {
+    setEndModalOpen(false);
+    if (reason && id) {
+      try {
+        await updateDoc(doc(db, 'sessions', id), {
+          endedByAstroReason: reason,
+        });
+      } catch (_) {}
+    }
+    try { await sessionService.endAndSettleClient(id); } catch (_) {}
+    try { await sessionService.collectAstrologerEarnings(user.uid); }
+    catch (_) {}
+    sessionService.endSession(id).catch(() => {});
+    // Stay on page - astrologer can send follow-up messages.
   }
 
   async function openRemedies() {
@@ -216,9 +280,40 @@ export default function AstroChat() {
     return <div className="p-6 text-sub-text">Loading chat...</div>;
   }
 
+  const sessionIsActive = session.status === 'active'
+    || session.status === 'accepted';
+  const sessionIsEnded = session.status === 'ended';
+
   return (
     <div className="flex h-screen flex-col md:flex-row"
       style={{ background: '#F1FAF6' }}>
+      {endModalOpen && (
+        <AstroChatEndModal
+          onConfirm={doEndSession}
+          onCancel={() => setEndModalOpen(false)} />
+      )}
+      {sessionIsEnded && (
+        <div className="pointer-events-none fixed inset-x-0 top-0 z-[60]
+          flex justify-center px-3 pt-[env(safe-area-inset-top)]">
+          <div className="pointer-events-auto mt-3 w-full max-w-md
+            rounded-2xl border border-[#7F2020]/30 bg-[#FFF8E7] px-4
+            py-3 text-sm shadow-2xl">
+            <div className="font-bold text-[#7F2020]">
+              Consultation ended
+            </div>
+            <div className="mt-0.5 text-dark-text">
+              {session.duration
+                ? `Duration: ${Math.ceil(
+                    Number(session.duration) / 60)} min. ` : ''}
+              {Number(session.cost) > 0
+                ? `Cost: ₹${Number(session.cost)}. ` : ''}
+              {Number(session.astroEarning || session.earned) > 0
+                ? `Earned: ₹${Number(
+                    session.astroEarning || session.earned)}.` : ''}
+            </div>
+          </div>
+        </div>
+      )}
       {toast && (
         <div className={`pointer-events-none fixed inset-x-0 top-2 z-50
             flex justify-center px-3`}>
@@ -263,6 +358,34 @@ export default function AstroChat() {
             </button>
           </div>
         )}
+        {aiAvailable && session.type === 'chat'
+          && (session.aiActive || session.astroTookOver) && (
+          <div className="mt-2">
+            {!session.astroTookOver ? (
+              <button onClick={takeOver} disabled={takeoverBusy}
+                className="w-full rounded-card px-3 py-2 text-sm
+                  font-semibold text-white transition active:opacity-80
+                  disabled:opacity-50"
+                style={{ background: '#D4A12A' }}>
+                {takeoverBusy ? 'Taking over...' : 'Take Over'}
+              </button>
+            ) : (
+              <button onClick={handBackToAi} disabled={takeoverBusy}
+                className="w-full rounded-card border px-3 py-2 text-sm
+                  font-semibold transition active:opacity-80
+                  disabled:opacity-50"
+                style={{ borderColor: '#7F2020', color: '#7F2020',
+                  background: '#FFF8E7' }}>
+                {takeoverBusy ? 'Handing back...' : 'Hand back to AI'}
+              </button>
+            )}
+            <div className="mt-1 text-center text-[10px] text-sub-text">
+              {!session.astroTookOver
+                ? 'AI is currently handling this chat'
+                : 'You are handling this chat'}
+            </div>
+          </div>
+        )}
         {session.purpose && (
           <p className="mt-2 text-sm">Purpose: {session.purpose}</p>
         )}
@@ -280,6 +403,47 @@ export default function AstroChat() {
         <div className="mt-3 text-sm capitalize text-sub-text">
           Status: {session.status}
         </div>
+        {sessionIsActive && (
+          <button onClick={endSession}
+            className="mt-3 w-full rounded-full py-2.5 text-sm font-bold
+              text-white shadow"
+            style={{ background: '#7F2020' }}>
+            End Consultation
+          </button>
+        )}
+        {session.status === 'active' && !!session.startTime && (() => {
+          const ratePerSec = session.ratePerSecond || 0;
+          const ratePerMin = Math.round(ratePerSec * 60);
+          const walletSecsLeft = ratePerSec > 0
+            ? Math.max(0, Math.floor(
+                (session.clientWallet || 0) / ratePerSec))
+            : null;
+          const elapsedClock = String(Math.floor(elapsedSecs / 60))
+            .padStart(2, '0') + ':' + String(elapsedSecs % 60)
+            .padStart(2, '0');
+          return (
+            <div className="mt-3 rounded-card border border-gray-200
+              bg-white p-2.5 text-sm">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sub-text">Elapsed</span>
+                <span className="font-mono font-bold text-dark-text">
+                  {elapsedClock}
+                </span>
+              </div>
+              {ratePerMin > 0 && walletSecsLeft !== null && (
+                <div className="mt-1 flex items-center justify-between
+                  gap-2">
+                  <span className="text-sub-text">Customer has</span>
+                  <span className={'font-mono font-bold ' + (walletSecsLeft <= 60
+                    ? 'text-[#D4A12A]' : 'text-dark-text')}>
+                    {String(Math.floor(walletSecsLeft / 60)).padStart(2, '0')}
+                    :{String(walletSecsLeft % 60).padStart(2, '0')} min
+                  </span>
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </aside>
 
       <main className="flex flex-1 flex-col bg-bg-gray">
@@ -371,6 +535,68 @@ export default function AstroChat() {
           </div>
         )}
       </main>
+    </div>
+  );
+}
+
+// End Consultation modal for the astro-chat page. Requires the
+// astrologer to select a reason before confirming. Saves the reason
+// to session.endedByAstroReason via updateDoc.
+const CHAT_END_REASONS = [
+  'Consultation completed naturally',
+  'Customer became unresponsive',
+  'Technical issue on my end',
+  'Customer was abusive/inappropriate',
+  'Other',
+];
+
+function AstroChatEndModal({ onConfirm, onCancel }) {
+  const [reason, setReason] = useState('');
+  return (
+    <div className="fixed inset-0 z-[2147483646] flex items-center
+      justify-center bg-black/60 px-4"
+      onClick={onCancel}>
+      <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}>
+        <div className="text-lg font-bold text-dark-text">
+          End Consultation
+        </div>
+        <p className="mt-1.5 text-sm text-sub-text">
+          Please select a reason. This helps us improve the platform.
+        </p>
+        <div className="mt-4">
+          <label className="mb-1 block text-sm font-semibold
+            text-dark-text">
+            Reason for ending
+          </label>
+          <select
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            className="w-full rounded-xl border border-gray-300 bg-white
+              px-3 py-2.5 text-sm text-dark-text outline-none
+              focus:border-[#7F2020]">
+            <option value="">Select a reason...</option>
+            {CHAT_END_REASONS.map((r) => (
+              <option key={r} value={r}>{r}</option>
+            ))}
+          </select>
+        </div>
+        <div className="mt-5 flex gap-2">
+          <button onClick={onCancel}
+            className="flex-1 rounded-full border border-gray-300
+              bg-white py-2.5 text-sm font-bold text-dark-text">
+            Continue
+          </button>
+          <button
+            onClick={() => reason && onConfirm(reason)}
+            disabled={!reason}
+            className="flex-1 rounded-full py-2.5 text-sm font-bold
+              text-white disabled:opacity-40"
+            style={{ background: '#7F2020' }}>
+            End Consultation
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
