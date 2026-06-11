@@ -457,6 +457,8 @@ export default function AstroChat() {
         <KundliModal
           profiles={kundliProfiles.length > 0
             ? kundliProfiles : (kundli ? [kundli] : [])}
+          initialTab={kundliTabIdx}
+          onTabChange={setKundliTabIdx}
           onClose={() => setKundliModalOpen(false)} />
       )}
 
@@ -497,49 +499,6 @@ export default function AstroChat() {
     </div>
   ) : null;
 
-  // Client name row (used in header)
-  const clientNameRow = (
-    <div className="flex items-center gap-3 px-4 py-3">
-      <div className="flex h-9 w-9 shrink-0 items-center
-        justify-center rounded-full font-bold text-white text-sm"
-        style={{ background: '#7F2020' }}>
-        {(client?.name || 'C').charAt(0).toUpperCase()}
-      </div>
-      <div>
-        <div className="flex items-center gap-2">
-          <span className="font-bold text-dark-text leading-tight">
-            {client?.name || 'Client'}
-          </span>
-          {/* FEATURE 2: member badge */}
-          {memberBadge?.hasBadge && (
-            <span
-              className="rounded-full px-2 py-0.5 text-[10px] font-bold
-                leading-none text-white"
-              style={{ background: '#6B8E23' }}>
-              {memberBadge.tierName ? memberBadge.tierName.toUpperCase() : 'MEMBER'}
-            </span>
-          )}
-        </div>
-        <div className="text-xs text-sub-text">
-          {sessionIsActive
-            ? (otherTyping ? 'typing...' : 'Online')
-            : 'Session ended'}
-        </div>
-      </div>
-      {sessionIsActive && session.status === 'active'
-        && !!session.startTime && (
-        <div className="ml-auto flex items-center gap-1.5 rounded-full
-          px-3 py-1 text-xs font-mono font-bold"
-          style={{ background: '#FFF8E7', color: '#7F2020',
-            border: '1px solid #D4A12A40' }}>
-          <span className="h-2 w-2 rounded-full bg-emerald-500
-            animate-pulse" />
-          {elapsedClock}
-        </div>
-      )}
-    </div>
-  );
-
   // Chat messages list
   const messagesList = (
     <div ref={scrollRef}
@@ -576,22 +535,10 @@ export default function AstroChat() {
     </div>
   ) : null;
 
-  // Input bar
+  // Input bar - no astrologer avatar, no session code
   const inputBar = (
     <div className="flex items-center gap-2 bg-white px-3 py-2.5"
       style={{ borderTop: '1px solid #E8D5B0' }}>
-      {/* Astrologer avatar */}
-      <div className="shrink-0 flex h-9 w-9 items-center justify-center
-        rounded-full overflow-hidden"
-        style={{ background: '#7F2020' }}>
-        {astroAvatar
-          ? <img src={astroAvatar} alt="You"
-              className="h-full w-full object-cover" />
-          : <span className="text-white text-sm font-bold">
-              {astroInitial}
-            </span>
-        }
-      </div>
 
       {/* Voice record button */}
       <button onClick={toggleRecord} disabled={busyAudio}
@@ -696,7 +643,42 @@ export default function AstroChat() {
   ) : null;
 
   // ---------------------------------------------------------------------------
-  // Left sidebar content (shared between both layouts)
+  // Inline AI toggle row (compact, used in both mobile header and desktop sidebar)
+  // ---------------------------------------------------------------------------
+  const inlineAiRow = aiAvailable && session.type === 'chat' ? (
+    <div className="flex items-center gap-2 px-4 py-2"
+      style={{ borderBottom: '1px solid #E8D5B0' }}>
+      <span className="text-xs font-semibold text-dark-text flex-1">
+        AI Auto-reply
+      </span>
+      <button onClick={toggleAi}
+        className={`relative h-5 w-9 shrink-0 rounded-full
+          transition ${aiOn ? 'bg-emerald-500' : 'bg-gray-300'}`}
+        aria-label="Toggle AI assistant">
+        <span className={`absolute top-0.5 h-4 w-4 rounded-full
+          bg-white transition-all ${aiOn ? 'left-4' : 'left-0.5'}`} />
+      </button>
+      {session.aiActive && !session.astroTookOver ? (
+        <button onClick={takeOver} disabled={takeoverBusy}
+          className="rounded-full px-2 py-1 text-[11px] font-bold
+            text-white disabled:opacity-50 shrink-0"
+          style={{ background: '#D4A12A' }}>
+          {takeoverBusy ? '...' : 'AI handling - Take Over'}
+        </button>
+      ) : session.astroTookOver ? (
+        <button onClick={handBackToAi} disabled={takeoverBusy}
+          className="rounded-full px-2 py-1 text-[11px] font-bold
+            disabled:opacity-50 shrink-0"
+          style={{ color: '#7F2020', background: '#FFF8E7',
+            border: '1px solid #D4A12A50' }}>
+          {takeoverBusy ? '...' : 'Hand back to AI'}
+        </button>
+      ) : null}
+    </div>
+  ) : null;
+
+  // ---------------------------------------------------------------------------
+  // Left sidebar content (desktop sidebar layout)
   // ---------------------------------------------------------------------------
   const sidebarContent = (
     <>
@@ -728,7 +710,7 @@ export default function AstroChat() {
           )}
         </div>
         <div className="text-xs text-sub-text">
-          Code {client?.userCode}
+          {client?.userCode ? `#${client.userCode}` : ''}
         </div>
       </div>
 
@@ -879,63 +861,8 @@ export default function AstroChat() {
         </div>
       )}
 
-      {/* AI Assistant section */}
-      {aiAvailable && session.type === 'chat' && (
-        <div className="px-4 pt-3 pb-3 border-b"
-          style={{ borderColor: '#E8D5B0' }}>
-          <div className="mb-2 text-[11px] font-bold uppercase tracking-widest"
-            style={{ color: '#7F2020' }}>
-            AI Assistant
-          </div>
-          <div className="flex items-center justify-between rounded-card
-            border bg-white p-2.5"
-            style={{ borderColor: '#D4A12A30' }}>
-            <div className="min-w-0">
-              <div className="text-sm font-semibold text-dark-text">
-                Auto-reply
-              </div>
-              <div className="text-[11px] text-sub-text">
-                {aiOn ? (aiBusy ? 'Replying...' : 'Auto-replying to chats')
-                  : 'Off, you reply manually'}
-              </div>
-            </div>
-            <button onClick={toggleAi}
-              className={`relative h-6 w-11 shrink-0 rounded-full
-                transition ${aiOn ? 'bg-emerald-500' : 'bg-gray-300'}`}
-              aria-label="Toggle AI assistant">
-              <span className={`absolute top-0.5 h-5 w-5 rounded-full
-                bg-white transition-all ${aiOn ? 'left-5' : 'left-0.5'}`} />
-            </button>
-          </div>
-          {(session.aiActive || session.astroTookOver) && (
-            <div className="mt-2">
-              {!session.astroTookOver ? (
-                <button onClick={takeOver} disabled={takeoverBusy}
-                  className="w-full rounded-card px-3 py-2 text-sm
-                    font-semibold text-white transition active:opacity-80
-                    disabled:opacity-50"
-                  style={{ background: '#D4A12A' }}>
-                  {takeoverBusy ? 'Taking over...' : 'Take Over Chat'}
-                </button>
-              ) : (
-                <button onClick={handBackToAi} disabled={takeoverBusy}
-                  className="w-full rounded-card border px-3 py-2 text-sm
-                    font-semibold transition active:opacity-80
-                    disabled:opacity-50"
-                  style={{ borderColor: '#7F2020', color: '#7F2020',
-                    background: '#FFF8E7' }}>
-                  {takeoverBusy ? 'Handing back...' : 'Hand back to AI'}
-                </button>
-              )}
-              <div className="mt-1 text-center text-[10px] text-sub-text">
-                {!session.astroTookOver
-                  ? 'AI is currently handling this chat'
-                  : 'You are handling this chat'}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+      {/* Inline AI toggle row (replaces the old standalone AI card) */}
+      {inlineAiRow}
 
       {/* Spacer + End button */}
       <div className="flex-1" />
@@ -994,9 +921,16 @@ export default function AstroChat() {
                         ? memberBadge.tierName.toUpperCase() : 'MEMBER'}
                     </span>
                   )}
+                  {client?.userCode && (
+                    <span className="text-xs text-sub-text font-normal">
+                      #{client.userCode}
+                    </span>
+                  )}
                 </div>
                 <div className="text-xs text-sub-text">
-                  Code {client?.userCode}
+                  {sessionIsActive
+                    ? (otherTyping ? 'typing...' : 'Online')
+                    : 'Session ended'}
                 </div>
               </div>
               {session.status === 'active' && !!session.startTime && (
@@ -1221,67 +1155,42 @@ export default function AstroChat() {
                 </div>
               )}
 
-              {/* AI assistant panel */}
+              {/* Inline AI toggle row (replaces old standalone AI card) */}
               {aiAvailable && session.type === 'chat' && (
                 <div className="rounded-2xl bg-white p-4"
                   style={{ border: '1px solid #E8D5B0' }}>
-                  <div className="mb-2 text-[11px] font-bold uppercase
-                    tracking-widest" style={{ color: '#7F2020' }}>
-                    AI Assistant
-                  </div>
-                  <div className="flex items-center justify-between
-                    rounded-card border bg-white p-2.5"
-                    style={{ borderColor: '#D4A12A30' }}>
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold text-dark-text">
-                        Auto-reply
-                      </div>
-                      <div className="text-[11px] text-sub-text">
-                        {aiOn
-                          ? (aiBusy ? 'Replying...' : 'Auto-replying to chats')
-                          : 'Off, you reply manually'}
-                      </div>
-                    </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm font-semibold text-dark-text flex-1">
+                      AI Auto-reply
+                    </span>
                     <button onClick={toggleAi}
-                      className={`relative h-6 w-11 shrink-0 rounded-full
-                        transition ${aiOn
-                          ? 'bg-emerald-500' : 'bg-gray-300'}`}
+                      className={`relative h-5 w-9 shrink-0 rounded-full
+                        transition ${aiOn ? 'bg-emerald-500' : 'bg-gray-300'}`}
                       aria-label="Toggle AI assistant">
-                      <span className={`absolute top-0.5 h-5 w-5
-                        rounded-full bg-white transition-all ${
-                        aiOn ? 'left-5' : 'left-0.5'}`} />
+                      <span className={`absolute top-0.5 h-4 w-4 rounded-full
+                        bg-white transition-all ${aiOn ? 'left-4' : 'left-0.5'}`} />
                     </button>
                   </div>
                   {(session.aiActive || session.astroTookOver) && (
                     <div className="mt-2">
                       {!session.astroTookOver ? (
-                        <button onClick={takeOver}
-                          disabled={takeoverBusy}
-                          className="w-full rounded-card px-3 py-2 text-sm
+                        <button onClick={takeOver} disabled={takeoverBusy}
+                          className="w-full rounded-card px-3 py-1.5 text-sm
                             font-semibold text-white transition
                             active:opacity-80 disabled:opacity-50"
                           style={{ background: '#D4A12A' }}>
-                          {takeoverBusy
-                            ? 'Taking over...' : 'Take Over Chat'}
+                          {takeoverBusy ? 'Taking over...' : 'AI handling - Take Over'}
                         </button>
                       ) : (
-                        <button onClick={handBackToAi}
-                          disabled={takeoverBusy}
-                          className="w-full rounded-card border px-3 py-2
+                        <button onClick={handBackToAi} disabled={takeoverBusy}
+                          className="w-full rounded-card border px-3 py-1.5
                             text-sm font-semibold transition
                             active:opacity-80 disabled:opacity-50"
                           style={{ borderColor: '#7F2020',
                             color: '#7F2020', background: '#FFF8E7' }}>
-                          {takeoverBusy
-                            ? 'Handing back...' : 'Hand back to AI'}
+                          {takeoverBusy ? 'Handing back...' : 'Hand back to AI'}
                         </button>
                       )}
-                      <div className="mt-1 text-center text-[10px]
-                        text-sub-text">
-                        {!session.astroTookOver
-                          ? 'AI is currently handling this chat'
-                          : 'You are handling this chat'}
-                      </div>
                     </div>
                   )}
                 </div>
@@ -1308,13 +1217,50 @@ export default function AstroChat() {
             borderRadius: '0 0 0 0',
             boxShadow: '-2px 0 12px rgba(0,0,0,0.07)',
           }}>
-          {/* Chat panel header */}
-          <div className="px-4 py-3 bg-white"
-            style={{
-              borderBottom: '1px solid #E8D5B0',
-              borderRadius: '0 0 0 0',
-            }}>
-            {clientNameRow}
+          {/* Chat panel header - client name + code */}
+          <div className="flex items-center gap-3 px-4 py-3 bg-white"
+            style={{ borderBottom: '1px solid #E8D5B0' }}>
+            <div className="flex h-9 w-9 shrink-0 items-center
+              justify-center rounded-full font-bold text-white text-sm"
+              style={{ background: '#7F2020' }}>
+              {(client?.name || 'C').charAt(0).toUpperCase()}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="font-bold text-dark-text leading-tight">
+                  {client?.name || 'Client'}
+                </span>
+                {memberBadge?.hasBadge && (
+                  <span
+                    className="rounded-full px-2 py-0.5 text-[10px] font-bold
+                      leading-none text-white"
+                    style={{ background: '#6B8E23' }}>
+                    {memberBadge.tierName
+                      ? memberBadge.tierName.toUpperCase() : 'MEMBER'}
+                  </span>
+                )}
+                {client?.userCode && (
+                  <span className="text-[11px] text-sub-text">
+                    #{client.userCode}
+                  </span>
+                )}
+              </div>
+              <div className="text-xs text-sub-text">
+                {sessionIsActive
+                  ? (otherTyping ? 'typing...' : 'Online')
+                  : 'Session ended'}
+              </div>
+            </div>
+            {session.status === 'active' && !!session.startTime && (
+              <div className="ml-auto flex items-center gap-1.5 rounded-full
+                px-3 py-1 text-xs font-mono font-bold shrink-0"
+                style={{ background: '#FFF8E7', color: '#7F2020',
+                  border: '1px solid #D4A12A40' }}>
+                <span className="h-2 w-2 rounded-full bg-emerald-500
+                  animate-pulse" />
+                {elapsedClock}
+              </div>
+            )}
           </div>
 
           {/* Messages */}
@@ -1334,104 +1280,197 @@ export default function AstroChat() {
   }
 
   // ---------------------------------------------------------------------------
-  // MOBILE / FULL layout (default, unchanged)
+  // MOBILE LAYOUT: single flex-col h-screen, compact sticky header (~20%),
+  // messages take flex-1 (~80%), input fixed at bottom.
   // ---------------------------------------------------------------------------
+
+  // Compact kundli strip for mobile header
+  const mobileKundliStrip = (sidebarKundli || kundliProfiles.length > 0) ? (
+    <div className="flex items-center gap-2 px-4 py-1.5"
+      style={{ borderBottom: '1px solid #E8D5B0' }}>
+      {sidebarKundli?.zodiac && (
+        <span className="shrink-0 rounded-full px-2 py-0.5 text-[11px]
+          font-bold text-white"
+          style={{ background: '#7F2020' }}>
+          {sidebarKundli.zodiac}
+        </span>
+      )}
+      <span className="min-w-0 flex-1 truncate text-xs text-sub-text">
+        {[sidebarKundli?.name, sidebarKundli?.dob, sidebarKundli?.place]
+          .filter(Boolean).join(' | ')}
+      </span>
+      <button
+        onClick={() => setKundliModalOpen(true)}
+        className="shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold
+          transition active:opacity-80"
+        style={{ background: '#FFF8E7', color: '#7F2020',
+          border: '1px solid #D4A12A60' }}>
+        Full Kundli
+      </button>
+    </div>
+  ) : null;
+
   return (
-    <div className="flex h-screen flex-col md:flex-row"
+    <div className="flex h-screen flex-col"
       style={{ background: '#F1FAF6' }}>
       {modalsAndToasts}
 
-      {/* Sidebar */}
-      <aside className="bg-bg-light md:w-72 flex flex-col"
-        style={{ borderRight: '1px solid #E8D5B0' }}>
-        {sidebarContent}
-      </aside>
+      {/* ---- COMPACT STICKY HEADER (max ~20% of screen) ---- */}
+      <div className="shrink-0 bg-white shadow-sm"
+        style={{ borderBottom: '1px solid #E8D5B0' }}>
 
-      {/* Main chat area */}
-      <main className="flex flex-1 flex-col bg-bg-gray overflow-hidden">
+        {/* Row 1: Back + timer/status + End button */}
+        <div className="flex items-center gap-2 px-3 py-2"
+          style={{ borderBottom: '1px solid #F0E4C880' }}>
+          <button onClick={() => router.push('/astro-sessions')}
+            className="shrink-0 flex items-center gap-1 text-sm
+              font-semibold text-primary">
+            <span style={{ fontSize: '1.1em' }}>&#8592;</span>
+            Back
+          </button>
 
-        {/* Chat header */}
-        <div className="flex flex-col bg-white shadow-sm"
-          style={{ borderBottom: '1px solid #E8D5B0' }}>
+          <div className="flex-1" />
 
-          {/* Earnings summary banner (post-session) */}
-          {sessionIsEnded && (
-            <div className="px-4 py-3"
-              style={{ background: '#FFF8E7',
-                borderBottom: '1px solid #E8D5B0' }}>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                <div className="font-bold text-sm"
-                  style={{ color: '#7F2020' }}>
-                  Consultation Complete
-                </div>
-                {sessionDurationMins !== null && (
-                  <div className="text-sm text-dark-text">
-                    <span className="text-sub-text">Duration:</span>{' '}
-                    <span className="font-semibold">
-                      {sessionDurationMins} min
-                    </span>
-                  </div>
-                )}
-                {sessionCost > 0 && (
-                  <div className="text-sm text-dark-text">
-                    <span className="text-sub-text">Client paid:</span>{' '}
-                    <span className="font-semibold">Rs {sessionCost}</span>
-                  </div>
-                )}
-                {earned > 0 && (
-                  <div className="text-sm">
-                    <span className="text-sub-text">You earned:</span>{' '}
-                    <span className="font-bold" style={{ color: '#7F2020' }}>
-                      Rs {earned}
-                    </span>
-                  </div>
-                )}
-              </div>
+          {/* Session timer */}
+          {session.status === 'active' && !!session.startTime && (
+            <div className="flex items-center gap-1 rounded-full px-2.5
+              py-0.5 text-xs font-mono font-bold"
+              style={{ background: '#FFF8E7', color: '#7F2020',
+                border: '1px solid #D4A12A40' }}>
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500
+                animate-pulse" />
+              {elapsedClock}
             </div>
           )}
 
-          {/* FEATURE 2: membership banner */}
-          {memberBannerEl}
-
-          {/* AI active banner */}
-          {aiHandlingChat && (
-            <div className="flex items-center gap-2 px-4 py-2"
-              style={{ background: '#FFFDF0',
-                borderBottom: '1px solid #D4A12A40' }}>
-              <span className="flex h-6 w-6 shrink-0 items-center
-                justify-center rounded-full text-sm"
-                style={{ background: '#D4A12A', color: '#fff' }}>
-                AI
-              </span>
-              <span className="text-sm font-semibold"
-                style={{ color: '#7F2020' }}>
-                AI Assistant is handling this chat
-              </span>
-              <button onClick={takeOver} disabled={takeoverBusy}
-                className="ml-auto rounded-full px-3 py-1 text-xs
-                  font-bold text-white disabled:opacity-50"
-                style={{ background: '#7F2020' }}>
-                {takeoverBusy ? 'Taking over...' : 'Take Over'}
-              </button>
-            </div>
+          {/* Status badge when not active timer */}
+          {session.status !== 'active' && (
+            <span className={`text-xs font-semibold capitalize ${
+              sessionIsActive ? 'text-emerald-600'
+              : sessionIsEnded ? 'text-[#7F2020]' : 'text-sub-text'
+            }`}>
+              {session.status}
+            </span>
           )}
 
-          {/* Client name row */}
-          {clientNameRow}
+          {/* End consultation button (small, header right) */}
+          {sessionIsActive && (
+            <button onClick={endSession}
+              className="shrink-0 rounded-full px-3 py-1 text-xs
+                font-bold text-white"
+              style={{ background: '#7F2020' }}>
+              End
+            </button>
+          )}
         </div>
 
-        {/* Messages */}
-        {messagesList}
+        {/* Row 2: Client avatar + name + badge + code + status dot */}
+        <div className="flex items-center gap-2 px-3 py-2">
+          <div className="flex h-8 w-8 shrink-0 items-center
+            justify-center rounded-full font-bold text-white text-sm"
+            style={{ background: '#7F2020' }}>
+            {(client?.name || 'C').charAt(0).toUpperCase()}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="font-bold text-dark-text text-sm leading-tight">
+                {client?.name || 'Client'}
+              </span>
+              {memberBadge?.hasBadge && (
+                <span
+                  className="rounded-full px-1.5 py-0.5 text-[10px] font-bold
+                    leading-none text-white"
+                  style={{ background: '#6B8E23' }}>
+                  {memberBadge.tierName
+                    ? memberBadge.tierName.toUpperCase() : 'MEMBER'}
+                </span>
+              )}
+              {client?.userCode && (
+                <span className="text-[11px] text-sub-text">
+                  #{client.userCode}
+                </span>
+              )}
+              <span className={`inline-block h-2 w-2 rounded-full ${
+                sessionIsActive ? 'bg-emerald-500' : 'bg-gray-400'
+              }`} />
+            </div>
+            <div className="text-[11px] text-sub-text leading-tight">
+              {sessionIsActive
+                ? (otherTyping ? 'typing...' : 'Online')
+                : 'Session ended'}
+            </div>
+          </div>
+        </div>
 
-        {/* Typing bubble */}
-        {typingBubble}
+        {/* Row 3: Compact kundli strip (only if kundli exists) */}
+        {mobileKundliStrip}
 
-        {/* Input bar */}
-        {inputBar}
+        {/* Row 4: Inline AI toggle (only if AI available) */}
+        {inlineAiRow}
 
-        {/* Remedies modal */}
-        {remediesModal}
-      </main>
+        {/* FEATURE 2: membership banner */}
+        {memberBannerEl}
+
+        {/* Earnings summary (post-session) */}
+        {sessionIsEnded && (
+          <div className="px-4 py-2"
+            style={{ background: '#FFF8E7',
+              borderTop: '1px solid #E8D5B0' }}>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+              <span className="font-bold text-xs"
+                style={{ color: '#7F2020' }}>
+                Consultation Complete
+              </span>
+              {sessionDurationMins !== null && (
+                <span className="text-xs text-sub-text">
+                  {sessionDurationMins} min
+                </span>
+              )}
+              {earned > 0 && (
+                <span className="text-xs font-bold"
+                  style={{ color: '#7F2020' }}>
+                  Earned: Rs {earned}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* AI active banner */}
+        {aiHandlingChat && (
+          <div className="flex items-center gap-2 px-3 py-1.5"
+            style={{ background: '#FFFDF0',
+              borderTop: '1px solid #D4A12A40' }}>
+            <span className="flex h-5 w-5 shrink-0 items-center
+              justify-center rounded-full text-[10px] font-bold"
+              style={{ background: '#D4A12A', color: '#fff' }}>
+              AI
+            </span>
+            <span className="flex-1 text-xs font-semibold"
+              style={{ color: '#7F2020' }}>
+              AI is handling this chat
+            </span>
+            <button onClick={takeOver} disabled={takeoverBusy}
+              className="rounded-full px-2.5 py-1 text-[11px]
+                font-bold text-white disabled:opacity-50"
+              style={{ background: '#7F2020' }}>
+              {takeoverBusy ? '...' : 'Take Over'}
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ---- MESSAGES AREA (flex-1, takes ~80% of remaining space) ---- */}
+      {messagesList}
+
+      {/* Typing bubble */}
+      {typingBubble}
+
+      {/* ---- INPUT BAR (sticks to bottom) ---- */}
+      {inputBar}
+
+      {/* Remedies modal */}
+      {remediesModal}
     </div>
   );
 }
@@ -1439,6 +1478,7 @@ export default function AstroChat() {
 // ---------------------------------------------------------------------------
 // KundliModal: full-screen overlay showing all kundli profiles with
 // predictions. Supports 1 profile (standard) or 2 profiles (matching).
+// Accepts initialTab and onTabChange to remember last active tab.
 // ---------------------------------------------------------------------------
 
 // Zodiac sign traits (personality, career, health, love) used for predictions.
@@ -1658,9 +1698,21 @@ function PredRow({ icon, label, text }) {
   );
 }
 
-function KundliModal({ profiles, onClose }) {
+function KundliModal({ profiles, initialTab, onTabChange, onClose }) {
   // profiles: array of kundli profile objects (1 or 2+ supported).
+  // initialTab: last active tab index from parent (persisted across opens).
+  const [activeTab, setActiveTab] = useState(
+    typeof initialTab === 'number' ? initialTab : 0
+  );
+
+  function handleTabChange(idx) {
+    setActiveTab(idx);
+    if (onTabChange) onTabChange(idx);
+  }
+
   const hasMultiple = profiles.length >= 2;
+  // For single-profile view, show the activeTab profile if multiple exist
+  const displayProfile = profiles[activeTab] || profiles[0] || null;
   const p1 = profiles[0] || null;
   const p2 = profiles[1] || null;
 
@@ -1683,8 +1735,8 @@ function KundliModal({ profiles, onClose }) {
             <div className="text-[11px] mt-0.5"
               style={{ color: '#F5D98B' }}>
               {hasMultiple
-                ? `${profiles.length} profiles · Kundli Matching`
-                : 'Birth chart details & predictions'}
+                ? `${profiles.length} profiles - Kundli Matching`
+                : 'Birth chart details and predictions'}
             </div>
           </div>
           <button onClick={onClose}
@@ -1695,33 +1747,41 @@ function KundliModal({ profiles, onClose }) {
           </button>
         </div>
 
+        {/* Tab buttons when multiple profiles */}
+        {profiles.length > 1 && (
+          <div className="flex gap-1 px-4 pt-3">
+            {profiles.map((p, i) => (
+              <button key={p.id || i}
+                onClick={() => handleTabChange(i)}
+                className="flex-1 rounded-full py-1.5 text-xs font-bold
+                  transition"
+                style={{
+                  background: activeTab === i ? '#7F2020' : '#FFF8E7',
+                  color: activeTab === i ? '#fff' : '#7F2020',
+                  border: '1px solid #D4A12A50',
+                }}>
+                {p.name ? p.name : `Profile ${i + 1}`}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="p-4 space-y-4">
-          {/* Single profile */}
+          {/* Single profile view (or selected tab when multiple) */}
           {!hasMultiple && p1 && (
             <KundliProfileCard profile={p1} label={null} />
           )}
 
-          {/* Two profiles side by side (or stacked on narrow screens) */}
+          {/* Multi-profile: show selected tab profile */}
           {hasMultiple && (
             <>
-              {/* Kundli Matching label */}
-              <div className="flex items-center gap-2">
-                <div className="flex-1 h-px"
-                  style={{ background: '#D4A12A50' }} />
-                <span className="text-[11px] font-bold uppercase
-                  tracking-widest px-2" style={{ color: '#7F2020' }}>
-                  Kundli Matching
-                </span>
-                <div className="flex-1 h-px"
-                  style={{ background: '#D4A12A50' }} />
-              </div>
+              <KundliProfileCard
+                profile={displayProfile}
+                label={profiles.length > 1
+                  ? `Profile ${activeTab + 1}` : null} />
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <KundliProfileCard profile={p1} label="Profile 1" />
-                <KundliProfileCard profile={p2} label="Profile 2" />
-              </div>
-
-              {/* Compatibility section */}
+              {/* Compatibility section when we have at least 2 profiles
+                  and the first two are selected */}
               {p1?.zodiac && p2?.zodiac && (
                 <div className="rounded-2xl p-4"
                   style={{ background: '#FFF8E7',
@@ -1775,14 +1835,6 @@ function KundliModal({ profiles, onClose }) {
                   </div>
                 </div>
               )}
-
-              {/* More profiles (3+) stacked below if present */}
-              {profiles.slice(2).map((p, i) => (
-                <KundliProfileCard
-                  key={p.id || i}
-                  profile={p}
-                  label={`Profile ${i + 3}`} />
-              ))}
             </>
           )}
         </div>
@@ -1876,25 +1928,16 @@ function AstroTypingBubble({ who }) {
       <span className="text-[12px] text-sub-text">
         <b className="text-dark-text">{who}</b> is typing
       </span>
-      <span className="flex items-center gap-0.5">
-        <span className="atb-dot" />
-        <span className="atb-dot" style={{ animationDelay: '120ms' }} />
-        <span className="atb-dot" style={{ animationDelay: '240ms' }} />
+      <span className="flex gap-0.5">
+        {[0, 1, 2].map((i) => (
+          <span key={i}
+            className="inline-block h-1.5 w-1.5 rounded-full animate-bounce"
+            style={{
+              background: '#7F2020',
+              animationDelay: `${i * 150}ms`,
+            }} />
+        ))}
       </span>
-      <style jsx>{`
-        :global(.atb-dot) {
-          width: 6px;
-          height: 6px;
-          border-radius: 999px;
-          background: #7F2020;
-          display: inline-block;
-          animation: atb-bounce 1s infinite ease-in-out;
-        }
-        @keyframes atb-bounce {
-          0%, 80%, 100% { transform: translateY(0); opacity: 0.45; }
-          40% { transform: translateY(-4px); opacity: 1; }
-        }
-      `}</style>
     </div>
   );
 }
