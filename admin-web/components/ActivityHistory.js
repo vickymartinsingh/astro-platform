@@ -180,15 +180,39 @@ export default function ActivityHistory({ uid, user }) {
             durationSec: Number(s.duration || 0),
             cost: s.cost, detail: s, id: s.id,
           })),
-          ...orders.map((o) => ({
-            kind: 'order', at: ms(o.paidAt),
-            label: o.kind === 'forecast12'
+          ...orders.map((o) => {
+            // Determine whether the wallet was actually debited.
+            // prepaid_* orders are pre-generated in the background
+            // when the user saves their profile; the wallet debit
+            // only happens later when they explicitly click "Buy"
+            // (the claim path). complimentary orders are admin gifts.
+            // Showing ₹299 as a debit for a prepaid order is
+            // misleading because no money left the user's wallet.
+            const st = o.status || '';
+            const walletDebited = Number(o.amount) > 0
+              && (st === 'paid_generating' || st === 'ready')
+              && !o.complimentary;
+            const isPrepaid = st.startsWith('prepaid') || !!o.prepaid;
+            const kindLabel = o.kind === 'forecast12'
               ? '12-Month Forecast PDF'
               : (o.kind === 'free' ? 'Free Vedic Kundli PDF'
-                : 'Kundli report'),
-            amount: -Math.abs(Number(o.amount || 0)),
-            detail: o, id: o.id,
-          })),
+                : 'Kundli report');
+            let suffix = '';
+            if (o.complimentary) {
+              suffix = ' (complimentary, no charge)';
+            } else if (isPrepaid) {
+              suffix = ` (pre-generated, not yet purchased`
+                + ` : price ₹${Number(o.amount || 0)})`;
+            }
+            return {
+              kind: 'order', at: ms(o.paidAt),
+              label: kindLabel + suffix,
+              // Only show as a debit if wallet was actually debited.
+              amount: walletDebited
+                ? -Math.abs(Number(o.amount)) : null,
+              detail: o, id: o.id,
+            };
+          }),
         ];
         const filtered = merged
           .filter((r) => r.at >= fromMs && r.at <= toMs)
@@ -227,7 +251,7 @@ export default function ActivityHistory({ uid, user }) {
 <h1>Activity History - ${escapeHtml(name)}</h1>
 <div class="sub">
   ${escapeHtml(email)} · UID ${escapeHtml(uid)}<br/>
-  Range: ${fmt(fromMs)} → ${fmt(toMs)}<br/>
+  Range: ${fmt(fromMs)} to ${fmt(toMs)}<br/>
   ${rows.length} events · Generated ${fmt(Date.now())}
 </div>
 <table>
@@ -294,7 +318,7 @@ ${rows.map((r) => `
         </div>
       )}
       <div className="mb-2 text-[10px] text-sub-text">
-        Range: {fmt(fromMs)} → {fmt(toMs)}
+        Range: {fmt(fromMs)} to {fmt(toMs)}
         {rows ? ` · ${rows.length} events` : ''}
       </div>
       {loading && (
@@ -365,8 +389,11 @@ function detailText(r) {
     return `${mins}m with ${r.astroId || 'astrologer'}`;
   }
   if (r.kind === 'order') {
+    const st = r.detail && r.detail.status
+      ? ` [${r.detail.status}]` : '';
     return (r.detail && r.detail.profileName)
-      ? `Chart: ${r.detail.profileName}` : 'Kundli PDF order';
+      ? `Chart: ${r.detail.profileName}${st}`
+      : `Kundli PDF order${st}`;
   }
   if (r.kind === 'transaction') {
     return r.detail && r.detail.type

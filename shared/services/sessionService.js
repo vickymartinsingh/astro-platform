@@ -284,7 +284,17 @@ async function resolveName(uid) {
 }
 
 export async function updateSessionStatus(id, status, extra = {}) {
-  await updateDoc(doc(db, 'sessions', id), { status, ...extra });
+  const update = { status, ...extra };
+  // Always stamp startTime when a session goes active. Billing in
+  // endAndSettleClient() requires this field to compute the charged
+  // duration. Guard: if the caller already passed startTime (manual
+  // accept in IncomingRequest) we keep their value; otherwise we set
+  // it here so the auto-accept path (which swallows errors) cannot
+  // silently leave startTime missing and produce a zero-cost session.
+  if (status === 'active' && !update.startTime) {
+    update.startTime = serverTimestamp();
+  }
+  await updateDoc(doc(db, 'sessions', id), update);
   // When the astrologer accepts, alert the client on their lock screen.
   if (status === 'accepted') {
     try {
