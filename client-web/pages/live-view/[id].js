@@ -700,9 +700,6 @@ export default function LiveView() {
   const [localMicTrack, setLocalMicTrack] = useState(null);
   const [localCamTrack, setLocalCamTrack] = useState(null);
 
-  // Follow state (separate from the existing `following` which uses liveService listener)
-  const [isFollowing, setIsFollowing] = useState(false);
-
   // Kicked state
   const [kickedOut, setKickedOut] = useState(false);
 
@@ -789,18 +786,6 @@ export default function LiveView() {
     return liveService.listenIsFollowing(astroUid, user.uid, setFollowing);
   }, [astroUid, user?.uid]);
 
-  // Check initial follow status for isFollowing state (Fix 3)
-  useEffect(() => {
-    if (!astroUid || !user?.uid) return;
-    (async () => {
-      try {
-        const { doc: fDoc, getDoc: fGet } = await import('firebase/firestore');
-        const followRef = fDoc(db, 'users', user.uid, 'following', astroUid);
-        const snap = await fGet(followRef);
-        setIsFollowing(snap.exists());
-      } catch (_) {}
-    })();
-  }, [astroUid, user?.uid]);
 
   useEffect(() => {
     if (!astroUid || !user?.uid) return undefined;
@@ -1207,33 +1192,6 @@ export default function LiveView() {
     });
   }
 
-  async function handleFollow() {
-    if (!user?.uid || !astroUid) {
-      if (!user?.uid) router.push('/login');
-      return;
-    }
-    try {
-      const { doc: fDoc, setDoc: fSet, deleteDoc: fDel, getDoc: fGet }
-        = await import('firebase/firestore');
-      const followRef = fDoc(db, 'users', user.uid, 'following', astroUid);
-      const snap = await fGet(followRef);
-      if (snap.exists()) {
-        await fDel(followRef);
-        setIsFollowing(false);
-      } else {
-        await fSet(followRef, {
-          astroId: astroUid,
-          followedAt: new Date().toISOString(),
-          astroName: info?.name || '',
-        });
-        setIsFollowing(true);
-      }
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.error('Follow error:', e);
-      notify('Could not update follow status. Try again.');
-    }
-  }
 
   function onRequestJoin() {
     if (!user?.uid) { router.push('/login'); return; }
@@ -1345,13 +1303,13 @@ export default function LiveView() {
         </button>
 
         <button
-          onClick={handleFollow}
+          onClick={onFollow}
           className="rounded-full px-3 py-1 text-[11px] font-bold"
-          style={isFollowing
+          style={following
             ? { background: 'rgba(255,255,255,0.15)', color: 'white' }
             : { background: 'linear-gradient(135deg,#D4A12A,#7F2020)', color: 'white' }}
         >
-          {isFollowing ? (
+          {following ? (
             <span className="inline-flex items-center gap-1">
               <IconCheckPill />Following
             </span>
