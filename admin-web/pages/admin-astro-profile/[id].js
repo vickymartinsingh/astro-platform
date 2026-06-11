@@ -3,7 +3,9 @@ import { useRouter } from 'next/router';
 import {
   astrologerService, sessionService, reviewService, userService, db,
 } from '@astro/shared';
-import { doc, setDoc } from 'firebase/firestore';
+import {
+  doc, setDoc, collection, query, where, getDocs,
+} from 'firebase/firestore';
 import Layout from '../../components/Layout';
 import ResetAccountPanel from '../../components/ResetAccountPanel';
 import ComplianceActivity from '../../components/ComplianceActivity';
@@ -13,6 +15,18 @@ import { useRequireAdmin } from '../../lib/useAuth';
 
 const { sessionRefNo } = sessionService;
 const TYPE_ICON = { chat: '💬', call: '📞', video: '📹' };
+
+const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
+
+async function isUsernameTaken(username, myUid) {
+  const q = await getDocs(
+    query(
+      collection(db, 'astrologers'),
+      where('username', '==', username.toLowerCase()),
+    ),
+  );
+  return q.docs.some((d) => d.id !== myUid);
+}
 
 function fmt(ts) {
   const ms = ts && ts.toMillis ? ts.toMillis()
@@ -49,6 +63,7 @@ export default function AdminAstroProfile() {
   const [clientNames, setClientNames] = useState({});
   const [aiChatEnabled, setAiChatEnabled] = useState(false);
   const [aiChatSaving, setAiChatSaving] = useState(false);
+  const [currentUsername, setCurrentUsername] = useState(null);
 
   useEffect(() => {
     if (loading || !id) return;
@@ -57,6 +72,7 @@ export default function AdminAstroProfile() {
         const a = await astrologerService.getAstrologer(id);
         setAstro(a);
         setAiChatEnabled(!!a?.aiChatEnabled);
+        setCurrentUsername(a?.username || null);
       } catch (_) { setAstro(null); }
       try {
         const list = await sessionService.getAstrologerSessions(id);
@@ -88,7 +104,7 @@ export default function AdminAstroProfile() {
   }
 
   if (loading || !astro) {
-    return <Layout><div className="surface p-4">Loading…</div></Layout>;
+    return <Layout><div className="surface p-4">Loading...</div></Layout>;
   }
 
   const ended = sessions.filter((s) => s.status === 'ended');
@@ -102,7 +118,7 @@ export default function AdminAstroProfile() {
     <Layout>
       <button onClick={() => router.back()}
         className="mb-3 text-sm font-semibold text-primary">
-        ← Back
+        Back
       </button>
 
       {/* HEADER */}
@@ -187,6 +203,13 @@ export default function AdminAstroProfile() {
             : 'AI assistant is disabled for this astrologer'}
         </div>
       </div>
+
+      {/* USERNAME MANAGEMENT */}
+      <AdminUsernamePanel
+        uid={id}
+        currentUsername={currentUsername}
+        onSaved={(uname) => setCurrentUsername(uname)}
+      />
 
       {/* PROFESSIONAL */}
       <div className="surface mt-4 p-4">
@@ -317,6 +340,133 @@ export default function AdminAstroProfile() {
         name={astro.name || astro.email}
         onDone={() => router.reload()} />
     </Layout>
+  );
+}
+
+function AdminUsernamePanel({ uid, currentUsername, onSaved }) {
+  const [input, setInput] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [msgType, setMsgType] = useState(''); // 'ok' | 'err'
+
+  function handleChange(e) {
+    const val = e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '');
+    setInput(val);
+    setMsg('');
+    setMsgType('');
+  }
+
+  async function forceSet() {
+    const val = input.trim();
+    if (!val) { setMsg('Enter a username first.'); setMsgType('err'); return; }
+    if (!USERNAME_RE.test(val)) {
+      setMsg('Lowercase letters, numbers, underscores only (3-20 chars).');
+      setMsgType('err');
+      return;
+    }
+    setSaving(true);
+    setMsg('');
+    try {
+      const taken = await isUsernameTaken(val, uid);
+      if (taken) {
+        setMsg('That username is already taken by another astrologer.');
+        setMsgType('err');
+        setSaving(false);
+        return;
+      }
+      await setDoc(
+        doc(db, 'astrologers', uid),
+        { username: val },
+        { merge: true },
+      );
+      onSaved(val);
+      setMsg(`Username set to @${val}.`);
+      setMsgType('ok');
+      setInput('');
+    } catch (e) {
+      setMsg('Error saving username. Please try again.');
+      setMsgType('err');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="surface mt-4 p-4">
+      <h2 className="mb-3 text-sm font-bold uppercase tracking-wide"
+        style={{ color: '#7F2020' }}>
+        Username
+      </h2>
+
+      <div
+        className="mb-3 rounded-card p-2 text-[11px]"
+        style={{
+          backgroundColor: '#FFF8E7',
+          border: '1px solid #D4A12A',
+          color: '#7F2020',
+        }}
+      >
+        Admin can force-set usernames. This bypasses the normal ticket process.
+      </div>
+
+      {currentUsername ? (
+        <div className="mb-3 flex items-center gap-2 flex-wrap">
+          <span className="text-sm text-sub-text">Current username:</span>
+          <span
+            className="rounded-full px-3 py-0.5 text-sm font-bold"
+            style={{
+              backgroundColor: '#FFF8E7',
+              color: '#7F2020',
+              border: '1px solid #D4A12A',
+            }}
+          >
+            @{currentUsername}
+          </span>
+          <span className="text-[11px] text-sub-text font-mono">
+            astroseer.in/@{currentUsername}
+          </span>
+        </div>
+      ) : (
+        <div className="mb-3 text-sm text-sub-text">No username set.</div>
+      )}
+
+      <div className="flex gap-2 items-center flex-wrap">
+        <div className="relative flex-1 min-w-[160px]">
+          <span
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-sm
+              font-semibold select-none"
+            style={{ color: '#D4A12A' }}
+          >
+            @
+          </span>
+          <input
+            className="input pl-7 w-full"
+            placeholder={currentUsername || 'new_username'}
+            value={input}
+            maxLength={20}
+            onChange={handleChange}
+          />
+        </div>
+        <button
+          onClick={forceSet}
+          disabled={saving || !input}
+          className="shrink-0 rounded-card px-4 py-2 text-sm font-bold
+            text-white disabled:opacity-50"
+          style={{ background: '#7F2020' }}
+        >
+          {saving ? 'Saving...' : 'Force-set username'}
+        </button>
+      </div>
+
+      {msg && (
+        <div
+          className="mt-2 text-xs font-semibold"
+          style={{ color: msgType === 'ok' ? '#16a34a' : '#dc2626' }}
+        >
+          {msg}
+        </div>
+      )}
+    </div>
   );
 }
 

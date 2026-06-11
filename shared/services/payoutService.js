@@ -3,7 +3,7 @@
 // Rewritten 2026-06-06 to cover the full payout lifecycle requested
 // by the operator:
 //   - Phase A: scheduling config (global + per-astrologer override)
-//   - Phase B: Instant Payment Request (70 percent cap, bank snap)
+//   - Phase B: Instant Payment Request (configurable cap, bank snap)
 //   - Phase C: KYC + bank details with approval gate
 //   - Phase D: status workflow initiated -> processing -> completed
 //              / rejected with mode + UTR + receipt
@@ -24,8 +24,6 @@ import {
   serverTimestamp, updateDoc, setDoc, runTransaction,
 } from 'firebase/firestore';
 import { db } from '../firebase.js';
-
-const INSTANT_CAP_PCT = 0.7; // 70 percent rule from the spec.
 
 // ---- Schedule -------------------------------------------------------
 
@@ -106,8 +104,16 @@ export async function getBankSnap(astroId) {
 // ---- Instant request (astrologer-side) -----------------------------
 
 export async function getInstantQuote(astroId) {
-  const astroSnap = await getDoc(doc(db, 'astrologers', astroId));
+  const [astroSnap, cfgSnap] = await Promise.all([
+    getDoc(doc(db, 'astrologers', astroId)),
+    getDoc(doc(db, 'settings', 'config')),
+  ]);
   const a = astroSnap.exists() ? astroSnap.data() : {};
+  const cfg = cfgSnap.exists() ? cfgSnap.data() : {};
+
+  // Commission priority: per-astrologer override > global default > 70% fallback.
+  const commissionPct = Number(a.payoutCommissionPct || cfg.defaultPayoutPct || 0.7);
+
   const earnings = Number(a.earnings || 0);
   const ps = await getDocs(query(collection(db, 'payouts'),
     where('astroId', '==', astroId)));
@@ -118,11 +124,11 @@ export async function getInstantQuote(astroId) {
     locked += Number(p.amount || 0);
   });
   const available = Math.max(0, earnings - locked);
-  const cap = Math.floor(available * INSTANT_CAP_PCT);
+  const cap = Math.floor(available * commissionPct);
   return {
     earnings, locked, available,
     instantMax: cap,
-    capPct: INSTANT_CAP_PCT,
+    capPct: commissionPct,
     kycRequired: !(a.kyc && a.kyc.status === 'approved'),
   };
 }
@@ -137,12 +143,14 @@ export async function requestInstantPayout(astroId, amount, narration) {
     throw ex;
   }
   if (amt > quote.instantMax) {
-    const ex = new Error(`Instant payout is capped at 70 percent of `
+    const pctDisplay = Math.round(quote.capPct * 100);
+    const ex = new Error(`Instant payout is capped at ${pctDisplay} percent of `
       + `available earnings (${quote.instantMax}).`);
     ex.code = 'over_cap';
     throw ex;
   }
   const bankSnap = await getBankSnap(astroId);
+  const pctDisplay = Math.round(quote.capPct * 100);
   const ref = await addDoc(collection(db, 'payouts'), {
     astroId,
     amount: amt,
@@ -153,7 +161,7 @@ export async function requestInstantPayout(astroId, amount, narration) {
     mode: '',
     utr: '',
     receiptUrl: '',
-    narration: narration || 'Instant payout (70% rule)',
+    narration: narration || `Instant payout (${pctDisplay}% of earnings)`,
     adminNote: '',
     createdAt: serverTimestamp(),
     processedAt: null,

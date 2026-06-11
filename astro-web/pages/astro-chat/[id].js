@@ -16,7 +16,10 @@ export default function AstroChat() {
   const { user, loading } = useRequireAstrologer();
   const [session, setSession] = useState(null);
   const [client, setClient] = useState(null);
+  // kundli: default/first profile (for backward compat)
   const [kundli, setKundli] = useState(null);
+  // kundliProfiles: all profiles for the client
+  const [kundliProfiles, setKundliProfiles] = useState([]);
   const [astrologer, setAstrologer] = useState(null);
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
@@ -31,6 +34,10 @@ export default function AstroChat() {
   const [aiBusy, setAiBusy] = useState(false);
   const [endModalOpen, setEndModalOpen] = useState(false);
   const [takeoverBusy, setTakeoverBusy] = useState(false);
+  // Kundli modal state
+  const [kundliModalOpen, setKundliModalOpen] = useState(false);
+  // Which tab is active when multiple kundli profiles exist (0-indexed)
+  const [kundliTabIdx, setKundliTabIdx] = useState(0);
   // Elapsed timer: counts UP from session.startTime so the astrologer
   // always sees how long the session has been running.
   const [elapsedSecs, setElapsedSecs] = useState(0);
@@ -63,8 +70,16 @@ export default function AstroChat() {
     setMessages([]); // drop the previous thread so a new chat isn't frozen
     lastCount.current = 0;
     userService.getUser(session.userId).then(setClient);
+    // Load the default kundli for backward compat
     kundliService.getDefaultKundli(session.userId).then(setKundli)
       .catch(() => {});
+    // Load ALL kundli profiles for the full modal view
+    kundliService.getKundliProfiles(session.userId)
+      .then((profiles) => {
+        setKundliProfiles(profiles || []);
+        setKundliTabIdx(0);
+      })
+      .catch(() => { setKundliProfiles([]); });
     const chatId = [session.userId, session.astroId].sort().join('_');
     return chatService.listenMessages(chatId, setMessages);
   }, [session?.userId, session?.astroId]);
@@ -323,6 +338,11 @@ export default function AstroChat() {
   const astroAvatar = astrologer?.photo || astrologer?.photoURL || null;
   const astroInitial = (astrologer?.name || 'A').charAt(0).toUpperCase();
 
+  // Determine which kundli to show in the sidebar card
+  const sidebarKundli = kundliProfiles.length > 0
+    ? kundliProfiles[kundliTabIdx] || kundliProfiles[0]
+    : kundli;
+
   return (
     <div className="flex h-screen flex-col md:flex-row"
       style={{ background: '#F1FAF6' }}>
@@ -330,6 +350,14 @@ export default function AstroChat() {
         <AstroChatEndModal
           onConfirm={doEndSession}
           onCancel={() => setEndModalOpen(false)} />
+      )}
+
+      {/* Kundli full modal */}
+      {kundliModalOpen && (
+        <KundliModal
+          profiles={kundliProfiles.length > 0
+            ? kundliProfiles : (kundli ? [kundli] : [])}
+          onClose={() => setKundliModalOpen(false)} />
       )}
 
       {/* Toast notifications */}
@@ -444,40 +472,81 @@ export default function AstroChat() {
           )}
         </div>
 
-        {/* Client Kundli section */}
-        {kundli && (
+        {/* CLIENT KUNDLI section */}
+        {(sidebarKundli || kundliProfiles.length > 0) && (
           <div className="px-4 pt-3 pb-3 border-b"
             style={{ borderColor: '#E8D5B0' }}>
             <div className="mb-2 text-[11px] font-bold uppercase tracking-widest"
               style={{ color: '#7F2020' }}>
               Client Kundli
             </div>
-            <div className="rounded-card bg-white p-3 text-sm space-y-0.5"
-              style={{ border: '1px solid #E8D5B0' }}>
-              {kundli.name && (
-                <div className="font-semibold text-dark-text">{kundli.name}</div>
-              )}
-              {kundli.dob && (
-                <div className="text-sub-text text-xs">DOB: {kundli.dob}</div>
-              )}
-              {(kundli.tob || kundli.ampm) && (
-                <div className="text-sub-text text-xs">
-                  Time: {kundli.tob || '--'} {kundli.ampm || ''}
-                </div>
-              )}
-              {kundli.place && (
-                <div className="text-sub-text text-xs">
-                  Place: {kundli.place}
-                </div>
-              )}
-              {kundli.zodiac && (
-                <div className="mt-1 inline-block rounded-full px-2 py-0.5
-                  text-[11px] font-semibold text-white"
-                  style={{ background: '#7F2020' }}>
-                  {kundli.zodiac}
-                </div>
-              )}
-            </div>
+
+            {/* Tab buttons when multiple profiles exist */}
+            {kundliProfiles.length > 1 && (
+              <div className="flex gap-1 mb-2">
+                {kundliProfiles.map((p, i) => (
+                  <button key={p.id || i}
+                    onClick={() => setKundliTabIdx(i)}
+                    className="flex-1 rounded-full py-1 text-[11px] font-bold
+                      transition"
+                    style={{
+                      background: kundliTabIdx === i ? '#7F2020' : '#FFF8E7',
+                      color: kundliTabIdx === i ? '#fff' : '#7F2020',
+                      border: '1px solid #D4A12A50',
+                    }}>
+                    Kundli {i + 1}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Kundli card */}
+            {sidebarKundli && (
+              <div className="rounded-card bg-white p-3 text-sm space-y-0.5"
+                style={{ border: '1px solid #E8D5B0' }}>
+                {sidebarKundli.name && (
+                  <div className="font-semibold text-dark-text">
+                    {sidebarKundli.name}
+                  </div>
+                )}
+                {sidebarKundli.dob && (
+                  <div className="text-sub-text text-xs">
+                    DOB: {sidebarKundli.dob}
+                  </div>
+                )}
+                {(sidebarKundli.tob || sidebarKundli.ampm) && (
+                  <div className="text-sub-text text-xs">
+                    Time: {sidebarKundli.tob || '--'}{' '}
+                    {sidebarKundli.ampm || ''}
+                  </div>
+                )}
+                {sidebarKundli.place && (
+                  <div className="text-sub-text text-xs">
+                    Place: {sidebarKundli.place}
+                  </div>
+                )}
+                {sidebarKundli.zodiac && (
+                  <div className="mt-1 inline-block rounded-full px-2 py-0.5
+                    text-[11px] font-semibold text-white"
+                    style={{ background: '#7F2020' }}>
+                    {sidebarKundli.zodiac}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Open Full Kundli button */}
+            <button
+              onClick={() => setKundliModalOpen(true)}
+              className="mt-2 w-full rounded-card py-2 text-sm font-bold
+                transition active:opacity-80"
+              style={{
+                background: '#FFF8E7',
+                color: '#7F2020',
+                border: '1px solid #D4A12A60',
+              }}>
+              Open Full Kundli
+            </button>
           </div>
         )}
 
@@ -805,9 +874,373 @@ export default function AstroChat() {
   );
 }
 
+// ---------------------------------------------------------------------------
+// KundliModal: full-screen overlay showing all kundli profiles with
+// predictions. Supports 1 profile (standard) or 2 profiles (matching).
+// ---------------------------------------------------------------------------
+
+// Zodiac sign traits (personality, career, health, love) used for predictions.
+const ZODIAC_PREDICTIONS = {
+  Aries: {
+    p: 'Bold, energetic and a natural pioneer who leads from the front.',
+    c: 'Thrives in leadership, defence, sport, entrepreneurship and fast-moving fields.',
+    h: 'Strong vitality; watch the head, stress and a tendency to overexert.',
+    l: 'Passionate and direct in love; values honesty and excitement.',
+  },
+  Taurus: {
+    p: 'Patient, dependable and grounded with a love of comfort and beauty.',
+    c: 'Excels in finance, real estate, food, arts and steady long-term work.',
+    h: 'Robust constitution; mind the throat, neck and weight balance.',
+    l: 'Loyal and sensual; seeks security and lasting commitment.',
+  },
+  Gemini: {
+    p: 'Curious, witty and adaptable with a quick, communicative mind.',
+    c: 'Shines in media, writing, sales, teaching, IT and travel.',
+    h: 'Generally agile; protect the lungs, nerves and sleep routine.',
+    l: 'Playful and intellectual; needs mental connection and variety.',
+  },
+  Cancer: {
+    p: 'Caring, intuitive and protective with deep emotional intelligence.',
+    c: 'Does well in care-giving, hospitality, real estate and family business.',
+    h: 'Sensitive digestion and emotions; nurture rest and diet.',
+    l: 'Devoted and nurturing; family and emotional safety matter most.',
+  },
+  Leo: {
+    p: 'Confident, warm and creative with natural charisma and pride.',
+    c: 'Born for leadership, entertainment, politics and the limelight.',
+    h: 'Strong heart energy; guard the heart, back and over-confidence.',
+    l: 'Generous and loyal; loves admiration and grand romance.',
+  },
+  Virgo: {
+    p: 'Analytical, precise and service-minded with an eye for detail.',
+    c: 'Great in health, analysis, editing, accounts and quality work.',
+    h: 'Careful digestion and nerves; routine and clean diet help.',
+    l: 'Thoughtful and devoted; shows love through practical care.',
+  },
+  Libra: {
+    p: 'Balanced, charming and fair with a strong sense of harmony.',
+    c: 'Suited to law, design, diplomacy, partnerships and the arts.',
+    h: 'Watch kidneys and lower back; balance work and rest.',
+    l: 'Romantic and partnership-oriented; seeks an equal companion.',
+  },
+  Scorpio: {
+    p: 'Intense, determined and deeply perceptive with strong willpower.',
+    c: 'Powerful in research, finance, medicine, investigation and strategy.',
+    h: 'Strong recovery; manage stress and reproductive health.',
+    l: 'Passionate and loyal; bonds deeply and values trust.',
+  },
+  Sagittarius: {
+    p: 'Optimistic, free-spirited and philosophical, always seeking truth.',
+    c: 'Excels in teaching, law, travel, publishing and consulting.',
+    h: 'Active body; mind the hips, thighs and over-indulgence.',
+    l: 'Honest and adventurous; needs freedom with loyalty.',
+  },
+  Capricorn: {
+    p: 'Disciplined, ambitious and patient, building success steadily.',
+    c: 'A natural in management, government, engineering and long-term ventures.',
+    h: 'Strong stamina; care for bones, knees and joints.',
+    l: 'Committed and steady; shows love through reliability.',
+  },
+  Aquarius: {
+    p: 'Original, humane and visionary with an independent mind.',
+    c: 'Innovates in technology, science, social work and networks.',
+    h: 'Guard circulation and ankles; avoid irregular routines.',
+    l: 'Friendly and unconventional; values mental freedom.',
+  },
+  Pisces: {
+    p: 'Compassionate, imaginative and spiritual with deep empathy.',
+    c: 'Gifted in arts, healing, spirituality, music and charity.',
+    h: 'Sensitive feet and immunity; needs emotional grounding.',
+    l: 'Tender and selfless; seeks a soulful, understanding bond.',
+  },
+};
+
+// Simple compatibility description between two zodiac signs.
+// Fire: Aries, Leo, Sagittarius | Earth: Taurus, Virgo, Capricorn
+// Air: Gemini, Libra, Aquarius  | Water: Cancer, Scorpio, Pisces
+function getZodiacElement(sign) {
+  if (['Aries', 'Leo', 'Sagittarius'].includes(sign)) return 'Fire';
+  if (['Taurus', 'Virgo', 'Capricorn'].includes(sign)) return 'Earth';
+  if (['Gemini', 'Libra', 'Aquarius'].includes(sign)) return 'Air';
+  if (['Cancer', 'Scorpio', 'Pisces'].includes(sign)) return 'Water';
+  return 'Unknown';
+}
+
+function getCompatibilityText(sign1, sign2) {
+  if (!sign1 || !sign2) return 'Compatibility analysis requires both zodiac signs.';
+  const el1 = getZodiacElement(sign1);
+  const el2 = getZodiacElement(sign2);
+  if (sign1 === sign2) {
+    return `Both are ${sign1} (${el1}). They share the same elemental energy, creating deep mutual understanding. The key is to balance similar traits and avoid amplifying weaknesses together.`;
+  }
+  const combos = {
+    'Fire-Fire': 'Two Fire signs share passion and drive — a dynamic, exciting match with high energy. Mutual respect and space are vital to avoid power struggles.',
+    'Earth-Earth': 'Two Earth signs bring stability, loyalty and practicality — a highly grounded and lasting bond built on shared values.',
+    'Air-Air': 'Two Air signs enjoy lively minds and communication — intellectually stimulating and socially vibrant, though emotional depth may need nurturing.',
+    'Water-Water': 'Two Water signs share deep emotional sensitivity and intuition — a profoundly empathic bond with strong spiritual connection.',
+    'Fire-Air': 'Fire and Air feed each other — this is an enthusiastic, creative and mutually inspiring pairing with strong chemistry.',
+    'Air-Fire': 'Fire and Air feed each other — this is an enthusiastic, creative and mutually inspiring pairing with strong chemistry.',
+    'Earth-Water': 'Earth and Water nourish one another — a nurturing, stable partnership where emotional and material needs are both met well.',
+    'Water-Earth': 'Earth and Water nourish one another — a nurturing, stable partnership where emotional and material needs are both met well.',
+    'Fire-Earth': 'Fire and Earth can balance ambition with patience, but may need effort to reconcile pace and priorities. Mutual appreciation goes a long way.',
+    'Earth-Fire': 'Fire and Earth can balance ambition with patience, but may need effort to reconcile pace and priorities. Mutual appreciation goes a long way.',
+    'Air-Water': 'Air and Water connect mind and emotion — a thoughtful and sensitive pairing that grows richer with open communication and understanding.',
+    'Water-Air': 'Air and Water connect mind and emotion — a thoughtful and sensitive pairing that grows richer with open communication and understanding.',
+  };
+  const key = `${el1}-${el2}`;
+  return combos[key] || `${sign1} (${el1}) and ${sign2} (${el2}) bring complementary qualities. A detailed chart analysis will reveal the full picture of this pairing.`;
+}
+
+// Single kundli profile card for the modal.
+function KundliProfileCard({ profile, label }) {
+  if (!profile) return null;
+  const traits = ZODIAC_PREDICTIONS[profile.zodiac] || null;
+  return (
+    <div className="rounded-2xl p-4 flex flex-col gap-3"
+      style={{ background: '#FFF8E7', border: '1px solid #D4A12A50' }}>
+      {/* Label */}
+      {label && (
+        <div className="text-[11px] font-bold uppercase tracking-widest"
+          style={{ color: '#D4A12A' }}>
+          {label}
+        </div>
+      )}
+
+      {/* Identity block */}
+      <div className="rounded-xl bg-white p-3"
+        style={{ border: '1px solid #E8D5B0' }}>
+        {profile.name && (
+          <div className="font-bold text-lg leading-tight"
+            style={{ color: '#1A1A2E' }}>
+            {profile.name}
+          </div>
+        )}
+        {profile.zodiac && (
+          <span className="mt-1 inline-block rounded-full px-2.5 py-0.5
+            text-xs font-bold text-white"
+            style={{ background: '#7F2020' }}>
+            {profile.zodiac}
+          </span>
+        )}
+        <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1">
+          {profile.dob && (
+            <div>
+              <div className="text-[10px] uppercase tracking-wider"
+                style={{ color: '#D4A12A' }}>
+                Date of Birth
+              </div>
+              <div className="text-sm font-semibold text-dark-text">
+                {profile.dob}
+              </div>
+            </div>
+          )}
+          {(profile.tob || profile.ampm) && (
+            <div>
+              <div className="text-[10px] uppercase tracking-wider"
+                style={{ color: '#D4A12A' }}>
+                Time of Birth
+              </div>
+              <div className="text-sm font-semibold text-dark-text">
+                {profile.tob || '--'} {profile.ampm || ''}
+              </div>
+            </div>
+          )}
+          {profile.place && (
+            <div className="col-span-2">
+              <div className="text-[10px] uppercase tracking-wider"
+                style={{ color: '#D4A12A' }}>
+                Place of Birth
+              </div>
+              <div className="text-sm font-semibold text-dark-text">
+                {profile.place}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Predictions section */}
+      {traits && (
+        <div>
+          <div className="mb-1.5 text-[11px] font-bold uppercase
+            tracking-widest" style={{ color: '#7F2020' }}>
+            Predictions
+          </div>
+          <div className="space-y-1.5">
+            <PredRow icon="&#9733;" label="Personality" text={traits.p} />
+            <PredRow icon="&#9775;" label="Career" text={traits.c} />
+            <PredRow icon="&#9829;" label="Health" text={traits.h} />
+            <PredRow icon="&#9834;" label="Love" text={traits.l} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PredRow({ icon, label, text }) {
+  return (
+    <div className="rounded-xl bg-white px-3 py-2"
+      style={{ border: '1px solid #E8D5B0' }}>
+      <div className="flex items-center gap-1.5 mb-0.5">
+        <span style={{ color: '#D4A12A', fontSize: '13px' }}>{icon}</span>
+        <span className="text-[11px] font-bold uppercase tracking-wider"
+          style={{ color: '#7F2020' }}>
+          {label}
+        </span>
+      </div>
+      <p className="text-xs leading-relaxed" style={{ color: '#444' }}>
+        {text}
+      </p>
+    </div>
+  );
+}
+
+function KundliModal({ profiles, onClose }) {
+  // profiles: array of kundli profile objects (1 or 2+ supported).
+  const hasMultiple = profiles.length >= 2;
+  const p1 = profiles[0] || null;
+  const p2 = profiles[1] || null;
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-start justify-center
+      overflow-y-auto bg-black/60 px-2 py-4"
+      onClick={onClose}>
+      <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl"
+        style={{ border: '1px solid #E8D5B0' }}
+        onClick={(e) => e.stopPropagation()}>
+
+        {/* Modal header */}
+        <div className="flex items-center justify-between px-5 py-4"
+          style={{ borderBottom: '1px solid #E8D5B0',
+            background: '#7F2020', borderRadius: '1rem 1rem 0 0' }}>
+          <div>
+            <div className="font-bold text-white text-base leading-tight">
+              Client Kundli
+            </div>
+            <div className="text-[11px] mt-0.5"
+              style={{ color: '#F5D98B' }}>
+              {hasMultiple
+                ? `${profiles.length} profiles · Kundli Matching`
+                : 'Birth chart details & predictions'}
+            </div>
+          </div>
+          <button onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center
+              rounded-full text-white text-lg transition hover:bg-white/20"
+            aria-label="Close kundli modal">
+            &#x2715;
+          </button>
+        </div>
+
+        <div className="p-4 space-y-4">
+          {/* Single profile */}
+          {!hasMultiple && p1 && (
+            <KundliProfileCard profile={p1} label={null} />
+          )}
+
+          {/* Two profiles side by side (or stacked on narrow screens) */}
+          {hasMultiple && (
+            <>
+              {/* Kundli Matching label */}
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-px" style={{ background: '#D4A12A50' }} />
+                <span className="text-[11px] font-bold uppercase tracking-widest px-2"
+                  style={{ color: '#7F2020' }}>
+                  Kundli Matching
+                </span>
+                <div className="flex-1 h-px" style={{ background: '#D4A12A50' }} />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <KundliProfileCard profile={p1} label="Profile 1" />
+                <KundliProfileCard profile={p2} label="Profile 2" />
+              </div>
+
+              {/* Compatibility section */}
+              {p1?.zodiac && p2?.zodiac && (
+                <div className="rounded-2xl p-4"
+                  style={{ background: '#FFF8E7',
+                    border: '1px solid #D4A12A50' }}>
+                  <div className="mb-2 text-[11px] font-bold uppercase
+                    tracking-widest" style={{ color: '#7F2020' }}>
+                    Compatibility
+                  </div>
+                  <div className="flex items-center gap-3 mb-3">
+                    <span className="rounded-full px-2.5 py-1 text-xs
+                      font-bold text-white" style={{ background: '#7F2020' }}>
+                      {p1.zodiac}
+                    </span>
+                    <span style={{ color: '#D4A12A', fontSize: '18px' }}>
+                      &#10022;
+                    </span>
+                    <span className="rounded-full px-2.5 py-1 text-xs
+                      font-bold text-white" style={{ background: '#7F2020' }}>
+                      {p2.zodiac}
+                    </span>
+                  </div>
+                  <p className="text-sm leading-relaxed"
+                    style={{ color: '#444' }}>
+                    {getCompatibilityText(p1.zodiac, p2.zodiac)}
+                  </p>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <div className="rounded-xl bg-white p-2"
+                      style={{ border: '1px solid #E8D5B0' }}>
+                      <div className="text-[10px] uppercase tracking-wider"
+                        style={{ color: '#D4A12A' }}>
+                        Element 1
+                      </div>
+                      <div className="font-bold text-sm"
+                        style={{ color: '#7F2020' }}>
+                        {getZodiacElement(p1.zodiac)}
+                      </div>
+                    </div>
+                    <div className="rounded-xl bg-white p-2"
+                      style={{ border: '1px solid #E8D5B0' }}>
+                      <div className="text-[10px] uppercase tracking-wider"
+                        style={{ color: '#D4A12A' }}>
+                        Element 2
+                      </div>
+                      <div className="font-bold text-sm"
+                        style={{ color: '#7F2020' }}>
+                        {getZodiacElement(p2.zodiac)}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* More profiles (3+) stacked below if present */}
+              {profiles.slice(2).map((p, i) => (
+                <KundliProfileCard
+                  key={p.id || i}
+                  profile={p}
+                  label={`Profile ${i + 3}`} />
+              ))}
+            </>
+          )}
+        </div>
+
+        {/* Footer close */}
+        <div className="px-5 py-4"
+          style={{ borderTop: '1px solid #E8D5B0' }}>
+          <button onClick={onClose}
+            className="w-full rounded-full py-2.5 text-sm font-bold
+              text-white transition active:opacity-80"
+            style={{ background: '#7F2020' }}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // End Consultation modal for the astro-chat page. Requires the
 // astrologer to select a reason before confirming. Saves the reason
 // to session.endedByAstroReason via updateDoc.
+// ---------------------------------------------------------------------------
 const CHAT_END_REASONS = [
   'Consultation completed naturally',
   'Customer became unresponsive',

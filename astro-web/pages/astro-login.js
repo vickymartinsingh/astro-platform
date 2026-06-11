@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/router';
-import { authService, userService, ticketService } from '@astro/shared';
+import { authService, userService, ticketService, astrologerService } from '@astro/shared';
 
 export default function AstroLogin() {
   const router = useRouter();
@@ -53,6 +53,14 @@ export default function AstroLogin() {
         setErr('Your account has been suspended.');
         return;
       }
+      // Redirect to onboarding exam if not yet completed.
+      try {
+        const astro = await astrologerService.getAstrologer(u.uid);
+        if (astro && !astro.examResult) {
+          router.replace('/astro-exam');
+          return;
+        }
+      } catch (_) { /* if check fails, proceed to dashboard */ }
       router.replace('/astro-dashboard');
     } catch {
       setErr('Invalid email or password.');

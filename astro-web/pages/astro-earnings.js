@@ -115,6 +115,8 @@ export default function AstroEarnings() {
     { key: 'payouts',  label: `Payouts (${payouts.length})` },
   ];
 
+  const capPctDisplay = quote ? Math.round((quote.capPct || 0.7) * 100) : 70;
+
   return (
     <Layout>
       <header className="mb-4">
@@ -122,8 +124,8 @@ export default function AstroEarnings() {
           Earnings &amp; Payouts
         </h1>
         <p className="mt-0.5 text-sm text-sub-text">
-          Request a payout any time (70% of available balance). The admin
-          processes via NEFT / RTGS within 24 hours.
+          You can request up to {capPctDisplay}% of available earnings.
+          Admin processes via NEFT / RTGS within 24 hours.
         </p>
       </header>
 
@@ -192,7 +194,7 @@ export default function AstroEarnings() {
                   value={`Rs.${quote.locked}`} />
                 <Stat label="Available balance"
                   value={`Rs.${quote.available}`} highlight />
-                <Stat label="Instant max (70%)"
+                <Stat label={`Instant max (${capPctDisplay}%)`}
                   value={`Rs.${quote.instantMax}`} highlight />
               </div>
               {quote.kycRequired && (
@@ -274,6 +276,7 @@ function WalletCard({ quote, quoteLoading, onRequest }) {
   if (!quote) return null;
 
   const canRequest = quote.instantMax > 0 && !quote.kycRequired;
+  const capPctDisplay = Math.round((quote.capPct || 0.7) * 100);
 
   return (
     <div className="rounded-2xl p-5"
@@ -321,6 +324,9 @@ function WalletCard({ quote, quoteLoading, onRequest }) {
           to enable payouts.
         </div>
       )}
+      <p className="mt-2 text-[11px]" style={{ color: C.gold }}>
+        You can request up to {capPctDisplay}% of available earnings.
+      </p>
     </div>
   );
 }
@@ -401,7 +407,7 @@ function PayoutRow({ p }) {
         <div>
           <div className="text-[10px] text-sub-text">
             {fmt(p.createdAt)} &bull; {p.type === 'instant'
-              ? 'Instant (70% rule)' : 'Scheduled'}
+              ? 'Instant payout' : 'Scheduled'}
           </div>
           <div className="mt-0.5 font-mono text-lg font-black"
             style={{ color: C.gold }}>
@@ -516,6 +522,7 @@ function RequestModal({ astroId, astro, quote, onClose, onDone }) {
   const bank = (astro && astro.bank) || {};
   const bankReady = bank.accountHolder && bank.bankName
     && bank.accountNumber && bank.ifsc;
+  const capPctDisplay = Math.round((quote.capPct || 0.7) * 100);
 
   async function submit() {
     setBusy(true); setErr('');
@@ -557,7 +564,7 @@ function RequestModal({ astroId, astro, quote, onClose, onDone }) {
             <p className="text-[12px] text-sub-text">
               Maximum:{' '}
               <b style={{ color: C.gold }}>Rs.{quote.instantMax}</b>{' '}
-              (70% of your Rs.{quote.available} available balance).
+              ({capPctDisplay}% of your Rs.{quote.available} available balance).
             </p>
             <input type="number" className="input text-2xl font-bold"
               value={amount} max={quote.instantMax}

@@ -241,9 +241,9 @@ module.exports = async (req, res) => {
   ]);
   const astroDoc = astroSnap.exists ? astroSnap.data() : {};
   const cfg = cfgSnap.exists ? cfgSnap.data() : {};
-  // Human-like delay window (defaults 3-9s).
-  const lo = Math.max(0, Number(cfg.ai_delay_min) || 3);
-  const hi = Math.max(lo, Number(cfg.ai_delay_max) || 9);
+  // Human-like delay window (defaults 2-4s).
+  const lo = Math.max(0, Number(cfg.ai_delay_min) || 2);
+  const hi = Math.max(lo, Number(cfg.ai_delay_max) || 4);
   const delayMs = Math.round((lo + Math.random() * (hi - lo)) * 1000);
 
   // Self-heal master switch: treat missing/null as ON (default true)
@@ -345,6 +345,16 @@ module.exports = async (req, res) => {
       .orderBy('createdAt', 'desc').limit(40).get();
     msgs = q.docs.map((d) => ({ id: d.id, ...d.data() })).reverse();
   } catch (_) { /* empty */ }
+
+  // Wait 1.5s to batch any rapid follow-up messages from the client.
+  await new Promise(r => setTimeout(r, 1500));
+  // Re-fetch messages to catch any that arrived during the wait.
+  try {
+    const q2 = await db.collection("chats/" + chatId + "/messages")
+      .orderBy('createdAt','desc').limit(40).get();
+    msgs = q2.docs.map(d => ({id:d.id,...d.data()})).reverse();
+  } catch(_) {}
+
   const recent = msgs.filter((m) => m.senderId && m.senderId !== 'system'
     && m.text && String(m.text).trim()).filter((m) => {
     const ts = (m.createdAt && m.createdAt.toMillis
@@ -408,7 +418,8 @@ module.exports = async (req, res) => {
   const kctx = await kundliContext(db, clientUid, kundliId || null);
   const context = kctx.text || '';
   const systemText = buildSystemPrompt({ astrologer: astroName,
-    client: clientName, context });
+    client: clientName, context })
+    + ' Keep replies concise - 1-3 sentences per bubble. Answer all questions asked but be brief.';
 
   // Typing indicator while we work.
   try {

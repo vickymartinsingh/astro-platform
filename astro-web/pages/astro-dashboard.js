@@ -133,6 +133,26 @@ const STATUS_CONFIG = {
   },
 };
 
+// Simple toast that slides up from bottom and auto-dismisses after 3s
+function SaveToast({ msg, kind, onDone }) {
+  useEffect(() => { const t = setTimeout(onDone, 3000); return () => clearTimeout(t); }, []);
+  if (!msg) return null;
+  return (
+    <div style={{
+      position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+      zIndex: 9999,
+      background: kind === 'ok' ? '#F0FDF4' : '#FFF8E7',
+      border: `1.5px solid ${kind === 'ok' ? '#16a34a' : '#7F2020'}`,
+      borderRadius: 12, padding: '10px 20px', fontWeight: 600, fontSize: 13,
+      color: kind === 'ok' ? '#15803d' : '#7F2020',
+      boxShadow: '0 4px 20px rgba(0,0,0,.12)',
+      whiteSpace: 'nowrap',
+    }}>
+      {kind === 'ok' ? '✓ ' : '! '}{msg}
+    </div>
+  );
+}
+
 export default function AstroDashboard() {
   const { user, profile, loading } = useRequireAstrologer();
   const router = useRouter();
@@ -148,6 +168,7 @@ export default function AstroDashboard() {
   const [cto, setCto] = useState('');
   const [aiAvailable, setAiAvailable] = useState(false); // admin-enabled
   const [walletBal, setWalletBal] = useState(null);
+  const [toast, setToast] = useState(null); // { msg, kind }
 
   // Is the AI assistant feature switched on for THIS astrologer by admin?
   useEffect(() => {
@@ -206,6 +227,10 @@ export default function AstroDashboard() {
     try {
       await astrologerService.updateAstrologer(user.uid,
         { aiAssistant: !current });
+      setToast({
+        msg: !current ? 'AI assistant: Enabled' : 'AI assistant: Disabled',
+        kind: 'ok',
+      });
     } finally { setBusy(false); }
   }
 
@@ -242,6 +267,10 @@ export default function AstroDashboard() {
         call_enabled: next.call,
         video_enabled: next.video,
         status: anyOn ? 'online' : 'offline',
+      });
+      setToast({
+        msg: turningOn ? `${label}: Now online` : `${label}: Now offline`,
+        kind: 'ok',
       });
     } finally { setBusy(false); }
   }
@@ -878,6 +907,15 @@ export default function AstroDashboard() {
           </div>
         )}
       </div>
+
+      {/* Global toast overlay */}
+      {toast && (
+        <SaveToast
+          msg={toast.msg}
+          kind={toast.kind}
+          onDone={() => setToast(null)}
+        />
+      )}
     </Layout>
   );
 }
