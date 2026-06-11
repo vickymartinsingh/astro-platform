@@ -43,16 +43,24 @@ export default function UserActionBar({ uid, user, onChange }) {
     if (busy) return; setModal(null);
   }
 
-  async function run(fn, okMsg) {
+  // transform(out) lets callers map the raw result to the shape
+  // the parent's onChange needs. Wallet actions pass
+  // (out) => ({ wallet: out?.after }) so the balance stat
+  // on the admin profile page immediately reflects the new value.
+  async function run(fn, okMsg, transform) {
     setBusy(true); setErr(''); setSuccess('');
     try {
       const out = await fn();
       setSuccess(okMsg || 'Done.');
-      if (typeof onChange === 'function') onChange(out);
+      if (typeof onChange === 'function') {
+        onChange(transform ? transform(out) : out);
+      }
     } catch (e) {
       setErr(String((e && e.message) || e));
     } finally { setBusy(false); }
   }
+
+  const walletTransform = (out) => ({ wallet: out?.after });
 
   async function doManualDebit() {
     const amt = Math.round(Number(amount) || 0);
@@ -66,6 +74,7 @@ export default function UserActionBar({ uid, user, onChange }) {
       () => adminService.adjustWallet(uid, -amt,
         `manual_debit: ${note.trim()}`),
       `Deducted ₹${amt} from wallet.`,
+      walletTransform,
     );
   }
   async function doAddBalance() {
@@ -73,17 +82,23 @@ export default function UserActionBar({ uid, user, onChange }) {
     if (!amt || amt <= 0) {
       setErr('Enter a positive amount.'); return;
     }
-    await run(() => adminService.adjustWallet(uid, amt,
-      note || 'admin_topup'), `+₹${amt} credited.`);
+    await run(
+      () => adminService.adjustWallet(uid, amt, note || 'admin_topup'),
+      `+₹${amt} credited.`,
+      walletTransform,
+    );
   }
   async function doAddBonus() {
     const amt = Math.round(Number(amount) || 0);
     if (!amt || amt <= 0) {
       setErr('Enter a positive amount.'); return;
     }
-    await run(() => adminService.adjustWallet(uid, amt,
-      `bonus${note ? `: ${note}` : ''}`),
-      `Bonus ₹${amt} credited.`);
+    await run(
+      () => adminService.adjustWallet(uid, amt,
+        `bonus${note ? `: ${note}` : ''}`),
+      `Bonus ₹${amt} credited.`,
+      walletTransform,
+    );
   }
   async function doGiftCard() {
     const amt = Math.round(Number(amount) || 0);
