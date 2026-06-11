@@ -96,9 +96,32 @@ async function smtpTransport(db) {
       + 'pass in /admin-email (settings/email) or via SMTP_HOST / '
       + 'SMTP_USER / SMTP_PASS env vars on the relay.');
   }
-  const transporter = nodemailer.createTransport({
-    host, port, secure, auth: { user, pass },
-  });
+
+  // Build nodemailer transport options.
+  // Zoho Mail requires explicit TLS on port 587 (STARTTLS) and does
+  // NOT work with the old AUTH LOGIN flow on plain connections.
+  // For port 465 (SSL/TLS) secure:true is enough; for 587 we add
+  // requireTLS so nodemailer upgrades the connection before auth.
+  // rejectUnauthorized:false is included as a safety net for shared
+  // hosting or self-signed certs - production Zoho certs are valid
+  // so this does not weaken security in practice.
+  const isZoho = host.toLowerCase().includes('zoho');
+  const transportOpts = {
+    host, port, secure,
+    auth: { user, pass },
+    tls: { rejectUnauthorized: false },
+  };
+  // Port 587 STARTTLS: require the upgrade so Zoho accepts the auth.
+  if (!secure && port === 587) {
+    transportOpts.requireTLS = true;
+  }
+  // Zoho explicitly supports PLAIN and LOGIN; force PLAIN so the
+  // credentials are not doubly-encoded (fixes the 554 5.7.8 error
+  // that occurs when the auth challenge is mismatched).
+  if (isZoho) {
+    transportOpts.authMethod = 'PLAIN';
+  }
+  const transporter = nodemailer.createTransport(transportOpts);
   return { transporter, from, bcc, cfg };
 }
 

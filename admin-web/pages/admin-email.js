@@ -129,20 +129,117 @@ export default function AdminEmail() {
 
       <div className="surface mb-4 space-y-3 p-4">
         <div className="font-semibold">Outgoing mail (SMTP)</div>
+
+        {/* Quick-fill buttons for common providers */}
+        <div className="flex flex-wrap gap-2">
+          <span className="text-xs text-sub-text self-center">
+            Quick fill:
+          </span>
+          {[
+            {
+              label: 'Zoho (India) SSL',
+              vals: { smtpHost: 'smtp.zoho.in', smtpPort: 465,
+                smtpSecure: true },
+            },
+            {
+              label: 'Zoho (India) TLS',
+              vals: { smtpHost: 'smtp.zoho.in', smtpPort: 587,
+                smtpSecure: false },
+            },
+            {
+              label: 'Zoho Global SSL',
+              vals: { smtpHost: 'smtp.zoho.com', smtpPort: 465,
+                smtpSecure: true },
+            },
+            {
+              label: 'Gmail',
+              vals: { smtpHost: 'smtp.gmail.com', smtpPort: 587,
+                smtpSecure: false },
+            },
+          ].map((p) => (
+            <button key={p.label}
+              onClick={() => setF((prev) => ({ ...prev, ...p.vals }))}
+              className="rounded-full border border-gray-300 px-3 py-1
+                text-xs hover:bg-gray-50">
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Zoho 554 5.7.8 fix guide - shown whenever host contains zoho */}
+        {f.smtpHost && f.smtpHost.toLowerCase().includes('zoho') && (
+          <div className="rounded-xl border border-amber-200
+            bg-amber-50 p-3 text-xs space-y-1.5">
+            <div className="font-bold text-amber-900">
+              Zoho SMTP: fix "554 5.7.8 Access Restricted"
+            </div>
+            <p className="text-amber-800">
+              Zoho no longer allows your account password for SMTP.
+              Follow these steps:
+            </p>
+            <ol className="list-decimal list-inside space-y-1
+              text-amber-800">
+              <li>
+                Log in to{' '}
+                <a href="https://mail.zoho.in" target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline font-semibold">
+                  mail.zoho.in
+                </a>
+                {' '}(or mail.zoho.com) as the sending account
+                (e.g. support@yourdomain.com).
+              </li>
+              <li>
+                Go to <b>Settings</b> (top-right gear icon).
+              </li>
+              <li>
+                Under <b>Mail Accounts</b>, select your account,
+                then click <b>Configure</b> and enable
+                <b> IMAP / SMTP Access</b>.
+              </li>
+              <li>
+                Now go to{' '}
+                <a href="https://accounts.zoho.in/home#security"
+                  target="_blank" rel="noopener noreferrer"
+                  className="underline font-semibold">
+                  accounts.zoho.in/home#security
+                </a>
+                {' '}and under <b>App Passwords</b>, generate a new
+                password (name it "AstroSeer Relay").
+              </li>
+              <li>
+                Paste that app password into the
+                <b> Password</b> field below (NOT your Zoho login
+                password).
+              </li>
+              <li>
+                Use <b>Port 465 + SSL on</b>{' '}
+                (recommended), or Port 587 + SSL off.
+                Both work with the relay.
+              </li>
+            </ol>
+            <p className="text-amber-700 font-semibold">
+              Username must be your full email address
+              (e.g. support@yourdomain.com).
+            </p>
+          </div>
+        )}
+
         <div className="grid gap-2 md:grid-cols-2">
           <input className="input" placeholder="SMTP host"
             value={f.smtpHost} onChange={set('smtpHost')} />
           <input className="input" type="number" placeholder="Port"
             value={f.smtpPort} onChange={set('smtpPort')} />
-          <input className="input" placeholder="Username"
+          <input className="input" placeholder="Username (full email)"
             value={f.smtpUser} onChange={set('smtpUser')} />
-          <input className="input" type="password" placeholder="Password"
+          <input className="input" type="password"
+            placeholder="App password (NOT account password)"
             value={f.smtpPass} onChange={set('smtpPass')} />
           <input className="input" placeholder="From address"
             value={f.smtpFrom} onChange={set('smtpFrom')} />
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={!!f.smtpSecure}
-              onChange={set('smtpSecure')} /> Use SSL/TLS
+              onChange={set('smtpSecure')} /> Use SSL/TLS (port 465)
           </label>
         </div>
         <div className="font-semibold">Incoming mail (IMAP / POP)</div>
