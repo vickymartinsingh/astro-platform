@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import { db, adminService, chatService } from '@astro/shared';
 import {
   collection, query, orderBy, limit, getDocs, doc, getDoc,
+  onSnapshot,
 } from 'firebase/firestore';
 import Layout from '../components/Layout';
 import { useRequireAdmin } from '../lib/useAuth';
@@ -25,6 +26,11 @@ export default function AdminSessions() {
   const [now, setNow] = useState(Date.now());
   const [mon, setMon] = useState(null);             // session being watched
   const [msgs, setMsgs] = useState([]);
+  // Wallet balances for active session users, keyed by uid.
+  // We subscribe with onSnapshot so the countdown reflects top-ups
+  // in real time without a page reload.
+  const [wallets, setWallets] = useState({});
+  const walletUnsubsRef = useRef({});
   const unsubRef = useRef(null);
   // Stick-to-bottom state for the live monitor scroll container.
   // The old code re-set scrollTop=scrollHeight on EVERY render via a
@@ -72,9 +78,33 @@ export default function AdminSessions() {
     const ids = [];
     list.forEach((s) => { ids.push(s.userId, s.astroId); });
     setNames(await resolveNames(ids));
+
+    // Subscribe to wallet balances for users in ACTIVE sessions so
+    // the countdown reflects real-time balance (including top-ups).
+    const prev = walletUnsubsRef.current;
+    Object.values(prev).forEach((u) => u && u());
+    walletUnsubsRef.current = {};
+    const activeUids = [...new Set(
+      list
+        .filter((s) => s.status === 'active' || s.status === 'accepted')
+        .map((s) => s.userId)
+        .filter(Boolean)
+    )];
+    activeUids.forEach((uid) => {
+      const unsub = onSnapshot(doc(db, 'users', uid), (snap) => {
+        const bal = Number((snap.data() || {}).wallet || 0);
+        setWallets((prev) => ({ ...prev, [uid]: bal }));
+      }, () => {});
+      walletUnsubsRef.current[uid] = unsub;
+    });
   }
   useEffect(() => { if (!loading) load(); /* eslint-disable-next-line */ },
     [loading]);
+
+  // Clean up wallet subscriptions on unmount.
+  useEffect(() => () => {
+    Object.values(walletUnsubsRef.current).forEach((u) => u && u());
+  }, []);
 
   // Tick every second so live durations update.
   useEffect(() => {
@@ -184,31 +214,70 @@ export default function AdminSessions() {
         {live.length === 0 && (
           <div className="card text-sub-text">No live sessions.</div>
         )}
-        {live.map((s) => (
-          <div key={s.id}
-            className="card flex flex-wrap items-center justify-between
-                       gap-2">
-            <div>
-              <div className="font-semibold capitalize">
-                {s.type} · {fmt((now - startMs(s)) / 1000)}
-                {' '}<span className="text-xs font-normal text-success">
-                  ● live</span>
+        {live.map((s) => {
+          // Wallet-based countdown: how many seconds until the
+          // client's wallet is exhausted at the current burn rate.
+          // pricePerMinute comes from the session doc (set when the
+          // session goes active). If not set, we show a dash.
+          const ppm = Number(s.pricePerMinute || s.pricePerMin || 0);
+          const walletBal = Number(wallets[s.userId] || 0);
+          const costSoFar = Number(s.cost || 0);
+          const elapsedSec = Math.floor((now - startMs(s)) / 1000);
+          // Remaining balance after cost already debited this session.
+          const remaining = Math.max(0, walletBal);
+          const timeLeftSec = ppm > 0
+            ? Math.max(0, Math.floor((remaining / ppm) * 60))
+            : null;
+          const lowBalance = timeLeftSec !== null && timeLeftSec <= 60;
+          return (
+            <div key={s.id}
+              className={`card flex flex-wrap items-center justify-between
+                         gap-2 ${lowBalance
+                           ? 'border-2 border-[#D4A12A]' : ''}`}>
+              <div>
+                <div className="font-semibold capitalize">
+                  {s.type} · {fmt(elapsedSec)}
+                  {' '}<span className="text-xs font-normal text-success">
+                    ● live</span>
+                </div>
+                <div className="text-sm text-sub-text">
+                  Astrologer: <b>{nm(s.astroId)}</b> ↔ Client:{' '}
+                  <b>{nm(s.userId)}</b> · ₹{s.cost || 0} so far
+                </div>
+                {/* Countdown: how much time client has left at current rate */}
+                <div className="mt-1 flex items-center gap-3 text-xs">
+                  {timeLeftSec !== null ? (
+                    <span className={`font-mono font-bold
+                      ${lowBalance ? 'text-[#D4A12A]' : 'text-dark-text'}`}>
+                      {fmt(timeLeftSec)} remaining
+                    </span>
+                  ) : (
+                    <span className="text-sub-text">Rate not set</span>
+                  )}
+                  {ppm > 0 && (
+                    <span className="text-sub-text">
+                      ₹{ppm}/min · Wallet: ₹{Math.round(walletBal)}
+                    </span>
+                  )}
+                </div>
+                {lowBalance && (
+                  <div className="mt-1 text-[11px] font-semibold
+                    text-[#D4A12A]">
+                    Low balance: less than 1 minute left
+                  </div>
+                )}
               </div>
-              <div className="text-sm text-sub-text">
-                Astrologer: <b>{nm(s.astroId)}</b> ↔ Client:{' '}
-                <b>{nm(s.userId)}</b> · ₹{s.cost || 0} so far
+              <div className="flex gap-3 text-sm">
+                <button onClick={() => openMonitor(s)}
+                  className="font-semibold text-primary">
+                  Live monitor
+                </button>
+                <button onClick={() => forceEnd(s.id)}
+                  className="text-danger">Force End</button>
               </div>
             </div>
-            <div className="flex gap-3 text-sm">
-              <button onClick={() => openMonitor(s)}
-                className="font-semibold text-primary">
-                Live monitor
-              </button>
-              <button onClick={() => forceEnd(s.id)}
-                className="text-danger">Force End</button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <h2 className="mb-2 font-semibold">Recent</h2>

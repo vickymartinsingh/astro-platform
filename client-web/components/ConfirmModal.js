@@ -71,7 +71,8 @@ export default function ConfirmModalHost() {
           </button>
           <button onClick={() => answer(true)}
             className={`flex-1 rounded-full py-2.5 text-sm font-bold
-              text-white ${open.danger ? 'bg-danger' : 'bg-primary'}`}>
+              text-white ${open.danger ? '' : 'bg-primary'}`}
+            style={open.danger ? { background: '#7F2020' } : undefined}>
             {open.yes}
           </button>
         </div>
