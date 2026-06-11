@@ -489,3 +489,184 @@ export async function toggleFollow(astroUid, user) {
   try { await announceFollow(astroUid, user); } catch (_) {}
   return true;
 }
+
+// ---- Kick / block / unblock during live --------------------------------
+
+// Kick a user: mark their join request as declined and post a system
+// message in the live feed.
+export async function kickUserFromLive(requestId, astroUid, userId) {
+  if (!requestId) return;
+  await updateDoc(doc(db, 'liveRequests', requestId), {
+    status: 'declined',
+    kickedAt: serverTimestamp(),
+  });
+  try {
+    await addDoc(liveMsgs(astroUid), {
+      type: 'system',
+      text: 'A user was removed.',
+      createdAt: serverTimestamp(),
+    });
+  } catch (_) {}
+}
+
+// Persist a block so the user cannot rejoin this live session.
+export async function blockUserFromLive(astroUid, userId, userName) {
+  await setDoc(
+    doc(db, 'chats', `live_${astroUid}`, 'blocked', userId),
+    { userId, userName, blockedAt: serverTimestamp() },
+  );
+}
+
+export async function unblockUserFromLive(astroUid, userId) {
+  await deleteDoc(doc(db, 'chats', `live_${astroUid}`, 'blocked', userId));
+}
+
+export function listenBlockedUsers(astroUid, callback) {
+  return onSnapshot(
+    collection(db, 'chats', `live_${astroUid}`, 'blocked'),
+    (snap) => callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+  );
+}
+
+export async function isUserBlocked(astroUid, userId) {
+  const s = await getDoc(
+    doc(db, 'chats', `live_${astroUid}`, 'blocked', userId),
+  );
+  return s.exists();
+}
+
+// ---- Connected-users listener ------------------------------------------
+
+export function listenConnectedUsers(astroUid, callback) {
+  return onSnapshot(
+    query(liveReqs(),
+      where('astroUid', '==', astroUid),
+      where('status', '==', 'connected'),
+      limit(10)),
+    (snap) => callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+  );
+}
+
+// ---- Complimentary call quota -----------------------------------------
+// Quota: max 2 per week (Sunday-Saturday), max 3 per calendar day.
+// Stored at astrologers/{astroUid}.complimentaryWeek.
+
+function isoDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function currentWeekStart() {
+  const now = new Date();
+  const dayIndex = now.getDay(); // 0 = Sunday
+  const start = new Date(now);
+  start.setDate(now.getDate() - dayIndex);
+  start.setHours(0, 0, 0, 0);
+  return isoDate(start);
+}
+
+export async function getComplimentaryStatus(astroUid) {
+  const today = isoDate(new Date());
+  const weekStart = currentWeekStart();
+  let weekCount = 0;
+  let todayCount = 0;
+  try {
+    const s = await getDoc(doc(db, 'astrologers', astroUid));
+    if (s.exists()) {
+      const cw = s.data().complimentaryWeek || {};
+      // Reset if the stored week start does not match the current one.
+      if (cw.weekStart === weekStart) {
+        weekCount = Number(cw.weekCount) || 0;
+        const daily = cw.dailyCounts || {};
+        todayCount = Number(daily[today]) || 0;
+      }
+    }
+  } catch (_) {}
+  return {
+    weekCount,
+    todayCount,
+    canUse: weekCount < 2 && todayCount < 3,
+  };
+}
+
+export async function recordComplimentaryCall(astroUid) {
+  const today = isoDate(new Date());
+  const weekStart = currentWeekStart();
+  const ref = doc(db, 'astrologers', astroUid);
+  // Read first so we can handle week rollover correctly.
+  try {
+    const s = await getDoc(ref);
+    const cw = (s.exists() && s.data().complimentaryWeek) || {};
+    if (cw.weekStart !== weekStart) {
+      // New week: reset counters.
+      await updateDoc(ref, {
+        'complimentaryWeek.weekStart': weekStart,
+        'complimentaryWeek.weekCount': 1,
+        [`complimentaryWeek.dailyCounts.${today}`]: 1,
+      });
+    } else {
+      await updateDoc(ref, {
+        'complimentaryWeek.weekCount': increment(1),
+        [`complimentaryWeek.dailyCounts.${today}`]: increment(1),
+      });
+    }
+  } catch (_) {}
+}
+
+// ---- requestJoinLiveV2 ------------------------------------------------
+// Extended version that carries callType, isComplimentary, and respects
+// connectedCount for queue placement.
+
+export async function requestJoinLiveV2({
+  astroUid, user, astroBusy, callType, isComplimentary, connectedCount,
+}) {
+  if (!astroUid || !user || !user.uid) return null;
+  const shouldQueue = astroBusy || (connectedCount || 0) >= 5;
+  const r = await addDoc(liveReqs(), {
+    astroUid,
+    userId: user.uid,
+    userName: user.name || 'Guest',
+    userPhoto: user.photo || '',
+    callType: callType || 'audio',
+    isComplimentary: !!isComplimentary,
+    status: shouldQueue ? 'queued' : 'pending',
+    createdAt: serverTimestamp(),
+  });
+  try {
+    await addDoc(liveMsgs(astroUid), {
+      type: 'join_request',
+      name: user.name || 'Guest',
+      uid: user.uid,
+      text: shouldQueue ? 'wants to join (queued)' : 'wants to join',
+      createdAt: serverTimestamp(),
+    });
+  } catch (_) {}
+  return r.id;
+}
+
+// ---- Waitlist / wishlist helpers --------------------------------------
+
+export async function moveToWaitlist(requestId) {
+  if (!requestId) return;
+  await updateDoc(doc(db, 'liveRequests', requestId), { status: 'queued' });
+}
+
+export async function addToWishlist(astroUid, userId, userName) {
+  await setDoc(
+    doc(db, 'chats', `live_${astroUid}`, 'wishlist', userId),
+    { userId, userName, addedAt: serverTimestamp() },
+  );
+}
+
+export async function removeFromWishlist(astroUid, userId) {
+  await deleteDoc(doc(db, 'chats', `live_${astroUid}`, 'wishlist', userId));
+}
+
+export function listenWishlist(astroUid, callback) {
+  return onSnapshot(
+    collection(db, 'chats', `live_${astroUid}`, 'wishlist'),
+    (snap) => callback(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
+  );
+}

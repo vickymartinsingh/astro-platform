@@ -9,6 +9,15 @@ import { useSettings } from '../lib/useSettings';
 import Layout from '../components/Layout';
 import { confirmModal } from '../components/ConfirmModal';
 
+// ─── Palette ────────────────────────────────────────────────────────────────
+const C = {
+  maroon:  '#7F2020',
+  amber:   '#D4A12A',
+  cream:   '#FFF8E7',
+  bg:      '#0A0A0A',
+};
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 function fmtWhen(ms) {
   if (!ms) return '';
   return new Date(ms).toLocaleString('en-GB', {
@@ -22,12 +31,15 @@ function fmtDur(sec) {
   const m = Math.floor((s % 3600) / 60);
   return h ? `${h}h ${m}m` : `${m}m ${s % 60}s`;
 }
+function mmss(secs) {
+  const s = Math.max(0, Math.round(secs || 0));
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+}
 
 function Tick({ green }) {
   return (
-    <svg width="15" height="15" viewBox="0 0 24 24"
-      style={{ display: 'inline-block', verticalAlign: 'middle',
-        marginLeft: 3 }}>
+    <svg width="14" height="14" viewBox="0 0 24 24"
+      style={{ display: 'inline-block', verticalAlign: 'middle', marginLeft: 3 }}>
       <path fill={green ? '#1FA855' : '#1D9BF0'} d="M12 1.5l2.2 2.06
         3-.36 1.2 2.78 2.78 1.2-.36 3L23 12l-2.06 2.2.36 3-2.78 1.2-1.2
         2.78-3-.36L12 22.5l-2.2-2.06-3 .36-1.2-2.78-2.78-1.2.36-3L1
@@ -38,65 +50,170 @@ function Tick({ green }) {
   );
 }
 
-function Avatar({ name }) {
+function Avatar({ name, size = 32 }) {
   const ch = (name || '?').trim().charAt(0).toUpperCase();
-  // Royal palette only - no purple/indigo. Maroon / Amber / Olive /
-  // Rust / Cream-dark / Deep maroon for avatar variety.
-  const colors = ['#7F2020', '#D4A12A', '#5A6E32', '#B45309',
-    '#1A1A2E', '#2A1408'];
-  const c = colors[(name || 'x').charCodeAt(0) % colors.length];
+  const colors = [C.maroon, C.amber, '#5A6E32', '#B45309', '#1A3A2E', '#2A1408'];
+  const bg = colors[(name || 'x').charCodeAt(0) % colors.length];
   return (
-    <span className="flex h-8 w-8 shrink-0 items-center justify-center
-      rounded-full text-sm font-bold text-white"
-      style={{ background: c }}>{ch}</span>
+    <span style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      width: size, height: size, borderRadius: '50%', background: bg,
+      color: '#fff', fontWeight: 700, fontSize: size * 0.38, flexShrink: 0,
+    }}>{ch}</span>
   );
 }
 
-// Astrotalk-style full-screen Go Live for the astrologer.
+// ─── Mic / Camera / Kick / Block icons (SVG, no emoji) ───────────────────────
+function IconMic({ off }) {
+  return off
+    ? (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" strokeWidth="2">
+        <line x1="1" y1="1" x2="23" y2="23" />
+        <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6" />
+        <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23" />
+        <line x1="12" y1="19" x2="12" y2="23" />
+        <line x1="8" y1="23" x2="16" y2="23" />
+      </svg>
+    ) : (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" strokeWidth="2">
+        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+        <line x1="12" y1="19" x2="12" y2="23" />
+        <line x1="8" y1="23" x2="16" y2="23" />
+      </svg>
+    );
+}
+function IconCamera({ off }) {
+  return off
+    ? (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" strokeWidth="2">
+        <line x1="1" y1="1" x2="23" y2="23" />
+        <path d="M21 21H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3m3-3h6l2 3h4a2 2 0 0 1 2 2v9.34" />
+        <circle cx="12" cy="13" r="3" />
+      </svg>
+    ) : (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" strokeWidth="2">
+        <path d="M23 7l-7 5 7 5V7z" />
+        <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+      </svg>
+    );
+}
+function IconCallType({ type }) {
+  return type === 'video'
+    ? (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+        stroke={C.amber} strokeWidth="2">
+        <path d="M23 7l-7 5 7 5V7z" />
+        <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+      </svg>
+    ) : (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+        stroke={C.amber} strokeWidth="2">
+        <path d="M22 16.92v3a2 2 0 0 1-2.18 2A19.79 19.79 0 0 1 11.41 18a19.5 19.5 0 0 1-6-6A19.79 19.79 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
+      </svg>
+    );
+}
+function IconWishlist() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill={C.amber}
+      stroke={C.amber} strokeWidth="1">
+      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+    </svg>
+  );
+}
+function IconEndCall() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+      stroke="#fff" strokeWidth="2.2">
+      <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92v3a2 2 0 0 1-2.18 2A19.79 19.79 0 0 1 11.41 18a19.45 19.45 0 0 1-3.41-3.31M2 2l20 20" />
+    </svg>
+  );
+}
+
+// ─── Small pre-live stat tile ─────────────────────────────────────────────────
+const Stat = ({ label, value }) => (
+  <div style={{
+    background: 'rgba(212,161,42,0.08)', borderRadius: 10, padding: '8px 4px',
+    textAlign: 'center',
+  }}>
+    <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
+      letterSpacing: '0.07em', color: '#888', marginBottom: 2 }}>
+      {label}
+    </div>
+    <div style={{ fontSize: 15, fontWeight: 700, color: C.cream }}>{value}</div>
+  </div>
+);
+
+// ─── Main component ───────────────────────────────────────────────────────────
 export default function AstroLive() {
   const { user, loading } = useRequireAstrologer();
   const { features } = useSettings();
   const router = useRouter();
-  const [astro, setAstro] = useState(null);
-  const [live, setLive] = useState(false);
+
+  const [astro, setAstro]     = useState(null);
+  const [live, setLive]       = useState(false);
   const [starting, setStarting] = useState(false);
-  const [muted, setMuted] = useState(false);
-  const [camOff, setCamOff] = useState(false);
-  const [info, setInfo] = useState(null);
+  const [muted, setMuted]     = useState(false);
+  const [camOff, setCamOff]   = useState(false);
+  const [info, setInfo]       = useState(null);
   const [comments, setComments] = useState([]);
-  const [fakes, setFakes] = useState([]);
-  const [dp, setDp] = useState('');
-  const [, setVtick] = useState(0);
+  const [fakes, setFakes]     = useState([]);
+  const [dp, setDp]           = useState('');
+  const [, setVtick]          = useState(0);
   const [elapsed, setElapsed] = useState(0);
-  const [mode, setMode] = useState('choose');     // choose | sched
-  const [sched, setSched] = useState(null);       // pending scheduled
-  const [history, setHistory] = useState([]);     // own live history
+  const [mode, setMode]       = useState('choose');
+  const [sched, setSched]     = useState(null);
+  const [history, setHistory] = useState([]);
   const [liveTitle, setLiveTitle] = useState('');
   const [schedAt, setSchedAt] = useState('');
   const [schedTitle, setSchedTitle] = useState('');
-  const localRef = useRef(null);
-  const joinedRef = useRef(false);
-  const cRef = useRef(null);
+  const [chatInput, setChatInput] = useState('');
+  const [sheetOpen, setSheetOpen] = useState(true);
 
-  // Join requests from viewers (2026-06-07 spec). Streamed straight
-  // into the broadcaster's overlay so Accept / Decline is one tap
-  // away while staying on the live feed. When the astro is on
-  // another call, new requests land with status='queued' and show
-  // in a Waitlist section underneath; once the call ends the
-  // broadcaster can promote one with Accept.
+  // Join requests
   const [joinRequests, setJoinRequests] = useState([]);
+  // New states
+  const [connectedUsers, setConnectedUsers] = useState([]);
+  const [blockedUsers, setBlockedUsers]     = useState([]);
+  const [wishlistUsers, setWishlistUsers]   = useState([]);
+  const [compStatus, setCompStatus]         = useState(null);
 
+  const localRef  = useRef(null);
+  const joinedRef = useRef(false);
+  const cRef      = useRef(null);
+
+  // ── Firestore listeners ───────────────────────────────────────────────────
   useEffect(() => {
     if (!user) return undefined;
-    astrologerService.getAstrologer(user.uid).then(setAstro)
-      .catch(() => setAstro(null));
+    astrologerService.getAstrologer(user.uid).then(setAstro).catch(() => setAstro(null));
+
     const u1 = liveService.listenLive(user.uid, setInfo);
     const u2 = liveService.listenLiveComments(user.uid, setComments);
     const u3 = liveService.listenScheduledLive(user.uid, setSched);
     const u4 = liveService.listenLiveHistory(user.uid, setHistory);
     const u5 = liveService.listenJoinRequests(user.uid, setJoinRequests);
-    return () => { u1 && u1(); u2 && u2(); u3 && u3(); u4 && u4();
-      u5 && u5(); };
+    const u6 = liveService.listenConnectedUsers
+      ? liveService.listenConnectedUsers(user.uid, setConnectedUsers) : null;
+    const u7 = liveService.listenBlockedUsers
+      ? liveService.listenBlockedUsers(user.uid, setBlockedUsers) : null;
+    const u8 = liveService.listenWishlist
+      ? liveService.listenWishlist(user.uid, setWishlistUsers) : null;
+
+    return () => {
+      u1 && u1(); u2 && u2(); u3 && u3(); u4 && u4();
+      u5 && u5(); u6 && u6(); u7 && u7(); u8 && u8();
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    if (liveService.getComplimentaryStatus) {
+      liveService.getComplimentaryStatus(user.uid).then(setCompStatus).catch(() => {});
+    }
   }, [user]);
 
   useEffect(() => {
@@ -106,31 +223,25 @@ export default function AstroLive() {
 
   useEffect(() => liveService.watchComplianceDp(setDp), []);
 
-  // Refresh simulated viewer count while live.
   useEffect(() => {
     if (!live) return undefined;
     const t = setInterval(() => setVtick((n) => n + 1), 4000);
     return () => clearInterval(t);
   }, [live]);
 
-  // Filler comments while live when real chatter is sparse.
+  // Filler comments
   useEffect(() => {
-    if (!live || !features || !features.live_fake_enabled) {
-      return undefined;
-    }
-    const ms = Math.max(3,
-      Number(features.live_fake_every_sec) || 12) * 1000;
+    if (!live || !features || !features.live_fake_enabled) return undefined;
+    const ms = Math.max(3, Number(features.live_fake_every_sec) || 12) * 1000;
     const t = setInterval(() => {
       setFakes((arr) => {
         if (comments.length >= 12) return arr;
-        return [...arr, liveService.nextFillerComment(features)]
-          .slice(-25);
+        return [...arr, liveService.nextFillerComment(features)].slice(-25);
       });
     }, ms);
     return () => clearInterval(t);
   }, [live, features, comments.length]);
 
-  // Reset fillers each time a live ends/starts.
   useEffect(() => { if (!live) setFakes([]); }, [live]);
 
   useEffect(() => {
@@ -139,15 +250,7 @@ export default function AstroLive() {
     return () => clearInterval(t);
   }, [live]);
 
-  // ADMIN-DRIVEN AUDIENCE BOTS: when the live_bots_* settings are
-  // enabled (and this astrologer is in scope), the astrologer
-  // client publishes bot viewer-joins + chat questions into the
-  // SAME live messages collection real viewers write into. So
-  // every viewer + the astrologer themselves sees the same bot
-  // names + comments, with no separate API call needed.
-  //
-  // Astrologer NEVER sees a toggle for this - the master switch
-  // and per-astrologer allowlist are admin-side only.
+  // Admin-driven audience bots
   useEffect(() => {
     if (!live || !user) return undefined;
     let cancelled = false;
@@ -160,18 +263,15 @@ export default function AstroLive() {
       console.log('[liveBots] cfg=', cfg, 'uid=', user.uid,
         'active=', liveBotService.botsActiveForAstro(cfg, user.uid));
       if (!liveBotService.botsActiveForAstro(cfg, user.uid)) return;
-      const joinMs = Math.max(3,
-        Number(cfg.live_bots_join_rate_sec) || 12) * 1000;
-      const commentMs = Math.max(5,
-        Number(cfg.live_bots_comment_rate_sec) || 35) * 1000;
+      const joinMs    = Math.max(3, Number(cfg.live_bots_join_rate_sec) || 12) * 1000;
+      const commentMs = Math.max(5, Number(cfg.live_bots_comment_rate_sec) || 35) * 1000;
       async function joinTick() {
         if (cancelled) return;
         try {
           const bot = await liveBotService.pickRandomBot();
           if (bot) {
             await liveBotService.publishBotEvent(user.uid,
-              { kind: 'join', name: bot.name,
-                code: bot.code || bot.id });
+              { kind: 'join', name: bot.name, code: bot.code || bot.id });
             // eslint-disable-next-line no-console
             console.log('[liveBots] joined', bot.name);
           } else {
@@ -180,15 +280,14 @@ export default function AstroLive() {
           }
         } catch (e) {
           // eslint-disable-next-line no-console
-          console.error('[liveBots] join failed:',
-            (e && e.message) || e);
+          console.error('[liveBots] join failed:', (e && e.message) || e);
         }
       }
       async function commentTick() {
         if (cancelled) return;
         try {
           const bot = await liveBotService.pickRandomBot();
-          const q = await liveBotService.pickQuestion(usedQs);
+          const q   = await liveBotService.pickQuestion(usedQs);
           if (bot && q) {
             await liveBotService.publishBotEvent(user.uid,
               { kind: 'comment', name: bot.name,
@@ -197,26 +296,18 @@ export default function AstroLive() {
             console.log('[liveBots] said', bot.name, '>', q.text);
           } else {
             // eslint-disable-next-line no-console
-            console.warn('[liveBots] no bot/question:',
-              { hasBot: !!bot, hasQ: !!q });
+            console.warn('[liveBots] no bot/question:', { hasBot: !!bot, hasQ: !!q });
           }
         } catch (e) {
           // eslint-disable-next-line no-console
-          console.error('[liveBots] comment failed:',
-            (e && e.message) || e);
+          console.error('[liveBots] comment failed:', (e && e.message) || e);
         }
       }
-      // First join + comment after a short stagger so it doesn't all
-      // fire at t=0.
       joinTimer = setTimeout(function loop() {
-        joinTick().then(() => {
-          if (!cancelled) joinTimer = setTimeout(loop, joinMs);
-        });
+        joinTick().then(() => { if (!cancelled) joinTimer = setTimeout(loop, joinMs); });
       }, 2000);
       commentTimer = setTimeout(function loop() {
-        commentTick().then(() => {
-          if (!cancelled) commentTimer = setTimeout(loop, commentMs);
-        });
+        commentTick().then(() => { if (!cancelled) commentTimer = setTimeout(loop, commentMs); });
       }, 6000);
     })();
     return () => {
@@ -226,9 +317,9 @@ export default function AstroLive() {
     };
   }, [live, user]);
 
+  // ── Actions ───────────────────────────────────────────────────────────────
   async function start() {
     if (!user || joinedRef.current) return;
-    // Must be fully OFFLINE (no Chat/Call/Video) before going Live.
     try {
       const a = await astrologerService.getAstrologer(user.uid);
       const onAny = a && (a.status === 'online' || a.chat_enabled
@@ -237,8 +328,7 @@ export default function AstroLive() {
         await confirmModal({
           title: 'Go offline first',
           message: 'You are currently online for Chat / Call / Video. '
-            + 'Turn those OFF on the Dashboard before starting a Live '
-            + 'session.',
+            + 'Turn those OFF on the Dashboard before starting a Live session.',
           yes: 'OK', no: 'Close',
         });
         return;
@@ -248,38 +338,34 @@ export default function AstroLive() {
       title: 'Go live now?',
       message: 'Your camera will start and your video will be visible '
         + 'to clients watching the Live tab.',
-      yes: 'Go live',
-      no: 'Cancel',
+      yes: 'Go live', no: 'Cancel',
     });
     if (!ok) return;
     setStarting(true);
     try {
-      const ch = liveService.liveChannel(user.uid);
-      const tok = await callService.fetchAgoraToken(ch, user.uid)
-        .catch(() => ({}));
+      const ch  = liveService.liveChannel(user.uid);
+      const tok = await callService.fetchAgoraToken(ch, user.uid).catch(() => ({}));
       await callService.joinAgoraChannel(
-        ch, user.uid, tok.appId || callService.AGORA_APP_ID,
-        tok.token || null);
+        ch, user.uid, tok.appId || callService.AGORA_APP_ID, tok.token || null);
       const tracks = await callService.publishLocalTracks({ video: true });
-      if (tracks.video && localRef.current) {
-        tracks.video.play(localRef.current);
-      }
+      if (tracks.video && localRef.current) tracks.video.play(localRef.current);
       joinedRef.current = true;
       await liveService.goLive(user.uid, {
-        name: astro?.name || 'Astrologer',
+        name:  astro?.name || 'Astrologer',
         photo: astro?.profileImage || '',
         title: (liveTitle || '').trim() || 'Live consultation',
       });
-      // Record the live session for admin monitoring (best effort).
       recordService.startRecording({
         sessionId: `live_${user.uid}`, type: 'live',
         astroId: user.uid, userId: '',
       }).catch(() => {});
       setLive(true);
-    } catch (e) {
-      await confirmModal({ title: 'Could not start live',
+    } catch (_) {
+      await confirmModal({
+        title: 'Could not start live',
         message: 'Check camera and microphone permissions and try again.',
-        yes: 'OK', no: 'Close' });
+        yes: 'OK', no: 'Close',
+      });
     } finally { setStarting(false); }
   }
 
@@ -293,15 +379,14 @@ export default function AstroLive() {
     }
     try {
       await liveService.scheduleLive(user.uid, {
-        name: astro?.name || 'Astrologer',
+        name:  astro?.name || 'Astrologer',
         photo: astro?.profileImage || '',
         title: (schedTitle || '').trim() || 'Live consultation',
         startAt: t,
       });
       setMode('choose'); setSchedAt(''); setSchedTitle('');
       await confirmModal({ title: 'Live scheduled',
-        message: 'All your followers have been notified. It now shows '
-          + 'as Upcoming in their app.',
+        message: 'All your followers have been notified. It now shows as Upcoming in their app.',
         yes: 'Done', no: 'Close' });
     } catch (_) {
       await confirmModal({ title: 'Could not schedule',
@@ -345,33 +430,74 @@ export default function AstroLive() {
     const c = !camOff; setCamOff(c); callService.setCameraEnabled(!c);
   }
 
-  const mmss = `${String(Math.floor(elapsed / 60)).padStart(2, '0')}:`
-    + `${String(elapsed % 60).padStart(2, '0')}`;
-  const rate = astro
-    ? (astro.priceVideo || astro.priceCall || astro.priceChat || 0) : 0;
+  async function handleKick(uid) {
+    if (!liveService.kickUserFromLive) return;
+    const ok = await confirmModal({
+      title: 'Kick this user?',
+      message: 'They will be removed from the live immediately.',
+      yes: 'Kick', no: 'Cancel', danger: true,
+    });
+    if (!ok) return;
+    try { await liveService.kickUserFromLive(user.uid, uid); } catch (_) {}
+  }
+
+  async function handleBlock(uid) {
+    if (!liveService.blockUserFromLive) return;
+    const ok = await confirmModal({
+      title: 'Block this user?',
+      message: 'They will be removed and cannot rejoin this live.',
+      yes: 'Block', no: 'Cancel', danger: true,
+    });
+    if (!ok) return;
+    try { await liveService.blockUserFromLive(user.uid, uid); } catch (_) {}
+  }
+
+  async function handleUnblock(uid) {
+    if (!liveService.unblockUserFromLive) return;
+    try { await liveService.unblockUserFromLive(user.uid, uid); } catch (_) {}
+  }
+
+  async function handleMakeComplimentary(requestId) {
+    if (!liveService.recordComplimentaryCall) return;
+    try { await liveService.recordComplimentaryCall(user.uid, requestId); } catch (_) {}
+  }
+
+  function sendChat() {
+    const txt = chatInput.trim();
+    if (!txt || !user) return;
+    liveService.sendLiveComment
+      ? liveService.sendLiveComment(user.uid, {
+          uid: user.uid,
+          name: astro?.name || 'Astrologer',
+          text: txt,
+          type: 'comment',
+        }).catch(() => {})
+      : null;
+    setChatInput('');
+  }
+
+  // ── Derived ───────────────────────────────────────────────────────────────
   const feed = [
-    ...comments.map((c) => ({
-      ...c, _t: c.createdAt?.toMillis ? c.createdAt.toMillis() : 0,
-    })),
+    ...comments.map((c) => ({ ...c, _t: c.createdAt?.toMillis ? c.createdAt.toMillis() : 0 })),
     ...fakes.map((f) => ({ ...f, _t: f._ts })),
   ].sort((a, b) => a._t - b._t);
 
+  const pendingReqs  = joinRequests.filter((r) => r.status === 'pending' || r.status === 'astro_ok');
+  const waitlistReqs = joinRequests.filter((r) => r.status === 'queued');
+
+  const compUsed  = compStatus?.usedThisWeek ?? 0;
+  const compLimit = compStatus?.weeklyLimit   ?? 2;
+
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center
-        bg-black text-white">Loading...</div>
+      <div style={{ display: 'flex', height: '100vh', alignItems: 'center',
+        justifyContent: 'center', background: C.bg, color: C.cream }}>
+        Loading...
+      </div>
     );
   }
 
-  const RailBtn = ({ children, onClick }) => (
-    <button onClick={onClick}
-      className="flex h-11 w-11 items-center justify-center rounded-full
-        bg-white/15 text-white backdrop-blur">{children}</button>
-  );
-
-  // PRE-LIVE: themed Layout page. The black streaming wrapper is only
-  // mounted once we are actually live, so the Go Live setup looks like
-  // every other page in the app.
+  // ── PRE-LIVE ──────────────────────────────────────────────────────────────
   if (!live) {
     return (
       <PreLiveScreen
@@ -384,179 +510,429 @@ export default function AstroLive() {
     );
   }
 
-  return (
-    <div className="relative h-screen w-screen overflow-hidden bg-black
-                    text-white">
-      <div ref={localRef} className="absolute inset-0" />
+  // ── LIVE BROADCAST UI ─────────────────────────────────────────────────────
+  const viewers = liveService.liveSimViewers(info, features);
 
-      {/* Top bar */}
-      <div className="absolute right-3 top-3 z-10 flex items-center
-        gap-2">
-        <span className="flex items-center gap-1 rounded-full
-          bg-black/40 px-3 py-1 text-sm backdrop-blur">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
-            stroke="currentColor" strokeWidth="2"><path d="M2 12s4-7
-            10-7 10 7 10 7-4 7-10 7S2 12 2 12z" /><circle cx="12"
-            cy="12" r="3" /></svg>
-          {liveService.liveSimViewers(info, features)}
-        </span>
-        <button onClick={() => stop()}
-          className="flex h-9 w-9 items-center justify-center
-            rounded-full bg-black/40 text-lg backdrop-blur">x</button>
+  return (
+    <div style={{
+      position: 'relative', width: '100vw', height: '100vh',
+      overflow: 'hidden', background: C.bg, color: '#fff',
+      display: 'flex', flexDirection: 'column',
+    }}>
+
+      {/* ── Top 55%: video preview ─────────────────────────────────────── */}
+      <div style={{ position: 'relative', height: '55%', background: '#000', flexShrink: 0 }}>
+
+        {/* Local video feed */}
+        <div ref={localRef} style={{
+          position: 'absolute', inset: 0,
+          background: '#000', objectFit: 'cover',
+        }} />
+
+        {/* ── Top bar (absolute over video) ── */}
+        <div style={{
+          position: 'absolute', top: 0, left: 0, right: 0, zIndex: 20,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '10px 14px',
+        }}>
+          {/* Left: viewer count */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            background: 'rgba(0,0,0,0.55)', borderRadius: 20, padding: '4px 10px',
+            backdropFilter: 'blur(6px)',
+          }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+              stroke={C.amber} strokeWidth="2">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+            <span style={{ fontSize: 13, fontWeight: 700, color: C.cream }}>{viewers}</span>
+          </div>
+
+          {/* Center: LIVE badge */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            background: 'rgba(0,0,0,0.55)', borderRadius: 20, padding: '4px 10px',
+            backdropFilter: 'blur(6px)',
+          }}>
+            {/* Pulsing red dot */}
+            <span style={{
+              width: 9, height: 9, borderRadius: '50%', background: '#E53E3E',
+              display: 'inline-block',
+              animation: 'livePulse 1.4s ease-in-out infinite',
+            }} />
+            <span style={{
+              fontSize: 12, fontWeight: 900, letterSpacing: '0.12em',
+              color: '#fff', textTransform: 'uppercase',
+            }}>LIVE</span>
+          </div>
+
+          {/* Right: elapsed timer */}
+          <div style={{
+            background: 'rgba(0,0,0,0.55)', borderRadius: 20, padding: '4px 10px',
+            backdropFilter: 'blur(6px)',
+            fontSize: 13, fontWeight: 700, color: C.amber, fontVariantNumeric: 'tabular-nums',
+          }}>
+            {mmss(elapsed)}
+          </div>
+        </div>
+
+        {/* ── Right rail (absolute over video) ── */}
+        <div style={{
+          position: 'absolute', right: 12, top: '50%',
+          transform: 'translateY(-50%)',
+          zIndex: 20, display: 'flex', flexDirection: 'column', gap: 12,
+        }}>
+          <RailButton onClick={toggleMute} title={muted ? 'Unmute' : 'Mute'}>
+            <IconMic off={muted} />
+          </RailButton>
+          <RailButton onClick={toggleCam} title={camOff ? 'Camera on' : 'Camera off'}>
+            <IconCamera off={camOff} />
+          </RailButton>
+          <RailButton
+            onClick={stop}
+            title="End live"
+            style={{ background: C.maroon }}>
+            <IconEndCall />
+          </RailButton>
+        </div>
       </div>
 
-      {/* Join requests overlay (2026-06-07 spec). Sits at the top
-          of the broadcaster UI so the astrologer sees who wants in,
-          and one tap accepts. Queued requests appear below the
-          active set with a "Waitlist" label. */}
-      {live && joinRequests.length > 0 && (
-        <div className="absolute left-3 right-3 top-16 z-20 space-y-1.5">
-          {joinRequests.filter((r) => r.status === 'pending'
-            || r.status === 'astro_ok' || r.status === 'connected')
-            .slice(0, 3).map((r) => (
-            <div key={r.id} className="flex items-center gap-2
-              rounded-2xl bg-black/70 px-3 py-1.5 backdrop-blur">
-              <Avatar name={r.userName} />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-[13px] font-bold">
-                  {r.userName}
+      {/* ── Bottom 45%: chat overlay ───────────────────────────────────── */}
+      <div style={{
+        flex: 1, display: 'flex', flexDirection: 'column',
+        background: 'rgba(0,0,0,0.6)', position: 'relative', overflow: 'hidden',
+      }}>
+
+        {/* Scrollable comments */}
+        <div ref={cRef} style={{
+          flex: 1, overflowY: 'auto', padding: '10px 14px 6px',
+          display: 'flex', flexDirection: 'column', gap: 8,
+        }}>
+          {feed.map((c) => (
+            c.type === 'join' || c.type === 'follow'
+              ? (
+                <div key={c.id} style={{
+                  fontSize: 12, fontStyle: 'italic',
+                  color: C.cream, opacity: 0.75,
+                }}>
+                  {c.name}{' '}
+                  {c.type === 'join' ? 'joined the live' : 'started following you'}
                 </div>
-                <div className="text-[10px] opacity-75">
-                  {r.status === 'astro_ok' ? 'Waiting on user...'
-                    : r.status === 'connected' ? 'Connected'
-                    : 'wants to join'}
+              ) : (
+                <div key={c.id} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                  {c.team && dp ? (
+                    <img src={dp} alt="Team"
+                      style={{ width: 30, height: 30, borderRadius: '50%',
+                        objectFit: 'cover', flexShrink: 0 }} />
+                  ) : (
+                    <Avatar name={c.name} size={30} />
+                  )}
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 12, lineHeight: 1.3 }}>
+                      <span style={{ fontWeight: 700, color: C.amber }}>{c.name}</span>
+                      {c.team && <Tick green />}
+                      {(c.code || c.uid) && (
+                        <span style={{ color: '#888', fontSize: 10, marginLeft: 4 }}>
+                          #{(c.code || String(c.uid).slice(0, 7)).toUpperCase()}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 13, color: '#fff', lineHeight: 1.4 }}>
+                      {c.text}
+                    </div>
+                  </div>
                 </div>
-              </div>
-              {r.status === 'pending' && (
-                <>
-                  <button onClick={() => liveService
-                    .astroAcceptJoin(r.id)}
-                    className="rounded-full bg-emerald-500 px-3 py-1
-                      text-[11px] font-bold text-white">
-                    Accept
-                  </button>
-                  <button onClick={() => liveService
-                    .astroDeclineJoin(r.id)}
-                    className="rounded-full bg-white/15 px-3 py-1
-                      text-[11px] font-bold">
-                    Decline
-                  </button>
-                </>
-              )}
-              {r.status === 'astro_ok' && (
-                <button onClick={() => liveService
-                  .astroDeclineJoin(r.id)}
-                  className="rounded-full bg-white/15 px-3 py-1
-                    text-[11px] font-bold">Cancel</button>
-              )}
-            </div>
+              )
           ))}
-          {joinRequests.filter((r) => r.status === 'queued').length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5
-              rounded-2xl bg-black/55 px-3 py-1.5 backdrop-blur">
-              <span className="text-[10px] font-bold uppercase
-                tracking-wider opacity-75">Waitlist</span>
-              {joinRequests.filter((r) => r.status === 'queued')
-                .slice(0, 6).map((r) => (
-                <button key={r.id}
-                  onClick={() => liveService.astroAcceptJoin(r.id)}
-                  className="rounded-full bg-white/10 px-2 py-0.5
-                    text-[11px] font-semibold hover:bg-emerald-500/30">
-                  {r.userName} - Promote
-                </button>
-              ))}
+        </div>
+
+        {/* Chat input row */}
+        <div style={{
+          display: 'flex', gap: 8, padding: '8px 12px',
+          borderTop: '1px solid rgba(255,255,255,0.08)',
+        }}>
+          <input
+            value={chatInput}
+            onChange={(e) => setChatInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') sendChat(); }}
+            placeholder="Say something to your viewers..."
+            style={{
+              flex: 1, background: 'rgba(255,255,255,0.07)', border: 'none',
+              borderRadius: 20, padding: '8px 14px', color: '#fff',
+              fontSize: 13, outline: 'none',
+            }} />
+          <button onClick={sendChat}
+            disabled={!chatInput.trim()}
+            style={{
+              background: C.amber, border: 'none', borderRadius: 20,
+              padding: '8px 16px', fontWeight: 700, fontSize: 13,
+              color: C.bg, cursor: 'pointer', opacity: chatInput.trim() ? 1 : 0.45,
+            }}>
+            Send
+          </button>
+        </div>
+      </div>
+
+      {/* ── Join Requests Panel (collapsible bottom sheet) ──────────────── */}
+      <JoinRequestsPanel
+        open={sheetOpen}
+        onToggle={() => setSheetOpen((v) => !v)}
+        pendingReqs={pendingReqs}
+        waitlistReqs={waitlistReqs}
+        connectedUsers={connectedUsers}
+        compUsed={compUsed}
+        compLimit={compLimit}
+        wishlistUsers={wishlistUsers}
+        onAccept={(id) => liveService.astroAcceptJoin(id)}
+        onDecline={(id) => liveService.astroDeclineJoin(id)}
+        onPromote={(id) => liveService.astroAcceptJoin(id)}
+        onKick={handleKick}
+        onBlock={handleBlock}
+        onMakeComp={handleMakeComplimentary}
+      />
+
+      {/* Pulsing dot keyframe injected once */}
+      <style>{`
+        @keyframes livePulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50%       { opacity: 0.4; transform: scale(0.7); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+// ─── Rail button helper ───────────────────────────────────────────────────────
+function RailButton({ children, onClick, title, style: extraStyle }) {
+  return (
+    <button onClick={onClick} title={title}
+      style={{
+        width: 44, height: 44, borderRadius: '50%',
+        background: 'rgba(255,255,255,0.15)', border: 'none',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        color: '#fff', cursor: 'pointer', backdropFilter: 'blur(6px)',
+        flexShrink: 0, ...extraStyle,
+      }}>
+      {children}
+    </button>
+  );
+}
+
+// ─── Join Requests Panel ──────────────────────────────────────────────────────
+function JoinRequestsPanel({
+  open, onToggle,
+  pendingReqs, waitlistReqs, connectedUsers,
+  compUsed, compLimit, wishlistUsers,
+  onAccept, onDecline, onPromote, onKick, onBlock, onMakeComp,
+}) {
+  const hasAnything = pendingReqs.length > 0 || waitlistReqs.length > 0
+    || connectedUsers.length > 0;
+
+  return (
+    <div style={{
+      position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 40,
+      background: 'rgba(10,10,10,0.97)',
+      borderTop: `2px solid ${C.maroon}`,
+      borderRadius: '16px 16px 0 0',
+      transition: 'transform 0.25s ease',
+      transform: open ? 'translateY(0)' : 'translateY(calc(100% - 44px))',
+    }}>
+      {/* Sheet handle / toggle */}
+      <button onClick={onToggle} style={{
+        width: '100%', padding: '10px 0 6px', background: 'transparent',
+        border: 'none', cursor: 'pointer', display: 'flex',
+        alignItems: 'center', justifyContent: 'center', gap: 8,
+      }}>
+        <span style={{
+          width: 36, height: 4, background: 'rgba(255,255,255,0.2)',
+          borderRadius: 2, display: 'block',
+        }} />
+        <span style={{
+          fontSize: 11, fontWeight: 700, color: C.amber,
+          textTransform: 'uppercase', letterSpacing: '0.1em',
+        }}>
+          Join Requests
+          {(pendingReqs.length > 0) && (
+            <span style={{
+              marginLeft: 6, background: C.maroon, color: '#fff',
+              borderRadius: 8, padding: '1px 6px', fontSize: 10, fontWeight: 800,
+            }}>
+              {pendingReqs.length}
+            </span>
+          )}
+        </span>
+        <span style={{
+          width: 36, height: 4, background: 'rgba(255,255,255,0.2)',
+          borderRadius: 2, display: 'block',
+        }} />
+      </button>
+
+      {open && (
+        <div style={{
+          maxHeight: 280, overflowY: 'auto', padding: '0 12px 16px',
+        }}>
+          {!hasAnything && (
+            <div style={{
+              textAlign: 'center', color: '#555', fontSize: 12,
+              padding: '20px 0',
+            }}>
+              No pending join requests
             </div>
           )}
-        </div>
-      )}
 
-      {/* Comments overlay - lower-left, scrolls up, on the video */}
-      {live && (
-        <div ref={cRef}
-          className="absolute bottom-20 left-0 z-10 max-h-[50vh] w-[80%]
-            space-y-2 overflow-y-auto px-3"
-          style={{
-            maskImage: 'linear-gradient(to top, #000 75%, transparent)',
-            WebkitMaskImage:
-              'linear-gradient(to top, #000 75%, transparent)',
-          }}>
-          {feed.map((c) => (
-            <div key={c.id} className="flex items-start gap-2">
-              {c.team && dp ? (
-                <img src={dp} alt="Compliance Team"
-                  className="h-8 w-8 shrink-0 rounded-full
-                    object-cover" />
-              ) : (
-                <Avatar name={c.name} />
-              )}
-              <div className="min-w-0">
-                <div className="text-[13px] leading-tight">
-                  <span className="font-semibold opacity-90">
-                    {c.name}
-                  </span>
-                  {c.team && <Tick green />}
-                  {(c.code || c.uid) && (
-                    <span className="text-[#D4A12A]">
-                      {' '}({c.code || String(c.uid).slice(0, 7)})
+          {/* Pending requests */}
+          {pendingReqs.length > 0 && (
+            <SectionLabel>Pending</SectionLabel>
+          )}
+          {pendingReqs.map((r) => {
+            const wl = wishlistUsers.find((w) => w.uid === r.userId);
+            return (
+              <div key={r.id} style={{
+                display: 'flex', alignItems: 'center', gap: 10,
+                padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)',
+              }}>
+                <Avatar name={r.userName} size={36} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 5,
+                    fontSize: 13, fontWeight: 700, color: C.cream,
+                  }}>
+                    <span className="truncate">{r.userName}</span>
+                    <IconCallType type={r.callType} />
+                    {wl && (
+                      <span style={{
+                        display: 'flex', alignItems: 'center', gap: 2,
+                        fontSize: 10, color: C.amber,
+                      }}>
+                        <IconWishlist />{wl.count || ''}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{
+                    fontSize: 10, color: '#888',
+                    display: 'flex', alignItems: 'center', gap: 6, marginTop: 1,
+                  }}>
+                    <span>{r.status === 'astro_ok' ? 'Waiting on user...' : 'Wants to join'}</span>
+                    <span style={{ color: C.amber }}>
+                      {compUsed}/{compLimit} comp used this week
                     </span>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 5, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  {r.status === 'pending' && (
+                    <>
+                      <SheetBtn onClick={() => onAccept(r.id)} color="#1A6B3C">
+                        Accept
+                      </SheetBtn>
+                      <SheetBtn onClick={() => onDecline(r.id)} color="rgba(255,255,255,0.1)">
+                        Decline
+                      </SheetBtn>
+                      {compUsed < compLimit && (
+                        <SheetBtn onClick={() => onMakeComp(r.id)} color="rgba(212,161,42,0.18)"
+                          textColor={C.amber}>
+                          Comp
+                        </SheetBtn>
+                      )}
+                    </>
+                  )}
+                  {r.status === 'astro_ok' && (
+                    <SheetBtn onClick={() => onDecline(r.id)} color="rgba(255,255,255,0.1)">
+                      Cancel
+                    </SheetBtn>
                   )}
                 </div>
-                {c.type === 'join' ? (
-                  <div className="text-[15px] font-semibold"
-                    style={{ color: 'rgb(var(--c-accent))' }}>
-                    Joined
-                  </div>
-                ) : c.type === 'follow' ? (
-                  <div className="text-[15px] font-semibold"
-                    style={{ color: 'rgb(var(--c-accent))' }}>
-                    started following you
-                  </div>
-                ) : (
-                  <div className="text-[15px] leading-snug">{c.text}</div>
-                )}
+              </div>
+            );
+          })}
+
+          {/* Connected users */}
+          {connectedUsers.length > 0 && (
+            <SectionLabel>Connected</SectionLabel>
+          )}
+          {connectedUsers.map((u) => (
+            <div key={u.uid || u.id} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)',
+            }}>
+              <Avatar name={u.userName || u.name} size={34} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 5,
+                  fontSize: 13, fontWeight: 700, color: C.cream,
+                }}>
+                  <span>{u.userName || u.name}</span>
+                  <IconCallType type={u.callType} />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
+                <SheetBtn onClick={() => onKick(u.uid || u.id)}
+                  color={C.maroon}>
+                  Kick
+                </SheetBtn>
+                <SheetBtn onClick={() => onBlock(u.uid || u.id)}
+                  color="rgba(255,255,255,0.1)">
+                  Block
+                </SheetBtn>
               </div>
             </div>
           ))}
-        </div>
-      )}
 
-      {/* Right action rail */}
-      {live && (
-        <div className="absolute bottom-24 right-3 z-10 flex flex-col
-          gap-3">
-          <RailBtn>🙏</RailBtn>
-          <RailBtn>
-            <span className="text-[10px] font-bold">{mmss}</span>
-          </RailBtn>
-          <RailBtn onClick={toggleCam}>{camOff ? '📷' : '🚫'}</RailBtn>
-          <RailBtn onClick={toggleMute}>{muted ? '🔇' : '🎙️'}</RailBtn>
-          <button onClick={stop}
-            className="flex h-12 w-12 items-center justify-center
-              rounded-full bg-danger text-xl">📞</button>
-        </div>
-      )}
-
-      {/* Bottom toolbar */}
-      {live && (
-        <div className="absolute inset-x-0 bottom-3 z-10 flex
-          items-center justify-between px-5 text-sm">
-          <button onClick={toggleCam} aria-label="camera">📹</button>
-          <button onClick={toggleMute} aria-label="mic">
-            {muted ? '🔇' : '🎤'}
-          </button>
-          <span className="font-semibold">Live {mmss}</span>
-          <span className="font-bold">
-            ₹{rate}<span className="text-xs">/m</span>
-          </span>
+          {/* Waitlist */}
+          {waitlistReqs.length > 0 && (
+            <SectionLabel>Waitlist</SectionLabel>
+          )}
+          {waitlistReqs.map((r) => (
+            <div key={r.id} style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)',
+            }}>
+              <Avatar name={r.userName} size={34} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: C.cream }}>
+                  {r.userName}
+                </div>
+                <div style={{ fontSize: 10, color: '#888' }}>In queue</div>
+              </div>
+              <SheetBtn onClick={() => onPromote(r.id)} color="#1A6B3C">
+                Accept Now
+              </SheetBtn>
+            </div>
+          ))}
         </div>
       )}
     </div>
   );
 }
 
-// Pre-live ("Go Live") screen using the standard app Layout so it matches
-// the rest of the astrologer app's theme. Sections: scheduled (if any),
-// the Go Live / Schedule chooser, and Today's activity. Modern, clean.
+function SectionLabel({ children }) {
+  return (
+    <div style={{
+      fontSize: 10, fontWeight: 700, textTransform: 'uppercase',
+      letterSpacing: '0.1em', color: '#555',
+      padding: '10px 0 4px',
+    }}>
+      {children}
+    </div>
+  );
+}
+
+function SheetBtn({ children, onClick, color, textColor }) {
+  return (
+    <button onClick={onClick} style={{
+      background: color || 'rgba(255,255,255,0.1)',
+      border: 'none', borderRadius: 12,
+      padding: '4px 10px', fontSize: 11, fontWeight: 700,
+      color: textColor || '#fff', cursor: 'pointer',
+    }}>
+      {children}
+    </button>
+  );
+}
+
+// ─── Pre-live screen ──────────────────────────────────────────────────────────
 function PreLiveScreen({
   astro, sched, mode, setMode, liveTitle, setLiveTitle, schedTitle,
   setSchedTitle, schedAt, setSchedAt, starting, start, schedule,
@@ -566,12 +942,12 @@ function PreLiveScreen({
   const todays = (history || [])
     .filter((h) => (h.ts || 0) >= sod.getTime())
     .sort((a, b) => (b.ts || 0) - (a.ts || 0));
-  const done = todays.filter((h) => h.status !== 'cancelled');
+  const done   = todays.filter((h) => h.status !== 'cancelled');
   const totSec = done.reduce((a, h) => a + (h.durationSec || 0), 0);
 
   return (
     <Layout>
-      {/* HERO */}
+      {/* Hero card */}
       <div className="card flex items-center gap-3">
         {astro?.profileImage ? (
           <img src={astro.profileImage} alt={astro.name || 'You'}
@@ -583,8 +959,9 @@ function PreLiveScreen({
           </span>
         )}
         <div className="min-w-0 flex-1">
-          <div className="text-xs font-bold uppercase tracking-wider
-            text-sub-text">Go Live</div>
+          <div className="text-xs font-bold uppercase tracking-wider text-sub-text">
+            Go Live
+          </div>
           <div className="truncate text-lg font-bold text-dark-text">
             {astro?.name || 'Astrologer'}
           </div>
@@ -595,10 +972,9 @@ function PreLiveScreen({
         </div>
       </div>
 
-      {/* SCHEDULED (if any) */}
+      {/* Scheduled (if any) */}
       {sched && (
-        <div className="card mt-3 border border-primary/30
-          bg-primary/5">
+        <div className="card mt-3 border border-primary/30 bg-primary/5">
           <div className="flex items-center gap-2">
             <span className="rounded-full bg-primary px-2 py-0.5
               text-[10px] font-bold uppercase tracking-wider text-white">
@@ -622,7 +998,7 @@ function PreLiveScreen({
         </div>
       )}
 
-      {/* TABS: Go Live now / Schedule */}
+      {/* Tabs */}
       <div className="card mt-3">
         <div className="mb-3 inline-flex rounded-full bg-bg-light p-1
           text-xs font-bold">
@@ -651,7 +1027,7 @@ function PreLiveScreen({
               className="w-full rounded-full bg-danger py-3 text-base
                 font-bold text-white shadow-sm hover:opacity-90
                 disabled:opacity-60">
-              {starting ? 'Starting…' : '● Go Live Now'}
+              {starting ? 'Starting...' : 'Go Live Now'}
             </button>
             <p className="text-[11px] text-sub-text">
               Make sure you are offline for Chat / Call / Video before
@@ -674,8 +1050,7 @@ function PreLiveScreen({
                 placeholder="What is this live about?"
                 onChange={(e) => setSchedTitle(e.target.value)} />
             </label>
-            <button onClick={schedule}
-              className="btn-primary w-full">
+            <button onClick={schedule} className="btn-primary w-full">
               Schedule &amp; notify followers
             </button>
             <p className="text-[11px] text-sub-text">
@@ -686,12 +1061,12 @@ function PreLiveScreen({
         )}
       </div>
 
-      {/* TODAY'S ACTIVITY */}
+      {/* Today's activity */}
       <div className="card mt-3">
         <div className="flex items-center justify-between">
           <div>
             <div className="text-sm font-bold text-dark-text">
-              Today’s live activity
+              Today's live activity
             </div>
             <div className="text-[12px] text-sub-text">
               Full history is in your Activity report.
@@ -714,12 +1089,9 @@ function PreLiveScreen({
               const cancelled = h.status === 'cancelled';
               return (
                 <div key={h.id}
-                  className="rounded-card border border-gray-200 p-3
-                    text-sm">
-                  <div className="flex items-center justify-between
-                    gap-2">
-                    <span className="truncate font-semibold
-                      text-dark-text">
+                  className="rounded-card border border-gray-200 p-3 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate font-semibold text-dark-text">
                       {h.title || 'Live consultation'}
                     </span>
                     <span className={`shrink-0 rounded-full px-2 py-0.5
@@ -733,15 +1105,14 @@ function PreLiveScreen({
                     {cancelled ? (
                       <>Was scheduled for {fmtWhen(h.startedAtMs)}</>
                     ) : (
-                      <>Started {fmtWhen(h.startedAtMs)} · Ended
-                        {' '}{fmtWhen(h.endedAtMs)}</>
+                      <>Started {fmtWhen(h.startedAtMs)} | Ended {fmtWhen(h.endedAtMs)}</>
                     )}
                   </div>
                   {!cancelled && (
                     <div className="text-[12px] text-sub-text">
                       Duration <b>{fmtDur(h.durationSec)}</b>
-                      {' '}· {h.viewers || 0} viewers
-                      {' '}· {h.likes || 0} likes
+                      {' '}| {h.viewers || 0} viewers
+                      {' '}| {h.likes || 0} likes
                     </div>
                   )}
                 </div>
@@ -753,10 +1124,3 @@ function PreLiveScreen({
     </Layout>
   );
 }
-const Stat = ({ label, value }) => (
-  <div className="rounded-card bg-bg-light p-2">
-    <div className="text-[10px] font-bold uppercase tracking-wider
-      text-sub-text">{label}</div>
-    <div className="mt-0.5 text-base font-bold text-dark-text">{value}</div>
-  </div>
-);

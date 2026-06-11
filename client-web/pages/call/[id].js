@@ -15,7 +15,11 @@ import { confirmModal } from '../../components/ConfirmModal';
 export default function CallScreen() {
   const router = useRouter();
   const { id: astroId } = router.query;
-  const callType = router.query.type === 'video' ? 'video' : 'call';
+  const [typeChosen, setTypeChosen] = useState(false);
+  const [selectedType, setSelectedType] = useState(
+    router.query.type === 'video' ? 'video' : 'call',
+  );
+  const callType = selectedType;
   const { user, profile, loading } = useRequireClient();
   const { astro, session, wallet, walletLoaded, countdown, end, sessionId } =
     useSession({ astroId, type: callType, uid: user?.uid,
@@ -33,6 +37,13 @@ export default function CallScreen() {
   const joinedRef = useRef(false);
   const remoteRef = useRef(null);
   const localRef = useRef(null);
+
+  // Sync selectedType with router.query.type on first load.
+  useEffect(() => {
+    if (router.query.type) {
+      setSelectedType(router.query.type === 'video' ? 'video' : 'call');
+    }
+  }, [router.query.type]);
 
   // Only "connected" (Agora join + billing) once the astrologer
   // accepted, which stamps startTime. Until then it stays a request.
@@ -219,6 +230,99 @@ export default function CallScreen() {
     return <Layout nav={false}><div className="p-6">Loading...</div></Layout>;
   }
 
+  // TYPE PICKER: shown before a session exists and before the user has
+  // confirmed their call type. Acts as a UI gate only - does not block
+  // the session from being created server-side.
+  if (!session && !typeChosen) {
+    const an = astro.name || 'Astrologer';
+    const rate = astro.ratePerMinute || astro.rate || 0;
+    return (
+      <div
+        className="fixed inset-0 z-[70] flex flex-col items-center
+          justify-center px-6"
+        style={{ background: 'linear-gradient(180deg, #1A0A0A 0%, #000000 100%)' }}
+      >
+        {/* Astrologer identity */}
+        <div className="mb-8 flex flex-col items-center gap-3 text-center">
+          <img
+            src={astro.profileImage || '/avatar.png'}
+            alt={an}
+            className="h-24 w-24 rounded-full object-cover"
+            style={{ border: '3px solid #D4A12A' }}
+          />
+          <div
+            className="text-2xl font-bold"
+            style={{ color: '#FFF8E7' }}
+          >
+            {an}
+          </div>
+          {rate > 0 && (
+            <div className="text-sm" style={{ color: '#D4A12A' }}>
+              {`₹${rate}/min`}
+            </div>
+          )}
+        </div>
+
+        {/* Type cards */}
+        <div className="mb-8 flex w-full max-w-sm gap-4">
+          <TypeCard
+            label="Voice Call"
+            icon={
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2"
+                strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0
+                  1-8.6-3 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3-8.6A2
+                  2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.3 1.8.6 2.6a2 2
+                  0 0 1-.5 2.1L8 9.6a16 16 0 0 0 6 6l1.2-1.2a2 2 0 0 1
+                  2.1-.5c.8.3 1.7.5 2.6.6a2 2 0 0 1 1.7 2z" />
+              </svg>
+            }
+            selected={selectedType === 'call'}
+            onSelect={() => setSelectedType('call')}
+          />
+          <TypeCard
+            label="Video Call"
+            icon={
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="2"
+                strokeLinecap="round" strokeLinejoin="round">
+                <path d="M23 7l-7 5 7 5V7zM1 5h14a2 2 0 0 1 2 2v10a2
+                  2 0 0 1-2 2H1z" />
+              </svg>
+            }
+            selected={selectedType === 'video'}
+            onSelect={() => setSelectedType('video')}
+          />
+        </div>
+
+        {/* Start button */}
+        <button
+          onClick={() => {
+            // Update the URL type param to match the user's choice.
+            const newQuery = { ...router.query, type: selectedType === 'video' ? 'video' : 'call' };
+            router.replace({ pathname: router.pathname, query: newQuery },
+              undefined, { shallow: true });
+            setTypeChosen(true);
+          }}
+          className="w-full max-w-sm rounded-2xl py-4 text-base font-bold
+            tracking-wide shadow-lg transition-opacity active:opacity-80"
+          style={{ background: '#D4A12A', color: '#1A0A0A' }}
+        >
+          Start Consultation
+        </button>
+
+        <button
+          onClick={() => router.push('/astrologers')}
+          className="mt-4 text-sm opacity-60"
+          style={{ color: '#FFF8E7' }}
+        >
+          Back
+        </button>
+      </div>
+    );
+  }
+
   if (session && session.status === 'cancelled') {
     if (typeof window !== 'undefined') router.replace('/astrologers');
     return (
@@ -231,8 +335,9 @@ export default function CallScreen() {
     const an = astro.name || 'Astrologer';
     return (
       <div className="fixed inset-0 z-[60] flex flex-col items-center
-        justify-between bg-dark-text text-white"
+        justify-between text-white"
         style={{
+          background: 'linear-gradient(180deg, #1A0A0A 0%, #000000 100%)',
           paddingTop: 'calc(env(safe-area-inset-top, 0px) + 56px)',
           paddingBottom:
             'calc(env(safe-area-inset-bottom, 0px) + 48px)',
@@ -246,10 +351,12 @@ export default function CallScreen() {
             <span className="absolute inset-0 animate-ping rounded-full
               bg-white/15" />
             <img src={astro.profileImage || '/avatar.png'} alt={an}
-              className="relative h-28 w-28 rounded-full object-cover
-                ring-4 ring-white/25" />
+              className="relative h-28 w-28 rounded-full object-cover"
+              style={{ border: '4px solid rgba(212,161,42,0.4)' }} />
           </div>
-          <div className="text-3xl font-bold">{an}</div>
+          <div className="text-3xl font-bold" style={{ color: '#FFF8E7' }}>
+            {an}
+          </div>
           <div className="text-sm opacity-80">Ringing...</div>
           <div className="mt-1 text-xs opacity-60">
             Waiting {Math.floor(Math.max(0, countdown) / 60)}:
@@ -259,7 +366,8 @@ export default function CallScreen() {
         <div className="flex flex-col items-center gap-2">
           <button onClick={cancelRequest} aria-label="Cancel"
             className="flex h-16 w-16 items-center justify-center
-              rounded-full bg-danger shadow-lg">
+              rounded-full shadow-lg"
+            style={{ background: '#7F2020' }}>
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none"
               stroke="#fff" strokeWidth="2" strokeLinecap="round"
               strokeLinejoin="round">
@@ -304,45 +412,81 @@ export default function CallScreen() {
   }
 
   return (
-    <div className="relative h-screen w-screen bg-call-bg text-white">
+    <div
+      className="relative h-screen w-screen text-white"
+      style={{ background: 'linear-gradient(180deg, #1A0A0A 0%, #000000 100%)' }}
+    >
+      {/* Remote video / voice background */}
       <div ref={remoteRef}
         className="absolute inset-0 flex items-center justify-center">
         {callType !== 'video' && (
-          <img src={astro.profileImage || '/avatar.png'}
-            className="h-40 w-40 rounded-full object-cover opacity-80" alt="" />
+          /* Voice call: large astrologer photo with pulsing amber ring */
+          <div className="relative flex items-center justify-center">
+            <span
+              className="absolute rounded-full animate-ping"
+              style={{
+                width: '184px',
+                height: '184px',
+                background: 'rgba(212,161,42,0.25)',
+              }}
+            />
+            <span
+              className="absolute rounded-full"
+              style={{
+                width: '168px',
+                height: '168px',
+                boxShadow: '0 0 0 4px rgba(212,161,42,0.55)',
+                borderRadius: '50%',
+              }}
+            />
+            <img
+              src={astro.profileImage || '/avatar.png'}
+              className="relative h-40 w-40 rounded-full object-cover"
+              style={{ border: '3px solid #D4A12A' }}
+              alt=""
+            />
+          </div>
         )}
       </div>
+
+      {/* Local video pip (video calls only) */}
       {callType === 'video' && (
         <div ref={localRef}
           className="absolute right-3 top-16 h-40 w-28 overflow-hidden
                      rounded-card bg-black/60" />
       )}
 
+      {/* Top HUD: name + timer + balance */}
       <div className="absolute left-0 right-0 top-0 flex justify-center
                       bg-black/40 px-4 py-3 text-sm font-mono">
-        {astro.name}
-        {' · '}{mmss}
+        <span style={{ color: '#FFF8E7' }}>{astro.name}</span>
+        <span style={{ color: '#D4A12A' }}>{` · ${mmss}`}</span>
         {ratePerSec > 0 ? (
-          <span className={totalSecsLeft <= 60
-            ? 'ml-1 text-warning font-bold'
-            : 'ml-1 opacity-80'}>
-            {' · '}
-            {`${String(Math.floor(totalSecsLeft / 60)).padStart(2,'0')}:${String(totalSecsLeft % 60).padStart(2,'0')} left`}
+          <span
+            className="ml-1 font-bold"
+            style={{ color: totalSecsLeft <= 60 ? '#D4A12A' : 'rgba(255,248,231,0.75)' }}
+          >
+            {` · ${String(Math.floor(totalSecsLeft / 60)).padStart(2, '0')}:${String(totalSecsLeft % 60).padStart(2, '0')} left`}
           </span>
         ) : (
-          <span className="ml-1 opacity-70">
-            {' · '}₹{wallet.toFixed(0)}
+          <span className="ml-1 opacity-70" style={{ color: '#FFF8E7' }}>
+            {` · ₹${wallet.toFixed(0)}`}
           </span>
         )}
       </div>
 
+      {/* Low balance warning */}
       {lowBalance && (
-        <div className="absolute left-0 right-0 top-12 bg-warning/90
-                        py-1 text-center text-xs">
+        <div
+          className="absolute left-0 right-0 top-12 py-1 text-center
+            text-xs font-semibold"
+          style={{ background: 'rgba(212,161,42,0.9)', color: '#1A0A0A' }}
+        >
           Call will end soon, recharge now
         </div>
       )}
 
+      {/* Bottom controls */}
       <div className="absolute inset-x-0 flex flex-col items-center
         gap-4"
         style={{
@@ -387,10 +531,19 @@ export default function CallScreen() {
             </>
           )}
         </div>
-        <button onClick={hangUp} aria-label="End call"
+
+        {/* End call button */}
+        <button
+          onClick={hangUp}
+          aria-label="End call"
           className={`flex h-16 w-16 items-center justify-center
-            rounded-full bg-danger shadow-lg ${lowBalance
-            ? 'ring-4 ring-warning animate-pulse' : ''}`}>
+            rounded-full shadow-lg ${lowBalance
+            ? 'ring-4 animate-pulse' : ''}`}
+          style={{
+            background: '#7F2020',
+            ...(lowBalance ? { '--tw-ring-color': '#D4A12A' } : {}),
+          }}
+        >
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none"
             stroke="#fff" strokeWidth="2" strokeLinecap="round"
             strokeLinejoin="round">
@@ -405,6 +558,7 @@ export default function CallScreen() {
         </button>
       </div>
 
+      {/* Session ended banner */}
       {sessionEnded && !showRate && (
         <div className="pointer-events-none absolute inset-x-0 top-0 z-50
           flex justify-center px-4 pt-[env(safe-area-inset-top)]">
@@ -424,6 +578,7 @@ export default function CallScreen() {
           </div>
         </div>
       )}
+
       {showRate && (
         <RateModal uid={user.uid} astroId={astroId} sessionId={session?.id}
           reason={totalSecsLeft <= 0 && ratePerSec > 0 ? 'balance'
@@ -434,10 +589,44 @@ export default function CallScreen() {
   );
 }
 
+// Selectable card for the type picker overlay.
+function TypeCard({ label, icon, selected, onSelect }) {
+  return (
+    <button
+      onClick={onSelect}
+      className="flex flex-1 flex-col items-center gap-3 rounded-2xl
+        py-6 px-4 transition-all"
+      style={{
+        background: selected ? 'rgba(212,161,42,0.15)' : 'rgba(255,255,255,0.06)',
+        border: selected ? '2px solid #D4A12A' : '2px solid rgba(255,255,255,0.12)',
+        color: selected ? '#D4A12A' : '#FFF8E7',
+      }}
+      aria-pressed={selected}
+    >
+      <span style={{ color: selected ? '#D4A12A' : 'rgba(255,248,231,0.7)' }}>
+        {icon}
+      </span>
+      <span className="text-sm font-semibold">{label}</span>
+      {selected && (
+        <span
+          className="flex h-5 w-5 items-center justify-center rounded-full
+            text-[11px] font-bold"
+          style={{ background: '#D4A12A', color: '#1A0A0A' }}
+        >
+          {'✓'}
+        </span>
+      )}
+    </button>
+  );
+}
+
 function Overlay({ children }) {
   return (
-    <div className="flex h-screen flex-col items-center justify-center
-                    bg-call-bg text-center">
+    <div
+      className="flex h-screen flex-col items-center justify-center
+                  text-center"
+      style={{ background: 'linear-gradient(180deg, #1A0A0A 0%, #000000 100%)' }}
+    >
       {children}
     </div>
   );
