@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import {
-  astrologerService, reviewService, followService,
+  astrologerService, reviewService, followService, db,
 } from '@astro/shared';
 import Layout from '../../components/Layout';
 import { SkeletonList } from '../../components/Skeleton';
 import VerifiedBadge from '../../components/VerifiedBadge';
 import ReportAstrologerModal from '../../components/ReportAstrologerModal';
+import PreSessionModal from '../../components/PreSessionModal';
 import { useOptionalClient } from '../../lib/useAuth';
 import { useAstroActions } from '../../lib/useAstroActions';
 
@@ -24,6 +25,8 @@ export default function AstrologerProfile() {
   const [report, setReport] = useState(false);
   const [following, setFollowing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
+  const [preSessionOpen, setPreSessionOpen] = useState(false);
+  const [pendingAction, setPendingAction] = useState(null); // 'chat' | 'call' | 'video'
 
   useEffect(() => {
     if (!id) return;
@@ -46,6 +49,37 @@ export default function AstrologerProfile() {
         user.uid, id, following);
       setFollowing(next);
     } catch (_) { /* ignore */ } finally { setFollowBusy(false); }
+  }
+
+  function startWithTopic(type) {
+    setPendingAction(type);
+    setPreSessionOpen(true);
+  }
+
+  async function handlePreSessionConfirm(data) {
+    setPreSessionOpen(false);
+    const type = pendingAction;
+    setPendingAction(null);
+
+    if (data.partnerProfile && user?.uid) {
+      try {
+        const { collection, addDoc, serverTimestamp } = await import('firebase/firestore');
+        await addDoc(collection(db, 'kundliProfiles'), {
+          userId: user.uid,
+          isPartnerProfile: true,
+          linkedTopic: data.topic,
+          name: data.partnerProfile.name,
+          gender: data.partnerProfile.gender,
+          dob: data.partnerProfile.dob,
+          tob: data.partnerProfile.tob,
+          ampm: data.partnerProfile.ampm,
+          place: data.partnerProfile.place,
+          createdAt: serverTimestamp(),
+        });
+      } catch (_) { /* non-critical, don't block session start */ }
+    }
+
+    go(type, a);
   }
 
   if (!a) return <Layout><SkeletonList /></Layout>;
@@ -138,19 +172,19 @@ export default function AstrologerProfile() {
               )}
               <div className="mt-4 grid gap-2 md:grid-cols-3">
                 <button disabled={!online || !okC}
-                  onClick={() => go('chat', a)}
+                  onClick={() => startWithTopic('chat')}
                   className={`btn-primary ${
                     online && okC ? '' : 'opacity-50'}`}>
                   {online ? 'Start Chat' : 'Astrologer is Offline'}
                 </button>
                 <button disabled={!online || !okV}
-                  onClick={() => go('call', a)}
+                  onClick={() => startWithTopic('call')}
                   className={`btn-ghost ${
                     online && okV ? '' : 'opacity-50'}`}>
                   Start Voice Call
                 </button>
                 <button disabled={!online || !okVid}
-                  onClick={() => go('video', a)}
+                  onClick={() => startWithTopic('video')}
                   className={`btn-ghost ${
                     online && okVid ? '' : 'opacity-50'}`}>
                   Start Video Call
@@ -195,6 +229,17 @@ export default function AstrologerProfile() {
             email: profile?.email, phone: profile?.phone,
             dob: profile?.dob }}
           onClose={() => setReport(false)} />
+      )}
+
+      {preSessionOpen && (
+        <PreSessionModal
+          astrologerName={a.name}
+          onConfirm={handlePreSessionConfirm}
+          onCancel={() => {
+            setPreSessionOpen(false);
+            setPendingAction(null);
+          }}
+        />
       )}
     </Layout>
   );

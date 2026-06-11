@@ -235,6 +235,8 @@ export default function AstroProfile() {
   const [currentUsername, setCurrentUsername] = useState(null);
   const [profilePhotoUrl, setProfilePhotoUrl] = useState(null);
   const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoMenuOpen, setPhotoMenuOpen] = useState(false);
+  const [viewPhotoOpen, setViewPhotoOpen] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -349,7 +351,72 @@ export default function AstroProfile() {
       <div style={{
         display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16,
       }}>
-        <InitialsAvatar name={f.name} photoUrl={profilePhotoUrl} size={48} />
+        {/* Clickable small avatar - opens photo menu */}
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <div
+            onClick={() => setPhotoMenuOpen((v) => !v)}
+            style={{ cursor: 'pointer', position: 'relative', display: 'inline-block' }}
+            title="Change or view photo"
+          >
+            <InitialsAvatar name={f.name} photoUrl={profilePhotoUrl} size={48} />
+            <span style={{
+              position: 'absolute', bottom: 0, right: 0,
+              width: 16, height: 16, borderRadius: '50%',
+              background: '#D4A12A', border: '1.5px solid #fff',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 9, color: '#fff', fontWeight: 700,
+              pointerEvents: 'none',
+            }}>
+              &#9998;
+            </span>
+          </div>
+
+          {photoMenuOpen && (
+            <>
+              {/* Overlay to close menu on outside click */}
+              <div
+                style={{ position: 'fixed', inset: 0, zIndex: 40 }}
+                onClick={() => setPhotoMenuOpen(false)}
+              />
+              <div style={{
+                position: 'absolute', top: 52, left: 0, zIndex: 50,
+                borderRadius: 12, background: '#fff',
+                boxShadow: '0 4px 20px rgba(0,0,0,.15)',
+                border: '1px solid #E8D5B0', minWidth: 140,
+              }}>
+                <button
+                  style={{
+                    display: 'block', width: '100%', padding: '10px 16px',
+                    textAlign: 'left', fontSize: 13, background: 'none',
+                    border: 'none', cursor: 'pointer', borderRadius: '12px 12px 0 0',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#f9fafb'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
+                  onClick={() => { setViewPhotoOpen(true); setPhotoMenuOpen(false); }}
+                >
+                  View Photo
+                </button>
+                <button
+                  style={{
+                    display: 'block', width: '100%', padding: '10px 16px',
+                    textAlign: 'left', fontSize: 13, background: 'none',
+                    border: 'none', cursor: 'pointer', borderRadius: '0 0 12px 12px',
+                    borderTop: '1px solid #f3ece0',
+                  }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = '#f9fafb'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'none'; }}
+                  onClick={() => {
+                    document.getElementById('profile-photo-input')?.click();
+                    setPhotoMenuOpen(false);
+                  }}
+                >
+                  Change Photo
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+
         <div>
           <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#7F2020' }}>
             {f.name || 'My Profile'}
@@ -366,100 +433,57 @@ export default function AstroProfile() {
         </div>
       </div>
 
-      {/* Profile photo card */}
+      {/* Profile photo card - slim version */}
       <div className="card" style={{ marginBottom: 12 }}>
         <ProfileCompletion f={f} hasPhoto={!!profilePhotoUrl} />
-        <div style={{
-          display: 'flex', flexDirection: 'column', alignItems: 'center',
-          gap: 10, paddingTop: 12,
-        }}>
-          <div style={{ fontWeight: 700, fontSize: 15, color: '#7F2020' }}>
-            {f.name || 'Your Name'}
+        {photoUploading && (
+          <div style={{ fontSize: 11, color: '#b45309', marginTop: 6, textAlign: 'center' }}>
+            Uploading photo...
           </div>
-          <InitialsAvatar name={f.name} photoUrl={profilePhotoUrl} size={100} />
-          <input
-            ref={photoInputRef}
-            type="file"
-            accept="image/*"
-            hidden
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) uploadPhoto(file);
-            }}
-          />
-          <button
-            onClick={() => photoInputRef.current?.click()}
-            disabled={photoUploading}
-            style={{
-              background: '#D4A12A', color: '#fff', fontWeight: 700,
-              fontSize: 13, border: 'none', borderRadius: 8,
-              padding: '8px 20px', cursor: 'pointer',
-              opacity: photoUploading ? 0.6 : 1,
-            }}
-          >
-            {photoUploading ? 'Uploading...' : 'Change Photo'}
-          </button>
-          {profilePhotoUrl && (
-            <button
-              onClick={removePhoto}
-              style={{
-                background: 'none', border: 'none', color: '#7F2020',
-                fontSize: 12, cursor: 'pointer', textDecoration: 'underline',
-                padding: 0,
-              }}
-            >
-              Remove Photo
-            </button>
-          )}
-          <div style={{ fontSize: 10, color: '#b45309', textAlign: 'center' }}>
+        )}
+        {profilePhotoUrl && !photoUploading && (
+          <div style={{ fontSize: 10, color: '#b45309', marginTop: 4, textAlign: 'center' }}>
             Photo uploaded as pending - reviewed within 24h.
           </div>
-        </div>
+        )}
+        {/* Hidden file input triggered from the avatar popup menu */}
+        <input
+          id="profile-photo-input"
+          ref={photoInputRef}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) uploadPhoto(file);
+          }}
+        />
       </div>
 
       <div className="card space-y-3">
-        {profileKycLocked && (
-          <div style={{
-            background: '#FFF8E7', border: '1px solid #D4A12A',
-            borderRadius: 8, padding: '8px 12px',
-            fontSize: 12, color: '#7F2020', fontWeight: 600,
-          }}>
-            Your profile is locked after KYC approval. Raise a support ticket to request changes.
-          </div>
-        )}
+        {/* Permanent admin-only banner */}
+        <div className="mb-4 rounded-xl px-4 py-3 text-sm"
+          style={{ background: '#FFF8E7', border: '1px solid #D4A12A40', color: '#7F2020' }}>
+          Profile details are managed by the admin team. Contact support to request changes.
+        </div>
 
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr,160px]">
           <Field label="Name">
-            {nameGenderLocked ? (
-              <>
-                <input
-                  className="input"
-                  value={f.name}
-                  readOnly
-                  disabled
-                  autoCapitalize="words"
-                  style={{ textTransform: 'capitalize', cursor: 'not-allowed', opacity: 0.7 }}
-                />
-                <div style={{ fontSize: 10, color: '#b45309', marginTop: 2 }}>
-                  Name and gender can only be changed via a support ticket.
-                </div>
-              </>
-            ) : (
-              <input
-                className="input"
-                value={f.name}
-                autoCapitalize="words"
-                style={{ textTransform: 'capitalize' }}
-                onChange={(e) => setF({ ...f, name: e.target.value })}
-              />
-            )}
+            <input
+              className="input"
+              value={f.name}
+              readOnly
+              disabled={true}
+              autoCapitalize="words"
+              style={{ textTransform: 'capitalize', cursor: 'not-allowed', opacity: 0.7 }}
+            />
           </Field>
           <Field label="Gender">
             <select
               className="input"
               value={f.gender || 'male'}
-              disabled={nameGenderLocked}
-              style={nameGenderLocked ? { cursor: 'not-allowed', opacity: 0.7 } : {}}
+              disabled={true}
+              style={{ cursor: 'not-allowed', opacity: 0.7 }}
               onChange={(e) => setF({ ...f, gender: e.target.value })}
             >
               <option value="male">Male</option>
@@ -474,12 +498,9 @@ export default function AstroProfile() {
             className="input"
             rows={3}
             value={f.bio}
-            disabled={profileKycLocked}
+            disabled={true}
             autoCapitalize="sentences"
-            style={profileKycLocked
-              ? { textTransform: 'capitalize', cursor: 'not-allowed', opacity: 0.7 }
-              : { textTransform: 'capitalize' }
-            }
+            style={{ textTransform: 'capitalize', cursor: 'not-allowed', opacity: 0.7 }}
             onChange={(e) => setF({ ...f, bio: e.target.value })}
           />
         </Field>
@@ -488,12 +509,9 @@ export default function AstroProfile() {
           <input
             className="input"
             value={f.skills}
-            disabled={profileKycLocked}
+            disabled={true}
             autoCapitalize="words"
-            style={profileKycLocked
-              ? { textTransform: 'capitalize', cursor: 'not-allowed', opacity: 0.7 }
-              : { textTransform: 'capitalize' }
-            }
+            style={{ textTransform: 'capitalize', cursor: 'not-allowed', opacity: 0.7 }}
             onChange={(e) => setF({ ...f, skills: e.target.value })}
           />
         </Field>
@@ -502,12 +520,9 @@ export default function AstroProfile() {
           <input
             className="input"
             value={f.languages}
-            disabled={profileKycLocked}
+            disabled={true}
             autoCapitalize="words"
-            style={profileKycLocked
-              ? { textTransform: 'capitalize', cursor: 'not-allowed', opacity: 0.7 }
-              : { textTransform: 'capitalize' }
-            }
+            style={{ textTransform: 'capitalize', cursor: 'not-allowed', opacity: 0.7 }}
             onChange={(e) => setF({ ...f, languages: e.target.value })}
           />
         </Field>
@@ -518,8 +533,8 @@ export default function AstroProfile() {
               className="input"
               type="number"
               value={f.experience}
-              disabled={profileKycLocked}
-              style={profileKycLocked ? { cursor: 'not-allowed', opacity: 0.7 } : {}}
+              disabled={true}
+              style={{ cursor: 'not-allowed', opacity: 0.7 }}
               onChange={(e) => setF({ ...f, experience: e.target.value })}
             />
           </Field>
@@ -528,8 +543,8 @@ export default function AstroProfile() {
               className="input"
               type="number"
               value={f.priceChat}
-              disabled={profileKycLocked}
-              style={profileKycLocked ? { cursor: 'not-allowed', opacity: 0.7 } : {}}
+              disabled={true}
+              style={{ cursor: 'not-allowed', opacity: 0.7 }}
               onChange={(e) => setF({ ...f, priceChat: e.target.value })}
             />
           </Field>
@@ -538,8 +553,8 @@ export default function AstroProfile() {
               className="input"
               type="number"
               value={f.priceCall}
-              disabled={profileKycLocked}
-              style={profileKycLocked ? { cursor: 'not-allowed', opacity: 0.7 } : {}}
+              disabled={true}
+              style={{ cursor: 'not-allowed', opacity: 0.7 }}
               onChange={(e) => setF({ ...f, priceCall: e.target.value })}
             />
           </Field>
@@ -548,18 +563,19 @@ export default function AstroProfile() {
               className="input"
               type="number"
               value={f.priceVideo}
-              disabled={profileKycLocked}
-              style={profileKycLocked ? { cursor: 'not-allowed', opacity: 0.7 } : {}}
+              disabled={true}
+              style={{ cursor: 'not-allowed', opacity: 0.7 }}
               onChange={(e) => setF({ ...f, priceVideo: e.target.value })}
             />
           </Field>
         </div>
 
-        {/* Discount is always editable, even when KYC locked */}
         <Field label="Discount %">
           <select
             className="input"
             value={f.discountPercent}
+            disabled={true}
+            style={{ cursor: 'not-allowed', opacity: 0.7 }}
             onChange={(e) => setF({ ...f, discountPercent: e.target.value })}
           >
             <option value={0}>No Discount</option>
@@ -568,10 +584,6 @@ export default function AstroProfile() {
             <option value={70}>70%</option>
           </select>
         </Field>
-
-        <button onClick={save} className="btn-primary w-full">
-          Save Profile
-        </button>
       </div>
 
       <UsernamePanel
@@ -603,6 +615,40 @@ export default function AstroProfile() {
           kind={toast.kind}
           onDone={() => setToast(null)}
         />
+      )}
+
+      {/* View photo full-screen modal */}
+      {viewPhotoOpen && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 60,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'rgba(0,0,0,0.70)',
+          }}
+          onClick={() => setViewPhotoOpen(false)}
+        >
+          <div
+            style={{ maxWidth: 360, width: '100%', padding: '0 16px' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={profilePhotoUrl || '/placeholder-avatar.png'}
+              alt="Profile photo"
+              style={{ width: '100%', borderRadius: 16, objectFit: 'cover' }}
+            />
+            <button
+              onClick={() => setViewPhotoOpen(false)}
+              style={{
+                marginTop: 14, width: '100%', borderRadius: 99,
+                padding: '10px 0', fontSize: 13, fontWeight: 700,
+                color: '#fff', border: 'none', cursor: 'pointer',
+                background: '#7F2020',
+              }}
+            >
+              Close
+            </button>
+          </div>
+        </div>
       )}
     </Layout>
   );

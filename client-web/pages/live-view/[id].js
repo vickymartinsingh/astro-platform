@@ -693,6 +693,22 @@ export default function LiveView() {
   const [showQuiz, setShowQuiz] = useState(false);
   const [userQuizPoints, setUserQuizPoints] = useState(0);
 
+  // Agora autoplay policy
+  const [needsUnmute, setNeedsUnmute] = useState(false);
+
+  // Local tracks for when user becomes a co-host
+  const [localMicTrack, setLocalMicTrack] = useState(null);
+  const [localCamTrack, setLocalCamTrack] = useState(null);
+
+  // Follow state (separate from the existing `following` which uses liveService listener)
+  const [isFollowing, setIsFollowing] = useState(false);
+
+  // Kicked state
+  const [kickedOut, setKickedOut] = useState(false);
+
+  // Session elapsed for connected panel
+  const [sessionElapsed, setSessionElapsed] = useState(0);
+
   const videoRef = useRef(null);
   const joinedRef = useRef(false);
   const cRef = useRef(null);
@@ -701,6 +717,10 @@ export default function LiveView() {
   const stickRef = useRef(true);
   // Track when the current pending request was created for auto-waitlist
   const requestCreatedAtRef = useRef(null);
+  // Track dial tone state
+  const dialTonePlayedRef = useRef(false);
+  // Agora client ref for co-host publish/unpublish
+  const agoraClientRef = useRef(null);
 
   // -----------------------------------------------------------------------
   // Desktop redirect detection (runs once after settings load)
@@ -767,6 +787,19 @@ export default function LiveView() {
   useEffect(() => {
     if (!astroUid || !user?.uid) return undefined;
     return liveService.listenIsFollowing(astroUid, user.uid, setFollowing);
+  }, [astroUid, user?.uid]);
+
+  // Check initial follow status for isFollowing state (Fix 3)
+  useEffect(() => {
+    if (!astroUid || !user?.uid) return;
+    (async () => {
+      try {
+        const { doc: fDoc, getDoc: fGet } = await import('firebase/firestore');
+        const followRef = fDoc(db, 'users', user.uid, 'following', astroUid);
+        const snap = await fGet(followRef);
+        setIsFollowing(snap.exists());
+      } catch (_) {}
+    })();
   }, [astroUid, user?.uid]);
 
   useEffect(() => {
@@ -846,7 +879,7 @@ export default function LiveView() {
   }, [user?.uid]);
 
   // -----------------------------------------------------------------------
-  // Agora join - audience mode (CRITICAL FIX)
+  // Agora join - audience mode with autoplay policy handling
   // -----------------------------------------------------------------------
 
   useEffect(() => {
@@ -857,7 +890,7 @@ export default function LiveView() {
     (async () => {
       try {
         const ch = liveService.liveChannel(astroUid);
-        const watcherId = `v${Math.floor(Math.random() * 1e6)}`;
+        const watcherId = user?.uid || `v${Math.floor(Math.random() * 1e6)}`;
         const tok = await callService.fetchAgoraToken(ch, watcherId).catch(() => ({}));
         const appId = tok.appId || callService.AGORA_APP_ID;
 
@@ -865,8 +898,14 @@ export default function LiveView() {
         const mod = await import('agora-rtc-sdk-ng');
         const AgoraRTC = mod.default;
 
+        // Handle autoplay policy - browsers block unmuted autoplay
+        AgoraRTC.on('autoplay-failed', () => {
+          setNeedsUnmute(true);
+        });
+
         // Create client in live/audience mode
         agoraClient = AgoraRTC.createClient({ mode: 'live', codec: 'vp8' });
+        agoraClientRef.current = agoraClient;
         await agoraClient.setClientRole('audience');
         await agoraClient.join(appId, ch, tok.token || null, watcherId);
 
@@ -895,6 +934,7 @@ export default function LiveView() {
     })();
 
     return () => {
+      agoraClientRef.current = null;
       if (agoraClient) {
         agoraClient.leave().catch(() => {});
       } else {
@@ -902,7 +942,60 @@ export default function LiveView() {
       }
       liveService.bumpViewers(astroUid, -1).catch(() => {});
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [astroUid]);
+
+  // -----------------------------------------------------------------------
+  // Publish user tracks when accepted as co-host (Fix 2)
+  // -----------------------------------------------------------------------
+
+  useEffect(() => {
+    if (myRequest?.status !== 'connected' || !agoraClientRef.current) return undefined;
+    let micTrack = null;
+    let camTrack = null;
+
+    (async () => {
+      try {
+        const mod = await import('agora-rtc-sdk-ng');
+        const AgoraRTC = mod.default;
+        const ac = agoraClientRef.current;
+        await ac.setClientRole('host');
+
+        if (callType === 'video') {
+          [micTrack, camTrack] = await AgoraRTC.createMicrophoneAndCameraTracks();
+          await ac.publish([micTrack, camTrack]);
+          setLocalMicTrack(micTrack);
+          setLocalCamTrack(camTrack);
+          // Show own video in a local cam container if the element exists
+          const localCamEl = document.getElementById('local-cam-container');
+          if (localCamEl) camTrack.play(localCamEl);
+        } else {
+          micTrack = await AgoraRTC.createMicrophoneAudioTrack();
+          await ac.publish([micTrack]);
+          setLocalMicTrack(micTrack);
+        }
+      } catch (_) { /* camera/mic permission denied or track error */ }
+    })();
+
+    return () => {
+      // Cleanup on disconnect
+      try { if (micTrack) micTrack.close(); } catch (_) {}
+      try { if (camTrack) camTrack.close(); } catch (_) {}
+      setLocalMicTrack(null);
+      setLocalCamTrack(null);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myRequest?.status]);
+
+  // -----------------------------------------------------------------------
+  // Cleanup local tracks on unmount
+  // -----------------------------------------------------------------------
+
+  useEffect(() => () => {
+    try { if (localMicTrack) localMicTrack.close(); } catch (_) {}
+    try { if (localCamTrack) localCamTrack.close(); } catch (_) {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // -----------------------------------------------------------------------
   // Auto-waitlist: if request has been pending for 2+ minutes, move to queue
@@ -932,6 +1025,73 @@ export default function LiveView() {
     }, 10000);
     return () => clearInterval(t);
   }, [myRequest]);
+
+  // -----------------------------------------------------------------------
+  // Dial tone when request is pending (Fix 5)
+  // -----------------------------------------------------------------------
+
+  useEffect(() => {
+    if (myRequest?.status !== 'pending') {
+      dialTonePlayedRef.current = false;
+      return;
+    }
+    if (dialTonePlayedRef.current) return;
+    dialTonePlayedRef.current = true;
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const playBurst = (startTime) => {
+        const osc1 = ctx.createOscillator();
+        const osc2 = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc1.connect(gain);
+        osc2.connect(gain);
+        gain.connect(ctx.destination);
+        osc1.frequency.value = 440;
+        osc2.frequency.value = 480;
+        gain.gain.setValueAtTime(0.15, startTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, startTime + 1.5);
+        osc1.start(startTime);
+        osc1.stop(startTime + 1.5);
+        osc2.start(startTime);
+        osc2.stop(startTime + 1.5);
+      };
+      playBurst(ctx.currentTime);
+      playBurst(ctx.currentTime + 2);
+      playBurst(ctx.currentTime + 4);
+    } catch (_) {}
+  }, [myRequest?.status]);
+
+  // -----------------------------------------------------------------------
+  // Session elapsed timer for connected panel (Fix 7)
+  // -----------------------------------------------------------------------
+
+  useEffect(() => {
+    if (myRequest?.status !== 'connected') {
+      setSessionElapsed(0);
+      return undefined;
+    }
+    const startMs = myRequest.connectedAt?.toMillis
+      ? myRequest.connectedAt.toMillis()
+      : Date.now();
+    const t = setInterval(() => {
+      setSessionElapsed(Math.floor((Date.now() - startMs) / 1000));
+    }, 1000);
+    return () => clearInterval(t);
+  }, [myRequest?.status, myRequest?.connectedAt]);
+
+  // -----------------------------------------------------------------------
+  // Listen for kicked status (Fix 8)
+  // -----------------------------------------------------------------------
+
+  useEffect(() => {
+    if (myRequest?.status === 'kicked') {
+      // Cleanup any published tracks
+      try { if (localMicTrack) localMicTrack.close(); } catch (_) {}
+      try { if (localCamTrack) localCamTrack.close(); } catch (_) {}
+      setKickedOut(true);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [myRequest?.status]);
 
   // -----------------------------------------------------------------------
   // Call countdown + elapsed timer
@@ -1000,6 +1160,30 @@ export default function LiveView() {
   const showWishlist = connectedUsers.length >= 5 || astroBusy;
 
   // -----------------------------------------------------------------------
+  // Simple in-page notification helper
+  // -----------------------------------------------------------------------
+
+  function notify(msg) {
+    // Basic approach: alert on mobile, can be swapped for a toast library
+    if (typeof window !== 'undefined' && msg) {
+      // Non-blocking toast via a temporary DOM element
+      try {
+        const el = document.createElement('div');
+        el.textContent = msg;
+        el.style.cssText = [
+          'position:fixed', 'bottom:80px', 'left:50%',
+          'transform:translateX(-50%)', 'background:rgba(0,0,0,0.8)',
+          'color:#FFF8E7', 'padding:8px 18px', 'border-radius:20px',
+          'font-size:13px', 'z-index:99999', 'pointer-events:none',
+          'white-space:nowrap',
+        ].join(';');
+        document.body.appendChild(el);
+        setTimeout(() => { try { document.body.removeChild(el); } catch (_) {} }, 3000);
+      } catch (_) {}
+    }
+  }
+
+  // -----------------------------------------------------------------------
   // Actions
   // -----------------------------------------------------------------------
 
@@ -1021,6 +1205,34 @@ export default function LiveView() {
       uid: user.uid,
       name: profile?.name || 'Guest',
     });
+  }
+
+  async function handleFollow() {
+    if (!user?.uid || !astroUid) {
+      if (!user?.uid) router.push('/login');
+      return;
+    }
+    try {
+      const { doc: fDoc, setDoc: fSet, deleteDoc: fDel, getDoc: fGet }
+        = await import('firebase/firestore');
+      const followRef = fDoc(db, 'users', user.uid, 'following', astroUid);
+      const snap = await fGet(followRef);
+      if (snap.exists()) {
+        await fDel(followRef);
+        setIsFollowing(false);
+      } else {
+        await fSet(followRef, {
+          astroId: astroUid,
+          followedAt: new Date().toISOString(),
+          astroName: info?.name || '',
+        });
+        setIsFollowing(true);
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('Follow error:', e);
+      notify('Could not update follow status. Try again.');
+    }
   }
 
   function onRequestJoin() {
@@ -1133,13 +1345,13 @@ export default function LiveView() {
         </button>
 
         <button
-          onClick={onFollow}
+          onClick={handleFollow}
           className="rounded-full px-3 py-1 text-[11px] font-bold"
-          style={following
+          style={isFollowing
             ? { background: 'rgba(255,255,255,0.15)', color: 'white' }
             : { background: 'linear-gradient(135deg,#D4A12A,#7F2020)', color: 'white' }}
         >
-          {following ? (
+          {isFollowing ? (
             <span className="inline-flex items-center gap-1">
               <IconCheckPill />Following
             </span>
@@ -1184,6 +1396,70 @@ export default function LiveView() {
             className="rounded-full bg-white px-5 py-2 font-semibold text-black"
           >
             Back to Live
+          </button>
+        </div>
+      )}
+
+      {/* ----------------------------------------------------------------
+          KICKED overlay (Fix 8)
+      ---------------------------------------------------------------- */}
+      {kickedOut && (
+        <div className="absolute inset-0 z-[9999] flex flex-col items-center justify-center gap-4 px-6"
+          style={{ background: 'rgba(0,0,0,0.92)' }}>
+          <div
+            className="flex h-16 w-16 items-center justify-center rounded-full"
+            style={{ background: 'rgba(127,32,32,0.35)', border: '2px solid #7F2020' }}
+          >
+            <svg viewBox="0 0 24 24" width="32" height="32">
+              <path d="M18 6L6 18M6 6l12 12" stroke="#7F2020" strokeWidth="2.5" strokeLinecap="round" />
+            </svg>
+          </div>
+          <div className="text-center text-base font-bold" style={{ color: '#FFF8E7' }}>
+            You have been removed from this live session by the astrologer.
+          </div>
+          <button
+            onClick={() => router.push('/live')}
+            className="rounded-full px-6 py-2.5 text-sm font-bold text-white"
+            style={{ background: 'linear-gradient(135deg,#D4A12A,#7F2020)' }}
+          >
+            Back to Live
+          </button>
+        </div>
+      )}
+
+      {/* ----------------------------------------------------------------
+          AUTOPLAY UNMUTE button (Fix 1)
+      ---------------------------------------------------------------- */}
+      {needsUnmute && (
+        <div
+          className="absolute inset-x-0 z-50 flex justify-center"
+          style={{ top: '50%', transform: 'translateY(-50%)' }}
+        >
+          <button
+            onClick={() => {
+              try {
+                if (agoraClientRef.current) {
+                  agoraClientRef.current.remoteUsers.forEach((u) => {
+                    if (u.audioTrack) u.audioTrack.play();
+                  });
+                }
+              } catch (_) {}
+              setNeedsUnmute(false);
+            }}
+            className="flex items-center gap-2 rounded-2xl px-6 py-4 text-base font-bold shadow-2xl"
+            style={{
+              background: 'linear-gradient(135deg,#D4A12A,#7F2020)',
+              color: '#FFF8E7',
+              border: '2px solid rgba(212,161,42,0.6)',
+            }}
+          >
+            <svg viewBox="0 0 24 24" width="22" height="22">
+              <path
+                d="M12 14a3 3 0 003-3V7a3 3 0 00-6 0v4a3 3 0 003 3zM19 11a7 7 0 11-14 0M12 18v3M8 21h8"
+                stroke="#FFF8E7" strokeWidth="2" strokeLinecap="round" fill="none"
+              />
+            </svg>
+            Tap to Enable Audio
           </button>
         </div>
       )}
@@ -1407,6 +1683,69 @@ export default function LiveView() {
       )}
 
       {/* ----------------------------------------------------------------
+          IN-CALL: local cam preview + connected users (Fix 2 + Fix 7)
+      ---------------------------------------------------------------- */}
+      {myRequest?.status === 'connected' && (
+        <div
+          className="absolute left-3 z-30"
+          style={{ bottom: 'calc(28vh + 72px + 60px)' }}
+        >
+          {/* Local cam preview for video calls */}
+          {callType === 'video' && (
+            <div
+              id="local-cam-container"
+              style={{
+                width: 72, height: 96, borderRadius: 10, background: '#111',
+                overflow: 'hidden', border: '2px solid #D4A12A',
+                marginBottom: 6,
+              }}
+            />
+          )}
+          {/* Session elapsed + connected users count */}
+          <div
+            className="rounded-xl px-2 py-1 text-center"
+            style={{ background: 'rgba(0,0,0,0.65)', border: '1px solid rgba(212,161,42,0.4)' }}
+          >
+            <div className="font-mono text-[11px] font-bold" style={{ color: '#D4A12A' }}>
+              {fmtClock(sessionElapsed)}
+            </div>
+            {connectedUsers.length > 0 && (
+              <div className="text-[9px]" style={{ color: 'rgba(255,248,231,0.7)' }}>
+                {connectedUsers.length} on call
+              </div>
+            )}
+          </div>
+          {/* Mini connected users list */}
+          {connectedUsers.length > 0 && (
+            <div className="mt-1 space-y-1">
+              {connectedUsers.slice(0, 3).map((cu) => (
+                <div
+                  key={cu.uid || cu.userId}
+                  className="flex items-center gap-1 rounded-lg px-1.5 py-1"
+                  style={{ background: 'rgba(0,0,0,0.6)', border: '1px solid rgba(255,255,255,0.1)' }}
+                >
+                  <span
+                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold text-white"
+                    style={{ background: '#7F2020' }}
+                  >
+                    {(cu.name || cu.displayName || 'U').charAt(0).toUpperCase()}
+                  </span>
+                  <span className="max-w-[56px] truncate text-[9px]" style={{ color: '#FFF8E7' }}>
+                    {cu.name || cu.displayName || 'Guest'}
+                  </span>
+                </div>
+              ))}
+              {connectedUsers.length > 3 && (
+                <div className="text-center text-[9px]" style={{ color: 'rgba(255,248,231,0.6)' }}>
+                  +{connectedUsers.length - 3} more
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ----------------------------------------------------------------
           IN-CALL CONTROLS: mic, camera, recharge, end
       ---------------------------------------------------------------- */}
       {myRequest?.status === 'connected' && (
@@ -1415,7 +1754,13 @@ export default function LiveView() {
             onClick={() => {
               const next = !micOn;
               setMicOn(next);
-              try { callService.setMuted(!next); } catch (_) {}
+              try {
+                if (localMicTrack) {
+                  localMicTrack.setEnabled(next);
+                } else {
+                  callService.setMuted(!next);
+                }
+              } catch (_) {}
             }}
             className="grid h-12 w-12 place-items-center rounded-full bg-white/15 backdrop-blur"
             aria-label="Mic"
@@ -1426,7 +1771,13 @@ export default function LiveView() {
             onClick={() => {
               const next = !camOn;
               setCamOn(next);
-              try { callService.setCameraEnabled(next); } catch (_) {}
+              try {
+                if (localCamTrack) {
+                  localCamTrack.setEnabled(next);
+                } else {
+                  callService.setCameraEnabled(next);
+                }
+              } catch (_) {}
             }}
             className="grid h-12 w-12 place-items-center rounded-full bg-white/15 backdrop-blur"
             aria-label="Camera"

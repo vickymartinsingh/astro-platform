@@ -5,7 +5,8 @@ import {
   remedyService, astrologerService, assistantService, db,
   membershipService,
 } from '@astro/shared';
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useRequireAstrologer } from '../../lib/useAuth';
 import { useSettings } from '../../lib/useSettings';
 import { playPing } from '../../lib/ping';
@@ -331,6 +332,21 @@ export default function AstroChat() {
     if (!chatId) return;
     await chatService.sendMessage(
       chatId, user.uid, remedyService.remedyMessageText(r));
+    // Also save to client's remedies subcollection in their profile
+    if (session?.userId && r) {
+      try {
+        await addDoc(collection(db, 'users', session.userId, 'remedies'), {
+          astrologerId: user.uid,
+          astrologerName: astrologer?.name || '',
+          sessionId: id,
+          remedyId: r.id || null,
+          name: r.name || '',
+          description: r.description || '',
+          price: r.price || 0,
+          suggestedAt: serverTimestamp(),
+        });
+      } catch (_) {}
+    }
   }
 
   async function toggleRecord() {
@@ -547,7 +563,65 @@ export default function AstroChat() {
           justify-center rounded-full text-base transition ${recording
             ? 'animate-pulse bg-danger text-white'
             : 'bg-bg-light text-primary'}`}>
-        {busyAudio ? '...' : recording ? '&#9646;' : '&#127908;'}
+        {busyAudio ? (
+          <span className="inline-block h-4 w-4 animate-spin rounded-full border-2"
+            style={{ borderColor: '#7F2020', borderTopColor: 'transparent' }} />
+        ) : recording ? (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="#7F2020">
+            <rect x="4" y="4" width="16" height="16" rx="2" />
+          </svg>
+        ) : (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <rect x="9" y="2" width="6" height="11" rx="3" />
+            <path d="M19 10a7 7 0 0 1-14 0" />
+            <line x1="12" y1="19" x2="12" y2="22" />
+            <line x1="8" y1="22" x2="16" y2="22" />
+          </svg>
+        )}
+      </button>
+
+      {/* Attachment button */}
+      <button
+        onClick={async () => {
+          if (typeof document === 'undefined') return;
+          const inp = document.createElement('input');
+          inp.type = 'file';
+          inp.accept = 'image/*,application/pdf';
+          inp.onchange = async (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (!file || !chatId || !user?.uid) return;
+            setBusyAudio(true);
+            try {
+              const storage = getStorage();
+              const sRef = storageRef(storage, `chat_attachments/${chatId}/${Date.now()}_${file.name}`);
+              const snap = await uploadBytes(sRef, file);
+              const url = await getDownloadURL(snap.ref);
+              const isImage = file.type.startsWith('image/');
+              await addDoc(collection(db, 'chats', chatId, 'messages'), {
+                senderId: user.uid,
+                text: isImage ? '' : `[File: ${file.name}]`,
+                createdAt: serverTimestamp(),
+                ...(isImage ? { imageUrl: url } : { fileUrl: url, fileName: file.name }),
+              });
+            } catch (_) {
+              notify('Could not upload. Try again.');
+            } finally {
+              setBusyAudio(false);
+            }
+          };
+          inp.click();
+        }}
+        disabled={busyAudio}
+        title="Send image or file"
+        className="flex h-9 w-9 shrink-0 items-center justify-center
+          rounded-full transition bg-bg-light text-primary">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <polyline points="17 8 12 3 7 8" />
+          <line x1="12" y1="3" x2="12" y2="15" />
+        </svg>
       </button>
 
       {/* Text input */}
@@ -559,12 +633,14 @@ export default function AstroChat() {
         onKeyDown={(e) => e.key === 'Enter' && send()} />
 
       {/* Remedy button */}
-      <button onClick={openRemedies} title="Suggest a remedy"
-        className="shrink-0 rounded-full px-3 py-2 text-sm
-          font-semibold transition active:opacity-80"
+      <button onClick={openRemedies} title="Suggest Remedy"
+        className="shrink-0 flex h-9 w-9 items-center justify-center rounded-full transition active:opacity-80"
         style={{ background: '#FFF8E7', color: '#7F2020',
           border: '1px solid #D4A12A50' }}>
-        Remedy
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <path d="M12 22V12M12 12C12 7 7 5 3 4c0 0 1 9 6 12M12 12c0-5 5-7 9-8 0 0-1 9-6 12" />
+        </svg>
       </button>
 
       {/* Send button */}
@@ -856,7 +932,7 @@ export default function AstroChat() {
               color: '#7F2020',
               border: '1px solid #D4A12A60',
             }}>
-            Open Full Kundli
+            Open Kundli
           </button>
         </div>
       )}
@@ -1150,7 +1226,7 @@ export default function AstroChat() {
                       color: '#7F2020',
                       border: '1px solid #D4A12A60',
                     }}>
-                    Open Full Kundli
+                    Open Kundli
                   </button>
                 </div>
               )}
@@ -1305,7 +1381,7 @@ export default function AstroChat() {
           transition active:opacity-80"
         style={{ background: '#FFF8E7', color: '#7F2020',
           border: '1px solid #D4A12A60' }}>
-        Full Kundli
+        Kundli
       </button>
     </div>
   ) : null;
@@ -1700,21 +1776,443 @@ function PredRow({ icon, label, text }) {
 
 function KundliModal({ profiles, initialTab, onTabChange, onClose }) {
   // profiles: array of kundli profile objects (1 or 2+ supported).
-  // initialTab: last active tab index from parent (persisted across opens).
-  const [activeTab, setActiveTab] = useState(
+  // initialTab: last active profile tab index from parent (persisted across opens).
+  const [activeProfile, setActiveProfile] = useState(
     typeof initialTab === 'number' ? initialTab : 0
   );
+  const [activeSection, setActiveSection] = useState('overview');
 
-  function handleTabChange(idx) {
-    setActiveTab(idx);
+  const hasMultiple = profiles.length >= 2;
+  const p1 = profiles[0] || null;
+  const p2 = profiles[1] || null;
+
+  const SECTIONS = ['overview', 'planets', 'houses', 'dasha', 'transits', 'yogas', 'doshas', 'panchang'];
+  const allSections = hasMultiple ? [...SECTIONS, 'matchmaking'] : SECTIONS;
+
+  function handleProfileChange(idx) {
+    setActiveProfile(idx);
     if (onTabChange) onTabChange(idx);
   }
 
-  const hasMultiple = profiles.length >= 2;
-  // For single-profile view, show the activeTab profile if multiple exist
-  const displayProfile = profiles[activeTab] || profiles[0] || null;
-  const p1 = profiles[0] || null;
-  const p2 = profiles[1] || null;
+  const profile = profiles[activeProfile] || profiles[0] || null;
+  const report = profile?.report || {};
+
+  // Helper: empty state message
+  function EmptyState({ msg }) {
+    return (
+      <div className="rounded-xl py-8 text-center text-sm"
+        style={{ color: '#888', background: '#FFF8E7', border: '1px solid #E8D5B0' }}>
+        {msg || 'No data available. Generate kundli first.'}
+      </div>
+    );
+  }
+
+  // Overview tab
+  function OverviewTab() {
+    const traits = ZODIAC_PREDICTIONS[profile?.zodiac] || null;
+    return (
+      <div className="space-y-3">
+        {profile ? (
+          <>
+            <KundliProfileCard profile={profile} label={hasMultiple ? `Profile ${activeProfile + 1}` : null} />
+            {report.currentDasha && (
+              <div className="rounded-xl px-4 py-3 text-sm"
+                style={{ background: '#FFF8E7', border: '1px solid #D4A12A50' }}>
+                <span className="text-[11px] font-bold uppercase tracking-widest mr-2"
+                  style={{ color: '#7F2020' }}>Current Dasha:</span>
+                <span style={{ color: '#444' }}>
+                  {report.currentDasha.mahadasha || ''}{report.currentDasha.antardasha ? ` / ${report.currentDasha.antardasha}` : ''}
+                </span>
+              </div>
+            )}
+            {report.ascendant && (
+              <div className="rounded-xl px-4 py-3 text-sm"
+                style={{ background: '#FFF8E7', border: '1px solid #D4A12A50' }}>
+                <div className="grid grid-cols-2 gap-2">
+                  {report.ascendant && (
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider mb-0.5" style={{ color: '#D4A12A' }}>Ascendant</div>
+                      <div className="font-semibold" style={{ color: '#1A1A2E' }}>{report.ascendant}</div>
+                    </div>
+                  )}
+                  {report.moonSign && (
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider mb-0.5" style={{ color: '#D4A12A' }}>Moon Sign</div>
+                      <div className="font-semibold" style={{ color: '#1A1A2E' }}>{report.moonSign}</div>
+                    </div>
+                  )}
+                  {report.sunSign && (
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider mb-0.5" style={{ color: '#D4A12A' }}>Sun Sign</div>
+                      <div className="font-semibold" style={{ color: '#1A1A2E' }}>{report.sunSign}</div>
+                    </div>
+                  )}
+                  {report.nakshatra && (
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider mb-0.5" style={{ color: '#D4A12A' }}>Nakshatra</div>
+                      <div className="font-semibold" style={{ color: '#1A1A2E' }}>{report.nakshatra}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          <EmptyState msg="No kundli profile found." />
+        )}
+      </div>
+    );
+  }
+
+  // Planets tab
+  function PlanetsTab() {
+    const planets = report.planets;
+    if (!planets || !Array.isArray(planets) || planets.length === 0) {
+      return <EmptyState msg="No planet data. Generate kundli to see planet positions." />;
+    }
+    return (
+      <div className="overflow-x-auto rounded-xl" style={{ border: '1px solid #E8D5B0' }}>
+        <table className="w-full text-xs min-w-[340px]">
+          <thead>
+            <tr style={{ background: '#7F2020', color: '#fff' }}>
+              <th className="px-3 py-2 text-left font-bold">Planet</th>
+              <th className="px-3 py-2 text-left font-bold">Sign</th>
+              <th className="px-3 py-2 text-left font-bold">House</th>
+              <th className="px-3 py-2 text-left font-bold">Degree</th>
+              <th className="px-3 py-2 text-left font-bold">R?</th>
+            </tr>
+          </thead>
+          <tbody>
+            {planets.map((pl, i) => (
+              <tr key={i} style={{ background: i % 2 === 0 ? '#FFF8E7' : '#fff', borderTop: '1px solid #E8D5B0' }}>
+                <td className="px-3 py-2 font-semibold" style={{ color: '#7F2020' }}>{pl.name || '-'}</td>
+                <td className="px-3 py-2" style={{ color: '#444' }}>{pl.sign || '-'}</td>
+                <td className="px-3 py-2" style={{ color: '#444' }}>{pl.house != null ? pl.house : '-'}</td>
+                <td className="px-3 py-2" style={{ color: '#444' }}>{pl.degree != null ? `${Number(pl.degree).toFixed(2)}` : '-'}</td>
+                <td className="px-3 py-2 font-bold" style={{ color: pl.isRetrograde ? '#D4A12A' : '#aaa' }}>
+                  {pl.isRetrograde ? 'R' : '-'}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  // Houses tab
+  function HousesTab() {
+    const houses = report.houses;
+    if (!houses || !Array.isArray(houses) || houses.length === 0) {
+      return <EmptyState msg="No house data. Generate kundli to see house positions." />;
+    }
+    return (
+      <div className="overflow-x-auto rounded-xl" style={{ border: '1px solid #E8D5B0' }}>
+        <table className="w-full text-xs min-w-[280px]">
+          <thead>
+            <tr style={{ background: '#7F2020', color: '#fff' }}>
+              <th className="px-3 py-2 text-left font-bold">House</th>
+              <th className="px-3 py-2 text-left font-bold">Sign</th>
+              <th className="px-3 py-2 text-left font-bold">Lord</th>
+            </tr>
+          </thead>
+          <tbody>
+            {houses.map((h, i) => (
+              <tr key={i} style={{ background: i % 2 === 0 ? '#FFF8E7' : '#fff', borderTop: '1px solid #E8D5B0' }}>
+                <td className="px-3 py-2 font-semibold" style={{ color: '#7F2020' }}>
+                  {h.house != null ? `House ${h.house}` : (h.name || `${i + 1}`)}
+                </td>
+                <td className="px-3 py-2" style={{ color: '#444' }}>{h.sign || '-'}</td>
+                <td className="px-3 py-2" style={{ color: '#444' }}>{h.lord || '-'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  // Dasha tab
+  function DashaTab() {
+    const dashas = report.dashas;
+    const current = report.currentDasha;
+    const currentMaha = current?.mahadasha || current?.planet || null;
+    if (!dashas || !Array.isArray(dashas) || dashas.length === 0) {
+      return <EmptyState msg="No dasha data. Generate kundli to see Vimshottari dasha." />;
+    }
+    return (
+      <div className="space-y-3">
+        {current && (
+          <div className="rounded-xl px-4 py-3 text-sm space-y-1"
+            style={{ background: '#FFF8E7', border: '1px solid #D4A12A60' }}>
+            <div className="text-[11px] font-bold uppercase tracking-widest mb-1" style={{ color: '#7F2020' }}>Current Dasha</div>
+            {current.mahadasha && <div><span className="text-sub-text text-xs">Mahadasha:</span> <span className="font-semibold text-xs" style={{ color: '#1A1A2E' }}>{current.mahadasha}</span></div>}
+            {current.antardasha && <div><span className="text-sub-text text-xs">Antardasha:</span> <span className="font-semibold text-xs" style={{ color: '#1A1A2E' }}>{current.antardasha}</span></div>}
+            {current.pratyantar && <div><span className="text-sub-text text-xs">Pratyantar:</span> <span className="font-semibold text-xs" style={{ color: '#1A1A2E' }}>{current.pratyantar}</span></div>}
+          </div>
+        )}
+        <div className="overflow-x-auto rounded-xl" style={{ border: '1px solid #E8D5B0' }}>
+          <table className="w-full text-xs min-w-[280px]">
+            <thead>
+              <tr style={{ background: '#7F2020', color: '#fff' }}>
+                <th className="px-3 py-2 text-left font-bold">Planet</th>
+                <th className="px-3 py-2 text-left font-bold">Start</th>
+                <th className="px-3 py-2 text-left font-bold">End</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dashas.map((d, i) => {
+                const isActive = currentMaha && (d.planet === currentMaha || d.name === currentMaha);
+                return (
+                  <tr key={i} style={{
+                    background: isActive ? '#7F2020' : (i % 2 === 0 ? '#FFF8E7' : '#fff'),
+                    color: isActive ? '#fff' : '#444',
+                    borderTop: '1px solid #E8D5B0',
+                    fontWeight: isActive ? 700 : 400,
+                  }}>
+                    <td className="px-3 py-2">{d.planet || d.name || '-'}</td>
+                    <td className="px-3 py-2">{d.start || d.startDate || '-'}</td>
+                    <td className="px-3 py-2">{d.end || d.endDate || '-'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  // Transits tab
+  function TransitsTab() {
+    const transits = report.transits;
+    if (!transits || (Array.isArray(transits) && transits.length === 0)) {
+      return <EmptyState msg="Transit data not available." />;
+    }
+    if (Array.isArray(transits)) {
+      return (
+        <div className="overflow-x-auto rounded-xl" style={{ border: '1px solid #E8D5B0' }}>
+          <table className="w-full text-xs min-w-[300px]">
+            <thead>
+              <tr style={{ background: '#7F2020', color: '#fff' }}>
+                <th className="px-3 py-2 text-left font-bold">Planet</th>
+                <th className="px-3 py-2 text-left font-bold">Transit Sign</th>
+                <th className="px-3 py-2 text-left font-bold">House</th>
+              </tr>
+            </thead>
+            <tbody>
+              {transits.map((t, i) => (
+                <tr key={i} style={{ background: i % 2 === 0 ? '#FFF8E7' : '#fff', borderTop: '1px solid #E8D5B0' }}>
+                  <td className="px-3 py-2 font-semibold" style={{ color: '#7F2020' }}>{t.planet || t.name || '-'}</td>
+                  <td className="px-3 py-2" style={{ color: '#444' }}>{t.sign || t.transitSign || '-'}</td>
+                  <td className="px-3 py-2" style={{ color: '#444' }}>{t.house != null ? t.house : '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+    return (
+      <div className="rounded-xl px-4 py-3 text-sm" style={{ background: '#FFF8E7', border: '1px solid #E8D5B0' }}>
+        <pre className="whitespace-pre-wrap text-xs" style={{ color: '#444' }}>{JSON.stringify(transits, null, 2)}</pre>
+      </div>
+    );
+  }
+
+  // Yogas tab
+  function YogasTab() {
+    const yogas = report.yogas;
+    if (!yogas || !Array.isArray(yogas) || yogas.length === 0) {
+      return <EmptyState msg="No yoga data available. Generate kundli to see yogas." />;
+    }
+    return (
+      <div className="space-y-2">
+        {yogas.map((y, i) => (
+          <div key={i} className="rounded-xl px-4 py-3"
+            style={{ background: '#FFF8E7', border: '1px solid #D4A12A50' }}>
+            <div className="font-bold text-sm" style={{ color: '#7F2020' }}>{y.name || `Yoga ${i + 1}`}</div>
+            {y.description && <div className="mt-1 text-xs leading-relaxed" style={{ color: '#444' }}>{y.description}</div>}
+            {y.present != null && (
+              <span className={`mt-1.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold ${y.present ? 'text-white' : 'text-sub-text'}`}
+                style={{ background: y.present ? '#7F2020' : '#E8D5B0' }}>
+                {y.present ? 'Present' : 'Absent'}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // Doshas tab
+  function DoshasTab() {
+    const doshas = report.doshas;
+    if (!doshas || (typeof doshas === 'object' && Object.keys(doshas).length === 0)) {
+      return <EmptyState msg="No dosha data available. Generate kundli to see doshas." />;
+    }
+    const items = Array.isArray(doshas) ? doshas : Object.entries(doshas).map(([k, v]) => ({
+      name: k, ...( typeof v === 'object' ? v : { present: !!v, description: typeof v === 'string' ? v : '' }),
+    }));
+    return (
+      <div className="space-y-2">
+        {items.map((d, i) => (
+          <div key={i} className="rounded-xl px-4 py-3"
+            style={{ background: '#FFF8E7', border: '1px solid #D4A12A50' }}>
+            <div className="flex items-center justify-between gap-2">
+              <div className="font-bold text-sm" style={{ color: '#7F2020' }}>{d.name || `Dosha ${i + 1}`}</div>
+              {d.present != null && (
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${d.present ? 'text-white' : 'text-sub-text'}`}
+                  style={{ background: d.present ? '#7F2020' : '#E8D5B0' }}>
+                  {d.present ? 'Present' : 'Absent'}
+                </span>
+              )}
+            </div>
+            {d.description && <div className="mt-1 text-xs leading-relaxed" style={{ color: '#444' }}>{d.description}</div>}
+            {d.severity && <div className="mt-0.5 text-xs" style={{ color: '#D4A12A' }}>Severity: {d.severity}</div>}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // Panchang tab
+  function PanchangTab() {
+    const panchang = report.panchang;
+    if (!panchang || (typeof panchang === 'object' && Object.keys(panchang).length === 0)) {
+      return <EmptyState msg="No panchang data available." />;
+    }
+    const fields = typeof panchang === 'object' ? Object.entries(panchang) : [];
+    return (
+      <div className="rounded-xl overflow-hidden" style={{ border: '1px solid #E8D5B0' }}>
+        {fields.map(([k, v], i) => (
+          <div key={k} className="flex items-center justify-between px-4 py-2.5 text-sm"
+            style={{ background: i % 2 === 0 ? '#FFF8E7' : '#fff', borderTop: i > 0 ? '1px solid #E8D5B0' : 'none' }}>
+            <span className="font-semibold capitalize" style={{ color: '#7F2020' }}>
+              {k.replace(/([A-Z])/g, ' $1').trim()}
+            </span>
+            <span style={{ color: '#444' }}>{String(v)}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // Matchmaking tab
+  function MatchmakingTab() {
+    if (!p1 || !p2) {
+      return <EmptyState msg="Two profiles are needed for matchmaking." />;
+    }
+    const el1 = getZodiacElement(p1.zodiac);
+    const el2 = getZodiacElement(p2.zodiac);
+    // Ashtakoot score: simulate based on element compatibility
+    const compatScore = {
+      'Fire-Fire': 28, 'Earth-Earth': 30, 'Air-Air': 26, 'Water-Water': 32,
+      'Fire-Air': 29, 'Air-Fire': 29, 'Earth-Water': 31, 'Water-Earth': 31,
+      'Fire-Earth': 20, 'Earth-Fire': 20, 'Air-Water': 22, 'Water-Air': 22,
+      'Fire-Water': 16, 'Water-Fire': 16, 'Earth-Air': 18, 'Air-Earth': 18,
+    };
+    const score = (p1.zodiac && p2.zodiac)
+      ? (compatScore[`${el1}-${el2}`] || 20) : null;
+    const scoreMax = 36;
+
+    return (
+      <div className="space-y-3">
+        {/* Profile pair header */}
+        <div className="flex items-center justify-between gap-2 rounded-xl px-4 py-3"
+          style={{ background: '#FFF8E7', border: '1px solid #D4A12A50' }}>
+          <div className="text-center flex-1">
+            <div className="font-bold text-sm" style={{ color: '#7F2020' }}>{p1.name || 'Person 1'}</div>
+            {p1.zodiac && <span className="mt-0.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold text-white" style={{ background: '#7F2020' }}>{p1.zodiac}</span>}
+          </div>
+          <div style={{ color: '#D4A12A', fontSize: '20px' }}>&#10022;</div>
+          <div className="text-center flex-1">
+            <div className="font-bold text-sm" style={{ color: '#7F2020' }}>{p2.name || 'Person 2'}</div>
+            {p2.zodiac && <span className="mt-0.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-bold text-white" style={{ background: '#7F2020' }}>{p2.zodiac}</span>}
+          </div>
+        </div>
+
+        {/* Ashtakoot score */}
+        {score != null && (
+          <div className="rounded-xl px-4 py-3 text-center"
+            style={{ background: '#FFF8E7', border: '1px solid #D4A12A50' }}>
+            <div className="text-[11px] font-bold uppercase tracking-widest mb-1" style={{ color: '#7F2020' }}>Ashtakoot Score</div>
+            <div className="text-3xl font-bold" style={{ color: '#7F2020' }}>
+              {score} <span className="text-base font-normal text-sub-text">/ {scoreMax}</span>
+            </div>
+            <div className="mt-1 text-xs" style={{ color: '#888' }}>
+              {score >= 28 ? 'Excellent match' : score >= 22 ? 'Good match' : score >= 18 ? 'Average compatibility' : 'Detailed analysis recommended'}
+            </div>
+            {/* Score bar */}
+            <div className="mt-2 rounded-full h-2 w-full" style={{ background: '#E8D5B0' }}>
+              <div className="rounded-full h-2 transition-all"
+                style={{ width: `${(score / scoreMax) * 100}%`, background: '#7F2020' }} />
+            </div>
+          </div>
+        )}
+
+        {/* Element compatibility */}
+        <div className="rounded-xl px-4 py-3"
+          style={{ background: '#FFF8E7', border: '1px solid #D4A12A50' }}>
+          <div className="text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: '#7F2020' }}>Compatibility Analysis</div>
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            <div className="rounded-lg bg-white px-3 py-2" style={{ border: '1px solid #E8D5B0' }}>
+              <div className="text-[10px] uppercase tracking-wider" style={{ color: '#D4A12A' }}>Element 1</div>
+              <div className="font-bold text-sm" style={{ color: '#7F2020' }}>{el1}</div>
+            </div>
+            <div className="rounded-lg bg-white px-3 py-2" style={{ border: '1px solid #E8D5B0' }}>
+              <div className="text-[10px] uppercase tracking-wider" style={{ color: '#D4A12A' }}>Element 2</div>
+              <div className="font-bold text-sm" style={{ color: '#7F2020' }}>{el2}</div>
+            </div>
+          </div>
+          <p className="text-sm leading-relaxed" style={{ color: '#444' }}>
+            {getCompatibilityText(p1.zodiac, p2.zodiac)}
+          </p>
+        </div>
+
+        {/* Recommendations */}
+        <div className="rounded-xl px-4 py-3"
+          style={{ background: '#FFF8E7', border: '1px solid #D4A12A50' }}>
+          <div className="text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: '#7F2020' }}>Recommendations</div>
+          <ul className="space-y-1.5 text-xs" style={{ color: '#444' }}>
+            <li className="flex items-start gap-2">
+              <span style={{ color: '#D4A12A' }}>*</span>
+              Perform a detailed Kundli Milan for complete Guna matching results.
+            </li>
+            <li className="flex items-start gap-2">
+              <span style={{ color: '#D4A12A' }}>*</span>
+              Check mangal dosha status for both partners before finalizing.
+            </li>
+            <li className="flex items-start gap-2">
+              <span style={{ color: '#D4A12A' }}>*</span>
+              Navamsa chart analysis is recommended for deeper relationship insights.
+            </li>
+          </ul>
+        </div>
+      </div>
+    );
+  }
+
+  function renderSection() {
+    switch (activeSection) {
+      case 'overview': return <OverviewTab />;
+      case 'planets': return <PlanetsTab />;
+      case 'houses': return <HousesTab />;
+      case 'dasha': return <DashaTab />;
+      case 'transits': return <TransitsTab />;
+      case 'yogas': return <YogasTab />;
+      case 'doshas': return <DoshasTab />;
+      case 'panchang': return <PanchangTab />;
+      case 'matchmaking': return <MatchmakingTab />;
+      default: return <OverviewTab />;
+    }
+  }
+
+  const SECTION_LABELS = {
+    overview: 'Overview', planets: 'Planets', houses: 'Houses',
+    dasha: 'Dasha', transits: 'Transits', yogas: 'Yogas',
+    doshas: 'Doshas', panchang: 'Panchang', matchmaking: 'Matching',
+  };
 
   return (
     <div className="fixed inset-0 z-[60] flex items-start justify-center
@@ -1732,8 +2230,7 @@ function KundliModal({ profiles, initialTab, onTabChange, onClose }) {
             <div className="font-bold text-white text-base leading-tight">
               Client Kundli
             </div>
-            <div className="text-[11px] mt-0.5"
-              style={{ color: '#F5D98B' }}>
+            <div className="text-[11px] mt-0.5" style={{ color: '#F5D98B' }}>
               {hasMultiple
                 ? `${profiles.length} profiles - Kundli Matching`
                 : 'Birth chart details and predictions'}
@@ -1747,17 +2244,16 @@ function KundliModal({ profiles, initialTab, onTabChange, onClose }) {
           </button>
         </div>
 
-        {/* Tab buttons when multiple profiles */}
+        {/* Profile selector row (only when multiple profiles) */}
         {profiles.length > 1 && (
           <div className="flex gap-1 px-4 pt-3">
             {profiles.map((p, i) => (
               <button key={p.id || i}
-                onClick={() => handleTabChange(i)}
-                className="flex-1 rounded-full py-1.5 text-xs font-bold
-                  transition"
+                onClick={() => handleProfileChange(i)}
+                className="flex-1 rounded-full py-1.5 text-xs font-bold transition"
                 style={{
-                  background: activeTab === i ? '#7F2020' : '#FFF8E7',
-                  color: activeTab === i ? '#fff' : '#7F2020',
+                  background: activeProfile === i ? '#7F2020' : '#FFF8E7',
+                  color: activeProfile === i ? '#fff' : '#7F2020',
                   border: '1px solid #D4A12A50',
                 }}>
                 {p.name ? p.name : `Profile ${i + 1}`}
@@ -1766,82 +2262,31 @@ function KundliModal({ profiles, initialTab, onTabChange, onClose }) {
           </div>
         )}
 
-        <div className="p-4 space-y-4">
-          {/* Single profile view (or selected tab when multiple) */}
-          {!hasMultiple && p1 && (
-            <KundliProfileCard profile={p1} label={null} />
-          )}
+        {/* Section tabs row (horizontally scrollable) */}
+        <div className="overflow-x-auto px-4 pt-3 pb-0">
+          <div className="flex gap-1 w-max min-w-full">
+            {allSections.map((sec) => (
+              <button key={sec}
+                onClick={() => setActiveSection(sec)}
+                className="rounded-full px-3 py-1.5 text-[11px] font-bold whitespace-nowrap transition shrink-0"
+                style={{
+                  background: activeSection === sec ? '#7F2020' : '#FFF8E7',
+                  color: activeSection === sec ? '#fff' : '#7F2020',
+                  border: '1px solid #D4A12A50',
+                }}>
+                {SECTION_LABELS[sec] || sec}
+              </button>
+            ))}
+          </div>
+        </div>
 
-          {/* Multi-profile: show selected tab profile */}
-          {hasMultiple && (
-            <>
-              <KundliProfileCard
-                profile={displayProfile}
-                label={profiles.length > 1
-                  ? `Profile ${activeTab + 1}` : null} />
-
-              {/* Compatibility section when we have at least 2 profiles
-                  and the first two are selected */}
-              {p1?.zodiac && p2?.zodiac && (
-                <div className="rounded-2xl p-4"
-                  style={{ background: '#FFF8E7',
-                    border: '1px solid #D4A12A50' }}>
-                  <div className="mb-2 text-[11px] font-bold uppercase
-                    tracking-widest" style={{ color: '#7F2020' }}>
-                    Compatibility
-                  </div>
-                  <div className="flex items-center gap-3 mb-3">
-                    <span className="rounded-full px-2.5 py-1 text-xs
-                      font-bold text-white"
-                      style={{ background: '#7F2020' }}>
-                      {p1.zodiac}
-                    </span>
-                    <span style={{ color: '#D4A12A', fontSize: '18px' }}>
-                      &#10022;
-                    </span>
-                    <span className="rounded-full px-2.5 py-1 text-xs
-                      font-bold text-white"
-                      style={{ background: '#7F2020' }}>
-                      {p2.zodiac}
-                    </span>
-                  </div>
-                  <p className="text-sm leading-relaxed"
-                    style={{ color: '#444' }}>
-                    {getCompatibilityText(p1.zodiac, p2.zodiac)}
-                  </p>
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    <div className="rounded-xl bg-white p-2"
-                      style={{ border: '1px solid #E8D5B0' }}>
-                      <div className="text-[10px] uppercase tracking-wider"
-                        style={{ color: '#D4A12A' }}>
-                        Element 1
-                      </div>
-                      <div className="font-bold text-sm"
-                        style={{ color: '#7F2020' }}>
-                        {getZodiacElement(p1.zodiac)}
-                      </div>
-                    </div>
-                    <div className="rounded-xl bg-white p-2"
-                      style={{ border: '1px solid #E8D5B0' }}>
-                      <div className="text-[10px] uppercase tracking-wider"
-                        style={{ color: '#D4A12A' }}>
-                        Element 2
-                      </div>
-                      <div className="font-bold text-sm"
-                        style={{ color: '#7F2020' }}>
-                        {getZodiacElement(p2.zodiac)}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
+        {/* Content area */}
+        <div className="p-4">
+          {renderSection()}
         </div>
 
         {/* Footer close */}
-        <div className="px-5 py-4"
-          style={{ borderTop: '1px solid #E8D5B0' }}>
+        <div className="px-5 py-4" style={{ borderTop: '1px solid #E8D5B0' }}>
           <button onClick={onClose}
             className="w-full rounded-full py-2.5 text-sm font-bold
               text-white transition active:opacity-80"

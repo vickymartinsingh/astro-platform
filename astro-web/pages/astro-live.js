@@ -18,6 +18,14 @@ const C = {
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+function getElapsed(ts) {
+  if (!ts) return '--';
+  const secs = Math.floor((Date.now() - (ts?.toMillis ? ts.toMillis() : ts)) / 1000);
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return m + 'm ' + s + 's';
+}
+
 function fmtWhen(ms) {
   if (!ms) return '';
   return new Date(ms).toLocaleString('en-GB', {
@@ -192,9 +200,35 @@ export default function AstroLive() {
   const [quizCorrectIdx, setQuizCorrectIdx] = useState(0);
   const [quizPoints, setQuizPoints]         = useState(10);
 
-  const localRef  = useRef(null);
-  const joinedRef = useRef(false);
-  const cRef      = useRef(null);
+  const [remoteUsers, setRemoteUsers]   = useState([]);
+
+  const localRef      = useRef(null);
+  const joinedRef     = useRef(false);
+  const cRef          = useRef(null);
+  const seenReqIds    = useRef(new Set());
+  const remoteVideoRefs = useRef({});
+
+  // ── Ring tone helper ─────────────────────────────────────────────────────
+  function playRingTone(repeat) {
+    const reps = repeat || 3;
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      let time = ctx.currentTime;
+      for (let i = 0; i < reps; i++) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = 880;
+        osc.type = 'sine';
+        gain.gain.setValueAtTime(0.3, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.4);
+        osc.start(time);
+        osc.stop(time + 0.4);
+        time += 0.6;
+      }
+    } catch (_) {}
+  }
 
   // ── Firestore listeners ───────────────────────────────────────────────────
   useEffect(() => {
@@ -233,6 +267,17 @@ export default function AstroLive() {
       liveService.getComplimentaryStatus(user.uid).then(setCompStatus).catch(() => {});
     }
   }, [user]);
+
+  useEffect(() => {
+    if (!live) return;
+    const pending = joinRequests.filter((r) => r.status === 'pending');
+    const newOnes = pending.filter((r) => r.id && !seenReqIds.current.has(r.id));
+    if (newOnes.length > 0) {
+      playRingTone(3);
+      newOnes.forEach((r) => seenReqIds.current.add(r.id));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [joinRequests, live]);
 
   useEffect(() => {
     const el = cRef.current;
@@ -386,6 +431,25 @@ export default function AstroLive() {
       const tracks = await callService.publishLocalTracks({ video: true });
       if (tracks.video && localRef.current) tracks.video.play(localRef.current);
       joinedRef.current = true;
+
+      // Subscribe to co-hosts who publish video/audio (connected users)
+      callService.subscribeToRemote((remoteUser, mediaType) => {
+        if (mediaType === 'video') {
+          setRemoteUsers((prev) => {
+            const exists = prev.find((u) => u.uid === remoteUser.uid);
+            if (exists) return prev;
+            return [...prev, remoteUser];
+          });
+          // Play their video once the container div is rendered
+          setTimeout(() => {
+            const el = remoteVideoRefs.current[remoteUser.uid];
+            if (el && remoteUser.videoTrack) remoteUser.videoTrack.play(el);
+          }, 200);
+        }
+        if (mediaType === 'audio' && remoteUser.audioTrack) {
+          remoteUser.audioTrack.play();
+        }
+      });
       await liveService.goLive(user.uid, {
         name:  astro?.name || 'Astrologer',
         photo: astro?.profileImage || '',
@@ -451,6 +515,7 @@ export default function AstroLive() {
     try { await callService.leaveAgoraChannel(); } catch (_) {}
     try { await liveService.endLive(user.uid); } catch (_) {}
     joinedRef.current = false;
+    setRemoteUsers([]);
     setLive(false);
     router.push('/astro-dashboard');
   }
@@ -471,14 +536,24 @@ export default function AstroLive() {
   }
 
   async function handleKick(uid) {
-    if (!liveService.kickUserFromLive) return;
+    if (!uid) return;
     const ok = await confirmModal({
       title: 'Kick this user?',
       message: 'They will be removed from the live immediately.',
       yes: 'Kick', no: 'Cancel', danger: true,
     });
     if (!ok) return;
-    try { await liveService.kickUserFromLive(user.uid, uid); } catch (_) {}
+    try {
+      if (liveService.kickUserFromLive) {
+        await liveService.kickUserFromLive(user.uid, uid);
+      } else {
+        const { doc: kDoc, updateDoc: kUpdate } = await import('firebase/firestore');
+        const { db: fdb } = await import('@astro/shared');
+        await kUpdate(kDoc(fdb, 'chats', 'live_' + user.uid, 'requests', uid), {
+          status: 'kicked',
+        });
+      }
+    } catch (_) {}
   }
 
   async function handleBlock(uid) {
@@ -598,6 +673,34 @@ export default function AstroLive() {
           position: 'absolute', inset: 0,
           background: '#000', objectFit: 'cover',
         }} />
+
+        {/* Remote user video tiles (connected co-hosts) */}
+        {remoteUsers.length > 0 && (
+          <div style={{
+            position: 'absolute', left: 10, bottom: 10, zIndex: 15,
+            display: 'flex', flexDirection: 'column', gap: 6,
+          }}>
+            {remoteUsers.map((ru) => (
+              <div key={ru.uid} style={{ position: 'relative' }}>
+                <div
+                  ref={(el) => { if (el) remoteVideoRefs.current[ru.uid] = el; }}
+                  style={{
+                    width: 90, height: 120, borderRadius: 10, background: '#111',
+                    overflow: 'hidden', border: `2px solid ${C.amber}`,
+                  }}
+                />
+                <div style={{
+                  position: 'absolute', bottom: 3, left: 0, right: 0,
+                  textAlign: 'center', fontSize: 9, color: C.cream,
+                  background: 'rgba(0,0,0,0.55)', borderRadius: '0 0 8px 8px',
+                  padding: '1px 3px',
+                }}>
+                  {String(ru.uid).slice(0, 8)}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* ── Top bar (absolute over video) ── */}
         <div style={{
@@ -808,11 +911,15 @@ export default function AstroLive() {
         />
       )}
 
-      {/* Pulsing dot keyframe injected once */}
+      {/* Keyframes injected once */}
       <style>{`
         @keyframes livePulse {
           0%, 100% { opacity: 1; transform: scale(1); }
           50%       { opacity: 0.4; transform: scale(0.7); }
+        }
+        @keyframes reqPulse {
+          0%, 100% { border-color: #D4A12A; box-shadow: 0 0 0 0 rgba(212,161,42,0.4); }
+          50%       { border-color: #7F2020; box-shadow: 0 0 0 4px rgba(212,161,42,0); }
         }
       `}</style>
     </div>
@@ -1122,6 +1229,13 @@ function JoinRequestsPanel({
   compUsed, compLimit, wishlistUsers,
   onAccept, onDecline, onPromote, onKick, onBlock, onMakeComp,
 }) {
+  const [, setElapsedTick] = useState(0);
+  useEffect(() => {
+    if (!open || connectedUsers.length === 0) return undefined;
+    const t = setInterval(() => setElapsedTick((n) => n + 1), 1000);
+    return () => clearInterval(t);
+  }, [open, connectedUsers.length]);
+
   const hasAnything = pendingReqs.length > 0 || waitlistReqs.length > 0
     || connectedUsers.length > 0;
 
@@ -1186,7 +1300,12 @@ function JoinRequestsPanel({
             return (
               <div key={r.id} style={{
                 display: 'flex', alignItems: 'center', gap: 10,
-                padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)',
+                padding: '8px 8px', borderRadius: 10,
+                border: r.status === 'pending'
+                  ? `1.5px solid ${C.amber}`
+                  : '1px solid rgba(255,255,255,0.05)',
+                animation: r.status === 'pending' ? 'reqPulse 1.6s ease-in-out infinite' : 'none',
+                marginBottom: 4,
               }}>
                 <Avatar name={r.userName} size={36} />
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -1246,33 +1365,53 @@ function JoinRequestsPanel({
           {connectedUsers.length > 0 && (
             <SectionLabel>Connected</SectionLabel>
           )}
-          {connectedUsers.map((u) => (
-            <div key={u.uid || u.id} style={{
-              display: 'flex', alignItems: 'center', gap: 10,
-              padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.05)',
-            }}>
-              <Avatar name={u.userName || u.name} size={34} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: 5,
-                  fontSize: 13, fontWeight: 700, color: C.cream,
+          <div className="space-y-2">
+            {connectedUsers.map((cu) => (
+              <div key={cu.uid || cu.userId || cu.id}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  borderRadius: 12, padding: '8px 10px',
+                  background: 'rgba(255,255,255,0.08)',
+                  border: '1px solid rgba(255,255,255,0.15)',
+                  marginBottom: 6,
                 }}>
-                  <span>{u.userName || u.name}</span>
-                  <IconCallType type={u.callType} />
+                <div style={{
+                  display: 'flex', width: 38, height: 38, flexShrink: 0,
+                  alignItems: 'center', justifyContent: 'center',
+                  borderRadius: '50%', fontWeight: 700, color: '#fff',
+                  background: C.maroon, fontSize: 15,
+                }}>
+                  {(cu.name || cu.userName || cu.displayName || 'U').charAt(0).toUpperCase()}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontWeight: 700, color: C.cream, fontSize: 13,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}>
+                    {cu.name || cu.userName || cu.displayName || 'Guest'}
+                  </div>
+                  <div style={{ fontSize: 11, color: C.amber }}>
+                    Connected {cu.connectedAt ? getElapsed(cu.connectedAt) : '--'}
+                  </div>
+                  <div style={{ fontSize: 10, color: '#aaa' }}>
+                    {cu.callType === 'video' ? 'Video' : 'Audio'} call
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
+                  <SheetBtn
+                    onClick={() => onKick(cu.uid || cu.userId || cu.id)}
+                    color={C.maroon}>
+                    Kick
+                  </SheetBtn>
+                  <SheetBtn
+                    onClick={() => onBlock(cu.uid || cu.userId || cu.id)}
+                    color="rgba(255,255,255,0.1)">
+                    Block
+                  </SheetBtn>
                 </div>
               </div>
-              <div style={{ display: 'flex', gap: 5, flexShrink: 0 }}>
-                <SheetBtn onClick={() => onKick(u.uid || u.id)}
-                  color={C.maroon}>
-                  Kick
-                </SheetBtn>
-                <SheetBtn onClick={() => onBlock(u.uid || u.id)}
-                  color="rgba(255,255,255,0.1)">
-                  Block
-                </SheetBtn>
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
 
           {/* Waitlist */}
           {waitlistReqs.length > 0 && (
