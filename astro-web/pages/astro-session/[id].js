@@ -23,6 +23,10 @@ export default function ActiveSession() {
   const [speaker, setSpeakerOn] = useState(true);
   const [endModalOpen, setEndModalOpen] = useState(false);
   const [sessionEnded, setSessionEnded] = useState(false);
+  // IMPROVEMENT 1: Agora connection error state
+  const [agoraErr, setAgoraErr] = useState(null);
+  // IMPROVEMENT 4: Closeable ended banner
+  const [endedBannerVisible, setEndedBannerVisible] = useState(true);
   const scrollRef = useRef(null);
   const remoteRef = useRef(null);
   const localRef = useRef(null);
@@ -73,7 +77,7 @@ export default function ActiveSession() {
     return () => clearInterval(t);
   }, [session?.status]);
 
-  // Join Agora for call/video sessions (channel = sessionId).
+  // IMPROVEMENT 1: Join Agora with full try/catch - show error banner on failure
   useEffect(() => {
     if (session?.status !== 'active' || session?.type === 'chat') return;
     if (joinedRef.current || !id) return;
@@ -94,14 +98,56 @@ export default function ActiveSession() {
         if (session.type === 'video' && tracks.video && localRef.current) {
           tracks.video.play(localRef.current);
         }
+        // Clear any previous error on successful join
+        setAgoraErr(null);
         // Record the call/video for admin monitoring (best effort).
         recordService.startRecording({
           sessionId: id, type: session.type,
           astroId: user.uid, userId: session.userId,
         }).catch(() => {});
-      } catch (e) { console.error(e); }
+      } catch (e) {
+        console.error(e);
+        joinedRef.current = false; // allow retry
+        setAgoraErr('Could not connect to call. Check camera/microphone permissions.');
+      }
     })();
   }, [session?.status, session?.type, id, user]);
+
+  function retryAgoraJoin() {
+    setAgoraErr(null);
+    // Reset join guard so the effect can fire again
+    joinedRef.current = false;
+    // Re-trigger by toggling a dummy state that causes the effect to re-run
+    // We do this by invoking the join logic directly
+    if (!session || !id || !user) return;
+    (async () => {
+      try {
+        const tok = await callService.fetchAgoraToken(id, user.uid);
+        await callService.joinAgoraChannel(
+          id, user.uid,
+          tok.appId || callService.AGORA_APP_ID,
+          tok.token || null);
+        callService.subscribeToRemote((u, mt) => {
+          if (mt === 'video') u.videoTrack?.play(remoteRef.current);
+          if (mt === 'audio') u.audioTrack?.play();
+        });
+        const tracks = await callService.publishLocalTracks(
+          { video: session.type === 'video' });
+        if (session.type === 'video' && tracks.video && localRef.current) {
+          tracks.video.play(localRef.current);
+        }
+        setAgoraErr(null);
+        joinedRef.current = true;
+        recordService.startRecording({
+          sessionId: id, type: session.type,
+          astroId: user.uid, userId: session.userId,
+        }).catch(() => {});
+      } catch (e) {
+        console.error(e);
+        setAgoraErr('Could not connect to call. Check camera/microphone permissions.');
+      }
+    })();
+  }
 
   useEffect(() => {
     // Ping on a genuinely new incoming (client) message, like WA/Meta.
@@ -129,6 +175,7 @@ export default function ActiveSession() {
       recordService.stopRecording().catch(() => {});
       callService.leaveAgoraChannel();
       setSessionEnded(true);
+      setEndedBannerVisible(true);
     }
   }, [session?.status]);
 
@@ -181,7 +228,7 @@ export default function ActiveSession() {
   }
 
   if (loading || !session) {
-    return <div className="p-6 text-sub-text">Loading session…</div>;
+    return <div className="p-6 text-sub-text">Loading session...</div>;
   }
 
   const mmss = `${String(Math.floor(elapsed / 60)).padStart(2, '0')}:` +
@@ -201,6 +248,12 @@ export default function ActiveSession() {
   const lowBalance = walletSecsLeft !== null && walletSecsLeft <= 60
     && walletSecsLeft > 0;
 
+  // IMPROVEMENT 5: Earnings summary data
+  const dur = Number(session.duration) || 0;
+  const cost = Number(session.cost) || 0;
+  const earned = Number(session.astroEarning || session.earned) || 0;
+  const durMin = dur > 0 ? Math.ceil(dur / 60) : null;
+
   return (
     <div className="flex h-screen flex-col">
       {endModalOpen && (
@@ -208,23 +261,67 @@ export default function ActiveSession() {
           onConfirm={doEndSession}
           onCancel={() => setEndModalOpen(false)} />
       )}
-      {sessionEnded && (
-        <AstroSessionEndedBanner session={session} />
+      {/* IMPROVEMENT 1: Agora error banner */}
+      {agoraErr && (
+        <div className="fixed inset-x-0 top-0 z-[70] flex items-center
+          justify-between gap-3 bg-[#7F2020] px-4 py-3 shadow-lg">
+          <div className="flex items-center gap-2 min-w-0">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+              stroke="#FFF8E7" strokeWidth="2" strokeLinecap="round"
+              strokeLinejoin="round" className="shrink-0">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+            <span className="text-sm font-semibold text-[#FFF8E7] truncate">
+              {agoraErr}
+            </span>
+          </div>
+          <button
+            onClick={retryAgoraJoin}
+            className="shrink-0 rounded-full border border-[#FFF8E7]/60
+              px-4 py-1.5 text-xs font-bold text-[#FFF8E7]
+              hover:bg-[#FFF8E7]/10 active:bg-[#FFF8E7]/20">
+            Retry
+          </button>
+        </div>
       )}
-      {/* Always-visible top bar with a prominent End button */}
+      {/* IMPROVEMENT 4: Closeable session ended banner */}
+      {sessionEnded && endedBannerVisible && (
+        <AstroSessionEndedBanner
+          session={session}
+          onClose={() => setEndedBannerVisible(false)} />
+      )}
+      {/* IMPROVEMENT 6: Always-visible top bar with active blinking dot */}
       <div className="flex items-center justify-between gap-2 bg-primary
-                      px-4 py-2 text-white">
+                      px-4 py-2 text-white"
+        style={{ paddingTop: agoraErr ? '3.5rem' : undefined }}>
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold">
             {client?.name || 'Client'}
           </div>
-          <div className="text-[11px] capitalize opacity-90">
-            {session.type} · {mmss}
+          <div className="flex items-center gap-1.5 text-[11px]">
+            {/* Blinking dot when session is active */}
+            {session.status === 'active' && !sessionEnded && (
+              <span className="relative flex h-2 w-2 shrink-0">
+                <span className="absolute inline-flex h-full w-full
+                  animate-ping rounded-full bg-[#D4A12A] opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full
+                  bg-[#D4A12A]" />
+              </span>
+            )}
+            <span className="capitalize opacity-90">
+              {session.type}
+            </span>
+            <span className="opacity-60">|</span>
+            <span className="font-mono font-semibold tracking-wide">
+              {mmss}
+            </span>
             {custRemainClock && (
-              <span className={'ml-1 ' + (lowBalance
+              <span className={'ml-0.5 ' + (lowBalance
                 ? 'font-bold text-[#D4A12A]'
                 : 'opacity-75')}>
-                · Customer {custRemainClock} left
+                | Client {custRemainClock} left
               </span>
             )}
           </div>
@@ -239,7 +336,7 @@ export default function ActiveSession() {
       </div>
       <div className="flex flex-1 flex-col overflow-hidden md:flex-row">
       {/* Client info panel (collapsible on mobile) */}
-      <aside className="bg-bg-light p-4 md:w-72">
+      <aside className="bg-bg-light p-4 md:w-72 overflow-y-auto">
         <div className="font-bold">{client?.name || 'Client'}</div>
         <div className="text-xs text-sub-text">Code {client?.userCode}</div>
         {session.purpose && (
@@ -269,6 +366,50 @@ export default function ActiveSession() {
             )}
           </div>
         )}
+        {/* IMPROVEMENT 5: Earnings summary card shown when session ended */}
+        {sessionEnded && (
+          <div className="mt-4 rounded-2xl border border-[#D4A12A]/30
+            bg-[#FFF8E7] px-4 py-3 text-sm shadow-sm">
+            <div className="mb-2 flex items-center gap-1.5">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+                stroke="#7F2020" strokeWidth="2" strokeLinecap="round"
+                strokeLinejoin="round" className="shrink-0">
+                <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5
+                  0 0 1 0 7H6" />
+              </svg>
+              <span className="font-bold text-[#7F2020]">
+                Session Summary
+              </span>
+            </div>
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-sub-text text-[12px]">Duration</span>
+                <span className="font-semibold text-dark-text">
+                  {durMin ? `${durMin} min` : `${Math.ceil(elapsed / 60)} min`}
+                </span>
+              </div>
+              {cost > 0 && (
+                <div className="flex items-center justify-between">
+                  <span className="text-sub-text text-[12px]">Client paid</span>
+                  <span className="font-semibold text-dark-text">
+                    Rs. {cost}
+                  </span>
+                </div>
+              )}
+              {earned > 0 && (
+                <div className="flex items-center justify-between border-t
+                  border-[#D4A12A]/20 pt-1.5 mt-1.5">
+                  <span className="text-[12px] font-semibold text-[#7F2020]">
+                    You earned
+                  </span>
+                  <span className="font-bold text-[#7F2020]">
+                    Rs. {earned}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
         {!sessionEnded && (
           <button onClick={endSession}
             className="btn-danger mt-4 w-full">End Session</button>
@@ -283,18 +424,76 @@ export default function ActiveSession() {
         {session.type !== 'chat' && (
           <div className="relative flex flex-1 flex-col bg-call-bg
                           text-white">
+            {/* IMPROVEMENT 2: Professional video connecting card */}
             <div ref={remoteRef}
               className="flex flex-1 items-center justify-center">
-              {session.type === 'video'
-                ? 'Connecting video…' : 'Voice call connected'}
+              {session.type === 'video' && !agoraErr && (
+                <div className="flex flex-col items-center gap-4 rounded-2xl
+                  border border-white/10 bg-black/40 px-8 py-6 backdrop-blur-sm">
+                  {/* Spinning indicator */}
+                  <div className="relative h-16 w-16">
+                    <div className="absolute inset-0 rounded-full border-4
+                      border-white/10" />
+                    <div className="absolute inset-0 animate-spin rounded-full
+                      border-4 border-transparent border-t-[#D4A12A]" />
+                    {/* Client initials in centre */}
+                    <div className="absolute inset-0 flex items-center
+                      justify-center text-lg font-bold text-white/80">
+                      {(client?.name || 'C').charAt(0).toUpperCase()}
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-base font-semibold text-white">
+                      {client?.name || 'Client'}
+                    </div>
+                    <div className="mt-0.5 text-sm text-white/60">
+                      Connecting video...
+                    </div>
+                  </div>
+                </div>
+              )}
+              {session.type === 'audio' && !agoraErr && (
+                <div className="flex flex-col items-center gap-4 rounded-2xl
+                  border border-white/10 bg-black/40 px-8 py-6 backdrop-blur-sm">
+                  <div className="relative h-16 w-16">
+                    <div className="absolute inset-0 rounded-full border-4
+                      border-white/10" />
+                    <div className="absolute inset-0 animate-spin rounded-full
+                      border-4 border-transparent border-t-[#D4A12A]" />
+                    <div className="absolute inset-0 flex items-center
+                      justify-center">
+                      <svg width="26" height="26" viewBox="0 0 24 24"
+                        fill="none" stroke="rgba(255,255,255,0.8)"
+                        strokeWidth="2" strokeLinecap="round"
+                        strokeLinejoin="round">
+                        <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0
+                          0 1-8.6-3 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0
+                          1-3-8.6A2 2 0 0 1 4.1 2h3a2 2 0 0 1 2
+                          1.7c.1.9.3 1.8.6 2.6a2 2 0 0 1-.5 2.1L8
+                          9.6a16 16 0 0 0 6 6l1.2-1.2a2 2 0 0 1
+                          2.1-.5c.8.3 1.7.5 2.6.6a2 2 0 0 1 1.7 2z" />
+                      </svg>
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-base font-semibold text-white">
+                      {client?.name || 'Client'}
+                    </div>
+                    <div className="mt-0.5 text-sm text-white/60">
+                      Voice call connecting...
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
             {session.type === 'video' && (
               <div ref={localRef}
                 className="absolute right-3 top-3 h-36 w-24 overflow-hidden
                            rounded-card bg-black/60" />
             )}
-            <div className="flex flex-col items-center gap-4 py-6">
-              <div className="flex items-center justify-center gap-5">
+            {/* IMPROVEMENT 3: Larger, labelled call controls */}
+            <div className="flex flex-col items-center gap-5 py-7">
+              <div className="flex items-center justify-center gap-6">
                 <SCtl on={!muted} label={muted ? 'Unmute' : 'Mute'}
                   onClick={toggleMute}>
                   {muted ? (
@@ -337,9 +536,10 @@ export default function ActiveSession() {
               </div>
               {!sessionEnded && (
               <button onClick={endSession} aria-label="End call"
-                className="flex h-16 w-16 items-center justify-center
-                  rounded-full bg-danger shadow-lg">
-                <svg width="28" height="28" viewBox="0 0 24 24"
+                className="flex h-[72px] w-[72px] items-center justify-center
+                  rounded-full bg-danger shadow-xl transition-transform
+                  active:scale-95">
+                <svg width="32" height="32" viewBox="0 0 24 24"
                   fill="none" stroke="#fff" strokeWidth="2"
                   strokeLinecap="round" strokeLinejoin="round">
                   <g transform="rotate(135 12 12)">
@@ -352,6 +552,12 @@ export default function ActiveSession() {
                   </g>
                 </svg>
               </button>
+              )}
+              {!sessionEnded && (
+                <span className="text-[11px] font-semibold text-white/60
+                  tracking-wide uppercase">
+                  End Call
+                </span>
               )}
             </div>
           </div>
@@ -466,9 +672,10 @@ function EndConsultationModal({ onConfirm, onCancel }) {
   );
 }
 
-// Banner shown to the astrologer after the session ends. Displays
-// duration, client cost, and the astrologer's earned amount.
-function AstroSessionEndedBanner({ session }) {
+// IMPROVEMENT 4: Banner shown to the astrologer after the session ends.
+// Now closeable with an X button. Displays duration, client cost, and
+// the astrologer's earned amount.
+function AstroSessionEndedBanner({ session, onClose }) {
   if (!session) return null;
   const dur = Number(session.duration) || 0;
   const cost = Number(session.cost) || 0;
@@ -480,30 +687,49 @@ function AstroSessionEndedBanner({ session }) {
       <div className="pointer-events-auto mt-3 w-full max-w-md rounded-2xl
         border border-[#7F2020]/30 bg-[#FFF8E7] px-4 py-3 text-sm
         shadow-2xl">
-        <div className="font-bold text-[#7F2020]">Consultation ended</div>
+        <div className="flex items-start justify-between gap-2">
+          <div className="font-bold text-[#7F2020]">Consultation ended</div>
+          <button
+            onClick={onClose}
+            aria-label="Dismiss"
+            className="flex h-6 w-6 shrink-0 items-center justify-center
+              rounded-full text-[#7F2020]/60 transition-colors
+              hover:bg-[#7F2020]/10 hover:text-[#7F2020]">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"
+              strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
         <div className="mt-0.5 text-dark-text">
           {durMin ? `Duration: ${durMin} min. ` : ''}
-          {cost > 0 ? `Cost: ₹${cost}. ` : ''}
-          {earned > 0 ? `Earned: ₹${earned}.` : ''}
+          {cost > 0 ? `Cost: Rs.${cost}. ` : ''}
+          {earned > 0 ? `Earned: Rs.${earned}.` : ''}
         </div>
       </div>
     </div>
   );
 }
 
-// Round in-call control (icon + label), WhatsApp/iPhone style.
+// IMPROVEMENT 3: Round in-call control (icon + label), larger and more
+// visible with bold label. WhatsApp/iPhone style.
 function SCtl({ on, label, onClick, children }) {
   return (
     <button onClick={onClick} aria-label={label}
-      className="flex flex-col items-center gap-1.5">
-      <span className={`flex h-12 w-12 items-center justify-center
-        rounded-full ${on ? 'bg-white/20'
-          : 'bg-white text-dark-text'}`}>
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+      className="flex flex-col items-center gap-2">
+      <span className={`flex h-14 w-14 items-center justify-center
+        rounded-full shadow-md transition-colors ${on
+          ? 'bg-white/20 hover:bg-white/30'
+          : 'bg-white text-dark-text hover:bg-white/90'}`}>
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none"
           stroke="currentColor" strokeWidth="2" strokeLinecap="round"
           strokeLinejoin="round">{children}</svg>
       </span>
-      <span className="text-[11px] text-white opacity-90">{label}</span>
+      <span className="text-[12px] font-semibold text-white/90 tracking-wide">
+        {label}
+      </span>
     </button>
   );
 }

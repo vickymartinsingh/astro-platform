@@ -17,12 +17,14 @@ export default function AstroChat() {
   const [session, setSession] = useState(null);
   const [client, setClient] = useState(null);
   const [kundli, setKundli] = useState(null);
+  const [astrologer, setAstrologer] = useState(null);
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
   const [otherTyping, setOtherTyping] = useState(false);
   const [recording, setRecording] = useState(false);
   const [busyAudio, setBusyAudio] = useState(false);
   const [remedyOpen, setRemedyOpen] = useState(false);
+  const [remedyLoading, setRemedyLoading] = useState(false);
   const [myRemedies, setMyRemedies] = useState([]);
   const [aiAvailable, setAiAvailable] = useState(false); // admin-enabled
   const [aiOn, setAiOn] = useState(false);                // this astro's
@@ -90,7 +92,10 @@ export default function AstroChat() {
       setAiAvailable(assistantService.aiAvailableForAstro(cfg, user.uid));
     });
     astrologerService.getAstrologer(user.uid)
-      .then((a) => setAiOn(assistantService.astroAssistantOn(a)))
+      .then((a) => {
+        setAstrologer(a);
+        setAiOn(assistantService.astroAssistantOn(a));
+      })
       .catch(() => {});
     return () => { if (unsub) unsub(); };
   }, [user && user.uid]);
@@ -193,7 +198,11 @@ export default function AstroChat() {
         });
       } catch (_) {}
     }
-    try { await sessionService.endAndSettleClient(id); } catch (_) {}
+    try {
+      await sessionService.endAndSettleClient(id);
+    } catch (_) {
+      notify('Settlement failed - please contact support', 'err');
+    }
     try { await sessionService.collectAstrologerEarnings(user.uid); }
     catch (_) {}
     sessionService.endSession(id).catch(() => {});
@@ -202,8 +211,16 @@ export default function AstroChat() {
 
   async function openRemedies() {
     if (!user) return;
-    setMyRemedies(await remedyService.getAstrologerRemedies(user.uid));
+    setRemedyLoading(true);
     setRemedyOpen(true);
+    try {
+      const results = await remedyService.getAstrologerRemedies(user.uid);
+      setMyRemedies(results);
+    } catch (_) {
+      setMyRemedies([]);
+    } finally {
+      setRemedyLoading(false);
+    }
   }
   async function suggestRemedy(r) {
     setRemedyOpen(false);
@@ -284,6 +301,27 @@ export default function AstroChat() {
   const sessionIsActive = session.status === 'active'
     || session.status === 'accepted';
   const sessionIsEnded = session.status === 'ended';
+  const aiHandlingChat = aiAvailable && session.type === 'chat'
+    && session.aiActive && !session.astroTookOver;
+
+  // Earnings summary computed once session ends.
+  const earned = Number(session.astroEarning || session.earned || 0);
+  const sessionCost = Number(session.cost || 0);
+  const sessionDurationMins = session.duration
+    ? Math.ceil(Number(session.duration) / 60) : null;
+
+  // Elapsed clock string (MM:SS)
+  const elapsedClock = String(Math.floor(elapsedSecs / 60)).padStart(2, '0')
+    + ':' + String(elapsedSecs % 60).padStart(2, '0');
+
+  const ratePerSec = session.ratePerSecond || 0;
+  const ratePerMin = Math.round(ratePerSec * 60);
+  const walletSecsLeft = ratePerSec > 0
+    ? Math.max(0, Math.floor((session.clientWallet || 0) / ratePerSec))
+    : null;
+
+  const astroAvatar = astrologer?.photo || astrologer?.photoURL || null;
+  const astroInitial = (astrologer?.name || 'A').charAt(0).toUpperCase();
 
   return (
     <div className="flex h-screen flex-col md:flex-row"
@@ -293,31 +331,11 @@ export default function AstroChat() {
           onConfirm={doEndSession}
           onCancel={() => setEndModalOpen(false)} />
       )}
-      {sessionIsEnded && (
-        <div className="pointer-events-none fixed inset-x-0 top-0 z-[60]
-          flex justify-center px-3 pt-[env(safe-area-inset-top)]">
-          <div className="pointer-events-auto mt-3 w-full max-w-md
-            rounded-2xl border border-[#7F2020]/30 bg-[#FFF8E7] px-4
-            py-3 text-sm shadow-2xl">
-            <div className="font-bold text-[#7F2020]">
-              Consultation ended
-            </div>
-            <div className="mt-0.5 text-dark-text">
-              {session.duration
-                ? `Duration: ${Math.ceil(
-                    Number(session.duration) / 60)} min. ` : ''}
-              {Number(session.cost) > 0
-                ? `Cost: ₹${Number(session.cost)}. ` : ''}
-              {Number(session.astroEarning || session.earned) > 0
-                ? `Earned: ₹${Number(
-                    session.astroEarning || session.earned)}.` : ''}
-            </div>
-          </div>
-        </div>
-      )}
+
+      {/* Toast notifications */}
       {toast && (
-        <div className={`pointer-events-none fixed inset-x-0 top-2 z-50
-            flex justify-center px-3`}>
+        <div className="pointer-events-none fixed inset-x-0 top-2 z-50
+            flex justify-center px-3">
           <div className={`pointer-events-auto flex items-start gap-2
               rounded-card px-3 py-2 text-sm shadow-md
               ${toast.kind === 'ok'
@@ -326,128 +344,313 @@ export default function AstroChat() {
             <span>{toast.msg}</span>
             <button onClick={() => setToast(null)}
               aria-label="Dismiss" className="opacity-60 hover:opacity-100">
-              ✕
+              &#x2715;
             </button>
           </div>
         </div>
       )}
-      <aside className="bg-bg-light p-4 md:w-72">
-        <button onClick={() => router.push('/astro-sessions')}
-          className="mb-3 text-sm font-semibold text-primary">
-          ← Back to sessions
-        </button>
-        <div className="font-bold">{client?.name || 'Client'}</div>
-        <div className="text-xs text-sub-text">Code {client?.userCode}</div>
-        {aiAvailable && session.type === 'chat' && (
-          <div className="mt-3 flex items-center justify-between
-            rounded-card border border-primary/30 bg-white p-2.5">
-            <div className="min-w-0">
-              <div className="text-sm font-semibold text-dark-text">
-                AI Assistant
-              </div>
-              <div className="text-[11px] text-sub-text">
-                {aiOn ? (aiBusy ? 'Replying…' : 'Auto-replying to chats')
-                  : 'Off, you reply manually'}
-              </div>
-            </div>
-            <button onClick={toggleAi}
-              className={`relative h-6 w-11 shrink-0 rounded-full
-                transition ${aiOn ? 'bg-emerald-500' : 'bg-gray-300'}`}
-              aria-label="Toggle AI assistant">
-              <span className={`absolute top-0.5 h-5 w-5 rounded-full
-                bg-white transition-all ${aiOn ? 'left-5' : 'left-0.5'}`} />
-            </button>
-          </div>
-        )}
-        {aiAvailable && session.type === 'chat'
-          && (session.aiActive || session.astroTookOver) && (
-          <div className="mt-2">
-            {!session.astroTookOver ? (
-              <button onClick={takeOver} disabled={takeoverBusy}
-                className="w-full rounded-card px-3 py-2 text-sm
-                  font-semibold text-white transition active:opacity-80
-                  disabled:opacity-50"
-                style={{ background: '#D4A12A' }}>
-                {takeoverBusy ? 'Taking over...' : 'Take Over'}
-              </button>
-            ) : (
-              <button onClick={handBackToAi} disabled={takeoverBusy}
-                className="w-full rounded-card border px-3 py-2 text-sm
-                  font-semibold transition active:opacity-80
-                  disabled:opacity-50"
-                style={{ borderColor: '#7F2020', color: '#7F2020',
-                  background: '#FFF8E7' }}>
-                {takeoverBusy ? 'Handing back...' : 'Hand back to AI'}
-              </button>
-            )}
-            <div className="mt-1 text-center text-[10px] text-sub-text">
-              {!session.astroTookOver
-                ? 'AI is currently handling this chat'
-                : 'You are handling this chat'}
-            </div>
-          </div>
-        )}
-        {session.purpose && (
-          <p className="mt-2 text-sm">Purpose: {session.purpose}</p>
-        )}
-        {kundli && (
-          <div className="mt-3 whitespace-pre-line rounded-card bg-white
-                          p-3 text-sm">
-            {[kundli.name, `DOB: ${kundli.dob}`,
-              `Time of birth: ${kundli.tob || '--'} ${kundli.ampm || ''}`
-                .trim(),
-              `Place of birth: ${kundli.place || '--'}`,
-              kundli.zodiac ? `Sign: ${kundli.zodiac}` : ''
-            ].filter(Boolean).join('\n')}
-          </div>
-        )}
-        <div className="mt-3 text-sm capitalize text-sub-text">
-          Status: {session.status}
-        </div>
-        {sessionIsActive && (
-          <button onClick={endSession}
-            className="mt-3 w-full rounded-full py-2.5 text-sm font-bold
-              text-white shadow"
-            style={{ background: '#7F2020' }}>
-            End Consultation
+
+      {/* Sidebar */}
+      <aside className="bg-bg-light md:w-72 flex flex-col"
+        style={{ borderRight: '1px solid #E8D5B0' }}>
+
+        {/* Back button */}
+        <div className="p-4 pb-0">
+          <button onClick={() => router.push('/astro-sessions')}
+            className="mb-3 text-sm font-semibold text-primary flex
+              items-center gap-1">
+            <span style={{ fontSize: '1.1em' }}>&#8592;</span>
+            Back to sessions
           </button>
-        )}
-        {session.status === 'active' && !!session.startTime && (() => {
-          const ratePerSec = session.ratePerSecond || 0;
-          const ratePerMin = Math.round(ratePerSec * 60);
-          const walletSecsLeft = ratePerSec > 0
-            ? Math.max(0, Math.floor(
-                (session.clientWallet || 0) / ratePerSec))
-            : null;
-          const elapsedClock = String(Math.floor(elapsedSecs / 60))
-            .padStart(2, '0') + ':' + String(elapsedSecs % 60)
-            .padStart(2, '0');
-          return (
-            <div className="mt-3 rounded-card border border-gray-200
-              bg-white p-2.5 text-sm">
+        </div>
+
+        {/* Client info */}
+        <div className="px-4 pb-3 border-b"
+          style={{ borderColor: '#E8D5B0' }}>
+          <div className="font-bold text-dark-text">
+            {client?.name || 'Client'}
+          </div>
+          <div className="text-xs text-sub-text">
+            Code {client?.userCode}
+          </div>
+        </div>
+
+        {/* Session Info section */}
+        <div className="px-4 pt-3 pb-3 border-b"
+          style={{ borderColor: '#E8D5B0' }}>
+          <div className="mb-2 text-[11px] font-bold uppercase tracking-widest"
+            style={{ color: '#7F2020' }}>
+            Session Info
+          </div>
+
+          {/* Status row */}
+          <div className="flex items-center justify-between text-sm mb-2">
+            <span className="text-sub-text">Status</span>
+            <span className={`font-semibold capitalize ${
+              sessionIsActive ? 'text-emerald-600'
+              : sessionIsEnded ? 'text-[#7F2020]' : 'text-sub-text'
+            }`}>
+              {session.status}
+            </span>
+          </div>
+
+          {/* Elapsed + wallet for active sessions */}
+          {session.status === 'active' && !!session.startTime && (
+            <div className="rounded-card border p-2.5 text-sm space-y-1.5"
+              style={{ borderColor: '#D4A12A', background: '#FFFDF5' }}>
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sub-text">Elapsed</span>
                 <span className="font-mono font-bold text-dark-text">
                   {elapsedClock}
                 </span>
               </div>
-              {ratePerMin > 0 && walletSecsLeft !== null && (
-                <div className="mt-1 flex items-center justify-between
-                  gap-2">
-                  <span className="text-sub-text">Customer has</span>
-                  <span className={'font-mono font-bold ' + (walletSecsLeft <= 60
-                    ? 'text-[#D4A12A]' : 'text-dark-text')}>
+              {ratePerMin > 0 && (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sub-text">Rate</span>
+                  <span className="font-semibold text-dark-text">
+                    Rs {ratePerMin}/min
+                  </span>
+                </div>
+              )}
+              {walletSecsLeft !== null && (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sub-text">Client balance</span>
+                  <span className={`font-mono font-bold ${
+                    walletSecsLeft <= 60 ? 'text-[#D4A12A]' : 'text-dark-text'
+                  }`}>
                     {String(Math.floor(walletSecsLeft / 60)).padStart(2, '0')}
                     :{String(walletSecsLeft % 60).padStart(2, '0')} min
                   </span>
                 </div>
               )}
+              {ratePerMin > 0 && (
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sub-text">Est. earned</span>
+                  <span className="font-semibold"
+                    style={{ color: '#7F2020' }}>
+                    Rs {Math.round(ratePerSec * elapsedSecs * 0.7)}
+                  </span>
+                </div>
+              )}
             </div>
-          );
-        })()}
+          )}
+
+          {/* Purpose */}
+          {session.purpose && (
+            <div className="mt-2 text-sm text-sub-text">
+              <span className="font-semibold text-dark-text">Purpose:</span>{' '}
+              {session.purpose}
+            </div>
+          )}
+        </div>
+
+        {/* Client Kundli section */}
+        {kundli && (
+          <div className="px-4 pt-3 pb-3 border-b"
+            style={{ borderColor: '#E8D5B0' }}>
+            <div className="mb-2 text-[11px] font-bold uppercase tracking-widest"
+              style={{ color: '#7F2020' }}>
+              Client Kundli
+            </div>
+            <div className="rounded-card bg-white p-3 text-sm space-y-0.5"
+              style={{ border: '1px solid #E8D5B0' }}>
+              {kundli.name && (
+                <div className="font-semibold text-dark-text">{kundli.name}</div>
+              )}
+              {kundli.dob && (
+                <div className="text-sub-text text-xs">DOB: {kundli.dob}</div>
+              )}
+              {(kundli.tob || kundli.ampm) && (
+                <div className="text-sub-text text-xs">
+                  Time: {kundli.tob || '--'} {kundli.ampm || ''}
+                </div>
+              )}
+              {kundli.place && (
+                <div className="text-sub-text text-xs">
+                  Place: {kundli.place}
+                </div>
+              )}
+              {kundli.zodiac && (
+                <div className="mt-1 inline-block rounded-full px-2 py-0.5
+                  text-[11px] font-semibold text-white"
+                  style={{ background: '#7F2020' }}>
+                  {kundli.zodiac}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* AI Assistant section */}
+        {aiAvailable && session.type === 'chat' && (
+          <div className="px-4 pt-3 pb-3 border-b"
+            style={{ borderColor: '#E8D5B0' }}>
+            <div className="mb-2 text-[11px] font-bold uppercase tracking-widest"
+              style={{ color: '#7F2020' }}>
+              AI Assistant
+            </div>
+            <div className="flex items-center justify-between rounded-card
+              border bg-white p-2.5"
+              style={{ borderColor: '#D4A12A30' }}>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-dark-text">
+                  Auto-reply
+                </div>
+                <div className="text-[11px] text-sub-text">
+                  {aiOn ? (aiBusy ? 'Replying...' : 'Auto-replying to chats')
+                    : 'Off, you reply manually'}
+                </div>
+              </div>
+              <button onClick={toggleAi}
+                className={`relative h-6 w-11 shrink-0 rounded-full
+                  transition ${aiOn ? 'bg-emerald-500' : 'bg-gray-300'}`}
+                aria-label="Toggle AI assistant">
+                <span className={`absolute top-0.5 h-5 w-5 rounded-full
+                  bg-white transition-all ${aiOn ? 'left-5' : 'left-0.5'}`} />
+              </button>
+            </div>
+            {(session.aiActive || session.astroTookOver) && (
+              <div className="mt-2">
+                {!session.astroTookOver ? (
+                  <button onClick={takeOver} disabled={takeoverBusy}
+                    className="w-full rounded-card px-3 py-2 text-sm
+                      font-semibold text-white transition active:opacity-80
+                      disabled:opacity-50"
+                    style={{ background: '#D4A12A' }}>
+                    {takeoverBusy ? 'Taking over...' : 'Take Over Chat'}
+                  </button>
+                ) : (
+                  <button onClick={handBackToAi} disabled={takeoverBusy}
+                    className="w-full rounded-card border px-3 py-2 text-sm
+                      font-semibold transition active:opacity-80
+                      disabled:opacity-50"
+                    style={{ borderColor: '#7F2020', color: '#7F2020',
+                      background: '#FFF8E7' }}>
+                    {takeoverBusy ? 'Handing back...' : 'Hand back to AI'}
+                  </button>
+                )}
+                <div className="mt-1 text-center text-[10px] text-sub-text">
+                  {!session.astroTookOver
+                    ? 'AI is currently handling this chat'
+                    : 'You are handling this chat'}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Spacer + End button */}
+        <div className="flex-1" />
+        {sessionIsActive && (
+          <div className="p-4">
+            <button onClick={endSession}
+              className="w-full rounded-full py-2.5 text-sm font-bold
+                text-white shadow"
+              style={{ background: '#7F2020' }}>
+              End Consultation
+            </button>
+          </div>
+        )}
       </aside>
 
-      <main className="flex flex-1 flex-col bg-bg-gray">
+      {/* Main chat area */}
+      <main className="flex flex-1 flex-col bg-bg-gray overflow-hidden">
+
+        {/* Chat header */}
+        <div className="flex flex-col bg-white shadow-sm"
+          style={{ borderBottom: '1px solid #E8D5B0' }}>
+
+          {/* Earnings summary banner (post-session) */}
+          {sessionIsEnded && (
+            <div className="px-4 py-3"
+              style={{ background: '#FFF8E7',
+                borderBottom: '1px solid #E8D5B0' }}>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                <div className="font-bold text-sm"
+                  style={{ color: '#7F2020' }}>
+                  Consultation Complete
+                </div>
+                {sessionDurationMins !== null && (
+                  <div className="text-sm text-dark-text">
+                    <span className="text-sub-text">Duration:</span>{' '}
+                    <span className="font-semibold">
+                      {sessionDurationMins} min
+                    </span>
+                  </div>
+                )}
+                {sessionCost > 0 && (
+                  <div className="text-sm text-dark-text">
+                    <span className="text-sub-text">Client paid:</span>{' '}
+                    <span className="font-semibold">Rs {sessionCost}</span>
+                  </div>
+                )}
+                {earned > 0 && (
+                  <div className="text-sm">
+                    <span className="text-sub-text">You earned:</span>{' '}
+                    <span className="font-bold" style={{ color: '#7F2020' }}>
+                      Rs {earned}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* AI active banner */}
+          {aiHandlingChat && (
+            <div className="flex items-center gap-2 px-4 py-2"
+              style={{ background: '#FFFDF0',
+                borderBottom: '1px solid #D4A12A40' }}>
+              <span className="flex h-6 w-6 shrink-0 items-center
+                justify-center rounded-full text-sm"
+                style={{ background: '#D4A12A', color: '#fff' }}>
+                AI
+              </span>
+              <span className="text-sm font-semibold"
+                style={{ color: '#7F2020' }}>
+                AI Assistant is handling this chat
+              </span>
+              <button onClick={takeOver} disabled={takeoverBusy}
+                className="ml-auto rounded-full px-3 py-1 text-xs
+                  font-bold text-white disabled:opacity-50"
+                style={{ background: '#7F2020' }}>
+                {takeoverBusy ? 'Taking over...' : 'Take Over'}
+              </button>
+            </div>
+          )}
+
+          {/* Client name row */}
+          <div className="flex items-center gap-3 px-4 py-3">
+            <div className="flex h-9 w-9 shrink-0 items-center
+              justify-center rounded-full font-bold text-white text-sm"
+              style={{ background: '#7F2020' }}>
+              {(client?.name || 'C').charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <div className="font-bold text-dark-text leading-tight">
+                {client?.name || 'Client'}
+              </div>
+              <div className="text-xs text-sub-text">
+                {sessionIsActive
+                  ? (otherTyping ? 'typing...' : 'Online')
+                  : 'Session ended'}
+              </div>
+            </div>
+            {sessionIsActive && session.status === 'active'
+              && !!session.startTime && (
+              <div className="ml-auto flex items-center gap-1.5 rounded-full
+                px-3 py-1 text-xs font-mono font-bold"
+                style={{ background: '#FFF8E7', color: '#7F2020',
+                  border: '1px solid #D4A12A40' }}>
+                <span className="h-2 w-2 rounded-full bg-emerald-500
+                  animate-pulse" />
+                {elapsedClock}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Messages */}
         <div ref={scrollRef}
           className="smooth-scroll flex-1 space-y-2 overflow-y-auto p-4">
           {messages.map((m) => {
@@ -473,44 +676,102 @@ export default function AstroChat() {
             );
           })}
         </div>
+
+        {/* Typing bubble */}
         {otherTyping && (
           <div className="px-4 pb-2">
             <AstroTypingBubble who="Client" />
           </div>
         )}
-        <div className="flex items-center gap-2 bg-white p-3">
+
+        {/* Input bar */}
+        <div className="flex items-center gap-2 bg-white px-3 py-2.5"
+          style={{ borderTop: '1px solid #E8D5B0' }}>
+          {/* Astrologer avatar */}
+          <div className="shrink-0 flex h-9 w-9 items-center justify-center
+            rounded-full overflow-hidden"
+            style={{ background: '#7F2020' }}>
+            {astroAvatar
+              ? <img src={astroAvatar} alt="You"
+                  className="h-full w-full object-cover" />
+              : <span className="text-white text-sm font-bold">
+                  {astroInitial}
+                </span>
+            }
+          </div>
+
+          {/* Voice record button */}
           <button onClick={toggleRecord} disabled={busyAudio}
             title="Record voice note"
-            className={`flex h-11 w-11 shrink-0 items-center
-              justify-center rounded-full text-lg ${recording
+            className={`flex h-9 w-9 shrink-0 items-center
+              justify-center rounded-full text-base transition ${recording
                 ? 'animate-pulse bg-danger text-white'
                 : 'bg-bg-light text-primary'}`}>
-            {busyAudio ? '...' : recording ? '■' : '🎤'}
+            {busyAudio ? '...' : recording ? '&#9646;' : '&#127908;'}
           </button>
-          <input className="input flex-1 !rounded-full" value={text}
+
+          {/* Text input */}
+          <input className="input flex-1 !rounded-full !py-2 text-sm"
+            value={text}
             placeholder={recording ? 'Recording... tap stop to send'
               : 'Type a reply...'}
             onChange={(e) => onType(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && send()} />
+
+          {/* Remedy button */}
           <button onClick={openRemedies} title="Suggest a remedy"
-            className="shrink-0 rounded-full bg-bg-light px-3 py-2
-              text-sm font-semibold text-primary">Remedy</button>
+            className="shrink-0 rounded-full px-3 py-2 text-sm
+              font-semibold transition active:opacity-80"
+            style={{ background: '#FFF8E7', color: '#7F2020',
+              border: '1px solid #D4A12A50' }}>
+            Remedy
+          </button>
+
+          {/* Send button */}
           <button onClick={send}
-            className="btn-grad !rounded-full px-5">Send</button>
+            className="shrink-0 flex h-9 w-9 items-center justify-center
+              rounded-full text-white shadow transition
+              active:opacity-80 disabled:opacity-40"
+            style={{ background: '#7F2020' }}
+            disabled={!text.trim()}
+            aria-label="Send message">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" strokeWidth="2.5"
+              strokeLinecap="round" strokeLinejoin="round">
+              <line x1="22" y1="2" x2="11" y2="13" />
+              <polygon points="22 2 15 22 11 13 2 9 22 2" />
+            </svg>
+          </button>
         </div>
+
+        {/* Remedies modal */}
         {remedyOpen && (
           <div className="fixed inset-0 z-50 flex items-end
             justify-center bg-black/40"
             onClick={() => setRemedyOpen(false)}>
             <div className="m-3 w-full max-w-md rounded-2xl bg-white p-4"
               onClick={(e) => e.stopPropagation()}>
-              <div className="mb-2 flex items-center justify-between">
-                <span className="font-bold">Suggest a remedy</span>
+              <div className="mb-3 flex items-center justify-between">
+                <span className="font-bold text-dark-text">
+                  Suggest a remedy
+                </span>
                 <button onClick={() => setRemedyOpen(false)}
-                  className="text-sm text-sub-text">Close</button>
+                  className="text-sm text-sub-text hover:text-dark-text">
+                  Close
+                </button>
               </div>
-              {myRemedies.length === 0 ? (
-                <p className="text-sm text-sub-text">
+              {remedyLoading ? (
+                <div className="flex items-center justify-center py-8 gap-3">
+                  <span className="inline-block h-5 w-5 animate-spin
+                    rounded-full border-2 border-t-transparent"
+                    style={{ borderColor: '#7F2020',
+                      borderTopColor: 'transparent' }} />
+                  <span className="text-sm text-sub-text">
+                    Loading remedies...
+                  </span>
+                </div>
+              ) : myRemedies.length === 0 ? (
+                <p className="text-sm text-sub-text py-4 text-center">
                   You have no remedies yet. Add them in My Remedies.
                 </p>
               ) : (
@@ -518,13 +779,17 @@ export default function AstroChat() {
                   {myRemedies.map((r) => (
                     <button key={r.id} onClick={() => suggestRemedy(r)}
                       className="block w-full rounded-card border
-                        border-gray-200 p-3 text-left hover:shadow">
-                      <div className="font-semibold">{r.name}</div>
-                      <div className="text-xs font-semibold text-primary">
+                        border-gray-200 p-3 text-left hover:shadow
+                        transition active:opacity-80">
+                      <div className="font-semibold text-dark-text">
+                        {r.name}
+                      </div>
+                      <div className="text-xs font-semibold"
+                        style={{ color: '#7F2020' }}>
                         Rs {r.price}
                       </div>
                       {r.description && (
-                        <div className="text-xs text-sub-text">
+                        <div className="text-xs text-sub-text mt-0.5">
                           {r.description}
                         </div>
                       )}
